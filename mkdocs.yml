@@ -1,0 +1,102 @@
+site_name: Spec Forge Docs
+site_description: Documentación técnica del proyecto Spec Forge
+repo_url: https://github.com/Spec-Forge-Testing/llm-pbt-agent
+edit_uri: ""
+
+theme:
+  name: material
+  language: en
+  logo: assets/logo.png
+  favicon: assets/logo.png
+  
+  features:
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.tracking
+    - navigation.indexes          # Permite que la carpeta principal tenga su propia página y expanda subtítulos
+    - navigation.top              # Botón para volver arriba flotante
+    - toc.follow
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - content.tooltips
+    - search.suggest
+    - search.highlight
+    - navigation.footer
+
+  font:
+    text: Plus Jakarta Sans
+    code: JetBrains Mono
+
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Cambiar a modo oscuro
+
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Cambiar a modo claro
+
+  icon:
+    repo: fontawesome/brands/github
+
+extra_css:
+  - stylesheets/extra.css
+
+extra_javascript:
+  - javascripts/extra.js
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Overview: index.md
+  - Getting Started:
+      - Setup: getting-started/setup.md
+      - Docker: getting-started/docker.md
+  - Architecture:
+      - Overview: architecture/overview.md
+  - Modules:
+      - Core CLI: modules/core.md
+      - Core AST:
+          - Overview: modules/core-ast.md
+          - Architecture Reference: modules/core-ast/architecture.md
+          - Code Reference: modules/core-ast/code-reference.md
+          - Integration Tests: modules/core-ast/integration-tests.md
+      - Contract Engine: modules/contract-engine.md
+      - Contracts (shared kernel): modules/contracts.md
+      - Storage: modules/storage.md
+      - Semantic Inference:
+          - Overview: modules/semantic-inference.md
+          - LLM Router (LiteLLM): modules/semantic-inference/llm-router.md
+      - Custom Schemathesis:
+          - Overview: modules/custom-schemathesis.md
+          - Engine Implementation: modules/custom-schemathesis/engine-implementation.md
+  - Environment:
+      - LLM Providers: environment/llm-providers.md

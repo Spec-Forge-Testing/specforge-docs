@@ -1,0 +1,540 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+/* ==========================================================================
+   1. SISTEMA DE DESIGN TOKENS Y PALETAS (LIGHT & SLATE)
+   ========================================================================== */
+
+/* MODO CLARO (DEFAULT / MATERIAL YOU M3 LIGHT) */
+:root,
+[data-md-color-scheme="default"] {
+  --md-font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --md-font-code: 'JetBrains Mono', monospace;
+
+  /* Colores de Superficie */
+  --bg-main: #f4f5eb;          /* Fondo crema principal */
+  --bg-card: #e8eae0;          /* Tarjetas y superficies */
+  --bg-code: #131a28;          /* Fondo para bloques de código */
+  --bg-chip-active: #dce0cd;   /* Píldora activa del sidebar */
+  
+  /* Tipografía */
+  --text-main: #1a1c18;        /* Texto de cuerpo */
+  --text-muted: #5d6255;       /* Texto secundario y etiquetas */
+  --text-bright: #000000;      /* Encabezados y títulos */
+  
+  /* Acentos y Bordes */
+  --accent-color: #536531;     /* Verde oliva M3 */
+  --border-subtle: rgba(0, 0, 0, 0.08);
+
+  /* Mapeo con variables nativas de MkDocs */
+  --md-default-bg-color: var(--bg-main);
+  --md-default-bg-color--page: var(--bg-main);
+  --md-default-fg-color: var(--text-main);
+  --md-default-fg-color--light: var(--text-muted);
+  --md-primary-fg-color: var(--bg-main);
+  --md-accent-fg-color: var(--accent-color);
+
+  --md-grid-max-width: 90rem;
+  --md-code-bg-color: var(--bg-code);
+  --md-code-fg-color: #e2e8f0;
+
+  /* Ancho de la columna de contenido (compartido con el footer prev/next) */
+  --sf-content-max-width: 68rem;
+}
+
+/* MODO OSCURO (SLATE) */
+[data-md-color-scheme="slate"] {
+  /* Colores de Superficie */
+  --bg-main: #141824;
+  --bg-card: #1b2131;
+  --bg-code: #0b0f19;
+  --bg-chip-active: #2b354d;
+  
+  /* Tipografía */
+  --text-main: #cbd5e1;
+  --text-muted: #808ea3;
+  --text-bright: #ffffff;
+  
+  /* Acentos y Bordes */
+  --accent-color: #68bee3;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+
+  /* Mapeo con variables nativas de MkDocs */
+  --md-default-bg-color: var(--bg-main);
+  --md-default-bg-color--page: var(--bg-main);
+  --md-default-fg-color: var(--text-main);
+  --md-default-fg-color--light: var(--text-muted);
+  --md-primary-fg-color: var(--bg-main);
+  --md-accent-fg-color: var(--accent-color);
+
+  --md-code-bg-color: var(--bg-code);
+  --md-code-fg-color: #d1d5db;
+}
+
+/* ==========================================================================
+   2. ESTRUCTURA GLOBAL Y LAYOUT CENTRAL
+   ========================================================================== */
+.md-main__inner {
+  margin-top: 0.5rem;
+}
+
+/* Ancho máximo de la columna de contenido */
+.md-content {
+  max-width: var(--sf-content-max-width);
+}
+
+/* Ancho compacto para Sidebars */
+.md-sidebar--primary {
+  width: 13.5rem;
+}
+
+.md-sidebar--secondary {
+  width: 12.5rem;
+}
+
+/* Reserva siempre el espacio del scrollbar nativo en los sidebars, para que
+   el ancho del contenido (y la línea divisoria inferior) no salte entre
+   páginas con y sin scroll. */
+.md-sidebar__scrollwrap {
+  scrollbar-gutter: stable;
+  overflow-x: hidden;
+}
+
+/* ==========================================================================
+   3. BARRA SUPERIOR (HEADER) Y BUSCADOR
+   ========================================================================== */
+.md-header {
+  background-color: var(--bg-main);
+  color: var(--text-main);
+  border-bottom: 1px solid var(--border-subtle);
+  box-shadow: none;
+}
+
+.md-header__title {
+  color: var(--text-bright);
+  font-weight: 700;
+}
+
+.md-header__button {
+  color: var(--text-main);
+}
+
+/* Buscador Estilo Cápsula */
+.md-search__form {
+  background-color: var(--bg-card);
+  border-radius: 99px;
+  border: 1px solid var(--border-subtle);
+}
+
+.md-search__input {
+  font-size: 0.7rem;
+  color: var(--text-main);
+}
+
+.md-search__input::placeholder {
+  color: var(--text-muted);
+}
+
+.md-search__icon {
+  color: var(--text-muted);
+}
+
+/* ==========================================================================
+   4. NAVEGACIÓN Y SIDEBARS (IZQUIERDO Y DERECHO)
+   ========================================================================== */
+/* Títulos de sección en sidebars */
+.md-nav__title {
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: var(--text-bright);
+}
+
+/* Enlaces de navegación general */
+.md-nav__link {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  padding: 0.35rem 0.75rem;
+  border-radius: 10px;
+  transition: all 0.15s ease;
+}
+
+.md-nav__link:hover {
+  color: var(--text-bright);
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
+/* Píldora activa (Sidebar Izquierdo) */
+.md-nav__item--active > .md-nav__link,
+.md-nav__link--active {
+  color: var(--text-bright);
+  font-weight: 600;
+  background-color: var(--bg-chip-active);
+}
+
+.md-nav__item--nested > .md-nav__link {
+  background-color: transparent;
+}
+
+/* Table of Contents (Sidebar Derecho) */
+.md-sidebar--secondary .md-nav__link {
+  border-radius: 99px;
+  font-size: 0.7rem;
+  padding: 0.3rem 0.75rem;
+  margin-bottom: 0.15rem;
+}
+
+.md-sidebar--secondary .md-nav__link--active {
+  background-color: transparent;
+  border: 1px solid var(--accent-color);
+  color: var(--text-bright);
+  font-weight: 600;
+}
+
+/* Material estira `.md-nav__list` con `flex: 1` para llenar el alto del
+   sidebar; eso empuja todo lo que va después (nuestra línea + el botón) al
+   fondo del contenedor cuando la lista es corta. Se cancela el stretch para
+   que la línea quede pegada al último link real. */
+.md-sidebar--primary .md-nav--primary > .md-nav__list,
+.md-sidebar--secondary .md-nav--secondary > .md-nav__list {
+  flex: initial;
+}
+
+/* Línea divisoria inferior en los sidebars. El ancho real (igual al link más
+   largo, nunca el ancho fijo de la columna) lo calcula y setea
+   docs/javascripts/extra.js vía --sf-divider-width; el list en sí queda
+   intacto para no romper el truncado con ellipsis de los links largos. */
+.sf-nav-divider {
+  height: 1px;
+  width: 100%;
+  max-width: 12rem;
+  margin: 1rem 0 0;
+  background-color: var(--border-subtle);
+}
+
+/* Botón "Back to top": reubicado por extra.js justo después de la línea
+   divisoria del sidebar derecho, y siempre visible ahí (no es el botón
+   flotante-por-scroll nativo de Material). El !important vence a la regla
+   nativa `.md-top[hidden]`, que tiene más especificidad que `.md-top` solo;
+   extra.js además remueve el atributo "hidden" apenas Material lo agrega. */
+.md-top,
+.md-top[hidden] {
+  position: relative;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  width: max-content;
+  max-width: 100%;
+  margin-top: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: inline-flex !important;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.6rem;
+  transition: color 0.15s ease;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+.md-top:hover {
+  color: var(--text-bright);
+}
+
+.md-top svg {
+  display: none; /* Oculta ícono SVG nativo de MkDocs */
+}
+
+.md-top::before {
+  content: "↑";
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.md-top:hover::before {
+  color: var(--text-bright);
+}
+
+/* ==========================================================================
+   5. TIPOGRAFÍA Y CONTENIDO PRINCIPAL
+   ========================================================================== */
+.md-typeset {
+  font-family: var(--md-font-sans);
+  font-size: 0.75rem;
+  line-height: 1.55;
+  color: var(--text-main);
+}
+
+/* Encabezados Jerarquizados */
+.md-typeset h1 {
+  font-size: 1.45rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-bright);
+  margin-bottom: 0.8em;
+}
+
+.md-typeset h2 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--text-bright);
+  margin-top: 1.6em;
+  margin-bottom: 0.6em;
+}
+
+.md-typeset h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-bright);
+  margin-top: 1.2em;
+}
+
+/* Enlaces */
+.md-typeset a {
+  color: var(--accent-color);
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.15s ease, text-decoration 0.15s ease;
+}
+
+.md-typeset a:hover {
+  text-decoration: underline;
+}
+
+.md-typeset h1 a,
+.md-typeset h2 a,
+.md-typeset h3 a {
+  color: inherit;
+}
+
+/* Código Inline e Imágenes */
+.md-typeset code {
+  font-family: var(--md-font-code);
+  font-size: 0.8em;
+  color: var(--text-bright);
+  background-color: var(--bg-card);
+  padding: 0.1em 0.35em;
+  margin: 0 0.1em;
+  border-radius: 5px;
+  border: 1px solid var(--border-subtle);
+}
+
+.md-typeset img {
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  display: block;
+  margin: 1.5em auto;
+}
+
+/* Citas (Blockquotes) estilo tarjeta Tip/Note */
+.md-typeset blockquote {
+  position: relative;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  padding: 1.2rem 1.2rem 1rem 2.5rem;
+  margin: 1.5em 0;
+  color: var(--text-main);
+  font-size: 0.7rem;
+}
+
+.md-typeset blockquote::before {
+  content: "💬  Note";
+  position: absolute;
+  top: 0.9rem;
+  left: 1.1rem;
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--accent-color);
+  display: block;
+}
+
+.md-typeset blockquote > p {
+  margin: 0.8em 0 0 0;
+  color: var(--text-main);
+}
+
+.md-typeset blockquote > p:first-child {
+  padding-top: 0.6rem;
+}
+
+/* ==========================================================================
+   6. BLOQUES DE CÓDIGO SINTÁCTICO
+   ========================================================================== */
+.md-typeset .highlight {
+  background-color: var(--bg-code);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  margin: 1em 0;
+  overflow: hidden;
+}
+
+.md-typeset div.highlight > pre,
+.md-typeset pre {
+  background-color: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  margin: 0;
+  padding: 0.8rem 1rem;
+  overflow-x: auto;
+}
+
+.md-typeset pre > code {
+  background: transparent;
+  padding: 0;
+  border: none;
+  font-family: var(--md-font-code);
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: #e2e8f0;
+}
+
+/* Tablas de números de línea */
+.md-typeset .highlighttable,
+.md-typeset .highlighttable tbody,
+.md-typeset .highlighttable tr,
+.md-typeset .highlighttable td {
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+}
+
+.md-typeset .linenodiv,
+.md-typeset .linenos {
+  background: transparent;
+  border: none;
+  padding-right: 0.8rem;
+  color: #475569;
+  user-select: none;
+}
+
+.md-typeset .linenodiv pre {
+  padding: 0.8rem 0 0.8rem 1rem;
+  color: #475569;
+}
+
+/* ==========================================================================
+   7. TARJETAS DE AVISOS (ADMONITIONS / TIPS)
+   ========================================================================== */
+.md-typeset .admonition,
+.md-typeset details {
+  background-color: var(--bg-card);
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+  box-shadow: none;
+  padding: 0.8rem 1rem;
+}
+
+.md-typeset .admonition-title {
+  background-color: transparent;
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: var(--accent-color);
+}
+
+.md-typeset .admonition-title::before {
+  background-color: var(--accent-color);
+}
+
+/* ==========================================================================
+   8. FOOTER — TARJETAS DE NAVEGACIÓN Y CRÉDITOS
+   ========================================================================== */
+.md-footer {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  margin-top: 1rem;
+}
+
+.md-footer__inner.md-grid {
+  max-width: var(--sf-content-max-width);
+  margin: 1rem auto 0;
+  padding: 1.5rem 1.5rem 0;
+  gap: 1rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.md-footer__link {
+  flex: 1 1 0;
+  max-width: none;
+  margin: 0;
+  padding: 0.9rem 1.1rem;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  color: inherit;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.md-footer__link:hover,
+.md-footer__link:focus {
+  color: inherit;
+  text-decoration: none;
+  transform: translateY(-2px);
+  border-color: var(--accent-color);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+}
+
+/* Si solo existe "next" (primera página), que quede pegado a la derecha. */
+.md-footer__link--next {
+  margin-left: auto;
+}
+
+.md-footer__button.md-icon svg {
+  fill: var(--text-muted);
+}
+
+.md-footer__direction {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.md-footer__title .md-ellipsis {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-bright);
+}
+
+/* ==========================================================================
+   SUB-FOOTER / META ("Made with MkDocs")
+   ========================================================================== */
+.md-footer-meta {
+  max-width: 100%;
+  margin-top: 1.5rem;
+  padding: 0.5rem 0;
+}
+
+.md-footer-meta__inner {
+  display: flex;
+  justify-content: center; 
+  align-items: center;
+  padding: 0;
+}
+
+.md-copyright {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.md-copyright a {
+  color: var(--text-muted);
+  font-weight: 600;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.md-copyright a:hover {
+  color: var(--accent-color);
+}

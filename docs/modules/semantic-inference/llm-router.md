@@ -1,26 +1,39 @@
-# US-1: Router Multi-Modelo y Sistema de Fallback (LiteLLM)
+# Multi-Model Router and Fallback System (LiteLLM)
 
-Se integró un enrutador de modelos basado en **LiteLLM**, lo cual permite pivotar dinámicamente entre distintos proveedores (OpenAI, Anthropic, Gemini, Groq, Mistral) sin necesidad de refactorizar el código de consumo, garantizando una alta disponibilidad mediante una cadena de fallbacks automáticos y políticas de reintentos.
+A model router built on **LiteLLM** lets the pipeline pivot dynamically between
+providers (OpenAI, Anthropic, Gemini, Groq, Mistral) without refactoring any
+calling code, keeping high availability through an automatic fallback chain and
+retry policies.
 
-## Decisiones de Arquitectura
+## Architecture decisions
 
-### 1. Centralización con LiteLLM
-Uso de `litellm.completion` para todas las llamadas de inferencia, así se evitan SDKs propietarios directos, permitiendo que el sistema sea agnóstico al proveedor y facilitando la adición de nuevos modelos en el futuro.
+### 1. Centralized on LiteLLM
 
-### 2. Capa de Resiliencia (Retries & Fallbacks)
-El sistema implementa un algoritmo de "espiral de reintentos" antes de saltar al siguiente modelo en la lista de fallbacks.
-- **Retry:** Se aplica ante errores transitorios de red o retardos del servidor.
-- **Fallback:** Se activa cuando el proveedor principal agota su cuota o tiene una caída crítica de servicio.
+All inference calls go through `litellm.completion`, avoiding direct
+provider-specific SDKs. This keeps the system provider-agnostic and makes adding a
+new model a configuration change, not a code change.
 
-### 3. Clasificación de Errores
+### 2. Resilience layer (retries and fallbacks)
 
-| Error | Causa Probable | Acción del Sistema |
-| :--- | :--- | :--- |
-| `AuthenticationError` | API Key inválida o vencida. | **Fail-Fast:** No reintenta. Corta la ejecución para evitar fallos silenciosos. |
-| `RateLimitError` (429) | Agotamiento de créditos o cuota. | **Fallback:** Cambia inmediatamente al siguiente proveedor de la lista. |
-| `ServiceUnavailable` (500) | Caída del servidor del proveedor. | **Fallback:** Intenta con el siguiente proveedor disponible. |
-| `Timeout` | El modelo tarda en responder. | **Retry:** Reintenta con el mismo modelo esperando un tiempo exponencial. |
+The system runs a retry "spiral" before falling through to the next model in the
+fallback list.
 
-## Sobre el logging
+- **Retry** — applied on transient network errors or server-side delays.
+- **Fallback** — triggered when the primary provider is out of quota or has a
+  critical outage.
 
-El logging de fallback ya está implementado con `logging.warning`, pero para verlo claramente en una app real después conviene que el entrypoint del módulo o del servicio configure handlers/formato de logging. La lógica ya está; lo que faltaría más adelante es una configuración global de logs del proyecto.
+### 3. Error classification
+
+| Error | Likely cause | System action |
+|---|---|---|
+| `AuthenticationError` | Invalid or expired API key. | **Fail-fast** — no retry, execution stops to avoid a silent failure. |
+| `RateLimitError` (429) | Quota/credits exhausted. | **Fallback** — switches immediately to the next provider in the list. |
+| `ServiceUnavailable` (500) | Provider-side outage. | **Fallback** — tries the next available provider. |
+| `Timeout` | Model is slow to respond. | **Retry** — retries the same model with exponential backoff. |
+
+## Logging
+
+Fallback logging is already implemented via `logging.warning`, but to see it
+clearly in a real deployment the module's or service's entrypoint should configure
+log handlers/formatting. The logic itself is in place; what's still missing is a
+project-wide logging configuration.

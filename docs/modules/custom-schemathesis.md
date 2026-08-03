@@ -1,428 +1,464 @@
-# custom-schemathesis
+# Custom Schemathesis
 
-Motor de validación determinístico del pipeline. Su responsabilidad es convertir contratos de endpoint enriquecidos por el LLM en estrategias concretas de Hypothesis y ejecutarlas contra la API objetivo de forma asíncrona, controlada y reproducible.
+The pipeline's deterministic validation engine. It turns LLM-enriched endpoint
+contracts into concrete Hypothesis strategies and runs them against the target API
+asynchronously, in a controlled and reproducible way.
 
-A diferencia de Schemathesis —que parsea un contrato OpenAPI genérico y genera datos con Hypothesis sin más contexto—, este módulo introduce tres diferenciales:
+Unlike Schemathesis — which parses a generic OpenAPI contract and generates data
+with Hypothesis with no further context — this module adds three differentiators:
 
-1. **Reglas por tipo con control fino**: cada parámetro tiene un contrato explícito con `type` y restricciones controladas. La LLM solo puede rellenar campos permitidos por tipo (`ALLOWED_FIELDS_BY_TYPE`).
-2. **Presupuesto adaptativo y reducción de combinatoria**: el espacio de generación se estima antes de compilar, se reparte por fases (`valid`, `boundary`, `invalid`, `attack`) y se limita con un techo duro para evitar explosión combinatoria.
-3. **Priorización por riesgo de endpoint**: los endpoints críticos pueden asignarse un perfil de riesgo que orientará el esfuerzo de fuzzing.
+1. **Fine-grained, type-scoped rules.** Each parameter carries an explicit contract
+   with `type` and controlled constraints; the LLM can only fill in fields allowed
+   for that type (`ALLOWED_FIELDS_BY_TYPE`).
+2. **Adaptive budget and combinatorics reduction.** The generation space is
+   estimated before compiling, split across phases (`valid`, `boundary`, `invalid`,
+   `attack`), and capped with a hard ceiling to avoid combinatorial explosion.
+3. **Risk-based endpoint prioritization.** Critical endpoints can carry a risk
+   profile that steers fuzzing effort toward them.
 
 ## Pipeline
 
 ```
 StrategyMode
-    ↓
-questionnaire.builder  →  QuestionnaireBundle  (plantilla vacía para LLM)
-    ↓ (LLM rellena)
-questionnaire.resolver  →  CompilerInput       (contratos ya validados)
-    ↓
-strategy_compiler.compile()  →  EngineInput    (estrategias Hypothesis por zona)
-    ↓
-engine  →  HTTP API  →  ExecutionResult
+    v
+questionnaire.builder  ->  QuestionnaireBundle   (empty template for the LLM)
+    v (LLM fills it in)
+questionnaire.resolver  ->  CompilerInput          (validated contracts)
+    v
+strategy_compiler.compile()  ->  EngineInput        (Hypothesis strategies per zone)
+    v
+engine  ->  HTTP API  ->  ExecutionResult
 ```
 
-## Arquitectura de capas
+## Layered architecture
 
 ### `src/models/`
 
-Capa de contratos tipados. Todo el dominio del módulo vive aquí. Ninguna otra capa define modelos propios de dominio.
-
-Subdivisión:
+The typed-contracts layer. The module's entire domain lives here — no other layer
+defines its own domain models.
 
 ```
 models/
-  strategy_mode.py          → StrategyMode enum (DEFAULT | HACKER)
+  strategy_mode.py          -> StrategyMode enum (DEFAULT | HACKER)
   questionnaire/
-    questionnaire.py        → QuestionnaireBundle, QuestionnaireEndpointItem, QuestionnaireEndpointContracts
-    resolved.py              → ResolvedQuestionnaireBundle, ResolvedQuestionnaire (re-exporta CombinationLimits)
-    rules.py                 → QUESTIONNAIRE_RULES_BY_MODE, DEFAULT_QUESTIONNAIRE_RULES, HACKER_QUESTIONNAIRE_RULES
+    questionnaire.py         -> QuestionnaireBundle, QuestionnaireEndpointItem, QuestionnaireEndpointContracts
+    resolved.py               -> ResolvedQuestionnaireBundle, ResolvedQuestionnaire (re-exports CombinationLimits)
+    rules.py                  -> QUESTIONNAIRE_RULES_BY_MODE, DEFAULT_QUESTIONNAIRE_RULES, HACKER_QUESTIONNAIRE_RULES
   compiler/
-    endpoint_info.py         → EndpointInfo (identidad + contratos por zona HTTP del endpoint)
-    compiler_input.py        → CompilerInput (lista de EndpointInfo, entrada al compilador)
-    budget.py                → CombinationLimits (límites de combinatoria)
+    endpoint_info.py          -> EndpointInfo (identity + per-HTTP-zone contracts)
+    compiler_input.py         -> CompilerInput (list of EndpointInfo, compiler input)
+    budget.py                 -> CombinationLimits (combinatorics limits)
     contracts/
       strategies/
-        base.py               → BaseStrategyContract (contrato técnico estándar)
-        hacker.py              → HackerStrategyContract (extiende base con knobs ofensivos)
-      endpoint_controls.py    → EndpointRiskContract, EndpointBudgetContract
-      response.py              → ResponseContract (forma esperada de la respuesta por status)
-      normalization.py         → ALLOWED_FIELDS_BY_TYPE, ALLOWED_FIELDS_BY_TYPE_HACKER
-      state_link.py             → StateLinkContract, StateProduction, StateConsumption, TransitionInvariant
+        base.py                -> BaseStrategyContract (standard technical contract)
+        hacker.py               -> HackerStrategyContract (extends base with offensive knobs)
+      endpoint_controls.py     -> EndpointRiskContract, EndpointBudgetContract
+      response.py               -> ResponseContract (expected response shape per status)
+      normalization.py          -> ALLOWED_FIELDS_BY_TYPE, ALLOWED_FIELDS_BY_TYPE_HACKER
+      state_link.py              -> StateLinkContract, StateProduction, StateConsumption, TransitionInvariant
   engine/
-    engine_input.py           → EngineInput, CompiledExecutionEndpoint, CompiledEndpointStrategies, CompiledRequestPart
-    execution.py               → ExecutionConfig, RequestBlueprint, ExecutionResult, ErrorCategory
-    crash_report.py            → CrashReport, InvariantViolation
-    results.py                  → EngineRunResult, RunStats, EndpointStats, RawFinding
+    engine_input.py            -> EngineInput, CompiledExecutionEndpoint, CompiledEndpointStrategies, CompiledRequestPart
+    execution.py                -> ExecutionConfig, RequestBlueprint, ExecutionResult, ErrorCategory
+    crash_report.py             -> CrashReport, InvariantViolation
+    results.py                   -> EngineRunResult, RunStats, EndpointStats, RawFinding
 ```
 
-#### Contratos (`models/compiler/contracts/`)
+**Contracts (`models/compiler/contracts/`).** `BaseStrategyContract` is the root
+contract: standard JSON Schema constraints (`type`, ranges, lengths, lists, objects,
+`enum`, `pattern`, `nullable`, ...), with `extra="forbid"` to reject any field the
+LLM shouldn't send. `HackerStrategyContract` extends it with high-level offensive
+knobs — `attack_profiles`, `focus_fields`, `sensitive_fields`, `aggressiveness`,
+`mutation_depth`, `invalid_input_ratio`, `include_encoded_variants`, `include_null`,
+`include_unicode`, `include_control_chars` — without holding concrete payloads;
+those are decided by the compiler. `EndpointRiskContract` (sensitivity/criticality)
+and `EndpointBudgetContract` (generation budget and phase split) are separate models
+because prioritization and example spend are independent decisions.
+`ALLOWED_FIELDS_BY_TYPE`/`ALLOWED_FIELDS_BY_TYPE_HACKER` are immutable lookup tables
+that define which contract fields are legal per JSON Schema type — LLM validation
+depends on these tables, not scattered conditional logic.
 
-`BaseStrategyContract` es el contrato raíz. Modela los constraints técnicos estándar de JSON Schema: `type`, rangos, longitudes, listas, objetos, `enum`, `pattern`, `nullable`, etc. Usa `extra="forbid"` para rechazar campos que el LLM no debería enviar.
+`StateLinkContract` is the **optional** contract that enables [stateful
+fuzzing](#stateful-fuzzing): declaratively, which response field to save into which
+bundle (`StateProduction`), which bundle to reinject into which request zone
+(`StateConsumption`), and which transition invariant to check after producing a
+resource (`TransitionInvariant`). It defaults to `None` — an endpoint with no state
+links fuzzes exactly as before.
 
-`HackerStrategyContract` extiende el base con knobs ofensivos de alto nivel: `attack_profiles`, `focus_fields`, `sensitive_fields`, `aggressiveness`, `mutation_depth`, `invalid_input_ratio`, `include_encoded_variants`, `include_null`, `include_unicode`, `include_control_chars`, etc. No contiene payloads concretos; eso lo decide el compilador.
+**`EndpointInfo`/`CompilerInput`.** `EndpointInfo` is the per-endpoint unit: `method`,
+`path_url`, `base_url`, and the four HTTP zones (`path_params`, `query_params`,
+`header_params`, `body`), each a `str -> BaseStrategyContract | HackerStrategyContract`
+map, plus optional `risk`/`budget`. `CompilerInput` is the questionnaire's output and
+the compiler's input: a global `strategy_mode` plus a list of `EndpointInfo`. The
+mode lives globally because it affects questionnaire rules, allowed contract types,
+compilation, and whether attack phases activate.
 
-`EndpointRiskContract` modela sensibilidad y criticidad del endpoint. `EndpointBudgetContract` modela presupuesto de generación y reparto de fases. Están separados porque priorización y consumo de ejemplos son decisiones independientes.
+**`CompiledRequestPart`/`CompiledEndpointStrategies`.** `CompiledRequestPart` is one
+compiled HTTP zone: `location` (path/query/header/body), normalized `schema`, and a
+ready-to-generate Hypothesis `strategy`. `CompiledEndpointStrategies` groups an
+endpoint's four compiled zones.
 
-`ALLOWED_FIELDS_BY_TYPE` y `ALLOWED_FIELDS_BY_TYPE_HACKER` son tablas inmutables que definen qué campos del contrato son legales por tipo JSON Schema. La validación de la LLM depende de estas tablas, no de lógica condicional dispersa.
-
-`StateLinkContract` es el contrato **opcional** que habilita el fuzzing stateful (ver [Fuzzing stateful](#srcenginestrategiesstateful_fuzzer-fuzzing-stateful)). Declara, de forma puramente declarativa: qué campo de una respuesta guardar en qué bundle (`StateProduction`), qué bundle reinyectar en qué zona del request (`StateConsumption`) y qué invariante de transición verificar tras producir un recurso (`TransitionInvariant`). Por defecto es `None`: un endpoint sin enlaces de estado se fuzzea exactamente como antes.
-
-#### `EndpointInfo` y `CompilerInput`
-
-`EndpointInfo` es la unidad central de información por endpoint. Contiene: `method`, `path_url`, `base_url`, y cuatro zonas HTTP —`path_params`, `query_params`, `header_params`, `body`— cada una como mapa `str → BaseStrategyContract | HackerStrategyContract`. También incluye `risk` y `budget` opcionales.
-
-`CompilerInput` es la salida del questionnaire y la entrada del compilador: `strategy_mode` global + lista de `EndpointInfo`. El modo vive a nivel global porque afecta las reglas del cuestionario, los tipos de contrato admitidos, la compilación y la activación de fases de ataque.
-
-#### `CompiledRequestPart` y `CompiledEndpointStrategies`
-
-`CompiledRequestPart` es el resultado de compilar una zona HTTP: contiene `location` (path/query/header/body), `schema` (JSON Schema normalizado) y `strategy` (objeto `SearchStrategy` de Hypothesis listo para generar datos).
-
-`CompiledEndpointStrategies` agrupa las cuatro zonas compiladas de un endpoint.
-
-#### `EngineInput` y `CompiledExecutionEndpoint`
-
-`CompiledExecutionEndpoint` combina la metadata de ejecución del endpoint (method, path_url, base_url, risk, budget) con su `CompiledEndpointStrategies`. Es la unidad de trabajo del engine. Incluye además un `state_link` opcional (`StateLinkContract | None`) que el fuzzer stateful consume y el stateless ignora.
-
-`EngineInput` es la lista de `CompiledExecutionEndpoint` más la configuración global. Es la única entrada que el engine necesita.
-
----
+**`EngineInput`/`CompiledExecutionEndpoint`.** `CompiledExecutionEndpoint` combines
+an endpoint's execution metadata (method, path_url, base_url, risk, budget) with its
+`CompiledEndpointStrategies` — the engine's unit of work — plus an optional
+`state_link` that the stateful fuzzer consumes and the stateless one ignores.
+`EngineInput` is the list of `CompiledExecutionEndpoint` plus global config; it's the
+only input the engine needs.
 
 ### `src/questionnaire/`
 
-Capa de frontera con el exterior. Su única responsabilidad es emitir una plantilla de cuestionario para que el LLM la rellene, y luego validar y transformar la respuesta en un `CompilerInput` seguro.
+The boundary layer with the outside world. Its only job is to emit a questionnaire
+template for the LLM to fill in, then validate and transform the answer into a safe
+`CompilerInput`. It never compiles or executes anything — the compiler only ever
+receives already-validated data.
 
-No compila ni ejecuta nada. El compilador recibe datos ya validados.
-
-#### `builder.py`
-
-Construye el `QuestionnaireBundle` vacío. Selecciona las reglas correctas vía `QUESTIONNAIRE_RULES_BY_MODE` según el `StrategyMode`. Sin lógica condicional propia: la selección de reglas es un lookup.
-
-#### `resolver.py`
-
-Convierte el bundle rellenado en `CompilerInput`. Responsabilidades:
-- Validar el `ResolvedQuestionnaireBundle` contra el modo global.
-- Coaccionar modelos opcionales (`risk`, `budget`) a sus tipos Pydantic.
-- Validar que cada contrato tenga `type` y solo use campos permitidos.
-- Construir `EndpointInfo` por endpoint.
-- Devolver `ResolvedQuestionnaire` con el `CompilerInput` final.
-
-#### `policy.py`
-
-Contiene las reglas de validación y las heurísticas de presupuesto. Funciones principales:
-
-- `validate_endpoint_contract_types(endpoint)` — verifica que cada contrato de las cuatro zonas tenga campo `type`.
-- `validate_contract_allowed_fields(contract, mode)` — verifica que el contrato no use campos que la tabla de ese tipo no permite.
-- `validate_endpoint_contract_allowed_fields(endpoint, mode)` — aplica la anterior a todas las zonas.
-- `estimate_parameter_space(params)` — heurística que estima el espacio combinatorio total de un mapa de parámetros (producto de opciones por campo).
-- `compute_combination_limits(endpoint) → CombinationLimits` — estima el espacio, lo capa con un máximo duro y reparte ejemplos entre fases `valid`, `boundary`, `invalid`, `attack`.
-
-La validación y la heurística están separadas intencionalmente: la primera es una verificación de corrección, la segunda es una política ajustable.
-
----
+- **`builder.py`** builds the empty `QuestionnaireBundle`, selecting the right rules
+  via `QUESTIONNAIRE_RULES_BY_MODE` for the given `StrategyMode` — a lookup, no
+  conditional logic of its own.
+- **`resolver.py`** converts the filled bundle into `CompilerInput`: validates the
+  `ResolvedQuestionnaireBundle` against the global mode, coerces optional models
+  (`risk`, `budget`) to their Pydantic types, checks that every contract only uses
+  allowed fields, builds `EndpointInfo` per endpoint, and returns a
+  `ResolvedQuestionnaire`.
+- **`policy.py`** holds validation rules and budget heuristics:
+  `validate_endpoint_contract_types` (every zone's contract has a `type`),
+  `validate_contract_allowed_fields`/`validate_endpoint_contract_allowed_fields`
+  (no field outside the type's allowed set), `estimate_parameter_space` (heuristic
+  product of per-field option counts), and `compute_combination_limits` (estimates
+  the space, caps it hard, and splits examples across `valid`/`boundary`/`invalid`/
+  `attack`). Validation and the budget heuristic are deliberately separate: the
+  first is a correctness check, the second is a tunable policy.
 
 ### `src/strategy_compiler/`
 
-Capa de traducción. Recibe `CompilerInput` (ya validado por el questionnaire) y produce `EngineInput` (estrategias Hypothesis listas para ejecución, organizadas por zona y por fase).
-
-**El compilador no toma decisiones de dominio.** No re-valida contratos ni reinterpreta el modo global. Solo traduce.
-
-#### Arquitectura interna
+The translation layer. Takes an already-validated `CompilerInput` and produces
+`EngineInput` (Hypothesis strategies, organized by zone and phase). **The compiler
+makes no domain decisions** — it never re-validates contracts or reinterprets the
+global mode, only translates.
 
 ```
 strategy_compiler/
-  compiler.py               → orquestador: compile(CompilerInput) → EngineInput
+  compiler.py                -> orchestrator: compile(CompilerInput) -> EngineInput
   schema_compiler/
-    __init__.py              → ContractCompiler Protocol, _REGISTRY, compile_contract, register_compiler
+    __init__.py               -> ContractCompiler Protocol, _REGISTRY, compile_contract, register_compiler
     default/
-      compiler.py             → DefaultContractCompiler (valid / boundary / invalid; attack → fallback a valid)
-      phases.py                → build_valid_strategy, build_boundary_strategy, build_invalid_strategy
-      type_strategies.py       → valid_for_type, string_strategy, array_strategy, object_strategy, compile_for_phase
-      constraints.py           → INT_BOUNDARY, FLOAT_BOUNDARY + helpers numéricos compartidos
+      compiler.py              -> DefaultContractCompiler (valid / boundary / invalid; attack falls back to valid)
+      phases.py                 -> build_valid_strategy, build_boundary_strategy, build_invalid_strategy
+      type_strategies.py        -> valid_for_type, string_strategy, array_strategy, object_strategy, compile_for_phase
+      constraints.py            -> INT_BOUNDARY, FLOAT_BOUNDARY + shared numeric helpers
     hacker/
-      compiler.py              → HackerContractCompiler (delega a default para non-attack)
-      builders.py               → build_attack_payloads, _encode_variants, mutate_object
-      tables.py                  → tablas de strings por perfil de ataque (solo datos)
+      compiler.py                -> HackerContractCompiler (delegates to default for non-attack phases)
+      builders.py                 -> build_attack_payloads, _encode_variants, mutate_object
+      tables.py                    -> attack-vector string tables (pure data)
 ```
 
-**Extensión para un nuevo tipo de contrato:**
-1. Implementar `ContractCompiler` Protocol.
-2. Registrar: `register_compiler(MiContractType, MiCompiler())`.
+**`compiler.py`** is the canonical entry point, `compile(CompilerInput) -> EngineInput`.
+For each `EndpointInfo`: determines the active phases from `strategy_mode` (DEFAULT:
+`valid`/`boundary`/`invalid`; HACKER: + `attack`); compiles each HTTP zone
+independently via `_compile_zone`; per zone, builds a
+`st.fixed_dictionaries({param: compile_contract(contract, phase)})` per phase; packs
+everything into `CompiledRequestPart` -> `CompiledEndpointStrategies` ->
+`CompiledExecutionEndpoint`; and propagates the serialized `CombinationLimits` as
+`generation_plan`. Path parameters are always forced `required=True`, regardless of
+the contract.
 
-No se modifica ningún archivo del núcleo.
-
-#### `compiler.py`
-
-Punto de entrada canónico: `compile(CompilerInput) → EngineInput`.
-
-Para cada `EndpointInfo`:
-1. Determina las fases activas según `strategy_mode`: DEFAULT (`valid`, `boundary`, `invalid`), HACKER (+ `attack`).
-2. Compila cada zona HTTP (`path`, `query`, `headers`, `body`) de forma independiente vía `_compile_zone`.
-3. Por zona: construye un `st.fixed_dictionaries({param: compile_contract(contract, phase)})` para cada fase.
-4. Empaqueta todo en `CompiledRequestPart` (con `strategies_by_phase` poblado) → `CompiledEndpointStrategies` → `CompiledExecutionEndpoint`.
-5. Propaga el plan de generación (`CombinationLimits` serializado) en `generation_plan` de `CompiledEndpointStrategies`.
-
-Los parámetros de `path` se fuerzan siempre a `required=True`, independientemente del contrato.
-
-Salida: `EngineInput`.
-
-#### `schema_compiler/`
-
-Submodulo de despacho. Traduce un `BaseStrategyContract` (o subclase) a una `SearchStrategy` de Hypothesis mediante el `_REGISTRY`.
-
-**Protocol `ContractCompiler`** (en `schema_compiler/__init__.py`):
+**`schema_compiler/`** is the dispatch layer, translating a `BaseStrategyContract`
+(or subclass) into a Hypothesis `SearchStrategy` via a registry:
 
 ```python
 class ContractCompiler(Protocol):
     def compile_contract(self, contract: BaseStrategyContract, phase: str) -> SearchStrategy: ...
 ```
 
-**`_REGISTRY: dict[type[BaseStrategyContract], ContractCompiler]`** — precargado con:
-- `BaseStrategyContract → DefaultContractCompiler`
-- `HackerStrategyContract → HackerContractCompiler`
+`_REGISTRY` is preloaded with `BaseStrategyContract -> DefaultContractCompiler` and
+`HackerStrategyContract -> HackerContractCompiler`. `compile_contract(contract,
+phase)` dispatches on `type(contract)`, raising `StrategyCompilationError` if
+nothing is registered; `register_compiler(type, compiler)` is the public extension
+API — no core file needs editing for a new contract type.
 
-**`compile_contract(contract, phase)`** — despacha al compilador registrado para `type(contract)`. Lanza `StrategyCompilationError` (de `src/exceptions.py`) si no hay compilador.
+`schema_compiler/default/` handles `BaseStrategyContract` with no knowledge of
+`HackerStrategyContract`. `DefaultContractCompiler` dispatches by phase to
+`phases.py`: `build_valid_strategy` (correct values — `const` -> `st.just`, `enum`
+-> `st.sampled_from`, a known type -> `valid_for_type`, no type ->
+`fallback_from_jsonschema`; wrapped in `st.one_of(st.none(), base)` when
+`nullable=True`), `build_boundary_strategy` (domain edges — integer candidates from
+`integer_boundary_values(min, max)` filtered by `boundary_int_filter`; strings at
+`minLength`/`maxLength` and their neighbors; arrays/objects delegate with
+`phase="boundary"`), and `build_invalid_strategy` (wrong types and out-of-range
+values). `attack` falls back silently to `build_valid_strategy`, since
+`BaseStrategyContract` has no offensive knobs. `type_strategies.py` dispatches by
+JSON Schema type (`string_strategy` picks a known-format regex, a custom `pattern`,
+or `st.text`; `array_strategy`/`object_strategy` recurse via `compile_for_phase`,
+which uses a deferred import of `phases.py` to break the `phases -> type_strategies
+-> phases` circular dependency; `strategy_from_jsonschema` is a patchable attribute
+pointing at `hypothesis_jsonschema.from_schema` when installed, used for constructs
+with no native coverage like `anyOf`/`oneOf`/`$ref`/unknown `format`).
+`constraints.py` holds pure numeric tables/helpers shared by `default/` and
+`hacker/` (boundary and attack value tables, `minimum`/`exclusiveMinimum`
+normalization, filter predicates) with no Hypothesis import.
 
-**`register_compiler(type, compiler)`** — API pública para extensión sin modificar el núcleo.
+`schema_compiler/hacker/` extends DEFAULT by adding the `attack` phase for
+`HackerStrategyContract`; it depends on `default/`, never the other way around.
+`HackerContractCompiler` delegates every phase except `attack` to
+`DefaultContractCompiler`; for `attack`, it extracts the contract's knobs and calls
+`build_attack_payloads`, which dispatches per type: strings pull from
+`PROFILE_STRING_PAYLOADS[profile]` (or `GENERIC_STRING_PAYLOADS` with no declared
+profile), optionally expanded via `_encode_variants` (original + URL-encoded +
+Base64) and nullbytes; numbers combine `integer_attack_values()` with
+`integer_boundary_values(min, max)`; booleans use a fixed list that deliberately
+mixes types (`True`, `False`, `None`, `0`, `1`, `"true"`, `"false"`, `"null"`);
+arrays/objects get prototype-pollution, overflow, and null mutations
+(`mutate_object`, recursive up to a depth limit). `tables.py` holds twelve pure
+string tables by attack vector (SQL, XSS, path traversal, SSRF, auth bypass, input
+validation, deserialization, parser compat, headers/cookies, info disclosure,
+resource abuse, business logic) with no Hypothesis or heavy stdlib import.
 
-#### `schema_compiler/default/`
-
-Maneja `BaseStrategyContract`. Sin conocimiento de `HackerStrategyContract` ni de `hacker/`.
-
-**`compiler.py` — `DefaultContractCompiler`**
-
-Despacha por fase a las funciones de `phases.py`. La fase `attack` hace fallback silencioso a `build_valid_strategy`: `BaseStrategyContract` no tiene knobs ofensivos.
-
-**`phases.py` — builders por fase**
-
-- `build_valid_strategy` — genera valores correctos: `const` → `st.just`, `enum` → `st.sampled_from`, tipo conocido → `valid_for_type`, sin tipo → `fallback_from_jsonschema`. Wrappea con `st.one_of(st.none(), base)` si `nullable=True`.
-- `build_boundary_strategy` — bordes del dominio: para `integer`, calcula candidatos con `integer_boundary_values(min, max)` y filtra con `boundary_int_filter`; para `string`, genera strings en `minLength`, `maxLength` y sus adyacentes; para `array`/`object`, delega con `phase="boundary"`.
-- `build_invalid_strategy` — tipos incorrectos y valores fuera de rango: `st.text`/`st.none()` para numéricos, `st.integers()`/`st.booleans()` para strings, valores de `integer_attack_values()` que caigan fuera del rango declarado.
-
-**`type_strategies.py` — builders por tipo**
-
-- `valid_for_type(t, data, contract)` — despacho por tipo JSON Schema a builders específicos.
-- `string_strategy` — elige entre regex de formato conocido (`FORMAT_PATTERNS`: `email`, `uuid`, `date`, `date-time`, `uri`, `ipv4`, `hostname`, `byte`), regex custom (`pattern`), o `st.text`.
-- `array_strategy` — `st.lists(compile_for_phase(items, phase), min_size, max_size)`.
-- `object_strategy` — `st.fixed_dictionaries(required={...}, optional={...})` construido recursivamente desde `contract.properties`.
-- `compile_for_phase(contract, phase)` — dispatcher recursivo para contratos anidados. Usa import diferido de `phases.py` para romper la dependencia circular `phases → type_strategies → phases`.
-- `strategy_from_jsonschema` — atributo parcheable que apunta a `hypothesis_jsonschema.from_schema` si está instalado, o `None`. Usado por `fallback_from_jsonschema` para constructos no cubiertos nativamente (`anyOf`, `oneOf`, `$ref`, `format` desconocido).
-
-**`constraints.py` — datos numéricos compartidos**
-
-Tablas y helpers puros (sin imports de Hypothesis). Compartidos por `default/` y `hacker/`.
-
-- `INT_BOUNDARY`, `FLOAT_BOUNDARY` — valores extremos y de borde de tipos numéricos.
-- `integer_boundary_values(min, max)`, `number_boundary_values(min, max)` — enriquecen las tablas base con aristas del rango declarado.
-- `integer_attack_values()`, `number_attack_values()` — sublistas para la fase attack.
-- `resolve_min_int`, `resolve_max_int`, `resolve_min_float`, `resolve_max_float` — normalizan `minimum`/`exclusiveMinimum` a un valor concreto.
-- `multiple_of_filter`, `boundary_int_filter`, `is_out_of_range` — predicados usados como `.filter()` o para selección manual de candidatos.
-
-#### `schema_compiler/hacker/`
-
-Extiende DEFAULT agregando la fase `attack` para `HackerStrategyContract`. Depende de `default/`; `default/` nunca importa de `hacker/`.
-
-**`compiler.py` — `HackerContractCompiler`**
-
-Compone sobre `DefaultContractCompiler`: delega todas las fases excepto `attack`. Para `attack`, llama a `_build_attack(contract)` que extrae knobs del contrato y llama a `build_attack_payloads`.
-
-**`builders.py` — lógica de construcción de payloads**
-
-- `build_attack_payloads(value_type, profiles, *, include_encoded_variants, include_nulls, include_large_values, minimum, maximum)` — despacha por tipo:
-  - `string`: toma `PROFILE_STRING_PAYLOADS[profile]` por cada perfil (o `GENERIC_STRING_PAYLOADS` si no hay), opcionalmente expande con `_encode_variants` (original + URL-encoded + Base64). Agrega nullbytes si `include_nulls`.
-  - `integer`/`number`: `integer_attack_values()` + `integer_boundary_values(min, max)` (importados de `default/constraints.py`). `None` si `include_nulls`.
-  - `boolean`: lista fija que mezcla tipos intencionalmente (`True`, `False`, `None`, `0`, `1`, `"true"`, `"false"`, `"null"`).
-  - `array`/`object`: listas/dicts con mutaciones de prototype pollution, overflow y nulls.
-  - Devuelve `st.sampled_from(unique)` tras deduplicar; `st.none()` si la lista queda vacía.
-- `_encode_variants(payload)` — expande un string a [original, URL-encoded, Base64].
-- `mutate_object(obj, depth)` — aplica prototype pollution, overflow y campos extra; recursivo hasta `depth`.
-
-**`tables.py` — datos puros**
-
-Doce tablas de strings por vector de ataque: `_SQL`, `_XSS`, `_PATH_TRAVERSAL`, `_SSRF`, `_AUTH_BYPASS`, `_INPUT_VALIDATION`, `_DESERIALIZATION`, `_PARSER_COMPAT`, `_HEADERS_COOKIE`, `_INFO_DISCLOSURE`, `_RESOURCE_ABUSE`, `_BUSINESS_LOGIC`.
-
-- `PROFILE_STRING_PAYLOADS` — mapea nombre de perfil → lista de strings.
-- `GENERIC_STRING_PAYLOADS` — subconjunto fijo para cuando no hay perfiles declarados.
-
-Sin imports de Hypothesis ni stdlib pesado.
-
----
+**Extending with a new contract type:** implement the `ContractCompiler` Protocol
+and call `register_compiler(MyContractType, MyCompiler())` — no core file changes.
 
 ### `src/engine/`
 
-Capa de ejecución. Recibe `EngineInput` (estrategias ya compiladas) y ejecuta requests HTTP asíncronos contra la API objetivo, valida invariantes de respuesta, reduce (shrink) cada hallazgo a su reproductor mínimo y deduplica los reportes.
-
-**El engine no conoce contratos ni modos de estrategia.** Solo consume `EngineInput`.
-
-#### Arquitectura interna
+The execution layer. Receives `EngineInput` (already-compiled strategies) and runs
+async HTTP requests against the target API, validates response invariants, shrinks
+every finding to its minimal reproducer, and deduplicates the reports. **The engine
+knows nothing about contracts or strategy modes** — it only consumes `EngineInput`.
 
 ```
-__init__.py                       → run(engine_input, config, *, stateful=False) → EngineRunResult
-protocols.py                       → FuzzStrategy, StatefulFuzzStrategy (Protocols estructurales)
-core/
-  orchestrator.py                  → AsyncOrchestrator (cliente persistente, semáforo, reintentos)
-  context_injector.py              → ContextInjector (interpola params, construye URL, ensambla request)
-  error_classifier.py              → ErrorClassifier (mapea respuestas/excepciones a ErrorCategory)
-  response_validator.py            → ResponseValidator (valida invariantes de respuesta → InvariantViolation)
-  report_deduplicator.py            → dedupe_crash_reports (colapsa reportes del mismo defecto)
-  hypothesis_bridge.py              → run_sync (corre corrutinas async desde callbacks síncronos de Hypothesis)
-strategies/
-  async_http_fuzzer/                → AsyncHttpFuzzer (stateless, por defecto)
-  stateful_fuzzer/                  → StatefulFuzzer (stateful; ver sección siguiente)
+strategy_compiler.compile(CompilerInput) -> EngineInput
+engine.run(EngineInput, ExecutionConfig, *, stateful=False) -> EngineRunResult
 ```
 
-Los modelos del engine viven en `models/engine/` (`ExecutionConfig`, `RequestBlueprint`, `ExecutionResult`, `ErrorCategory`, `CompiledExecutionEndpoint`, `EngineInput`, `CrashReport`, `InvariantViolation`, `EngineRunResult`, `RunStats`).
+```
+engine/
+  __init__.py                 -> run(engine_input, config, *, stateful=False) -> EngineRunResult
+  protocols.py                 -> FuzzStrategy, StatefulFuzzStrategy (structural Protocols)
+  core/
+    orchestrator.py             -> AsyncOrchestrator (persistent client, semaphore, retries)
+    context_injector.py         -> ContextInjector (interpolates params, builds the URL, assembles the request)
+    error_classifier.py         -> ErrorClassifier (maps responses/exceptions to ErrorCategory)
+    response_validator.py       -> ResponseValidator (checks response invariants -> InvariantViolation)
+    report_deduplicator.py       -> dedupe_crash_reports (collapses reports of the same defect)
+    hypothesis_bridge.py         -> run_sync (runs async coroutines from Hypothesis's synchronous callbacks)
+  strategies/
+    async_http_fuzzer/           -> AsyncHttpFuzzer (stateless, the default)
+    stateful_fuzzer/             -> StatefulFuzzer (stateful; see below)
+```
 
-#### `__init__.py` — orquestación
+Engine models live in `models/engine/`: `execution.py` (`ErrorCategory`,
+`INFRA_CATEGORIES`, `ExecutionConfig`, `RequestBlueprint`, `ExecutionResult`),
+`results.py` (`RawFinding`, `EndpointStats`, `RunStats`, `EngineRunResult`), plus
+`engine_input.py` and `crash_report.py`. Shared constants
+(`DEFAULT_MAX_EXAMPLES`, `DEFAULT_PHASE_SPLIT`, `MAX_BACKOFF_S`,
+`MAX_INFRA_FAILURES`, `DEFAULT_SHRINK_MAX_EXAMPLES`) live in `src/constants.py`; the
+domain exception `EngineError` lives in `src/exceptions.py`.
 
-`run(engine_input, config, *, stateful=False)` abre un único orquestador para toda la corrida y, según el flag, ejecuta el camino stateless o el stateful; luego deduplica los reportes confirmados y arma las estadísticas (`EngineRunResult`). En modo stateless explora cada endpoint, recolecta `RawFinding` y shrinkea cada uno; en modo stateful delega en `StatefulFuzzer.fuzz_sequence`. El ciclo de vida del cliente HTTP y el conteo de estadísticas por request son helpers compartidos por ambos caminos.
+**Two-phase design.** Testing happens in two clearly separated phases so exploring
+for bugs and minimizing them never interfere with each other:
 
-#### `protocols.py`
+1. **Explore** — find as many failures as possible without stopping. Hypothesis
+   generates with `phases=[Phase.explicit, Phase.generate]` (no `Phase.shrink`),
+   and the callback **never raises** on a violation — it records a `RawFinding` and
+   keeps generating up to `max_examples`. Catching the `AssertionError` that
+   `@given` would otherwise raise was ruled out: Hypothesis already shrinks
+   internally before re-raising, which would take the minimization process out of
+   the engine's control.
+2. **Shrink** — for each `RawFinding`, `hypothesis.find(strategy, predicate)`
+   searches for the minimal payload that still reproduces the failure. This runs
+   **sequentially**, one finding at a time, to avoid interference from shared
+   state, rate limits, or side effects; it reuses Hypothesis's own `conjecture`
+   algorithm rather than reimplementing shrinking. A finding that no longer
+   reproduces is discarded as flaky.
 
-Dos `Protocol` estructurales (extensión por estructura, no por herencia):
-- `FuzzStrategy` — testeo stateless por endpoint. Expone `name`, `fuzz(endpoint, config) → (list[ExecutionResult], list[RawFinding])` y `shrink(finding, config) → CrashReport | None`.
-- `StatefulFuzzStrategy` — testeo stateful sobre el conjunto. Expone `name` y `fuzz_sequence(endpoints, config) → (list[ExecutionResult], list[CrashReport])`.
+**Components:**
 
-#### `core/orchestrator.py`
+- **`AsyncOrchestrator`** is the engine's only point of contact with the network: a
+  single shared `httpx.AsyncClient` for the whole run (reuses TCP connections,
+  avoids exhausting sockets), an `asyncio.Semaphore` limiting concurrency, and
+  retries limited to transient infrastructure failures (`429`/`502`/`503` and
+  `ConnectTimeout`) with exponential backoff plus jitter — never `400`/`422`
+  (findings) or `500` (the bug being hunted). Transport errors never escape: every
+  attempt becomes an `ExecutionResult` (with `status_code=None` and a transport
+  `ErrorCategory`), so one dead endpoint never aborts the run. It classifies
+  results but never interprets invariants — that's `ResponseValidator`'s job.
+- **`ContextInjector.build`** turns a per-zone payload (path/query/header/body)
+  into an immutable `RequestBlueprint`: interpolates path params (a missing one is
+  an `EngineError`), builds the absolute URL from `base_url` + `path_url`, merges
+  headers (generated ones win over config), and picks the content type. A pure data
+  transformation, no HTTP or Hypothesis involved.
+- **`ErrorClassifier`** maps outcomes to `ErrorCategory`: 5xx -> `server_error`,
+  4xx -> `client_error`, 2xx/3xx -> `None`; connect/protocol/connect-timeout
+  exceptions -> `availability`, other timeouts -> `timeout`. `contract_violation` is
+  never produced by the classifier — the fuzzer assigns it when
+  `ResponseValidator` detects an invariant violation on an otherwise successful
+  response.
+- **`ResponseValidator`** checks the endpoint's declared invariants and returns the
+  matching `InvariantViolation` (or `None`): `NOT_A_SERVER_ERROR` (any 5xx is a
+  defect), `STATUS_CODE_CONFORMANCE` (undeclared status), `CONTENT_TYPE_CONFORMANCE`,
+  `RESPONSE_SCHEMA_CONFORMANCE` (body doesn't validate against the declared schema),
+  and `STATE_TRANSITION` (used by the stateful fuzzer). Infrastructure failures
+  (timeouts, connection errors) never count as a violation; the body is validated
+  with a pure recursive walk against `BaseStrategyContract` (no Pydantic). It also
+  exposes `sanitize_headers`, redacting `Authorization`/`Cookie`/`X-Api-Key` before
+  persisting anything.
+- **`dedupe_crash_reports`** collapses reports that reproduce the same defect: two
+  reports are the same bug if they share endpoint, method, phase, violated
+  invariant, status, and minimal payload (canonicalized with sorted keys), keeping
+  the order of first appearance. Deduplicating once here — instead of leaving every
+  consumer to repeat it — matters for three audiences: the **auto-fixer LLM**
+  (N copies of the same crash waste tokens and skew the defect ranking), **storage**
+  (N rows for one defect inflates "how many bugs did this run find"), and the
+  **human-facing report/CLI** ("24 crashes" reads as 24 problems when there's one).
+  No information is lost: `findings_confirmed` still holds the per-finding total,
+  and `findings_unique == len(crash_reports)` is the distinct-defect count.
+- **`run_sync(coro)`** (the hypothesis bridge) runs an async coroutine from
+  Hypothesis's synchronous callback. A single event loop lives in a daemon thread
+  for the whole process, and `run_sync` blocks for the result via
+  `run_coroutine_threadsafe` — an `asyncio.run()` per generated example would
+  exhaust file descriptors. Both the stateless and stateful fuzzers reuse this
+  bridge; the engine's tests require `settings(deadline=None)` to avoid false
+  positives from latency on a stressed API.
 
-`AsyncOrchestrator` es el único punto de contacto del engine con la red:
-- Un único `httpx.AsyncClient` compartido por toda la corrida (reusa conexiones TCP, evita agotar sockets).
-- Limita concurrencia con un `asyncio.Semaphore`.
-- Reintenta solo fallos transitorios de infraestructura (`429`/`502`/`503` y `ConnectTimeout`) con exponential backoff + jitter (`espera = 2^n · base + jitter`, con techo `MAX_BACKOFF_S`).
-- Los errores de transporte **nunca escapan**: cada intento se convierte en un `ExecutionResult` (con `status_code=None` y una `ErrorCategory` de transporte), de modo que un endpoint caído no aborta la corrida. Clasifica resultados pero nunca interpreta invariantes — eso es del `ResponseValidator`.
+**`AsyncHttpFuzzer`** (stateless, the default strategy) implements `FuzzStrategy` in
+two steps mirroring the two-phase design: `fuzz` generates examples per phase from
+the compiled `CompiledRequestPart`s, materializes each one with `ContextInjector`,
+executes it via `AsyncOrchestrator`, and validates it with `ResponseValidator`,
+accumulating `RawFinding`s without raising (aborting only a single endpoint after
+`MAX_INFRA_FAILURES` consecutive transport failures, then moving to the next);
+`shrink` re-runs each finding under `hypothesis.find` to minimize it into a
+`CrashReport` (sanitized headers, status, minimal body), returning `None` for a
+flaky (non-reproducing) finding. `phases.py` discovers active phases and merges
+per-zone strategies; `budget.py` resolves how many examples each phase gets,
+treating the compiler's `generation_plan` as authoritative over
+`budget.max_examples x phase_split` and further over hardcoded defaults.
 
-#### `core/context_injector.py`
+**Entry point (`__init__.py`).** `run(engine_input, config, *, stateful=False)`
+opens one orchestrator for the whole run, dispatches to the stateless or stateful
+path per the flag, then deduplicates confirmed reports and builds `RunStats`
+(`EngineRunResult`). The stateless path explores every endpoint, collects
+`RawFinding`s, and shrinks each one sequentially today — the structure allows
+parallelizing exploration later without touching the signature or phase 2. The
+stateful path delegates to `StatefulFuzzer.fuzz_sequence`. The HTTP client's
+lifecycle and per-request stat counting are helpers shared by both paths.
 
-`ContextInjector.build` convierte un payload por zona (`path`/`query`/`header`/`body`) en un `RequestBlueprint` inmutable: interpola path params (un faltante es `EngineError`), construye la URL absoluta desde `base_url` + `path_url`, mezcla headers y elige el content-type. Transformación pura: sin HTTP ni Hypothesis.
+## Stateful fuzzing
 
-#### `core/error_classifier.py`
+`StatefulFuzzer` is a **second execution strategy** added alongside
+`AsyncHttpFuzzer` (stateless) **without modifying it**. Where the default fuzzer
+tests each endpoint in isolation with synthetic data, the stateful one **chains
+requests**: it captures real values from a response (an `id`, a token) and
+reinjects them into later requests, exercising complete business flows
+(`POST -> GET -> DELETE -> GET`). This catches bugs the stateless fuzzer can't see:
+deleted resources that are still accessible, reads that don't reflect a prior
+update, tokens that survive logout, and similar issues.
 
-Mapea respuestas y excepciones de transporte a `ErrorCategory`:
+**The state-link contract.** The mapping of "what to save and where to reinject it"
+is **declarative data** (`StateLinkContract`, in
+`models/compiler/contracts/state_link.py`), not fuzzer-side hardcoded logic. It
+travels as an **optional** field through the whole pipeline
+(`QuestionnaireEndpointContracts -> EndpointInfo -> CompiledExecutionEndpoint`) —
+filled in today by a fixture/spec, and in the future by `semantic_inference`'s LLM
+output; the module is agnostic about who produces it.
 
-| Caso | Resultado |
-|---|---|
-| `classify_response` 5xx | `server_error` |
-| `classify_response` 4xx | `client_error` |
-| `classify_response` 2xx/3xx | `None` |
-| `classify_exception` connect / protocol / connect-timeout | `availability` |
-| `classify_exception` otros timeouts | `timeout` |
+- `StateConsumption.invalidates` — if `True`, the value is **removed** from the
+  bundle on consumption (via `hypothesis.stateful.consumes`), so a deleted resource
+  can't be operated on again. By default the value stays reusable (the same `id`
+  can serve both `GET` and `DELETE`).
+- `TransitionInvariant.echoed_fields` — beyond the status code, requires the
+  follow-up probe's body to **echo** the fields sent in the triggering request
+  (e.g. after `PUT {price: 10}`, a subsequent `GET` must return `price == 10`).
+  Empty means only the status is checked.
 
-`contract_violation` no la produce el clasificador: la asigna el fuzzer cuando el `ResponseValidator` detecta una violación de invariante sobre una respuesta 2xx/3xx.
+**The state machine.** `state_machine.build_state_machine(...)` dynamically builds
+a Hypothesis `RuleBasedStateMachine`: one `Bundle` per declared bundle name; one
+`@rule()` per endpoint that injects consumed values (`bundles.inject`), executes
+through the orchestrator (`run_sync`, the same async bridge), captures produced
+values into their bundle (`bundles.capture`), and checks transition invariants;
+`@precondition()` enforces logical ordering so nothing consumes a bundle no
+endpoint has produced yet. On the first broken invariant, the rule **raises**
+`StatefulViolationError`, so Hypothesis shrinks the **sequence of operations** down
+to a minimal reproducer — unlike the stateless path, which collects findings and
+shrinks the *payload*. `transitions.py` builds the follow-up probe by reusing
+`ContextInjector`, delegates the 5xx check to the existing `ResponseValidator`, and
+adds the expected-status and (if declared) `echoed_fields` comparisons
+(`InvariantViolation.STATE_TRANSITION`).
 
-#### `core/response_validator.py`
-
-`ResponseValidator` chequea las invariantes de respuesta declaradas en el endpoint y devuelve la `InvariantViolation` correspondiente (o `None`):
-- `NOT_A_SERVER_ERROR` — cualquier 5xx es defecto.
-- `STATUS_CODE_CONFORMANCE` — status no declarado en el contrato de respuestas.
-- `CONTENT_TYPE_CONFORMANCE` — content-type no coincide.
-- `RESPONSE_SCHEMA_CONFORMANCE` — el body no valida contra el schema declarado.
-- `STATE_TRANSITION` — usada por el fuzzer stateful para transiciones de estado rotas.
-
-Los fallos de infraestructura (timeouts, conexión) nunca cuentan como violación. También expone `sanitize_headers`, que redacta secretos (`Authorization`, `Cookie`, `X-Api-Key`) antes de persistir.
-
-#### `core/report_deduplicator.py`
-
-`dedupe_crash_reports` colapsa reportes que reproducen el mismo defecto: dos reportes son el mismo bug si comparten endpoint, método, fase, invariante violada, status y payload mínimo (canonicalizado con claves ordenadas). Preserva el orden de aparición. Las estadísticas siguen contando cada hallazgo confirmado; la lista pública expone un reporte por reproductor distinto.
-
-#### `core/hypothesis_bridge.py`
-
-`run_sync(coro)` corre una corrutina async desde código síncrono controlado por Hypothesis. Mantiene un único event loop en un thread daemon para todo el proceso y bloquea esperando el resultado, evitando crear y destruir un loop por ejemplo generado. Lo usan tanto el fuzzer stateless como el stateful.
-
-`settings(deadline=None)` es obligatorio en los tests del engine para evitar falsos positivos por latencia en APIs bajo estrés.
-
-#### `strategies/async_http_fuzzer/` — estrategia stateless (por defecto)
-
-`AsyncHttpFuzzer` implementa `FuzzStrategy` en dos fases:
-
-1. **`fuzz` (exploración)** — Hypothesis genera ejemplos por fase (`valid`/`boundary`/`invalid`/`attack`) desde las `CompiledRequestPart`; cada ejemplo se materializa con `ContextInjector`, se ejecuta vía `AsyncOrchestrator` y se valida con `ResponseValidator`. **No lanza** ante una violación: acumula un `RawFinding` y deja que Hypothesis siga generando. Si se acumulan `MAX_INFRA_FAILURES` fallos de transporte consecutivos, aborta ese endpoint y continúa con el siguiente.
-2. **`shrink` (reducción)** — re-ejecuta el hallazgo bajo `hypothesis.find` para minimizar el payload que aún reproduce la violación, y arma un `CrashReport` con el reproductor mínimo (headers sanitizados, status, body). Devuelve `None` si el fallo ya no reproduce (flaky).
-
-`phases.py` descubre las fases y mergea las estrategias por zona (`merged_strategy_for_phase`); `budget.py` resuelve cuántos ejemplos corre cada fase (`examples_for_phase`), tomando el `generation_plan` del compilador como autoritativo.
-
----
-
-### `src/engine/strategies/stateful_fuzzer/` — Fuzzing stateful
-
-`StatefulFuzzer` es una **segunda estrategia de ejecución** que se suma al `AsyncHttpFuzzer` (stateless) **sin modificarlo**. Mientras el fuzzer por defecto prueba cada endpoint de forma aislada con datos sintéticos, el stateful **encadena requests**: captura valores reales de una respuesta (un `id`, un token) y los reinyecta en requests posteriores, ejercitando flujos de negocio completos (`POST → GET → DELETE → GET`).
-
-Detecta bugs invisibles para el fuzzer stateless: recursos borrados que siguen accesibles, lecturas que no reflejan una actualización previa, tokens que no se invalidan al cerrar sesión, etc.
-
-#### El contrato de enlace de estado
-
-El mapeo "qué guardar y dónde reinyectarlo" es **dato declarativo** (`StateLinkContract`, ver `models/compiler/contracts/state_link.py`), no lógica hardcodeada en el fuzzer. Viaja como campo **opcional** por todo el pipeline (`QuestionnaireEndpointContracts → EndpointInfo → CompiledExecutionEndpoint`). Lo rellena hoy un fixture/spec y, a futuro, la inferencia del LLM (`semantic_inference`): el módulo es agnóstico de quién lo produce.
-
-- `StateConsumption.invalidates` — si es `True`, el valor se **remueve** del bundle al consumirse (vía `hypothesis.stateful.consumes`), de modo que un recurso borrado no pueda volver a operarse. Por defecto el valor queda reutilizable (un mismo `id` sirve para `GET` y `DELETE`).
-- `TransitionInvariant.echoed_fields` — además del status, exige que el body del probe de seguimiento **refleje** los campos enviados en el request disparador (ej. tras `PUT {price: 10}`, el `GET` debe devolver `price == 10`). Vacío ⇒ solo se chequea el status.
-
-#### La máquina de estados
-
-`state_machine.build_state_machine(...)` construye dinámicamente un `RuleBasedStateMachine` de Hypothesis:
-
-- un `Bundle` por cada nombre de bundle declarado;
-- una `@rule()` por endpoint que: inyecta valores consumidos (`bundles.inject`) → ejecuta vía el orquestador (`run_sync`, el bridge async existente) → captura valores producidos al bundle (`bundles.capture`) → prueba las invariantes de transición;
-- `@precondition()` garantiza el orden lógico: no se consume un bundle que ningún endpoint produjo todavía;
-- ante la primera invariante rota, la regla **lanza** `StatefulViolationError`, de modo que Hypothesis **reduce (shrink) la secuencia de operaciones** hasta el reproductor mínimo — a diferencia del stateless, que recolecta hallazgos y shrinkea el *payload*.
-
-`transitions.py` materializa el probe de seguimiento reutilizando `ContextInjector`, y valida su respuesta delegando el chequeo de 5xx al `ResponseValidator` existente; agrega la comparación de status esperado y, si hay `echoed_fields`, la comparación de valores contra el body enviado (`InvariantViolation.STATE_TRANSITION`).
-
-**Varios bugs por corrida (loop-until-dry, opcional):** la regla se detiene en el primer fallo, así que por defecto `fuzz_sequence` hace **una sola pasada** (barato: reporta el primer defecto). Subiendo `StatefulConfig.max_distinct_bugs` se activa el bucle: cada pasada reporta un defecto, registra su *firma* `(método, path, invariante)` en un conjunto `suppressed` y vuelve a correr; las reglas registran pero **no relanzan** las firmas ya vistas, así una pasada posterior descubre otros defectos. El bucle termina cuando una pasada no encuentra nada nuevo o al llegar al tope configurado. Cada defecto conserva su shrinking individual.
-
-#### Cómo se invoca
-
-El engine expone el modo con un flag, **sin romper la firma previa**:
+**Multiple bugs per run (loop-until-dry, optional).** A rule stops at the first
+failure, so by default `fuzz_sequence` makes a **single pass** (cheap: reports the
+first defect). Raising `StatefulConfig.max_distinct_bugs` enables a loop: each pass
+reports one defect, records its signature `(method, path, invariant)` in a
+`suppressed` set, and reruns; rules log but don't re-raise signatures already seen,
+so later passes surface other defects. The loop stops when a pass finds nothing new
+or the configured cap is reached; each defect keeps its own shrinking.
 
 ```python
-run(engine_input, config)                  # stateless (AsyncHttpFuzzer) — comportamiento previo intacto
-run(engine_input, config, stateful=True)   # stateful (StatefulFuzzer) — una pasada (default)
-run(engine_input, config, stateful=True,   # stateful exhaustivo (loop-until-dry)
+run(engine_input, config)                  # stateless (AsyncHttpFuzzer) - unchanged prior behavior
+run(engine_input, config, stateful=True)   # stateful (StatefulFuzzer) - one pass (default)
+run(engine_input, config, stateful=True,   # exhaustive stateful (loop-until-dry)
     stateful_config=StatefulConfig(max_distinct_bugs=10))
 ```
 
-`StatefulConfig` ajusta la exhaustividad del modo stateful: `max_distinct_bugs` (default `1`, una pasada), `max_examples` (secuencias por pasada) y `step_count` (largo máximo de cada secuencia). `StatefulFuzzer.fuzz_sequence(endpoints, config, stateful_config)` corre la máquina y devuelve `(results, crash_reports)` ya minimizados (no hay fase de shrink separada). Los reports reutilizan `CrashReport` con un campo opcional `transition_sequence` (los pasos previos al fallo), evitando un segundo tipo de report.
+`StatefulConfig` tunes exhaustiveness: `max_distinct_bugs` (default `1`, one pass),
+`max_examples` (sequences per pass), and `step_count` (max length per sequence).
+`StatefulFuzzer.fuzz_sequence(endpoints, config, stateful_config)` runs the machine
+and returns `(results, crash_reports)` already minimized — there's no separate
+shrink phase. Reports reuse `CrashReport` with an optional `transition_sequence`
+field (the steps leading up to the failure), avoiding a second report type.
 
-#### Qué cambió respecto del engine previo (stateless)
+**What changed in the stateless engine:** nothing — every addition is additive and
+the stateless path's tests were untouched.
 
-Todo lo nuevo es **aditivo**; el camino stateless quedó intacto (sus tests no se tocaron):
-
-| Componente previo | Cambio |
+| Existing component | Change |
 |---|---|
-| `engine.run(engine_input, config)` | Acepta `*, stateful=False`. Con `True` corre el `StatefulFuzzer`. La firma previa sigue funcionando igual. |
-| `protocols.py` (`FuzzStrategy`) | Sin cambios. Se **agrega** `StatefulFuzzStrategy` (opera sobre el conjunto de endpoints, no uno por uno). |
-| `AsyncHttpFuzzer` | Sin cambios. Sigue siendo la estrategia por defecto. |
-| `CompiledExecutionEndpoint` / `EndpointInfo` / `QuestionnaireEndpointContracts` | Nuevo campo opcional `state_link` (default `None`). |
-| `CrashReport` | Nuevo campo opcional `transition_sequence` (default `None`). |
-| `InvariantViolation` | Nuevo miembro `STATE_TRANSITION`. |
-| `ResponseValidator`, `ContextInjector`, `run_sync`, `AsyncOrchestrator` | Reutilizados **sin modificar**. |
+| `engine.run(engine_input, config)` | Accepts `*, stateful=False`; `True` runs `StatefulFuzzer`. Prior signature still works unchanged. |
+| `protocols.py` (`FuzzStrategy`) | Unchanged. **Adds** `StatefulFuzzStrategy` (operates on the endpoint set, not one at a time). |
+| `AsyncHttpFuzzer` | Unchanged; still the default strategy. |
+| `CompiledExecutionEndpoint` / `EndpointInfo` / `QuestionnaireEndpointContracts` | New optional field `state_link` (default `None`). |
+| `CrashReport` | New optional field `transition_sequence` (default `None`). |
+| `InvariantViolation` | New member `STATE_TRANSITION`. |
+| `ResponseValidator`, `ContextInjector`, `run_sync`, `AsyncOrchestrator` | Reused **unmodified**. |
 
----
+## Facade, constants, and exceptions
 
-### `src/main.py`
+**`src/main.py`** is the minimal public facade: `build_questionnaire`,
+`resolve_questionnaire`, `compile_strategies`, and `run` (with its `stateful`
+flag), delegating to the internal layers (`questionnaire/`, `strategy_compiler/`,
+`engine/`). The real logic lives in those layers, not in the facade.
 
-Fachada pública mínima. Expone `build_questionnaire`, `resolve_questionnaire`, `compile_strategies` y `run` (con su flag `stateful`), delegando en las capas internas (`questionnaire/`, `strategy_compiler/`, `engine/`). La lógica real vive en esas capas.
+**`src/constants.py`** holds configuration shared by `policy.py`, the questionnaire,
+and the engine: default example/combination limits, the combinatorial-explosion
+ceiling, default phase split (`DEFAULT`: `valid` 60% / `boundary` 25% / `invalid`
+15%; `HACKER` adds `attack` 5%, lowering `invalid` to 10%), orchestrator retry/backoff
+parameters, the stateful fuzzer's budget (`DEFAULT_STATEFUL_MAX_EXAMPLES`,
+`DEFAULT_STATEFUL_STEP_COUNT`), and base heuristics for estimating options per type.
+Constants live outside the models so generation policy can be tuned without
+touching contracts or validators.
 
----
+**`src/exceptions.py`** defines the module's domain exceptions: `PolicyError` (a
+contract, rule, or field fails the questionnaire's constraints),
+`StrategyCompilationError` (a contract can't be translated into a Hypothesis
+strategy), `EngineError` (an execution invariant is violated), and
+`StatefulLinkError` (a state link can't be honored during stateful fuzzing;
+subclasses `EngineError`). These separate business failures from generic technical
+errors.
 
-### `src/constants.py`
+## Consolidated architectural decisions
 
-Constantes de configuración compartidas por `policy.py`, el cuestionario y el engine: límites por defecto de ejemplos y combinaciones, techo de explosión combinatoria, reparto de fases por defecto (`DEFAULT`: `valid` 60% / `boundary` 25% / `invalid` 15%; `HACKER` agrega `attack` 5% bajando `invalid` a 10%), parámetros de reintentos y backoff del orquestador, presupuesto del fuzzer stateful (`DEFAULT_STATEFUL_MAX_EXAMPLES`, `DEFAULT_STATEFUL_STEP_COUNT`) y heurísticas base para estimar opciones por tipo.
-
-Las constantes viven fuera de los modelos para que las políticas de generación sean ajustables sin tocar contratos ni validadores.
-
-### `src/exceptions.py`
-
-Define las excepciones de dominio del módulo: `PolicyError` (un contrato, regla o campo no cumple las restricciones del cuestionario), `StrategyCompilationError` (un contrato no puede traducirse a una estrategia de Hypothesis), `EngineError` (se viola una invariante de ejecución del engine) y `StatefulLinkError` (un enlace de estado no puede honrarse durante el fuzzing stateful; subclase de `EngineError`). Distinguen fallos de negocio de errores técnicos genéricos.
-
----
-
-## Decisiones arquitectónicas consolidadas
-
-- `strategy_mode` es global en `CompilerInput`. Nunca repetirlo por endpoint.
-- El **cuestionario resuelto** es el único punto donde se valida compatibilidad entre modo y tipo de contrato.
-- El **compilador** recibe datos ya validados. No re-normaliza ni re-valida.
-- El **engine** no conoce contratos. Solo consume `EngineInput`.
-- La fase `attack` solo se activa si el campo tiene `HackerStrategyContract` **y** el modo global es `HACKER`.
-- `HACKER` tiene sus propias reglas de validación. No hereda de `DEFAULT`.
-- El engine usa `Protocol` para estrategias, no herencia. Hay dos: `FuzzStrategy` (stateless, por endpoint) y `StatefulFuzzStrategy` (stateful, sobre el conjunto). Se eligen con `run(..., stateful=...)`.
-- El `hypothesis_bridge` reutiliza un event loop persistente. No crear uno por ejemplo generado. El fuzzer stateful lo reutiliza tal cual desde dentro del `RuleBasedStateMachine` (síncrono).
-- `StateLinkContract` es opcional y aditivo: `state_link is None` ⇒ flujo stateless idéntico. El fuzzer stateful no infiere enlaces por heurística; los lee del contrato.
-- `extra="forbid"` en todos los modelos Pydantic. Nunca silenciar campos inesperados del LLM.
+- `strategy_mode` is global on `CompilerInput` — never repeat it per endpoint.
+- The **resolved questionnaire** is the only place mode/contract-type compatibility
+  is validated.
+- The **compiler** receives already-validated data; it never re-normalizes or
+  re-validates.
+- The **engine** knows nothing about contracts — it only consumes `EngineInput`.
+- The `attack` phase only activates when a field has a `HackerStrategyContract`
+  **and** the global mode is `HACKER`.
+- `HACKER` has its own validation rules; it does not inherit from `DEFAULT`.
+- The engine uses `Protocol` for strategies, not inheritance: `FuzzStrategy`
+  (stateless, per endpoint) and `StatefulFuzzStrategy` (stateful, over the whole
+  set), selected via `run(..., stateful=...)`.
+- `hypothesis_bridge` reuses one persistent event loop — never one per generated
+  example. The stateful fuzzer reuses it as-is from inside the (synchronous)
+  `RuleBasedStateMachine`.
+- `StateLinkContract` is optional and additive: `state_link is None` means an
+  identical stateless flow. The stateful fuzzer never infers links by heuristic —
+  it only reads them from the contract.
+- `extra="forbid"` on every Pydantic model — an unexpected LLM field is never
+  silently dropped.

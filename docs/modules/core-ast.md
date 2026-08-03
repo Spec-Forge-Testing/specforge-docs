@@ -164,8 +164,8 @@ src/
 └── packager/             # assemble the LLMPayload (XML, tokens, sanitization)
 ```
 
-For a deeper dive, see the module's `src/README_CODE.md` (per-module code reference)
-and `src/README_ARCHITECTURE.md` (design decisions and trade-offs) in the repository.
+For a deeper dive into design decisions and per-module code reference, see
+[Reference](core-ast/reference.md).
 
 ## Design principles
 

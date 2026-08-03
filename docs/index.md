@@ -1,6 +1,6 @@
 # Spec Forge
 
-![Spec Forge CLI](assets/spec-forge.png)
+![Spec Forge CLI](assets/imgs/spec-forge.png)
 
 Spec Forge is a modular, AI-powered Property-Based Testing (PBT) orchestrator for API security and
 correctness testing. It combines static AST analysis, semantic inference, contract validation, and

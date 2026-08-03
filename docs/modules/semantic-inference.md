@@ -1,45 +1,46 @@
 # semantic_inference
 
-Motor de Inferencia Estructurada — Cerebro orquestador entre el análisis estático y la ejecución determinística.
+Structured Inference Engine — the orchestrating brain between static analysis and
+deterministic execution.
 
-Este módulo transforma el contexto puro extraído del código fuente (AST) y los contratos OpenAPI en invariantes matemáticos, límites de dominio y reglas de negocio ocultas. En lugar de depender de interacciones conversacionales libres, implementa un pipeline de inferencia estricta apoyado en una arquitectura multi-agente para alimentar dinámicamente al motor de Property-Based Testing.
+This module turns the pure context extracted from source code (AST) and OpenAPI
+contracts into mathematical invariants, domain bounds, and hidden business rules.
+Instead of relying on free-form conversational interaction, it implements a strict
+inference pipeline backed by a multi-agent architecture, dynamically feeding the
+Property-Based Testing engine.
 
-## Configuración del Entorno
+## Environment configuration
 
-Para que el módulo y los tests de integración funcionen, el cliente necesita saber a qué modelo llamar y con qué credenciales autorizarse.
+The client needs to know which model to call and which credentials to authorize
+with. See [Environment → LLM Providers](../environment/llm-providers.md) for the
+full provider/variable table and setup instructions.
 
-Dependiendo del modelo elegido, se deben configurar la variable `LLM_MODEL` y su respectiva API Key del `.env.local` (en la raíz del proyecto):
+## About the tests
 
-| Proveedor | Variable de Entorno | Modelo de ejemplo en código (`LLM_MODEL`) |
-| :--- | :--- | :--- |
-| **Google Gemini** | `GEMINI_API_KEY` | `gemini/gemini-1.5-pro`, `gemini/gemini-1.5-flash` |
-| **Anthropic** | `ANTHROPIC_API_KEY` | `anthropic/claude-3-5-sonnet` |
-| **OpenAI** | `OPENAI_API_KEY` | `openai/gpt-4o`, `openai/gpt-3.5-turbo` |
-| **Mistral AI** | `MISTRAL_API_KEY` | `mistral/mistral-large-latest` |
-| **Groq** *(Ultra veloz)* | `GROQ_API_KEY` | `groq/llama3-70b-8192` |
+Two levels of validation are included:
 
-## Sobre los tests
+- **Local/unit tests** — exercise configuration, template loading, and the client
+  wrapper in isolation.
+- **Integration smoke test** — makes real calls to the configured model's API (e.g.
+  sends a "Ping" and expects a "Pong").
 
-Se incluyen dos niveles de validación:
+  Integration tests (marked `@pytest.mark.integration`) don't run in the GitHub
+  Actions pipeline by default, so builds don't fail randomly from network issues,
+  missing real credentials, or a provider's temporary outage.
 
-* **Tests locales y unitarios**: Prueban la configuración, la carga de templates y el wrapper del cliente de forma aislada.
-* **Smoke test de integración**: Hacen llamadas reales a las APIs de los modelos configurados (ej. enviar un "Ping" y esperar un "Pong").
-
-    **Nota**: Los tests de integración (marcados con `@pytest.mark.integration`) no corren en el pipeline de GitHub Actions por defecto. Esto evita que los builds fallen aleatoriamente por problemas de red, falta de credenciales reales o caídas temporales en los servidores del proveedor.
-
-Para correr solo los tests rápidos (sin integración):
+Run only the fast tests (no integration):
 
 ```bash
 python -m pytest -m "not integration" -q
 ```
 
-Para probar exclusivamente el smoke test de conexión:
+Run only the connection smoke test:
 
 ```bash
 python -m pytest -m integration
 ```
 
-Para correr la suite completa:
+Run the full suite:
 
 ```bash
 pytest

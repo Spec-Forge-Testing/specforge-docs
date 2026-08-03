@@ -1,138 +1,155 @@
-# Storage Engine (Persistencia Local)
+# Storage Engine
 
-Este módulo (`lib/storage`) es la capa de persistencia para el sistema `llm-pbt-agent`. Convierte la herramienta en una plataforma auditable, centralizada y trazable.
+`lib/storage` is the persistence layer for the Spec Forge pipeline. It turns the
+tool into an auditable, centralized, traceable platform.
 
-El motor gestiona de forma automática una base de datos **SQLite** dentro del directorio de la aplicación (`llm-pbt-agent/data/coretest.db`), organizando todo alrededor de la jerarquía **proyecto → análisis → corrida**: un análisis es la receta replicable (contratos ya resueltos, traza de ejecución grabada), y cada corrida es una ejecución de esa receta (la original, que genera y graba, o un replay posterior que la re-envía tal cual).
+The engine manages a **SQLite** database inside the application directory
+(`llm-pbt-agent/data/coretest.db`) organized around the **project → analysis → run**
+hierarchy: an analysis is the replayable recipe (already-resolved contracts, a
+recorded execution trace), and each run is one execution of that recipe — either
+the original one, which generates and records it, or a later replay that resends it
+as-is.
 
-## Arquitectura (Repository Pattern)
+## Architecture (Repository pattern)
 
-Para garantizar un código limpio, mantenible y escalable, el módulo está diseñado usando el **Patrón Repositorio**:
+1. **`StorageEngine` (`db.py`)** — its only job is connecting to SQLite, configuring
+   safety settings (e.g. enabling foreign keys), and initializing tables from the
+   plain `schema.sql` file.
+2. **Repositories (`repositories/`)** — one DAO per entity, fully encapsulating
+   parametrized SQL (`INSERT`, `SELECT`) to shield the database against injection.
+3. **DTOs (`models.py`)** — everything entering or leaving the engine is validated
+   through immutable Pydantic models.
+4. **Domain exceptions (`exceptions.py`)** — any persistence failure raises a
+   handleable domain error (e.g. `RunNotFoundError`) instead of a raw SQLite driver
+   exception.
 
-1. **`StorageEngine` (`db.py`)**: Su única responsabilidad es conectarse a SQLite, configurar la seguridad (ej: Foreign Keys activadas) e inicializar las tablas automáticamente a través del archivo puro `schema.sql`.
-2. **Repositories (`repositories/`)**: Data Access Objects (DAOs) separados por entidad. Encapsulan por completo el SQL paramétrico (`INSERT`, `SELECT`), blindando la base contra inyecciones SQL.
-3. **Data Transfer Objects (`models.py`)**: Todo lo que entra o sale del motor se valida mediante modelos inmutables de **Pydantic**.
-4. **Domain Exceptions (`exceptions.py`)**: Cualquier fallo en la persistencia levanta errores de dominio manejables (ej. `RunNotFoundError`) en lugar de arrojar excepciones internas del driver de SQLite.
-
----
-
-## Modelos de Datos (DTOs)
-
-A continuación se detalla la estructura de los objetos de persistencia devueltos por el motor.
+## Data model
 
 ### `ProjectRecord`
-El registro raíz: a qué repositorio pertenecen los análisis.
 
-| Campo | Tipo | Descripción |
+The root record: which repository a set of analyses belongs to.
+
+| Field | Type | Description |
 |---|---|---|
-| `id` | `int` | Primary Key de la tabla autoincremental. |
-| `name` | `str` | Nombre legible del proyecto. |
-| `repo_path` | `str` | Ruta del repositorio en disco. |
+| `id` | `int` | Auto-incrementing primary key. |
+| `name` | `str` | Human-readable project name. |
+| `repo_path` | `str` | Repository path on disk. |
 
 ### `AnalysisRecord`
-La receta replicable: contratos ya resueltos, modo de estrategia y configuración de ejecución.
 
-| Campo | Tipo | Descripción |
+The replayable recipe: resolved contracts, strategy mode, and execution config.
+
+| Field | Type | Description |
 |---|---|---|
-| `id` | `int` | Primary Key de la tabla autoincremental. |
-| `project_id` | `int` | **Foreign Key** referenciando a `ProjectRecord.id`. |
-| `created_at` | `datetime` | Momento de creación del análisis. |
-| `label` | `str \| None` | Etiqueta legible opcional. |
-| `generated_against_repo_hash` | `str` | Hash del repo contra el que se generó la traza. |
-| `strategy_mode` | `str` | Modo de estrategia de Hypothesis usado para generar. |
-| `stateful` | `bool` | Si el análisis corre cadenas stateful. |
-| `stateful_config` | `str \| None` | Configuración stateful serializada en JSON. |
-| `execution_config` | `str` | Configuración de ejecución en JSON (headers ya sanitizados). |
-| `engine_version` | `str \| None` | Versión del engine que produjo el análisis (solo provenance). |
+| `id` | `int` | Auto-incrementing primary key. |
+| `project_id` | `int` | Foreign key to `ProjectRecord.id`. |
+| `created_at` | `datetime` | When the analysis was created. |
+| `label` | `str \| None` | Optional human-readable label. |
+| `generated_against_repo_hash` | `str` | Hash of the repo the trace was generated against. |
+| `strategy_mode` | `str` | Hypothesis strategy mode used to generate it. |
+| `stateful` | `bool` | Whether the analysis runs stateful chains. |
+| `stateful_config` | `str \| None` | Stateful config, serialized as JSON. |
+| `execution_config` | `str` | Execution config as JSON (headers already sanitized). |
+| `engine_version` | `str \| None` | Engine version that produced the analysis (provenance only). |
 
 ### `AnalysisEndpointRecord`
-Resumen filtrable de qué endpoints ataca un análisis (no los valores probados — esos viven en la traza grabada como artefacto).
 
-| Campo | Tipo | Descripción |
+A filterable summary of which endpoints an analysis targets (not the values tried —
+those live in the recorded trace artifact).
+
+| Field | Type | Description |
 |---|---|---|
-| `id` | `int` | Primary Key de la tabla autoincremental. |
-| `analysis_id` | `int` | **Foreign Key** referenciando a `AnalysisRecord.id`. |
-| `method` | `str` | El método HTTP (ej. `GET`, `POST`). |
-| `path` | `str` | La URL (ej. `/api/v1/users`). |
+| `id` | `int` | Auto-incrementing primary key. |
+| `analysis_id` | `int` | Foreign key to `AnalysisRecord.id`. |
+| `method` | `str` | HTTP method (e.g. `GET`, `POST`). |
+| `path` | `str` | URL (e.g. `/api/v1/users`). |
 
 ### `RunRecord`
-Una corrida: una ejecución concreta de un análisis.
 
-| Campo | Tipo | Descripción |
+A run: one concrete execution of an analysis.
+
+| Field | Type | Description |
 |---|---|---|
-| `id` | `int` | Primary Key de la tabla autoincremental. |
-| `analysis_id` | `int` | **Foreign Key** referenciando a `AnalysisRecord.id`. |
-| `executed_at` | `datetime` | Momento en que arrancó la corrida. |
-| `duration_ms` | `int \| None` | Duración total de la corrida en milisegundos. |
-| `executed_against_repo_hash` | `str` | Hash del repo contra el que efectivamente se ejecutó. |
-| `status` | `str` | Resultado materializado de la corrida (ej. `SUCCESS`, `FAILED`). |
-| `ordinal` | `int` | Posición de la corrida dentro de su análisis (1 = original). |
-| `is_original` | `bool` | Si esta corrida generó y grabó la traza. |
+| `id` | `int` | Auto-incrementing primary key. |
+| `analysis_id` | `int` | Foreign key to `AnalysisRecord.id`. |
+| `executed_at` | `datetime` | When the run started. |
+| `duration_ms` | `int \| None` | Total run duration, in milliseconds. |
+| `executed_against_repo_hash` | `str` | Hash of the repo it actually ran against. |
+| `status` | `str` | Final run outcome (e.g. `SUCCESS`, `FAILED`). |
+| `ordinal` | `int` | Position of the run within its analysis (1 = original). |
+| `is_original` | `bool` | Whether this run generated and recorded the trace. |
 
 ### `RunMetricsRecord`
-Stats agregadas de una corrida. Sin columnas de coverage: el engine todavía no lo emite.
 
-| Campo | Tipo | Descripción |
+Aggregate stats for a run. No coverage columns yet — the engine doesn't emit that data.
+
+| Field | Type | Description |
 |---|---|---|
-| `run_id` | `int` | **Foreign Key** (y Primary Key) referenciando a `RunRecord.id`. |
-| `total_requests` | `int` | Total de requests enviados durante la corrida. |
-| `findings_raw` | `int` | Violaciones encontradas en exploración, antes de shrinking. |
-| `findings_confirmed` | `int` | Findings que reprodujeron al shrinkear. |
-| `findings_unique` | `int` | Defectos distintos (`== len(crash_reports)`). |
-| `findings_flaky` | `int` | Findings que no reprodujeron. |
-| `by_phase` | `str \| None` | Desglose de requests por fase, serializado en JSON. |
-| `by_category` | `str \| None` | Desglose de requests por categoría de error, en JSON. |
+| `run_id` | `int` | Foreign key (and primary key) to `RunRecord.id`. |
+| `total_requests` | `int` | Total requests sent during the run. |
+| `findings_raw` | `int` | Violations found during exploration, before shrinking. |
+| `findings_confirmed` | `int` | Findings that still reproduced after shrinking. |
+| `findings_unique` | `int` | Distinct defects (`== len(crash_reports)`). |
+| `findings_flaky` | `int` | Findings that failed to reproduce. |
+| `by_phase` | `str \| None` | Request breakdown by phase, as JSON. |
+| `by_category` | `str \| None` | Request breakdown by error category, as JSON. |
 
 ### `RunEndpointStatsRecord`
-Detalle por endpoint de las stats de una corrida.
 
-| Campo | Tipo | Descripción |
+Per-endpoint detail of a run's stats.
+
+| Field | Type | Description |
 |---|---|---|
-| `id` | `int` | Primary Key de la tabla autoincremental. |
-| `run_id` | `int` | **Foreign Key** referenciando a `RunRecord.id`. |
-| `analysis_endpoint_id` | `int` | **Foreign Key** referenciando a `AnalysisEndpointRecord.id`. |
-| `requests` | `int` | Requests enviados contra este endpoint durante la corrida. |
-| `findings_raw` | `int` | Violaciones encontradas para este endpoint, antes de shrinking. |
-| `crash_count` | `int` | Conteo materializado de filas de `crash_reports` de este endpoint (no una copia). |
+| `id` | `int` | Auto-incrementing primary key. |
+| `run_id` | `int` | Foreign key to `RunRecord.id`. |
+| `analysis_endpoint_id` | `int` | Foreign key to `AnalysisEndpointRecord.id`. |
+| `requests` | `int` | Requests sent to this endpoint during the run. |
+| `findings_raw` | `int` | Violations found for this endpoint, before shrinking. |
+| `crash_count` | `int` | Materialized count of this endpoint's `crash_reports` rows (not a copy). |
 
 ### `CrashReportRecord`
-Un defecto distinto encontrado en una corrida.
 
-| Campo | Tipo | Descripción |
+A distinct defect found during a run.
+
+| Field | Type | Description |
 |---|---|---|
-| `id` | `int` | Primary Key de la tabla autoincremental. |
-| `run_id` | `int` | **Foreign Key** referenciando a `RunRecord.id`. |
-| `analysis_endpoint_id` | `int \| None` | **Foreign Key** a `AnalysisEndpointRecord.id`; `None` si el hallazgo abarca varios endpoints (stateful). |
-| `method` / `path` / `phase` | `str` | Identidad del request que disparó el defecto y su fase (valid/boundary/invalid/attack/stateful). |
-| `invariant_violated` | `str` | Qué invariante se violó. |
-| `status_code` | `int` | Código de status de la respuesta que falló. |
-| `minimal_payload` | `str` | Payload mínimo reproducible, en JSON. |
-| `sanitized_headers` | `str` | Headers en JSON, con secretos ya redactados por el engine. |
-| `response_body` | `str` | Cuerpo de la respuesta que falló. |
-| `stack_trace` | `str \| None` | Lo completa después el Auto-Fixer; el engine lo deja en `None`. |
-| `transition_sequence` | `str \| None` | Cadena de requests en JSON, solo para hallazgos stateful. |
+| `id` | `int` | Auto-incrementing primary key. |
+| `run_id` | `int` | Foreign key to `RunRecord.id`. |
+| `analysis_endpoint_id` | `int \| None` | Foreign key to `AnalysisEndpointRecord.id`; `None` if the finding spans several endpoints (stateful). |
+| `method` / `path` / `phase` | `str` | Identity of the request that triggered the defect, and its phase (valid/boundary/invalid/attack/stateful). |
+| `invariant_violated` | `str` | Which invariant was violated. |
+| `status_code` | `int` | Status code of the failing response. |
+| `minimal_payload` | `str` | Minimal reproducible payload, as JSON. |
+| `sanitized_headers` | `str` | Headers as JSON, with secrets already redacted by the engine. |
+| `response_body` | `str` | Body of the failing response. |
+| `stack_trace` | `str \| None` | Filled in later by the Auto-Fixer; the engine leaves it `None`. |
+| `transition_sequence` | `str \| None` | Request chain as JSON, stateful findings only. |
 
 ### `ArtifactRecord`
-Un artefacto de recipe (a nivel análisis, ej. la traza) o de reporte (a nivel corrida, ej. `report.html`). Pertenece a exactamente uno de los dos niveles — lo garantiza un `CHECK` en el schema, no solo el repositorio.
 
-| Campo | Tipo | Descripción |
+A recipe-level artifact (analysis scope, e.g. the trace) or a report-level one
+(run scope, e.g. `report.html`). Belongs to exactly one of the two levels — enforced
+by a `CHECK` in the schema, not just by the repository.
+
+| Field | Type | Description |
 |---|---|---|
-| `id` | `int` | Primary Key de la tabla autoincremental. |
-| `analysis_id` | `int \| None` | Seteado en artefactos de nivel análisis. |
-| `run_id` | `int \| None` | Seteado en artefactos de nivel corrida. |
-| `kind` | `str` | Tipo de artefacto (ej. `execution_trace`, `report_html`). |
-| `path` | `str` | Ruta en disco del artefacto. |
-| `sha256` | `str` | Hash del contenido del artefacto. |
-| `size_bytes` | `int` | Tamaño en bytes. |
-| `critical` | `bool` | Si perderlo rompe la reproducibilidad. |
-| `compressed` | `bool` | Si está almacenado comprimido. |
-
----
+| `id` | `int` | Auto-incrementing primary key. |
+| `analysis_id` | `int \| None` | Set for analysis-level artifacts. |
+| `run_id` | `int \| None` | Set for run-level artifacts. |
+| `kind` | `str` | Artifact type (e.g. `execution_trace`, `report_html`). |
+| `path` | `str` | Path on disk. |
+| `sha256` | `str` | Hash of the artifact's content. |
+| `size_bytes` | `int` | Size in bytes. |
+| `critical` | `bool` | Whether losing it breaks reproducibility. |
+| `compressed` | `bool` | Whether it's stored compressed. |
 
 ## Testing
 
-El módulo incluye soporte nativo para bases de datos **en memoria**, facilitando el testing aislado. Los repositorios pueden inyectarse con un `StorageEngine(db_path=":memory:")` y compartir la misma conexión durante los tests unitarios.
+The module has native support for **in-memory** databases for isolated testing:
+repositories can be injected with `StorageEngine(db_path=":memory:")` and share the
+same connection across unit tests.
 
-Para correr la suite de pruebas del storage de forma completamente aislada con Docker:
+To run the storage suite fully isolated with Docker:
 
 ```bash
 cd lib/storage

@@ -1,20 +1,20 @@
 site_name: Spec Forge Docs
-site_description: Documentación técnica del proyecto Spec Forge
+site_description: Technical documentation for the Spec Forge project
 repo_url: https://github.com/Spec-Forge-Testing/llm-pbt-agent
 edit_uri: ""
 
 theme:
   name: material
   language: en
-  logo: assets/logo.png
-  favicon: assets/logo.png
+  logo: assets/imgs/logo.png
+  favicon: assets/imgs/logo.png
   
   features:
     - navigation.instant
     - navigation.instant.progress
     - navigation.tracking
-    - navigation.indexes          # Permite que la carpeta principal tenga su propia página y expanda subtítulos
-    - navigation.top              # Botón para volver arriba flotante
+    - navigation.indexes          # lets a parent section have its own index page and expand subsections
+    - navigation.top              # floating back-to-top button
     - toc.follow
     - content.code.copy
     - content.code.annotate
@@ -35,7 +35,7 @@ theme:
       accent: custom
       toggle:
         icon: material/weather-sunny
-        name: Cambiar a modo oscuro
+        name: Switch to dark mode
 
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
@@ -43,16 +43,16 @@ theme:
       accent: custom
       toggle:
         icon: material/weather-night
-        name: Cambiar a modo claro
+        name: Switch to light mode
 
   icon:
     repo: fontawesome/brands/github
 
 extra_css:
-  - stylesheets/extra.css
+  - assets/stylesheets/extra.css
 
 extra_javascript:
-  - javascripts/extra.js
+  - assets/javascripts/extra.js
 
 markdown_extensions:
   - admonition
@@ -86,8 +86,7 @@ nav:
       - Core CLI: modules/core.md
       - Core AST:
           - Overview: modules/core-ast.md
-          - Architecture Reference: modules/core-ast/architecture.md
-          - Code Reference: modules/core-ast/code-reference.md
+          - Reference: modules/core-ast/reference.md
           - Integration Tests: modules/core-ast/integration-tests.md
       - Contract Engine: modules/contract-engine.md
       - Contracts (shared kernel): modules/contracts.md
@@ -95,8 +94,6 @@ nav:
       - Semantic Inference:
           - Overview: modules/semantic-inference.md
           - LLM Router (LiteLLM): modules/semantic-inference/llm-router.md
-      - Custom Schemathesis:
-          - Overview: modules/custom-schemathesis.md
-          - Engine Implementation: modules/custom-schemathesis/engine-implementation.md
+      - Custom Schemathesis: modules/custom-schemathesis.md
   - Environment:
       - LLM Providers: environment/llm-providers.md

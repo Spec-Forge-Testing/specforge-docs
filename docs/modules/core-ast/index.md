@@ -165,7 +165,7 @@ src/
 ```
 
 For a deeper dive into design decisions and per-module code reference, see
-[Reference](core-ast/reference.md).
+[Reference](reference.md).
 
 ## Design principles
 

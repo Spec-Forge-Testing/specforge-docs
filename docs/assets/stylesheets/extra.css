@@ -355,7 +355,7 @@
 }
 
 .md-typeset blockquote > p {
-  margin: 0.8em 0 0 0;
+  margin: 0.8em 0 0 1.8rem;
   color: var(--text-main);
 }
 

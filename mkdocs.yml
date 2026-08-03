@@ -13,7 +13,6 @@ theme:
     - navigation.instant
     - navigation.instant.progress
     - navigation.tracking
-    - navigation.indexes          # lets a parent section have its own index page and expand subsections
     - navigation.top              # floating back-to-top button
     - toc.follow
     - content.code.copy
@@ -80,20 +79,29 @@ nav:
   - Getting Started:
       - Setup: getting-started/setup.md
       - Docker: getting-started/docker.md
-  - Architecture:
-      - Overview: architecture/overview.md
+  - Architecture: architecture/overview.md
   - Modules:
-      - Core CLI: modules/core.md
+      - Core CLI:
+          - Overview: modules/core/index.md
+          - Commands: modules/core/commands.md
       - Core AST:
-          - Overview: modules/core-ast.md
+          - Overview: modules/core-ast/index.md
           - Reference: modules/core-ast/reference.md
           - Integration Tests: modules/core-ast/integration-tests.md
-      - Contract Engine: modules/contract-engine.md
-      - Contracts (shared kernel): modules/contracts.md
-      - Storage: modules/storage.md
+      - Contract Engine:
+          - Overview: modules/contract-engine/index.md
+          - Reference: modules/contract-engine/reference.md
+      - Contracts (shared kernel): modules/contracts/index.md
+      - Storage:
+          - Overview: modules/storage/index.md
+          - Data model: modules/storage/data-model.md
       - Semantic Inference:
-          - Overview: modules/semantic-inference.md
+          - Overview: modules/semantic-inference/index.md
           - LLM Router (LiteLLM): modules/semantic-inference/llm-router.md
-      - Custom Schemathesis: modules/custom-schemathesis.md
+      - Custom Schemathesis:
+          - Overview: modules/custom-schemathesis/index.md
+          - Architecture: modules/custom-schemathesis/architecture.md
+          - Stateful fuzzing: modules/custom-schemathesis/stateful-fuzzing.md
+          - Complete reference: modules/custom-schemathesis/reference.md
   - Environment:
       - LLM Providers: environment/llm-providers.md

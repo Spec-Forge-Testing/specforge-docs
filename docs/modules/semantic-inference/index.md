@@ -12,7 +12,7 @@ Property-Based Testing engine.
 ## Environment configuration
 
 The client needs to know which model to call and which credentials to authorize
-with. See [Environment → LLM Providers](../environment/llm-providers.md) for the
+with. See [Environment → LLM Providers](../../environment/llm-providers.md) for the
 full provider/variable table and setup instructions.
 
 ## About the tests

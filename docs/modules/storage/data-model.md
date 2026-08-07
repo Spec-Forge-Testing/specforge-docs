@@ -25,123 +25,109 @@ as-is.
 
 ## Data model
 
-### `ProjectRecord`
+??? "`ProjectRecord` - **The root record**: which repository a set of analyses belongs to."
 
-The root record: which repository a set of analyses belongs to.
+      | Field | Type | Description |
+      |---|---|---|
+      | `id` | `int` | Auto-incrementing primary key. |
+      | `name` | `str` | Human-readable project name. |
+      | `repo_path` | `str` | Repository path on disk. |
 
-| Field | Type | Description |
-|---|---|---|
-| `id` | `int` | Auto-incrementing primary key. |
-| `name` | `str` | Human-readable project name. |
-| `repo_path` | `str` | Repository path on disk. |
+??? "`AnalysisRecord` - **The replayable recipe**: resolved contracts, strategy mode, and execution config."
 
-### `AnalysisRecord`
+      | Field | Type | Description |
+      |---|---|---|
+      | `id` | `int` | Auto-incrementing primary key. |
+      | `project_id` | `int` | Foreign key to `ProjectRecord.id`. |
+      | `created_at` | `datetime` | When the analysis was created. |
+      | `label` | `str \| None` | Optional human-readable label. |
+      | `generated_against_repo_hash` | `str` | Hash of the repo the trace was generated against. |
+      | `strategy_mode` | `str` | Hypothesis strategy mode used to generate it. |
+      | `stateful` | `bool` | Whether the analysis runs stateful chains. |
+      | `stateful_config` | `str \| None` | Stateful config, serialized as JSON. |
+      | `execution_config` | `str` | Execution config as JSON (headers already sanitized). |
+      | `engine_version` | `str \| None` | Engine version that produced the analysis (provenance only). |
 
-The replayable recipe: resolved contracts, strategy mode, and execution config.
+??? "`AnalysisEndpointRecord` - A **filterable summary** of which endpoints an analysis targets."
 
-| Field | Type | Description |
-|---|---|---|
-| `id` | `int` | Auto-incrementing primary key. |
-| `project_id` | `int` | Foreign key to `ProjectRecord.id`. |
-| `created_at` | `datetime` | When the analysis was created. |
-| `label` | `str \| None` | Optional human-readable label. |
-| `generated_against_repo_hash` | `str` | Hash of the repo the trace was generated against. |
-| `strategy_mode` | `str` | Hypothesis strategy mode used to generate it. |
-| `stateful` | `bool` | Whether the analysis runs stateful chains. |
-| `stateful_config` | `str \| None` | Stateful config, serialized as JSON. |
-| `execution_config` | `str` | Execution config as JSON (headers already sanitized). |
-| `engine_version` | `str \| None` | Engine version that produced the analysis (provenance only). |
+      | Field | Type | Description |
+      |---|---|---|
+      | `id` | `int` | Auto-incrementing primary key. |
+      | `analysis_id` | `int` | Foreign key to `AnalysisRecord.id`. |
+      | `method` | `str` | HTTP method (e.g. `GET`, `POST`). |
+      | `path` | `str` | URL (e.g. `/api/v1/users`). |
 
-### `AnalysisEndpointRecord`
+??? "`RunRecord` - A **run**: one concrete execution of an analysis."
 
-A filterable summary of which endpoints an analysis targets (not the values tried —
-those live in the recorded trace artifact).
+      | Field | Type | Description |
+      |---|---|---|
+      | `id` | `int` | Auto-incrementing primary key. |
+      | `analysis_id` | `int` | Foreign key to `AnalysisRecord.id`. |
+      | `executed_at` | `datetime` | When the run started. |
+      | `duration_ms` | `int \| None` | Total run duration, in milliseconds. |
+      | `executed_against_repo_hash` | `str` | Hash of the repo it actually ran against. |
+      | `status` | `str` | Final run outcome (e.g. `SUCCESS`, `FAILED`). |
+      | `ordinal` | `int` | Position of the run within its analysis (1 = original). |
+      | `is_original` | `bool` | Whether this run generated and recorded the trace. |
 
-| Field | Type | Description |
-|---|---|---|
-| `id` | `int` | Auto-incrementing primary key. |
-| `analysis_id` | `int` | Foreign key to `AnalysisRecord.id`. |
-| `method` | `str` | HTTP method (e.g. `GET`, `POST`). |
-| `path` | `str` | URL (e.g. `/api/v1/users`). |
+??? "`RunMetricsRecord` - Aggregate **stats for a run**."
 
-### `RunRecord`
+      *No coverage columns yet — the engine doesn't emit that data.*
 
-A run: one concrete execution of an analysis.
+      | Field | Type | Description |
+      |---|---|---|
+      | `run_id` | `int` | Foreign key (and primary key) to `RunRecord.id`. |
+      | `total_requests` | `int` | Total requests sent during the run. |
+      | `findings_raw` | `int` | Violations found during exploration, before shrinking. |
+      | `findings_confirmed` | `int` | Findings that still reproduced after shrinking. |
+      | `findings_unique` | `int` | Distinct defects (`== len(crash_reports)`). |
+      | `findings_flaky` | `int` | Findings that failed to reproduce. |
+      | `by_phase` | `str \| None` | Request breakdown by phase, as JSON. |
+      | `by_category` | `str \| None` | Request breakdown by error category, as JSON. |
 
-| Field | Type | Description |
-|---|---|---|
-| `id` | `int` | Auto-incrementing primary key. |
-| `analysis_id` | `int` | Foreign key to `AnalysisRecord.id`. |
-| `executed_at` | `datetime` | When the run started. |
-| `duration_ms` | `int \| None` | Total run duration, in milliseconds. |
-| `executed_against_repo_hash` | `str` | Hash of the repo it actually ran against. |
-| `status` | `str` | Final run outcome (e.g. `SUCCESS`, `FAILED`). |
-| `ordinal` | `int` | Position of the run within its analysis (1 = original). |
-| `is_original` | `bool` | Whether this run generated and recorded the trace. |
+??? "`RunEndpointStatsRecord` - Per-endpoint **detail of a run's stats**."
 
-### `RunMetricsRecord`
+      | Field | Type | Description |
+      |---|---|---|
+      | `id` | `int` | Auto-incrementing primary key. |
+      | `run_id` | `int` | Foreign key to `RunRecord.id`. |
+      | `analysis_endpoint_id` | `int` | Foreign key to `AnalysisEndpointRecord.id`. |
+      | `requests` | `int` | Requests sent to this endpoint during the run. |
+      | `findings_raw` | `int` | Violations found for this endpoint, before shrinking. |
+      | `crash_count` | `int` | Materialized count of this endpoint's `crash_reports` rows (not a copy). |
 
-Aggregate stats for a run. No coverage columns yet — the engine doesn't emit that data.
+??? "`CrashReportRecord` - A distinct **defect found** during a run."
 
-| Field | Type | Description |
-|---|---|---|
-| `run_id` | `int` | Foreign key (and primary key) to `RunRecord.id`. |
-| `total_requests` | `int` | Total requests sent during the run. |
-| `findings_raw` | `int` | Violations found during exploration, before shrinking. |
-| `findings_confirmed` | `int` | Findings that still reproduced after shrinking. |
-| `findings_unique` | `int` | Distinct defects (`== len(crash_reports)`). |
-| `findings_flaky` | `int` | Findings that failed to reproduce. |
-| `by_phase` | `str \| None` | Request breakdown by phase, as JSON. |
-| `by_category` | `str \| None` | Request breakdown by error category, as JSON. |
+      | Field | Type | Description |
+      |---|---|---|
+      | `id` | `int` | Auto-incrementing primary key. |
+      | `run_id` | `int` | Foreign key to `RunRecord.id`. |
+      | `analysis_endpoint_id` | `int \| None` | Foreign key to `AnalysisEndpointRecord.id`; `None` if the finding spans several endpoints (stateful). |
+      | `method` / `path` / `phase` | `str` | Identity of the request that triggered the defect, and its phase (valid/boundary/invalid/attack/stateful). |
+      | `invariant_violated` | `str` | Which invariant was violated. |
+      | `status_code` | `int` | Status code of the failing response. |
+      | `minimal_payload` | `str` | Minimal reproducible payload, as JSON. |
+      | `sanitized_headers` | `str` | Headers as JSON, with secrets already redacted by the engine. |
+      | `response_body` | `str` | Body of the failing response. |
+      | `stack_trace` | `str \| None` | Filled in later by the Auto-Fixer; the engine leaves it `None`. |
+      | `transition_sequence` | `str \| None` | Request chain as JSON, stateful findings only. |
 
-### `RunEndpointStatsRecord`
+??? "`ArtifactRecord` - A **recipe-level artifact** or a **report-level one**"
 
-Per-endpoint detail of a run's stats.
+      Belongs to exactly one of the two levels (analysis scope or run scope) — enforced
+      by a `CHECK` in the schema, not just by the repository.
 
-| Field | Type | Description |
-|---|---|---|
-| `id` | `int` | Auto-incrementing primary key. |
-| `run_id` | `int` | Foreign key to `RunRecord.id`. |
-| `analysis_endpoint_id` | `int` | Foreign key to `AnalysisEndpointRecord.id`. |
-| `requests` | `int` | Requests sent to this endpoint during the run. |
-| `findings_raw` | `int` | Violations found for this endpoint, before shrinking. |
-| `crash_count` | `int` | Materialized count of this endpoint's `crash_reports` rows (not a copy). |
-
-### `CrashReportRecord`
-
-A distinct defect found during a run.
-
-| Field | Type | Description |
-|---|---|---|
-| `id` | `int` | Auto-incrementing primary key. |
-| `run_id` | `int` | Foreign key to `RunRecord.id`. |
-| `analysis_endpoint_id` | `int \| None` | Foreign key to `AnalysisEndpointRecord.id`; `None` if the finding spans several endpoints (stateful). |
-| `method` / `path` / `phase` | `str` | Identity of the request that triggered the defect, and its phase (valid/boundary/invalid/attack/stateful). |
-| `invariant_violated` | `str` | Which invariant was violated. |
-| `status_code` | `int` | Status code of the failing response. |
-| `minimal_payload` | `str` | Minimal reproducible payload, as JSON. |
-| `sanitized_headers` | `str` | Headers as JSON, with secrets already redacted by the engine. |
-| `response_body` | `str` | Body of the failing response. |
-| `stack_trace` | `str \| None` | Filled in later by the Auto-Fixer; the engine leaves it `None`. |
-| `transition_sequence` | `str \| None` | Request chain as JSON, stateful findings only. |
-
-### `ArtifactRecord`
-
-A recipe-level artifact (analysis scope, e.g. the trace) or a report-level one
-(run scope, e.g. `report.html`). Belongs to exactly one of the two levels — enforced
-by a `CHECK` in the schema, not just by the repository.
-
-| Field | Type | Description |
-|---|---|---|
-| `id` | `int` | Auto-incrementing primary key. |
-| `analysis_id` | `int \| None` | Set for analysis-level artifacts. |
-| `run_id` | `int \| None` | Set for run-level artifacts. |
-| `kind` | `str` | Artifact type (e.g. `execution_trace`, `report_html`). |
-| `path` | `str` | Path on disk. |
-| `sha256` | `str` | Hash of the artifact's content. |
-| `size_bytes` | `int` | Size in bytes. |
-| `critical` | `bool` | Whether losing it breaks reproducibility. |
-| `compressed` | `bool` | Whether it's stored compressed. |
+      | Field | Type | Description |
+      |---|---|---|
+      | `id` | `int` | Auto-incrementing primary key. |
+      | `analysis_id` | `int \| None` | Set for analysis-level artifacts. |
+      | `run_id` | `int \| None` | Set for run-level artifacts. |
+      | `kind` | `str` | Artifact type (e.g. `execution_trace`, `report_html`). |
+      | `path` | `str` | Path on disk. |
+      | `sha256` | `str` | Hash of the artifact's content. |
+      | `size_bytes` | `int` | Size in bytes. |
+      | `critical` | `bool` | Whether losing it breaks reproducibility. |
+      | `compressed` | `bool` | Whether it's stored compressed. |
 
 ## Testing
 

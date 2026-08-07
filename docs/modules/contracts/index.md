@@ -3,11 +3,19 @@
 `specforge-contracts` is the **single source of truth** for the unified endpoint
 contract — the boundary object that travels across the whole pipeline:
 
-```
-semantic_inference ──► contract_engine (fusion) ──► custom_schemathesis
-        │                      │                            │
-        └──────────────  specforge_contracts  ──────────────┘
-                     (canonical EndpointContract)
+```mermaid
+flowchart TD
+    subgraph Flow ["Execution Pipeline"]
+        direction LR
+        SI["semantic_inference"] --> CE["contract_engine<br/><i>(fusion)</i>"]
+        CE --> CS["custom_schemathesis"]
+    end
+
+    SC[["specforge_contracts<br/><i>(canonical EndpointContract)</i>"]]
+
+    SI -.- SC
+    CE -.- SC
+    CS -.- SC
 ```
 
 It is a **dependency-light kernel**: only `pydantic`, no logic, no I/O. Every
@@ -15,7 +23,7 @@ pipeline stage imports the same models from here, so the AI layer, the fusion
 stage and the execution engine speak exactly the same shape and the contract can
 never drift between them.
 
-## Why a separate package
+## Why a separate package?
 
 `semantic_inference` is the most *upstream* module that uses the contract. If the
 models lived in `contract_engine` (a downstream stage), `semantic_inference` would
@@ -35,7 +43,7 @@ from specforge_contracts import EndpointContract, EndpointParameters, SchemaProp
 - `EndpointParameters` — the three HTTP parameter zones.
 - `SchemaProperty` — a recursive JSON Schema fragment.
 
-Design invariants:
+## Design invariants:
 
 - **Pure JSON Schema vocabulary** (`type`, `minimum`, `maximum`, `pattern`,
   `enum`, `minLength`/`maxLength`, `minItems`/`maxItems`, `items`, `properties`,
@@ -44,7 +52,7 @@ Design invariants:
 - **`extra="forbid"`** so a hallucinated keyword fails validation, forcing the LLM
   to self-correct.
 
-`contract_engine` re-exports `EndpointContract` under its historical name
+> `contract_engine` re-exports `EndpointContract` under its historical name
 `UnifiedEndpointContract` (a backward-compatible alias).
 
 ## Installation

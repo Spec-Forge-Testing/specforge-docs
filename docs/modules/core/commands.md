@@ -74,149 +74,197 @@ Commands are self-registering, so a new one is small and local:
 That's it: dispatch, fuzzy-match suggestions, `help`, `help foo` and tab-completion
 are all derived from the registry — no other file needs editing.
 
-## `doctor` — environment & dependency diagnostics
+## Current Commands
 
-```text
-SpecForge ❯ doctor
-```
+??? "`doctor` — environment & dependency diagnostics"
 
-`doctor` checks that the local environment is ready to run the whole pipeline and
-prints a categorized report. For each check it shows a status, a detail and — when
-something is wrong — a concrete fix.
+    ```text
+    SpecForge ❯ doctor
+    ```
 
-It validates:
+    `doctor` checks that the local environment is ready to run the whole pipeline and
+    prints a categorized report. For each check it shows a status, a detail and — when
+    something is wrong — a concrete fix.
 
-- **Runtime** — the Python interpreter version and the CLI's own dependencies.
-- **Pipeline modules** — Contract Engine, AST parser, LLM integration, execution
-  engine, storage and the shared contracts, probed by import without executing them.
-- **Test runtime** — `pytest` / `pytest-cov`.
-- **LLM configuration** — the module-local `lib/semantic_inference/.env.local`,
-  `LLM_MODEL`, and the provider credential the configured model needs (presence
-  only — credential *values* are never read or shown).
+    It validates:
 
-Findings are split into two levels:
+    - **Runtime** — the Python interpreter version and the CLI's own dependencies.
+    - **Pipeline modules** — Contract Engine, AST parser, LLM integration, execution
+      engine, storage and the shared contracts, probed by import without executing them.
+    - **Test runtime** — `pytest` / `pytest-cov`.
+    - **LLM configuration** — the module-local `lib/semantic_inference/.env.local`,
+      `LLM_MODEL`, and the provider credential the configured model needs (presence
+      only — credential *values* are never read or shown).
 
-- **critical** (✖) — the interpreter, the CLI runtime, or a pipeline stage wired
-  into a working command today (the Contract Engine, the AST parser, the execution
-  engine). The environment is *not ready* while any critical check fails.
-- **warning** (⚠) — a not-yet-wired pipeline stage, the test runtime, or missing LLM
-  configuration. These degrade a capability but don't block the CLI.
+    Findings are split into two levels:
 
-The diagnostic logic is pure and deterministic: `specforge_cli.services.diagnostics.run_diagnostics`
-returns a `DiagnosticReport` DTO and never prints; the CLI renders it. The check
-catalog and severities are declared as data in `services/diagnostics/requirements.py`.
+    - **critical** (✖) — the interpreter, the CLI runtime, or a pipeline stage wired
+      into a working command today (the Contract Engine, the AST parser, the execution
+      engine). The environment is *not ready* while any critical check fails.
+    - **warning** (⚠) — a not-yet-wired pipeline stage, the test runtime, or missing LLM
+      configuration. These degrade a capability but don't block the CLI.
 
-### `doctor --fix` — guided installation
+    The diagnostic logic is pure and deterministic: `specforge_cli.services.diagnostics.run_diagnostics`
+    returns a `DiagnosticReport` DTO and never prints; the CLI renders it. The check
+    catalog and severities are declared as data in `services/diagnostics/requirements.py`.
 
-```text
-SpecForge ❯ doctor --fix          # plan, confirm, install, re-check
-SpecForge ❯ doctor --fix --yes    # skip the confirmation (CI / non-interactive)
-```
+??? "`doctor --fix` — guided installation"
 
-`--fix` installs the missing components. It runs **only** the catalog's install
-commands — never arbitrary input — as `python -m pip install -e <target>` in the
-**current interpreter**, ordered so the shared contracts land before the engines
-that import them. It is read-only until confirmation: it prints the plan, asks for
-approval (skipped by `--yes`), streams each install, then **re-runs the diagnosis**
-to show the resulting state. Manual fixes (the `.env.local` file, `LLM_MODEL`,
-credentials) are listed but never auto-applied. Honors `SPECFORGE_SYSTEM_COMMANDS`:
-when system commands are disabled, the plan is shown but nothing is executed.
+    ```text
+    SpecForge ❯ doctor --fix          # plan, confirm, install, re-check
+    SpecForge ❯ doctor --fix --yes    # skip the confirmation (CI / non-interactive)
+    ```
 
-The planning is pure (`services/diagnostics/planner.py`: a `DiagnosticReport` →
-`FixPlan`) and the execution is a thin orchestration over the injectable
-`CommandExecutor` seam (`services/diagnostics/fixer.py`), so both are unit-tested
-without installing anything.
+    `--fix` installs the missing components. It runs **only** the catalog's install
+    commands — never arbitrary input — as `python -m pip install -e <target>` in the
+    **current interpreter**, ordered so the shared contracts land before the engines
+    that import them. It is read-only until confirmation: it prints the plan, asks for
+    approval (skipped by `--yes`), streams each install, then **re-runs the diagnosis**
+    to show the resulting state. Manual fixes (the `.env.local` file, `LLM_MODEL`,
+    credentials) are listed but never auto-applied. Honors `SPECFORGE_SYSTEM_COMMANDS`:
+    when system commands are disabled, the plan is shown but nothing is executed.
 
-> Note: like the rest of the Rich UI, `doctor` emits status glyphs (✔ ⚠ ✖). On a
-> legacy Windows console these require a UTF-8 capable terminal; redirecting output
-> to a non-UTF-8 pipe can raise an encoding error (a pre-existing, app-wide trait of
-> the Rich presentation layer, not specific to this command).
+    The planning is pure (`services/diagnostics/planner.py`: a `DiagnosticReport` →
+    `FixPlan`) and the execution is a thin orchestration over the injectable
+    `CommandExecutor` seam (`services/diagnostics/fixer.py`), so both are unit-tested
+    without installing anything.
 
-## `trace` — static code tracing from an OpenAPI endpoint
+    > Like the rest of the Rich UI, `doctor` emits status glyphs (✔ ⚠ ✖). On a
+    > legacy Windows console these require a UTF-8 capable terminal; redirecting output
+    > to a non-UTF-8 pipe can raise an encoding error (a pre-existing, app-wide trait of
+    > the Rich presentation layer, not specific to this command).
 
-```text
-SpecForge > trace --contract openapi.yaml --project /path/to/project --operation-id create_user
-```
+??? "`trace` — static code tracing from an OpenAPI endpoint"
 
-`trace` connects the OpenAPI contract with the source code of the project being tested. It reads the contract, selects one or more endpoints, locates the handler function in the target repository and asks `core_ast` to extract only the relevant AST context for that endpoint.
+    ```text
+    SpecForge > trace --contract openapi.yaml --project /path/to/project --operation-id create_user
+    ```
 
-The command prints:
+    `trace` connects the OpenAPI contract with the source code of the project being tested. It reads the contract, selects one or more endpoints, locates the handler function in the target repository and asks `core_ast` to extract only the relevant AST context for that endpoint.
 
-- **Endpoint** — the HTTP method and path found in the OpenAPI contract.
-- **Controller** — the source file where the endpoint handler was located.
-- **Target function** — the function extracted as the entry point for the endpoint.
-- **Trace mode** — whether the dependency trace was surgical, hybrid or fallback.
-- **Processed functions** — each file/function pair visited while resolving local calls and imports.
-- **Fallback / hybrid files** — extra files selected when the tracer cannot resolve enough dependencies surgically.
+    The command prints:
 
-`--operation-id` is the OpenAPI `operationId` of the endpoint. In many APIs this matches the handler function name, so it gives the AST locator a precise target:
+    - **Endpoint** — the HTTP method and path found in the OpenAPI contract.
+    - **Controller** — the source file where the endpoint handler was located.
+    - **Target function** — the function extracted as the entry point for the endpoint.
+    - **Trace mode** — whether the dependency trace was surgical, hybrid or fallback.
+    - **Processed functions** — each file/function pair visited while resolving local calls and imports.
+    - **Fallback / hybrid files** — extra files selected when the tracer cannot resolve enough dependencies surgically.
 
-```yaml
-paths:
-  /users:
-    post:
-      operationId: create_user
-```
+    `--operation-id` is the OpenAPI `operationId` of the endpoint. In many APIs this matches the handler function name, so it gives the AST locator a precise target:
 
-With that contract, `--operation-id create_user` means: "trace the `POST /users` endpoint whose OpenAPI operation is named `create_user`".
+    ```yaml
+    paths:
+      /users:
+        post:
+          operationId: create_user
+    ```
 
-If the contract has no `operationId`, use the endpoint coordinates instead:
+    With that contract, `--operation-id create_user` means: "trace the `POST /users` endpoint whose OpenAPI operation is named `create_user`".
 
-```text
-SpecForge > trace -c openapi.yaml -p /path/to/project --path /users --method post
-```
+    If the contract has no `operationId`, use the endpoint coordinates instead:
 
-## `ast-extract` — inspect the extracted code and the LLM context
+    ```text
+    SpecForge > trace -c openapi.yaml -p /path/to/project --path /users --method post
+    ```
 
-```text
-SpecForge ❯ ast-extract -c openapi.yaml -p /path/to/project --operation-id create_user --code
-```
+??? "`ast-extract` — inspect the extracted code and the LLM context"
 
-Where `trace` reports *which* files and functions were visited, `ast-extract`
-shows the *actual content*: the function `core_ast` surgically extracts and the
-context that would be sent to the LLM. It accepts the same endpoint selectors as
-`trace` (`-c/--contract`, `-p/--project`, `--operation-id`, or `--path`/`--method`)
-plus three mode flags:
+    ```text
+    SpecForge ❯ ast-extract -c openapi.yaml -p /path/to/project --operation-id create_user --code
+    ```
 
-- **`--code`** (default) — the extracted controller and each dependency function,
-  syntax-highlighted with their real line numbers. Use it to verify the AST cut is
-  correct.
-- **`--payload`** — the packaged context the inference engine would receive, parsed
-  into sections (primary controller, dependencies, fallback files and any missing
-  context) plus its estimated token count and a complete/partial flag.
-- **`--raw`** — the *literal* `system_context` XML the LLM actually receives,
-  verbatim (the `<source_context>` block with its `<primary_controller>`,
-  `<dependencies>` and `CDATA` sections), for auditing the exact prompt input.
+    Where `trace` reports *which* files and functions were visited, `ast-extract`
+    shows the *actual content*: the function `core_ast` surgically extracts and the
+    context that would be sent to the LLM. It accepts the same endpoint selectors as
+    `trace` (`-c/--contract`, `-p/--project`, `--operation-id`, or `--path`/`--method`)
+    plus three mode flags:
 
-They can be combined (e.g. `--code --payload`, or `--payload --raw`). Even when the
-dependency trace degrades to *hybrid* or *fallback* mode, `--payload`/`--raw` still
-show the primary controller and the selected fallback files, so there is always
-something to inspect.
+    - **`--code`** (default) — the extracted controller and each dependency function,
+      syntax-highlighted with their real line numbers. Use it to verify the AST cut is
+      correct.
+    - **`--payload`** — the packaged context the inference engine would receive, parsed
+      into sections (primary controller, dependencies, fallback files and any missing
+      context) plus its estimated token count and a complete/partial flag.
+    - **`--raw`** — the *literal* `system_context` XML the LLM actually receives,
+      verbatim (the `<source_context>` block with its `<primary_controller>`,
+      `<dependencies>` and `CDATA` sections), for auditing the exact prompt input.
 
-## `fuzz` — compile strategies from the schema and fuzz a live API
+    They can be combined (e.g. `--code --payload`, or `--payload --raw`). Even when the
+    dependency trace degrades to *hybrid* or *fallback* mode, `--payload`/`--raw` still
+    show the primary controller and the selected fallback files, so there is always
+    something to inspect.
 
-```text
-SpecForge ❯ fuzz -f openapi.yaml --base-url http://localhost:8000
-```
+??? "`fuzz` — compile strategies from the schema and fuzz a live API"
 
-`fuzz` runs the execution engine end to end **without the LLM or source analysis**:
-it parses the contract, compiles Hypothesis strategies straight from the schema,
-fuzzes the live API at `--base-url` and shrinks every failure to its minimal
-reproducer. The schema constraints alone (`type`, `minimum`, `enum`, `pattern`, …)
-are enough to surface `5xx` crashes and undeclared responses.
+    ```text
+    SpecForge ❯ fuzz -f openapi.yaml --base-url http://localhost:8000
+    ```
 
-The command prints:
+    `fuzz` runs the execution engine end to end **without the LLM or source analysis**:
+    it parses the contract, compiles Hypothesis strategies straight from the schema,
+    fuzzes the live API at `--base-url` and shrinks every failure to its minimal
+    reproducer. The schema constraints alone (`type`, `minimum`, `enum`, `pattern`, …)
+    are enough to surface `5xx` crashes and undeclared responses.
 
-- **Run summary** — total requests and the finding funnel (raw → confirmed after
-  shrinking → unique after de-duplication → flaky).
-- **Category breakdown** — requests grouped by outcome (success, client/server
-  error, timeout, availability).
-- **Crashes** — one row per minimal reproducer: method, endpoint, phase, the
-  violated invariant, the status code and the smallest failing payload.
+    The command prints:
 
-Narrow the run with `--endpoint <path>` and/or `--method <verb>`, and tune execution
-with `--timeout` / `--max-concurrency`. The target API must already be running;
-infrastructure failures (server down, timeout) are reported, never fatal.
+    - **Run summary** — total requests and the finding funnel (raw → confirmed after
+      shrinking → unique after de-duplication → flaky).
+    - **Category breakdown** — requests grouped by outcome (success, client/server
+      error, timeout, availability).
+    - **Crashes** — one row per minimal reproducer: method, endpoint, phase, the
+      violated invariant, the status code and the smallest failing payload.
+
+    Narrow the run with `--endpoint <path>` and/or `--method <verb>`, and tune execution
+    with `--timeout` / `--max-concurrency`. The target API must already be running;
+    infrastructure failures (server down, timeout) are reported, never fatal.
+
+??? "`!` — run system commands"
+
+    ```text
+    SpecForge ❯ !git status
+    SpecForge ❯ !pytest -q
+    ```
+
+    Prefix any line with `!` to run it as a system command from the same session.
+    The escape is **explicit on purpose**: a line without `!` is always resolved as
+    an internal command (and a typo gets a fuzzy suggestion, never an accidental
+    system call), so internal-vs-system resolution stays unambiguous.
+
+    - **Streaming output.** `stdout` and `stderr` are shown live as the command
+      runs, so long commands (`pytest`, `docker build`) show progress instead of
+      going silent. `stderr` is visually differentiated and a non-zero exit code is
+      reported clearly.
+    - **Shared working directory.** Commands run in the REPL's current directory, so
+      the internal `cd` and `!ls` / `!git` stay in sync.
+    - **Never breaks the loop.** A missing executable, an unparsable line or a
+      failing command are reported and the REPL keeps going. The child's stdin is
+      closed, so an interactive program gets EOF instead of hanging the session.
+    - **Disable in CI/CD.** Set `SPECFORGE_SYSTEM_COMMANDS=0` (or `false` / `no` /
+      `off`) to turn the escape off in non-interactive environments.
+
+    The executor is decoupled from rendering behind a `CommandExecutor` seam: it
+    streams typed output events that the Rich CLI renders today and a future desktop
+    frontend can consume directly.
+
+    > Scope: the primary target is Linux/Docker (Windows is best-effort). v1 runs a
+    > single program without a shell (no pipes, redirection or built-ins like `dir`)
+    > and is not interactive (no `vim` / `rebase -i`); a PTY-backed executor for full
+    > interactivity is a planned follow-up.
+
+??? "`theme` — switch the UI color theme"
+
+    ```text
+    SpecForge ❯ theme          # list themes, marking the active one
+    SpecForge ❯ theme mono     # switch at runtime
+    ```
+
+    Switching the theme re-skins **everything** — console output, the banner and the
+    REPL prompt — because each is rendered through semantic tokens, not raw colours.
+    Bundled themes: `default`, `mono`, `nord`, `dracula`, `solarized`, `matrix`. They
+    are token→style maps in `ui/theme.py`; the active theme can also be chosen at
+    startup with `SPECFORGE_THEME=<name>`.
 
 ## Example workspace — `examples/ast_demo`
 
@@ -265,52 +313,6 @@ repo) so the locator resolves a single, unambiguous handler. Step 5 serves those
 same handlers and fuzzes them: the schema-only run reaches the `500` (whenever
 Hypothesis happens to generate a valid `account_id`) and also flags the `422`s the
 spec never declares.
-
-## `!` — run system commands
-
-```text
-SpecForge ❯ !git status
-SpecForge ❯ !pytest -q
-```
-
-Prefix any line with `!` to run it as a system command from the same session.
-The escape is **explicit on purpose**: a line without `!` is always resolved as
-an internal command (and a typo gets a fuzzy suggestion, never an accidental
-system call), so internal-vs-system resolution stays unambiguous.
-
-- **Streaming output.** `stdout` and `stderr` are shown live as the command
-  runs, so long commands (`pytest`, `docker build`) show progress instead of
-  going silent. `stderr` is visually differentiated and a non-zero exit code is
-  reported clearly.
-- **Shared working directory.** Commands run in the REPL's current directory, so
-  the internal `cd` and `!ls` / `!git` stay in sync.
-- **Never breaks the loop.** A missing executable, an unparsable line or a
-  failing command are reported and the REPL keeps going. The child's stdin is
-  closed, so an interactive program gets EOF instead of hanging the session.
-- **Disable in CI/CD.** Set `SPECFORGE_SYSTEM_COMMANDS=0` (or `false` / `no` /
-  `off`) to turn the escape off in non-interactive environments.
-
-The executor is decoupled from rendering behind a `CommandExecutor` seam: it
-streams typed output events that the Rich CLI renders today and a future desktop
-frontend can consume directly.
-
-> Scope: the primary target is Linux/Docker (Windows is best-effort). v1 runs a
-> single program without a shell (no pipes, redirection or built-ins like `dir`)
-> and is not interactive (no `vim` / `rebase -i`); a PTY-backed executor for full
-> interactivity is a planned follow-up.
-
-## `theme` — switch the UI color theme
-
-```text
-SpecForge ❯ theme          # list themes, marking the active one
-SpecForge ❯ theme mono     # switch at runtime
-```
-
-Switching the theme re-skins **everything** — console output, the banner and the
-REPL prompt — because each is rendered through semantic tokens, not raw colours.
-Bundled themes: `default`, `mono`, `nord`, `dracula`, `solarized`, `matrix`. They
-are token→style maps in `ui/theme.py`; the active theme can also be chosen at
-startup with `SPECFORGE_THEME=<name>`.
 
 ## Tests
 

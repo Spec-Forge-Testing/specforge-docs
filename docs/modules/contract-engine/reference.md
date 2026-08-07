@@ -7,9 +7,12 @@ the LLM to produce the final contract the fuzzing engine attacks.
 
 It works in three stages, each usable on its own:
 
-```
-OpenAPI file ──► parse_contract ──► ASTAdapter ──► fuse_contract ──► unified contract
-                (ingestion)        (adaptation)    (fusion)          (for the engine)
+```mermaid
+flowchart LR
+    A[OpenAPI file] --> B["parse_contract<br/><i>(ingestion)</i>"]
+    B --> C["ASTAdapter<br/><i>(adaptation)</i>"]
+    C --> D["fuse_contract<br/><i>(fusion)</i>"]
+    D --> E["unified contract<br/><i>(for the engine)</i>"]
 ```
 
 ## Installation
@@ -18,6 +21,36 @@ The package targets Python 3.11+.
 
 ```bash
 pip install -e ".[dev]"
+```
+
+## Module layout
+
+```
+src/contract_engine/
+├── exceptions.py     # domain exceptions
+├── models/           # data models (ResolvedContract, EndpointDefinition, unified contract re-export)
+├── ingestion/         # parse_contract
+├── adapters/          # ASTAdapter
+└── fusion/             # fuse_contract (normalizer, llm_input, merger, façade)
+```
+
+The unified contract model itself lives in the shared kernel `specforge-contracts`
+(canonical class `EndpointContract`, at `lib/contracts` in the repository), which
+this package depends on and re-exports as `UnifiedEndpointContract` for backward
+compatibility. The kernel is the single owner shared with `semantic_inference`
+and `custom_schemathesis`, so the contract shape never drifts between stages.
+
+Everything you normally need is re-exported from the package root:
+
+```python
+from contract_engine import (
+    parse_contract,
+    ASTAdapter,
+    fuse_contract,
+    ResolvedContract,
+    EndpointDefinition,
+    UnifiedEndpointContract,
+)
 ```
 
 ## How it works
@@ -104,36 +137,6 @@ unified = fuse_contract(endpoint, llm_contract)
 `llm_contract` may be a JSON string or a dict. A malformed or invalid LLM
 contract raises `SemanticContractError` (it never merges corrupted data).
 
-## Module layout
-
-```
-src/contract_engine/
-├── exceptions.py     # domain exceptions
-├── models/           # data models (ResolvedContract, EndpointDefinition, unified contract re-export)
-├── ingestion/         # parse_contract
-├── adapters/          # ASTAdapter
-└── fusion/             # fuse_contract (normalizer, llm_input, merger, façade)
-```
-
-The unified contract model itself lives in the shared kernel `specforge-contracts`
-(canonical class `EndpointContract`, at `lib/contracts` in the repository), which
-this package depends on and re-exports as `UnifiedEndpointContract` for backward
-compatibility. The kernel is the single owner shared with `semantic_inference`
-and `custom_schemathesis`, so the contract shape never drifts between stages.
-
-Everything you normally need is re-exported from the package root:
-
-```python
-from contract_engine import (
-    parse_contract,
-    ASTAdapter,
-    fuse_contract,
-    ResolvedContract,
-    EndpointDefinition,
-    UnifiedEndpointContract,
-)
-```
-
 ## CLI
 
 A small executable parses a contract and prints the extracted endpoints:
@@ -142,25 +145,18 @@ A small executable parses a contract and prints the extracted endpoints:
 python -m contract_engine path/to/openapi.yaml
 ```
 
-## Development
+## Development & Testing
 
 Tests and linting run in an isolated container via the `contract-engine`
 service defined in `docker-compose.yml`.
 
-Run the test suite with coverage:
-
 ```bash
+## Run the test suite with coverage
 docker compose run --rm contract-engine pytest tests/ -v --cov=src/ --cov-report=term-missing
-```
 
-Check linting:
-
-```bash
+## Check linting
 docker compose run --rm contract-engine ruff check src/ tests/
-```
 
-Open an interactive shell in the container:
-
-```bash
+## Open an interactive shell in the container
 docker compose run --rm contract-engine bash
 ```

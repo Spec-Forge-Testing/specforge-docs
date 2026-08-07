@@ -14,8 +14,28 @@ them asynchronously against the target API.
 
 ## Pipeline
 
-```text
-StrategyMode → questionnaire → CompilerInput → strategy compiler → EngineInput → engine → API
+```mermaid
+flowchart TD
+    subgraph Config ["1. Configuration Phase"]
+        direction LR
+        SM["StrategyMode"] --> Q["questionnaire"]
+        Q --> CI["CompilerInput"]
+    end
+
+    subgraph Compilation ["2. Compilation Phase"]
+        direction LR
+        CI --> SC["strategy compiler"]
+        SC --> EI["EngineInput"]
+    end
+
+    subgraph Execution ["3. Execution Phase"]
+        direction LR
+        EI --> E["engine"]
+        E --> API[("Target API")]
+    end
+
+    Config ==> Compilation
+    Compilation ==> Execution
 ```
 
 ## Read next

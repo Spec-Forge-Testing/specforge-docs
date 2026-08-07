@@ -4,17 +4,17 @@ The CLI is the interactive entry point to Spec Forge. It coordinates contract
 validation, static tracing, LLM-ready context extraction and API fuzzing without
 putting domain logic in the user interface.
 
-## Commands
+## Commands Summary
 
-| Command | Purpose |
-|---|---|
-| `contract-engine` | Validate and inspect an OpenAPI contract. |
-| `trace` | Locate an endpoint implementation and trace its dependencies. |
-| `ast-extract` | Inspect extracted source and the packaged LLM context. |
-| `fuzz` | Compile contracts into strategies and test a live API. |
-| `doctor` | Diagnose and optionally repair local dependencies. |
-| `theme` | Select the terminal visual theme. |
-| `!command` | Run an explicit system command from the REPL. |
+| Command | Category | Description |
+| :--- | :--- | :--- |
+| **`doctor`** | Diagnostics | Checks environment, pipeline dependencies, and LLM setup. |
+| **`doctor --fix`** | Diagnostics | Guided automated installation and dependency fixes. |
+| **`trace`** | Analysis | Static code tracing from an OpenAPI endpoint. |
+| **`ast-extract`** | Analysis | Inspects extracted code structures and LLM context. |
+| **`fuzz`** | Execution | Compiles strategies from schema and fuzzes a live API. |
+| **`!`** | System | Executes system shell commands directly from REPL. |
+| **`theme`** | Settings | Switches the CLI UI color theme. |
 
 ## Start here
 

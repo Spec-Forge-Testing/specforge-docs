@@ -83,6 +83,7 @@ nav:
   - Getting Started:
       - Setup: getting-started/setup.md
       - Docker: getting-started/docker.md
+      - Development & Testing: getting-started/development.md
   - Architecture: architecture/overview.md
   - Modules:
       - Core CLI:

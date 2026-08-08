@@ -25,13 +25,10 @@ flowchart LR
     H --> I[("LLMPayload")]
 ```
 
-## Installation
+## Development requirements
 
-The package targets Python 3.11+.
-
-```bash
-pip install -e ".[dev]"
-```
+The package targets Python 3.11+. Installation and verification commands are in
+[Development & Testing](../../getting-started/development.md#module-commands).
 
 Seven languages load on demand (Java, C#, Ruby, PHP, Rust, Kotlin, Swift) via
 `golden-path` extra. Token counting uses ``tiktoken`` via ``tokens``. Neither

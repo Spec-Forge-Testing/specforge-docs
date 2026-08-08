@@ -55,20 +55,9 @@ from specforge_contracts import EndpointContract, EndpointParameters, SchemaProp
 > `contract_engine` re-exports `EndpointContract` under its historical name
 `UnifiedEndpointContract` (a backward-compatible alias).
 
-## Installation
-
-The package targets Python 3.10+.
-
-```bash
-pip install -e ".[dev]"
-```
-
-Consumers add it to their test path (`pythonpath = ["src", "../contracts/src"]`)
-and install it in their runtime image.
-
 ## Development
 
-```bash
-pytest -q --cov=src/specforge_contracts --cov-report=term-missing
-ruff check src tests
-```
+The package supports Python 3.10+. Consumers add it to their test path
+(`pythonpath = ["src", "../contracts/src"]`) and install it in their runtime image.
+Installation, test and lint commands are centralized in
+[Development & Testing](../../getting-started/development.md#module-commands).

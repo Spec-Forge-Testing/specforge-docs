@@ -135,10 +135,5 @@ The module has native support for **in-memory** databases for isolated testing:
 repositories can be injected with `StorageEngine(db_path=":memory:")` and share the
 same connection across unit tests.
 
-To run the storage suite fully isolated with Docker:
-
-```bash
-cd lib/storage
-docker build -t storage-engine .
-docker run --rm storage-engine pytest -v --cov=src/storage --cov-report=term-missing
-```
+The Docker test command is in
+[Development & Testing](../../getting-started/development.md#module-commands).

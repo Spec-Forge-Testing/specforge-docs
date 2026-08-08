@@ -1,11 +1,10 @@
 # Docker Compose
 
-The repository includes a root-level `docker-compose.yml` as the main entry point for the
-monorepo. It groups services under profiles so you only start what you need.
+The root `docker-compose.yml` is the entry point for running Spec Forge in
+containers. It groups services into profiles, so only the requested workload
+starts.
 
 ## CLI (`dev` profile)
-
-Run the main orchestrator:
 
 ```bash
 poe dev
@@ -13,22 +12,14 @@ poe dev
 
 ## Demo API (`demo` profile)
 
-Start the dummy API used for manual/demo fuzzing runs:
+Start the dummy API used for manual or demo fuzzing:
 
 ```bash
 poe demo
 ```
 
-## Module test suites (`test` profile)
+## Working on one module
 
-Each engine has its own service (`contract-engine`, `storage-engine`, `core-ast`, ...) that runs
-`pytest` with coverage:
-
-```bash
-poe test
-poe test-engine <engine-name>
-# Example: poe test-engine storage-engine
-```
-
-The module-specific `docker-compose.yml` files under each `lib/*` package are still available if
-you want to work inside a single package directly, without the root compose file.
+Module-specific Compose files under `lib/*` remain available when you need to
+work within a package directly. Test and lint commands, including the repository
+`test` profile, are documented in [Development & Testing](development.md).

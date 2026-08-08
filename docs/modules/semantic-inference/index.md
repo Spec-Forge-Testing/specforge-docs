@@ -28,20 +28,5 @@ Two levels of validation are included:
   Actions pipeline by default, so builds don't fail randomly from network issues,
   missing real credentials, or a provider's temporary outage.
 
-Run only the fast tests (no integration):
-
-```bash
-python -m pytest -m "not integration" -q
-```
-
-Run only the connection smoke test:
-
-```bash
-python -m pytest -m integration
-```
-
-Run the full suite:
-
-```bash
-pytest
-```
+Test commands are centralized in
+[Development & Testing](../../getting-started/development.md#module-commands).

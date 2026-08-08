@@ -15,13 +15,8 @@ flowchart LR
     D --> E["unified contract<br/><i>(for the engine)</i>"]
 ```
 
-## Installation
-
-The package targets Python 3.11+.
-
-```bash
-pip install -e ".[dev]"
-```
+The package targets Python 3.11+. Its installation, test and lint commnds are in
+[Development & Testing](../../getting-started/development.md#module-commands).
 
 ## Module layout
 
@@ -143,20 +138,4 @@ A small executable parses a contract and prints the extracted endpoints:
 
 ```bash
 python -m contract_engine path/to/openapi.yaml
-```
-
-## Development & Testing
-
-Tests and linting run in an isolated container via the `contract-engine`
-service defined in `docker-compose.yml`.
-
-```bash
-## Run the test suite with coverage
-docker compose run --rm contract-engine pytest tests/ -v --cov=src/ --cov-report=term-missing
-
-## Check linting
-docker compose run --rm contract-engine ruff check src/ tests/
-
-## Open an interactive shell in the container
-docker compose run --rm contract-engine bash
 ```

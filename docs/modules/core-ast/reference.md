@@ -88,18 +88,8 @@ context. No silent None returns or hidden truncations.
 
 ## Development & Testing
 
-Execution uses isolated Docker containers (``core-ast`` service):
-
-```bash
-# Run unit & coverage tests
-docker compose run --rm core-ast pytest tests/ -v --cov=src --cov-report=term-missing
-
-# Code quality & linting
-docker compose run --rm core-ast ruff check src/ tests/
-
-# Interactive shell
-docker compose run --rm core-ast bash
-```
+Use the Core AST commands in
+[Development & Testing](../../getting-started/development.md#module-commands).
 
 Integration-test setup and output conventions are documented separately in
 [Integration Tests](integration-tests.md).

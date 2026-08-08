@@ -287,7 +287,7 @@ business invariant the OpenAPI alone never states.
 
 Run the demo from the repository root:
 
-```text
+```bash
 # 1. Validate the spec
 SpecForge ❯ contract-engine --validate -f core/examples/ast_demo/openapi.yaml
 
@@ -316,12 +316,6 @@ spec never declares.
 
 ## Tests
 
-```bash
-cd core
-python -m venv .venv
-.venv/Scripts/python.exe -m pip install -e ".[dev]"
-.venv/Scripts/python.exe -m pytest -q
-```
-
 Tests live under `tests/`, grouped into subpackages that mirror `src/`
-(`config/`, `ui/`, `services/`, `repl/`).
+(`config/`, `ui/`, `services/`, `repl/`). Setup and test commands are in
+[Development & Testing](../../getting-started/development.md#module-commands).

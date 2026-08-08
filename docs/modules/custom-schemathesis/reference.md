@@ -36,6 +36,18 @@ The four layers have deliberately separate responsibilities:
 | `strategy_compiler` | Contract → Hypothesis strategy translation. | Reinterpret validated policy. |
 | `engine` | Request execution and reporting. | Know contract types or strategy mode. |
 
+### Public entry point (`main.py`)
+
+A minimal facade wires the three layers together and adds no logic of its own —
+callers only ever need these four functions:
+
+```python
+build_questionnaire(mode)          -> QuestionnaireBundle
+resolve_questionnaire(bundle)      -> ResolvedQuestionnaire
+compile_strategies(compiler_input) -> EngineInput
+run(engine_input, config, *, stateful=False) -> EngineRunResult
+```
+
 ## Models and Questionnaire
 
 ### Strategy Contracts & Models
@@ -117,6 +129,18 @@ Serves as the system's sole network boundary. It manages:
 * Exponential-backoff retries for transient infrastructure failures (`429`, `502`, `503`, and connection timeouts).
 * **Policy**: Client errors (4xx) are logged as findings. Server errors (5xx) are treated as potential defects and are **never** retried away.
 
+### Async Bridge (`hypothesis_bridge.py`)
+
+Hypothesis drives generation through a **synchronous** callback, but every request
+is async `httpx`. Calling `asyncio.run()` once per generated example exhausts file
+descriptors under load, so the bridge instead:
+
+* Starts a single event loop on a daemon thread, alive for the whole process.
+* Runs each coroutine on it via `run_coroutine_threadsafe` and blocks for the result.
+
+Both `AsyncHttpFuzzer` and `StatefulFuzzer` share this one loop — no strategy ever
+creates its own.
+
 ### Core Engine Components
 
 | Component | Role |
@@ -130,7 +154,7 @@ Serves as the system's sole network boundary. It manages:
 
 ### Two-Phase Testing Pipeline
 
-* **Explore Phase**: Executes tests and records all failures without raising exceptions, allowing test generation to continue uninterrupted.
+* **Explore Phase**: Executes tests and records all failures without raising exceptions, allowing test generation to continue uninterrupted. If transport failures pile up to `MAX_INFRA_FAILURES` in a row, that endpoint aborts and the run moves on to the next one — a dead endpoint never stalls the whole run.
 * **Shrink Phase**: Each raw finding is sequentially minimized using `hypothesis.find`.
   * Findings that fail to reproduce during shrinking are discarded as flaky.
   * Sequential execution avoids shared-state pollution, side effects, and rate-limit interference.
@@ -150,18 +174,88 @@ Serves as the system's sole network boundary. It manages:
   * A transition invariant to validate between steps.
 * **Stateless Fallback**: Endpoints without `StateLinkContract` retain standard stateless behavior.
 * **Execution**: State links are passed via `CompiledExecutionEndpoint` and consumed exclusively by `StatefulFuzzer`. Stateful findings can output the complete multi-request sequence required to reproduce cross-endpoint bugs.
+* **Who fills the contract today**: a fixture/spec, not inference — the module is
+  agnostic about the producer. `semantic_inference` filling it via LLM is future
+  work, tracked separately.
+
+#### Fine print on production/consumption
+
+| Field | Behavior |
+|---|---|
+| `StateConsumption.invalidates` | `True` **removes** the value from its bundle on consumption (via `hypothesis.stateful.consumes`), so a deleted resource can't be reused. Default `False`: the value stays reusable (e.g. the same `id` serves both `GET` and `DELETE`). |
+| `TransitionInvariant.echoed_fields` | Beyond the status code, asserts the follow-up probe's body **reflects** the fields sent in the triggering request (e.g. after `PUT {price: 10}`, `GET` must return `price == 10`). Empty ⇒ status-only check. |
+
+#### The state machine (`state_machine.py`)
+
+`build_state_machine(...)` assembles a Hypothesis `RuleBasedStateMachine` at
+runtime:
+
+```mermaid
+flowchart LR
+    inject["inject\n(bundles.inject)"] --> exec["execute\n(run_sync via orchestrator)"]
+    exec --> capture["capture\n(bundles.capture)"]
+    capture --> check["check transition\ninvariants"]
+```
+
+* One Hypothesis `Bundle` per declared bundle name.
+* One `@rule()` per endpoint, running the pipeline above.
+* `@precondition()` blocks consuming a bundle no endpoint has produced yet —
+  preserves logical request ordering.
+* The first broken invariant makes the rule **raise** `StatefulViolationError`, so
+  Hypothesis shrinks the **sequence of operations** to a minimal reproducer —
+  unlike the stateless fuzzer, which collects findings and shrinks the *payload*.
+
+`transitions.py` builds the follow-up probe by reusing `ContextInjector`, delegates
+the 5xx check to the existing `ResponseValidator`, and adds the expected-status and
+`echoed_fields` comparisons (`InvariantViolation.STATE_TRANSITION`).
+
+#### Multiple bugs per run (loop-until-dry, opt-in)
+
+A rule stops at its first failure, so by default `fuzz_sequence` does **one pass**
+— report the first defect, stay cheap. Raising `StatefulConfig.max_distinct_bugs`
+turns on a loop:
+
+1. Each pass reports one defect and records its signature
+   `(method, path, invariant)` in a `suppressed` set.
+2. Rules keep checking already-seen signatures but don't re-raise on them, so the
+   next pass can surface a *different* defect.
+3. The loop stops when a pass finds nothing new, or the configured cap is hit.
+
+Every defect keeps its own independent shrinking.
+
+```python
+run(engine_input, config)                  # stateless — unchanged prior behavior
+run(engine_input, config, stateful=True)   # stateful, one pass (default)
+run(engine_input, config, stateful=True,   # stateful, exhaustive
+    stateful_config=StatefulConfig(max_distinct_bugs=10))
+```
+
+`StatefulConfig` fields: `max_distinct_bugs` (default `1`), `max_examples`
+(sequences per pass), `step_count` (max steps per sequence). Findings reuse
+`CrashReport` with its optional `transition_sequence` field (the steps leading to
+the failure) rather than a second report type.
 
 ---
 
 ## Operational Constants & System Invariants
 
 ### Configuration (`src/constants.py`)
-Centralizes operational defaults including maximum example counts, phase splits, retry backoff parameters, infrastructure-failure caps, and shrink budgets. All engine exceptions derive from `EngineError`.
+Centralizes operational defaults including maximum example counts, phase splits, retry backoff parameters, infrastructure-failure caps, and shrink budgets.
 
 > **Testing Guideline:** Disable Hypothesis deadlines during integration tests where real network latency could cause non-deterministic failures.
 
+### Domain Exceptions (`src/exceptions.py`)
+
+| Exception | Raised when |
+|---|---|
+| `PolicyError` | A contract, rule or field breaks a questionnaire constraint. |
+| `StrategyCompilationError` | A contract has no registered compiler to translate it into a Hypothesis strategy. |
+| `EngineError` | An execution-time invariant of the engine is violated (e.g. a missing path param). |
+| `StatefulLinkError` | A state link can't be honored during stateful fuzzing. Subclass of `EngineError`. |
+
 ### Architectural Invariants
 When modifying this module, the following core invariants must be maintained:
+
 1. **Single Validation Crossing**: Validated data crosses each system boundary exactly once.
 2. **Registry Extensibility**: The strategy compiler remains extensible via its registration interface.
 3. **Shared HTTP Transport**: All outbound HTTP requests execute through a single shared client.

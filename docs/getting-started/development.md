@@ -43,7 +43,7 @@ Only these modules need a different workflow:
 
 - **Core CLI (`core`)**: create a virtual environment, install `.[dev]`, then run
   `.venv/Scripts/python.exe -m pytest -q`.
-- **Contracts (`lib/contracts`)**: run
+- **Contracts (`lib/contracts`)**: `pip install -e ".[dev]"`, then run
   `pytest -q --cov=src/specforge_contracts --cov-report=term-missing`, then
   `ruff check src tests`.
 - **Storage (`lib/storage`)**: build its image with
@@ -53,9 +53,11 @@ Only these modules need a different workflow:
   `python -m pytest -m "not integration" -q`; run live-provider tests with
   `python -m pytest -m integration` after configuring `LLM_MODEL` and its key.
 
-Core AST and Contract Engine use the Compose pattern. Core AST can additionally
-install `.[dev,golden-path,tokens]` when optional languages or token counting are
-needed.
+Core AST and Contract Engine primarily use the Compose pattern above, but both
+also work from a local venv (`pip install -e ".[dev]"`, then `pytest`/`ruff`
+directly) when you want editor tooling or scripts outside Docker. Core AST can
+additionally install `.[dev,golden-path,tokens]` when optional languages or token
+counting are needed.
 
 ## Test scope
 

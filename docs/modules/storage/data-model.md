@@ -23,7 +23,7 @@ as-is.
    handleable domain error (e.g. `RunNotFoundError`) instead of a raw SQLite driver
    exception.
 
-## Data model
+## Data Models (DTOs)
 
 ??? "`ProjectRecord` - **The root record**: which repository a set of analyses belongs to."
 
@@ -128,6 +128,27 @@ as-is.
       | `size_bytes` | `int` | Size in bytes. |
       | `critical` | `bool` | Whether losing it breaks reproducibility. |
       | `compressed` | `bool` | Whether it's stored compressed. |
+
+## On-disk artifact persistence (`artifacts/`)
+
+Heavy artifacts (specs, reports) don't live inside SQLite: they're written as files, and the `artifacts` table only stores path, hash, and metadata. The `storage/artifacts/` package exposes a single public function:
+
+```python
+from storage.artifacts import save_artifact
+
+record = save_artifact(
+    engine,
+    kind="report_html",
+    filename="report.html",
+    content=html_bytes,
+    run_id=run_id,  # or analysis_id= for recipe-level artifacts
+)
+```
+
+- **Two folders, not one**: `data/artifacts/analyses/<analysis_id>/` for recipe artifacts (`openapi.json`, `semantic_contract.json`, `generated_test.py` — written once) and `data/artifacts/runs/<run_id>/` for run artifacts (`report.json`, `report.html` — one per execution). The root is configurable via `CORETEST_ARTIFACTS_ROOT` to isolate tests.
+- **Exclusive level validated before touching disk**: passing both or neither of `analysis_id`/`run_id` raises `InvalidArtifactLevelError` without writing any file.
+- **Deduplication by hash**: if an artifact of the same level and `kind` with identical content (same SHA-256) already exists, the existing record is returned without rewriting the file or inserting a new row.
+- **Content-addressed on disk**: each file is written under a hash subdirectory (`.../<digest>/<filename>`), so a later save with different content under the same kind can never overwrite a previously recorded artifact's file.
 
 ## Testing
 

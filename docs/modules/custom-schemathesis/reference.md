@@ -20,7 +20,7 @@ flowchart TD
 
     subgraph L3 ["3. engine"]
         direction LR
-        EI --> ERR[("EngineRunResult")]
+        EI --> ERR[("EngineRunResult<br/>crash reports · stats · trace")]
     end
 
     L1 ==> L2
@@ -145,16 +145,90 @@ creates its own.
 
 | Component | Role |
 | :--- | :--- |
-| **`ContextInjector`** | Builds an immutable request blueprint from assembled zone payloads. |
+| **`ContextInjector`** | Builds an immutable request blueprint from assembled zone payloads, and records which header names came from the run config. |
 | **`ErrorClassifier`** | Categorizes HTTP responses and transport-level failures. |
 | **`ResponseValidator`** | Enforces declared response formats and state transition invariants. |
+| **`hypothesis_settings`** | Single source of the Hypothesis settings each strategy runs with. |
 | **`AsyncHttpFuzzer`** | Default stateless execution strategy. |
 | **`StatefulFuzzer`** | Executes linked, multi-endpoint request sequences. |
+| **`build_trace`** | Projects the exploration results into the execution trace. |
 | **`dedupe_crash_reports`** | Collapses duplicate findings for identical defects. |
+
+### Hypothesis settings (`core/hypothesis_settings.py`)
+
+Every strategy has its own parameters — example budget, phases, sequence length — but
+they share one run-level policy, stated once here rather than re-typed at each call
+site: `exploration_settings(n)`, `shrink_settings()` and `stateful_settings(config)`.
+
+`deadline=None` everywhere, because a real HTTP round trip would trip it without any
+defect being present.
+
+**No example database (`database=None`) — a decision, not a forgotten default.**
+Hypothesis otherwise persists failing examples under `.hypothesis/` in the working
+directory and replays them into later runs. That is unacceptable here for two reasons:
+
+* the directory belongs to the working directory rather than to the API under test, so
+  every target fuzzed from the same folder shares one pool of examples;
+* it breaks the premise of record-and-replay. A run is reproduced by re-sending the
+  trace of what it actually sent, so a replayed example from an older run — against a
+  different revision, possibly a different API — would put a value in the trace that
+  *this* run never generated.
+
+Without a database a run is a function of its input and nothing else. An ephemeral
+per-run database was considered and rejected: the reuse it preserves is worth little
+(each run starts cold anyway) and it adds state that then has to be cleaned up.
+
+Only shrinking and stateful ever replayed old examples — exploration declares
+`phases=[Phase.explicit, Phase.generate]`, which excludes `Phase.reuse` — but all three
+wrote to the shared database.
+
+### Execution trace (`engine/trace/`)
+
+A run does not reproduce by regenerating the same data; it reproduces by **re-sending
+what it sent**. `EngineRunResult.trace` is that record: the ordered list of requests
+that actually went out, with their concrete values.
+
+`build_trace` is a **pure projection** over the `ExecutionResult` list exploration
+already collected. That is what makes "no shrinking requests" true by construction
+rather than by a flag: shrinking runs off the findings list, in a different branch of
+the algorithm, and never reaches the results. Recording inside the orchestrator was
+rejected — everything passes through it, so it would have to know which stage of the
+algorithm it is in, which the "classifies results, never interprets" rule forbids.
+
+Each recorded request carries what is needed to re-emit it, plus **the status code this
+run observed**. That status is useless for sending the request again, and it is the only
+thing that lets a later replay tell whether the context those requests land in is still
+the same.
+
+**Credentials are omitted, not redacted.** A trace with the token blanked out cannot be
+replayed — the real value is missing — so the two obvious outcomes are both bad: either
+the replay fails, or someone "fixes" it by storing the secret in the clear. The trace
+therefore records only the headers the fuzzer generated, plus the **names** of the
+config-sourced ones, never their values; a replay re-injects them from whatever config
+is in force. The trace becomes shareable, replaying against staging instead of
+production is a config change rather than a file edit, and rotating a credential does
+not invalidate history. A generated header that overrides a config one of the same name
+counts as generated: its value is test data.
+
+`canonical_json` serializes with sorted keys and compact separators; `content_hash` is a
+SHA-256 over that form **excluding `sent_at_ms`**, since send moments are pacing rather
+than content. Serialization deliberately uses Python's JSON encoder instead of
+Pydantic's: Pydantic maps `NaN` and `Infinity` to `null`, so a replay would send `null`
+where the run sent a special float — losing exactly the exotic values most likely to
+have broken the API. The output is what `json.load` accepts, not strict RFC 8259.
+
+A run that was cut short says so through `TruncationRecord` (reason, endpoint, and how
+many requests that endpoint managed to send). Without that mark, a partial trace replays
+as though it were complete and any before/after comparison drawn from it is wrong.
+
+**Stateful limitation:** the state machine minimizes by re-running shorter sequences, and
+those re-runs go through the same collector. In stateful mode the trace therefore also
+holds the attempts made while shrinking; the clean split is only possible on the
+stateless path.
 
 ### Two-Phase Testing Pipeline
 
-* **Explore Phase**: Executes tests and records all failures without raising exceptions, allowing test generation to continue uninterrupted. If transport failures pile up to `MAX_INFRA_FAILURES` in a row, that endpoint aborts and the run moves on to the next one — a dead endpoint never stalls the whole run.
+* **Explore Phase**: Executes tests and records all failures without raising exceptions, allowing test generation to continue uninterrupted. If transport failures pile up to `MAX_INFRA_FAILURES` in a row, that endpoint aborts and the run moves on to the next one — a dead endpoint never stalls the whole run. The abort is recorded in the trace as a truncation, so a partial run is never mistaken for a complete one. Exploration returns an `ExplorationOutcome` (results, raw findings, and the truncation when there was one).
 * **Shrink Phase**: Each raw finding is sequentially minimized using `hypothesis.find`.
   * Findings that fail to reproduce during shrinking are discarded as flaky.
   * Sequential execution avoids shared-state pollution, side effects, and rate-limit interference.
@@ -162,7 +236,7 @@ creates its own.
 ### Validation, Redaction & Deduplication
 
 * **`ResponseValidator` Checks**: Verifies no-server-error (5xx), declared status code matching, content-type headers, response schema adherence, and valid state transitions. Transport failures are never categorized as contract violations.
-* **Secret Redaction**: Sensitive headers (`Authorization`, `Cookie`, `X-Api-Key`) are scrubbed before persistence.
+* **Secret Redaction**: Sensitive headers (`Authorization`, `Cookie`, `X-Api-Key`) are scrubbed from **crash reports** before persistence. The execution trace uses a different mechanism — it *omits* config-sourced headers by origin, keeping their names and never their values, because a redacted trace could not be replayed. Do not merge the two: one is redaction against a fixed list, the other is omission by origin.
 * **Report Deduplication**: Two reports are considered identical if they share the same endpoint, method, phase, invariant, status, and canonical minimal payload. Only one instance is stored to prevent CLI/stat skew, while total defect counts are preserved in aggregate counters.
 
 
@@ -242,7 +316,7 @@ the failure) rather than a second report type.
 ### Configuration (`src/constants.py`)
 Centralizes operational defaults including maximum example counts, phase splits, retry backoff parameters, infrastructure-failure caps, and shrink budgets.
 
-> **Testing Guideline:** Disable Hypothesis deadlines during integration tests where real network latency could cause non-deterministic failures.
+> **Testing Guideline:** Disable Hypothesis deadlines in your own integration tests, where real network latency would otherwise cause non-deterministic failures. The engine's own strategies already do this through `core/hypothesis_settings.py`.
 
 ### Domain Exceptions (`src/exceptions.py`)
 
@@ -260,4 +334,6 @@ When modifying this module, the following core invariants must be maintained:
 2. **Registry Extensibility**: The strategy compiler remains extensible via its registration interface.
 3. **Shared HTTP Transport**: All outbound HTTP requests execute through a single shared client.
 4. **Resilient Runs**: Infrastructure and network failures must not abort an active test run.
-5. **Zero Secret Leakage**: Sensitive credentials and auth tokens must never be persisted in crash reports or logs.
+5. **Zero Secret Leakage**: Sensitive credentials and auth tokens must never be persisted in crash reports, execution traces, or logs. Crash reports redact them against a fixed header list; traces omit config-sourced headers by origin so that they stay replayable. Any new persisted artifact must state which of the two it uses.
+6. **Reproducibility Comes From Recording**: There is no seed in this module and there will not be one. A run is reproduced by re-sending its recorded trace, never by regenerating the same data — which with real HTTP in the loop would need a pinned Hypothesis version and would break on the next upgrade. The example database is disabled for the same reason.
+7. **The Trace Is a Projection**: It is derived from the results exploration collected, never recorded at the transport layer, so shrinking traffic stays out by construction rather than by a flag.

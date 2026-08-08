@@ -13,19 +13,34 @@ deep bugs (e.g. `500`s on invalid input instead of proper `4xx`s).
 5. **Fuzz** — compile the contract into Hypothesis strategies, run async HTTP tests.
 6. **Persist** — log runs/endpoints/results to SQLite.
 
-```text
-OpenAPI spec ─► contract_engine (parse_contract → ASTAdapter) ─► EndpointDefinition ─┐
-                                                                                     │
-source code  ─► core_ast (locate/extract handler logic) ─► context ─► semantic_inference (LLM)
-                                                                                     │
-                                          EndpointDefinition (structure) ────────────┤
-                                          LLM EndpointContract (invariants) ─────────┘
-                                                          │
-                                          contract_engine.fuse_contract  (merge)
-                                                          │
-                                          unified contract (dict) ─► custom_schemathesis
-                                                          │
-                                          Hypothesis strategies ─► HTTP fuzzing ─► storage
+```mermaid
+flowchart TD
+    subgraph Ingestion ["1. Ingestion & AST Analysis"]
+        O[/OpenAPI spec/] --> CE["contract_engine<br/><i>(parse_contract → ASTAdapter)</i>"]
+        CE --> ED["EndpointDefinition"]
+        
+        S[/source_code/] --> CA["core_ast<br/><i>(locate/extract handler logic)</i>"]
+        CA --> CTX["context"]
+    end
+
+    subgraph Inference ["2. Semantic Inference"]
+        ED --> SI["semantic_inference<br/><i>(LLM)</i>"]
+        CTX --> SI
+        SI --> EC["LLM EndpointContract<br/><i>(invariants)</i>"]
+    end
+
+    subgraph Fusion ["3. Contract Fusion"]
+        ED --> FC["contract_engine.fuse_contract<br/><i>(merge)</i>"]
+        EC --> FC
+        FC --> UC[("unified contract<br/><i>(dict)</i>")]
+    end
+
+    subgraph Execution ["4. Fuzzing & Storage"]
+        UC --> CS["custom_schemathesis"]
+        CS --> HS["Hypothesis strategies"]
+        HS --> HF["HTTP fuzzing"]
+        HF --> ST[(storage)]
+    end
 ```
 
 ## Repository layout

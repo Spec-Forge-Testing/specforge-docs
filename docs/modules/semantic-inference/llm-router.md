@@ -1,26 +1,64 @@
-# US-1: Router Multi-Modelo y Sistema de Fallback (LiteLLM)
+# LLM Router (LiteLLM)
 
-Se integró un enrutador de modelos basado en **LiteLLM**, lo cual permite pivotar dinámicamente entre distintos proveedores (OpenAI, Anthropic, Gemini, Groq, Mistral) sin necesidad de refactorizar el código de consumo, garantizando una alta disponibilidad mediante una cadena de fallbacks automáticos y políticas de reintentos.
+`ModelRouter` is the single choke point every inference call goes through. It
+wraps [LiteLLM](https://github.com/BerriAI/litellm) so the rest of the codebase
+never talks to a provider SDK directly, and layers retry/fallback resilience on
+top so a flaky provider doesn't take the pipeline down with it.
 
-## Decisiones de Arquitectura
+## Why centralize on LiteLLM
 
-### 1. Centralización con LiteLLM
-Uso de `litellm.completion` para todas las llamadas de inferencia, así se evitan SDKs propietarios directos, permitiendo que el sistema sea agnóstico al proveedor y facilitando la adición de nuevos modelos en el futuro.
+- **One call shape, any provider.** `litellm.completion(...)` is the only call
+  site — OpenAI, Anthropic, Gemini, Groq and Mistral are configuration, not code.
+- **Adding a provider is a config change.** New models plug in via
+  [environment variables](../../environment/llm-providers.md), not new client code.
 
-### 2. Capa de Resiliencia (Retries & Fallbacks)
-El sistema implementa un algoritmo de "espiral de reintentos" antes de saltar al siguiente modelo en la lista de fallbacks.
-- **Retry:** Se aplica ante errores transitorios de red o retardos del servidor.
-- **Fallback:** Se activa cuando el proveedor principal agota su cuota o tiene una caída crítica de servicio.
+## Resilience: retry vs. fallback
 
-### 3. Clasificación de Errores
+Not every failure means "try someone else." The router classifies each LiteLLM
+exception and reacts differently:
 
-| Error | Causa Probable | Acción del Sistema |
-| :--- | :--- | :--- |
-| `AuthenticationError` | API Key inválida o vencida. | **Fail-Fast:** No reintenta. Corta la ejecución para evitar fallos silenciosos. |
-| `RateLimitError` (429) | Agotamiento de créditos o cuota. | **Fallback:** Cambia inmediatamente al siguiente proveedor de la lista. |
-| `ServiceUnavailable` (500) | Caída del servidor del proveedor. | **Fallback:** Intenta con el siguiente proveedor disponible. |
-| `Timeout` | El modelo tarda en responder. | **Retry:** Reintenta con el mismo modelo esperando un tiempo exponencial. |
+```mermaid
+flowchart TD
+    Call["completion() call"] --> Err{Exception type}
+    Err -->|AuthenticationError| FailFast["Fail-fast\nraise immediately"]
+    Err -->|Timeout| Retry["Retry same model\nexponential backoff"]
+    Err -->|RateLimit / 5xx / connection| Fallback["Fallback\nnext model in the list"]
+    Retry -->|attempts exhausted| Fallback
+```
 
-## Sobre el logging
+| Error | Likely cause | Router behavior |
+|---|---|---|
+| `AuthenticationError` | Invalid or expired API key. | **Fail-fast** — raises immediately. No retry: a bad key never recovers on its own, and retrying would just mask the misconfiguration. |
+| `Timeout` | Model is slow to respond. | **Retry**, same model, waiting `RETRY_BACKOFF_BASE_SECONDS * attempt` between tries. |
+| `RateLimitError`, `InternalServerError`, `ServiceUnavailableError`, `APIConnectionError`, `BadGatewayError` | Quota exhausted or provider-side outage. | **Fallback** — moves to the next model in the configured list. |
 
-El logging de fallback ya está implementado con `logging.warning`, pero para verlo claramente en una app real después conviene que el entrypoint del módulo o del servicio configure handlers/formato de logging. La lógica ya está; lo que faltaría más adelante es una configuración global de logs del proyecto.
+A retry spiral always happens **before** a fallback: `complete_text` exhausts the
+current model's retry budget first, and only then advances to the next model. Each
+fallback switch and retry attempt is logged via `logging.warning` — wire up log
+handlers at the entrypoint/service level to see them; the logging calls exist
+today, a global log configuration is the piece left for whoever owns that
+entrypoint.
+
+## Structured completion (Instructor)
+
+Beyond plain text, `ModelRouter.complete_structured()` returns a **validated
+Pydantic object** instead of raw text, using [Instructor](https://python.useinstructor.com/)
+for schema-guided generation and self-correction:
+
+- Picks an `instructor.Mode` matched to the provider behind the model name
+  (`ANTHROPIC_JSON`, `JSON_SCHEMA`, `MISTRAL_STRUCTURED_OUTPUTS`, `TOOLS`, …).
+- On a Pydantic validation failure, re-asks the model with the validation error
+  and its own previous (invalid) response attached, up to `max_retries` times.
+- Gemini/Vertex AI go through a dedicated JSON-loop path instead of Instructor's
+  hook system, since those providers need different structured-output handling.
+- Returns `(validated_model, StructuredCompletionMetrics)` — the metrics track
+  attempts, retries, token usage and cost per call, aggregated across every
+  attempt (including failed ones), so callers can account for the full cost of
+  a self-correcting request.
+
+## Read next
+
+- [Environment → LLM Providers](../../environment/llm-providers.md): the
+  provider/variable table and credential setup.
+- [semantic_inference overview](index.md): where the router sits in the
+  inference pipeline, and the test tiers.

@@ -1,20 +1,19 @@
 site_name: Spec Forge Docs
-site_description: Documentación técnica del proyecto Spec Forge
+site_description: Technical documentation for the Spec Forge project
 repo_url: https://github.com/Spec-Forge-Testing/llm-pbt-agent
 edit_uri: ""
 
 theme:
   name: material
   language: en
-  logo: assets/logo.png
-  favicon: assets/logo.png
+  logo: assets/imgs/logo.png
+  favicon: assets/imgs/logo.png
   
   features:
     - navigation.instant
     - navigation.instant.progress
     - navigation.tracking
-    - navigation.indexes          # Permite que la carpeta principal tenga su propia página y expanda subtítulos
-    - navigation.top              # Botón para volver arriba flotante
+    - navigation.top              # floating back-to-top button
     - toc.follow
     - content.code.copy
     - content.code.annotate
@@ -35,7 +34,7 @@ theme:
       accent: custom
       toggle:
         icon: material/weather-sunny
-        name: Cambiar a modo oscuro
+        name: Switch to dark mode
 
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
@@ -43,16 +42,16 @@ theme:
       accent: custom
       toggle:
         icon: material/weather-night
-        name: Cambiar a modo claro
+        name: Switch to light mode
 
   icon:
     repo: fontawesome/brands/github
 
 extra_css:
-  - stylesheets/extra.css
+  - assets/stylesheets/extra.css
 
 extra_javascript:
-  - javascripts/extra.js
+  - assets/javascripts/extra.js
 
 markdown_extensions:
   - admonition
@@ -63,7 +62,11 @@ markdown_extensions:
       anchor_linenums: true
       line_spans: __span
       pygments_lang_class: true
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.inlinehilite
   - pymdownx.snippets
   - pymdownx.tabbed:
@@ -80,23 +83,30 @@ nav:
   - Getting Started:
       - Setup: getting-started/setup.md
       - Docker: getting-started/docker.md
-  - Architecture:
-      - Overview: architecture/overview.md
+      - Development & Testing: getting-started/development.md
+  - Architecture: architecture/overview.md
   - Modules:
-      - Core CLI: modules/core.md
+      - Core CLI:
+          - Overview: modules/core/index.md
+          - Commands: modules/core/commands.md
       - Core AST:
-          - Overview: modules/core-ast.md
-          - Architecture Reference: modules/core-ast/architecture.md
-          - Code Reference: modules/core-ast/code-reference.md
+          - Overview: modules/core-ast/index.md
+          - Reference: modules/core-ast/reference.md
           - Integration Tests: modules/core-ast/integration-tests.md
-      - Contract Engine: modules/contract-engine.md
-      - Contracts (shared kernel): modules/contracts.md
-      - Storage: modules/storage.md
+      - Contract Engine:
+          - Overview: modules/contract-engine/index.md
+          - Reference: modules/contract-engine/reference.md
+      - Contracts (shared kernel): modules/contracts/index.md
+      - Storage:
+          - Overview: modules/storage/index.md
+          - Data model: modules/storage/data-model.md
       - Semantic Inference:
-          - Overview: modules/semantic-inference.md
+          - Overview: modules/semantic-inference/index.md
           - LLM Router (LiteLLM): modules/semantic-inference/llm-router.md
       - Custom Schemathesis:
-          - Overview: modules/custom-schemathesis.md
-          - Engine Implementation: modules/custom-schemathesis/engine-implementation.md
+          - Overview: modules/custom-schemathesis/index.md
+          - Architecture: modules/custom-schemathesis/architecture.md
+          - Stateful fuzzing: modules/custom-schemathesis/stateful-fuzzing.md
+          - Complete reference: modules/custom-schemathesis/reference.md
   - Environment:
       - LLM Providers: environment/llm-providers.md

@@ -355,7 +355,7 @@
 }
 
 .md-typeset blockquote > p {
-  margin: 0.8em 0 0 0;
+  margin: 0.8em 0 0 1.8rem;
   color: var(--text-main);
 }
 
@@ -537,4 +537,40 @@
 
 .md-copyright a:hover {
   color: var(--accent-color);
+}
+
+/* ==========================================================================
+   DESPLEGABLES MkDOCS
+   ========================================================================== */
+.md-typeset details {
+  background-color: transparent !important;
+  border: none !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important; /* Línea divisora sutil */
+  border-radius: 0 !important;
+  margin: 0 !important;
+  box-shadow: none !important;
+}
+
+.md-typeset details summary {
+  padding: 0.75rem 0.25rem !important;
+  background-color: transparent !important;
+  font-weight: 500;
+}
+
+.md-typeset details summary:hover {
+  background-color: rgba(255, 255, 255, 0.03) !important;
+}
+
+.md-typeset details[open] {
+  padding-bottom: 0.75rem !important;
+}
+
+/* Ocultar el ícono del lápiz en los desplegables */
+.md-typeset details summary::before {
+  display: none !important;
+}
+
+/* Ajustar el espacio izquierdo donde estaba el ícono */
+.md-typeset details summary {
+  padding-left: 0.5rem !important;
 }

@@ -30,5 +30,12 @@ each recorded finding sequentially and deduplicates confirmed defects. Responses
 checked for server errors, declared status/content types, response schemas and
 state-transition invariants; persisted headers are sanitized.
 
+A run also records its **execution trace**: the ordered list of requests it actually
+sent, with concrete values and the status each one returned. That is how a run is
+reproduced — by re-sending the trace, never by regenerating the data — so the module
+has no seed and keeps Hypothesis's example database disabled. Credentials are omitted
+from the trace by origin rather than redacted, since a redacted trace could not be
+replayed.
+
 For the full file map, algorithms, error categories and extension points, use the
 [complete reference](reference.md).

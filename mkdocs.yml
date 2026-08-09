@@ -107,6 +107,7 @@ nav:
           - Overview: modules/custom-schemathesis/index.md
           - Architecture: modules/custom-schemathesis/architecture.md
           - Stateful fuzzing: modules/custom-schemathesis/stateful-fuzzing.md
+          - Strategy compiler internals: modules/custom-schemathesis/strategy-compiler-internals.md
           - Complete reference: modules/custom-schemathesis/reference.md
   - Environment:
       - LLM Providers: environment/llm-providers.md

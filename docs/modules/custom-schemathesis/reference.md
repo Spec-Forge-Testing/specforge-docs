@@ -45,8 +45,12 @@ callers only ever need these four functions:
 build_questionnaire(mode)          -> QuestionnaireBundle
 resolve_questionnaire(bundle)      -> ResolvedQuestionnaire
 compile_strategies(compiler_input) -> EngineInput
-run(engine_input, config, *, stateful=False) -> EngineRunResult
+run(engine_input, config, *, mode=None, options=None) -> EngineRunResult
 ```
+
+`mode` defaults to `ExecutionMode.STATELESS`; `options` carries that mode's settings.
+The former `stateful` / `stateful_config` pair still works for one version and emits a
+`DeprecationWarning`.
 
 ## Models and Questionnaire
 
@@ -64,8 +68,25 @@ run(engine_input, config, *, stateful=False) -> EngineRunResult
 * **`CompilerInput`**: Global `StrategyMode` paired with the target endpoint list.
 * **`EngineInput`**: Contains compiled endpoints along with global execution configurations.
 
+### Strategy Mode Profiles (`models/strategy_profile.py`)
+
+A `StrategyModeProfile` holds everything one strategy mode decides, so no consumer
+branches on the mode:
+
+| Field | Decides |
+| :--- | :--- |
+| `phase_split` | Which phases compile (its keys **are** the phase list) and how examples divide between them. |
+| `allowed_fields_by_type` | Which contract fields are legal per JSON Schema type. |
+| `contract_type` + `allow_contract_subclasses` | Which contract type the mode accepts. |
+| `questionnaire_rules` | Derived from the allowed fields — not a second copy. |
+
+`allow_contract_subclasses` makes the asymmetry between modes explicit: `DEFAULT` sets it
+`False` so a Hacker contract is rejected, `HACKER` sets it `True`. Register a mode with
+`register_profile(...)` and read it back with `profile_for(mode)`; an unregistered mode
+raises `PolicyError` listing the registered ones.
+
 ### Lifecycle Modules
-* **`questionnaire.builder`**: Selects validation/generation rules based on mode and emits an empty `QuestionnaireBundle`.
+* **`questionnaire.builder`**: Takes the mode's rules from its profile and emits an empty `QuestionnaireBundle`.
 * **`questionnaire.resolver`**: 
   * Validates the completed response.
   * Coerces optional risk and budget models.
@@ -80,8 +101,7 @@ run(engine_input, config, *, stateful=False) -> EngineRunResult
 ### Compilation Pipeline
 The entry point `compile(CompilerInput) -> EngineInput` processes each HTTP zone independently:
 * **Path Parameters**: Always marked as required.
-* **`DEFAULT` Mode**: Generates `valid`, `boundary`, and `invalid` test phases.
-* **`HACKER` Mode**: Includes all default phases plus an added `attack` phase.
+* **Phases**: Taken from `profile_for(strategy_mode).phases` — `DEFAULT` yields `valid`, `boundary`, `invalid`; `HACKER` adds `attack`. The compiler never branches on the mode itself.
 * **Output Hierarchy**: `CompiledRequestPart` objects are grouped into `CompiledEndpointStrategies`, which assemble into `CompiledExecutionEndpoint`.
 
 ### Dispatch Registry & Extensibility
@@ -118,8 +138,37 @@ register_compiler(MyContractType, MyCompiler())
 ### Execution Entry Point
 
 ```python
-engine.run(engine_input, config, *, stateful=False) -> EngineRunResult
+engine.run(engine_input, config, *, mode=None, options=None) -> EngineRunResult
 ```
+
+The entry point resolves, orchestrates and delegates — nothing else. It looks up the
+`ExecutionRunner` registered for `mode`, checks `options` against the `options_type` that
+runner declares, opens one orchestrator for the whole run and hands it over.
+
+An unknown mode raises `EngineError` listing the registered ones. It never falls back to
+a default: silently running something other than what the caller asked for is worse than
+failing. Wrong-typed options fail the same way, before the HTTP client is opened.
+
+### Execution Runners (`engine/runners/`)
+
+A runner encapsulates one complete execution procedure — its fuzzer, its phases and its
+statistics builder — and receives the orchestrator **already open**, so the core keeps
+ownership of the HTTP client's lifetime.
+
+| Mode | Runner | Options | Procedure |
+| :--- | :--- | :--- | :--- |
+| `stateless` | `StatelessRunner` | — | Explore per endpoint, then shrink each finding. |
+| `stateful` | `StatefulRunner` | `StatefulConfig` | Chain endpoints; the state machine minimizes as it goes. |
+
+```python
+register_runner(MyRunner())   # mode, options_type, run(request, orchestrator)
+```
+
+Registering the runner rather than the fuzz strategy is deliberate: a replay generates
+nothing and a load run has no contract to compile, so what varies between modes is the
+whole procedure, not just the generator. Registry keys are the mode's string value, since
+a `StrEnum` is closed and keying by the member would make the extensibility claim
+untestable.
 
 ### Network Orchestration (`AsyncOrchestrator`)
 
@@ -298,11 +347,16 @@ turns on a loop:
 Every defect keeps its own independent shrinking.
 
 ```python
-run(engine_input, config)                  # stateless — unchanged prior behavior
-run(engine_input, config, stateful=True)   # stateful, one pass (default)
-run(engine_input, config, stateful=True,   # stateful, exhaustive
-    stateful_config=StatefulConfig(max_distinct_bugs=10))
+run(engine_input, config)                                # stateless (default)
+run(engine_input, config, mode=ExecutionMode.STATEFUL)   # stateful, one pass
+run(engine_input, config, mode=ExecutionMode.STATEFUL,   # stateful, exhaustive
+    options=StatefulConfig(max_distinct_bugs=10))
 ```
+
+The `stateful` / `stateful_config` pair still works for one version with a
+`DeprecationWarning`. Combining it with `mode` or `options` raises `EngineError` instead
+of resolving by precedence: a caller passing both has two different runs in mind, and
+silently picking one would hide the mistake.
 
 `StatefulConfig` fields: `max_distinct_bugs` (default `1`), `max_examples`
 (sequences per pass), `step_count` (max steps per sequence). Findings reuse

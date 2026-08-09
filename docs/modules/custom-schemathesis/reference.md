@@ -111,6 +111,10 @@ register_compiler(MyContractType, MyCompiler())
    * Delegates all non-attack phases (``valid``, ``boundary``, ``invalid``) directly to DefaultContractCompiler.
    * The ``attack`` phase constructs profile-based strings, numeric extremes, mixed boolean logic, and recursive array/object mutations.
 
+For the file-by-file map of `default/` and `hacker/` — every builder
+function, the boundary/attack value tables, and the format-pattern regexes —
+see [Strategy compiler internals](strategy-compiler-internals.md).
+
 ---
 
 ## Engine Architecture
@@ -121,6 +125,22 @@ register_compiler(MyContractType, MyCompiler())
 engine.run(engine_input, config, *, stateful=False) -> EngineRunResult
 ```
 
+### `protocols.py`
+
+Two structural `Protocol`s (extension by shape, not inheritance) define the
+engine's two execution strategies:
+
+* **`FuzzStrategy`** — stateless, per-endpoint testing. Exposes `name`,
+  `fuzz(endpoint, config) -> ExplorationOutcome` (raw results, raw findings,
+  and the truncation record if the pass was cut short) and
+  `shrink(finding, config) -> CrashReport | None`.
+* **`StatefulFuzzStrategy`** — stateful testing over the whole endpoint set.
+  Exposes `name` and
+  `fuzz_sequence(endpoints, config) -> (list[ExecutionResult], list[CrashReport])`.
+
+`run(..., stateful=...)` picks between the two; nothing else in the engine
+branches on strategy type.
+
 ### Network Orchestration (`AsyncOrchestrator`)
 
 Serves as the system's sole network boundary. It manages:
@@ -128,6 +148,28 @@ Serves as the system's sole network boundary. It manages:
 * A concurrency semaphore limiting parallel requests.
 * Exponential-backoff retries for transient infrastructure failures (`429`, `502`, `503`, and connection timeouts).
 * **Policy**: Client errors (4xx) are logged as findings. Server errors (5xx) are treated as potential defects and are **never** retried away.
+* **Timing metadata**: every result is stamped with `sent_at_ms` (offset from
+  the run's start) and `in_flight` (requests in flight at dispatch),
+  captured before the `await` so a retried request keeps the timestamp of
+  the attempt that actually went out. `in_flight` is always `1` today since
+  execution is sequential — it starts telling the truth once endpoints run
+  in parallel.
+
+### `core/error_classifier.py`
+
+Maps responses and transport exceptions to `ErrorCategory`:
+
+| Case | Result |
+|---|---|
+| `classify_response`, 5xx | `server_error` |
+| `classify_response`, 4xx | `client_error` |
+| `classify_response`, 2xx/3xx | `None` |
+| `classify_exception`, connect / protocol / connect-timeout | `availability` |
+| `classify_exception`, other timeouts | `timeout` |
+
+`contract_violation` is never produced by the classifier — the fuzzer assigns
+it when `ResponseValidator` finds an invariant violation on an otherwise
+successful (2xx/3xx) response.
 
 ### Async Bridge (`hypothesis_bridge.py`)
 
@@ -314,7 +356,7 @@ the failure) rather than a second report type.
 ## Operational Constants & System Invariants
 
 ### Configuration (`src/constants.py`)
-Centralizes operational defaults including maximum example counts, phase splits, retry backoff parameters, infrastructure-failure caps, and shrink budgets.
+Centralizes operational defaults including maximum example counts, phase splits (`DEFAULT`: `valid` 60% / `boundary` 25% / `invalid` 15%; `HACKER` adds `attack` 5%, taken from `invalid`), retry backoff parameters, infrastructure-failure caps, shrink budgets, and stateful-fuzzer defaults (`DEFAULT_STATEFUL_MAX_EXAMPLES`, `DEFAULT_STATEFUL_STEP_COUNT`).
 
 > **Testing Guideline:** Disable Hypothesis deadlines in your own integration tests, where real network latency would otherwise cause non-deterministic failures. The engine's own strategies already do this through `core/hypothesis_settings.py`.
 
@@ -337,3 +379,8 @@ When modifying this module, the following core invariants must be maintained:
 5. **Zero Secret Leakage**: Sensitive credentials and auth tokens must never be persisted in crash reports, execution traces, or logs. Crash reports redact them against a fixed header list; traces omit config-sourced headers by origin so that they stay replayable. Any new persisted artifact must state which of the two it uses.
 6. **Reproducibility Comes From Recording**: There is no seed in this module and there will not be one. A run is reproduced by re-sending its recorded trace, never by regenerating the same data — which with real HTTP in the loop would need a pinned Hypothesis version and would break on the next upgrade. The example database is disabled for the same reason.
 7. **The Trace Is a Projection**: It is derived from the results exploration collected, never recorded at the transport layer, so shrinking traffic stays out by construction rather than by a flag.
+8. **`strategy_mode` Is Global**: it lives once on `CompilerInput`, never per-endpoint. Never re-derive or repeat it lower in the pipeline.
+9. **`extra="forbid"` Everywhere**: every Pydantic model in this module rejects unexpected fields. An unexpected LLM-supplied field must fail loudly, never be silently dropped.
+10. **Hypothesis Settings, One Source**: every strategy's `settings(...)` come from `core/hypothesis_settings.py`. A new strategy asks that module for its constructor instead of restating the run-level policy at its own call site.
+11. **One Persistent Event Loop**: `hypothesis_bridge` never creates a loop per generated example. The stateful fuzzer reuses the same loop from inside its (synchronous) `RuleBasedStateMachine`.
+12. **`StateLinkContract` Is Optional and Additive**: `state_link is None` means the stateless flow is untouched. The stateful fuzzer never infers links by heuristic — it only reads what the contract declares.

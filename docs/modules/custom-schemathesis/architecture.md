@@ -38,4 +38,6 @@ from the trace by origin rather than redacted, since a redacted trace could not 
 replayed.
 
 For the full file map, algorithms, error categories and extension points, use the
-[complete reference](reference.md).
+[complete reference](reference.md). The strategy compiler's internals — every
+builder function behind `default/` and `hacker/` — get their own page: see
+[Strategy compiler internals](strategy-compiler-internals.md).

@@ -141,6 +141,67 @@ secondary safeguard for pathological non-cyclic depth (long wrapper chains).
 explicitly imported or defined locally in the same file, so a user's own `map`
 or `sum` still gets traced.
 
+**Cross-language qualified-call resolution.** A qualified call (`obj.method()`)
+is only traced when its base is an import that already resolved to a file
+**inside** `repo_root`. That single rule is what makes `self.compute()` or
+`svc.charge()` — where the base is a parameter or a local variable, not an
+import — drop out without a special case, and it's why the tracer never
+chases the language's own stdlib or a third-party library.
+
+The twelve grammars express one idea — a call, with or without a base — in
+nine different shapes, so resolution goes through tables of node types and
+field names rather than a branch per language. The call node either carries
+the name itself (Java `method_invocation`, Ruby `call`, PHP
+`scoped_call_expression`), points at it with a `function` field (Python,
+JS/TS, Go, Rust, C#, PHP), or leaves it as the first named child with no field
+at all (Kotlin, Swift). A multi-segment base resolves to its last segment —
+the module that actually names the function:
+
+| Source | Detected as |
+|---|---|
+| `services.process()` (Python, JS/TS) | `services.process` |
+| `services.Process()` (Go) | `services.Process` |
+| `crate::services::process()` (Rust) | `services.process` |
+| `import a.b; a.b.c()` | `b.c` |
+| `obj.method().chained()`, `self::helper()` | dropped — no module to attribute it to |
+
+The snippet is re-parsed on its own, outside its file, and not every language
+recognizes its own code that way: a bare PHP function parses as a single text
+node, so languages that need an opening marker get one prepended before
+parsing.
+
+`ImportEntry.imported_names` holds the name the **code** uses — the alias
+when there is one — because that's what has to match the call.
+`ImportEntry.aliases` keeps the original name next to it, because that's the
+name the function is defined under in the target file. Storing only one of
+the two would silently lose `import services as svc; svc.process()`.
+
+Imports are split three ways by whether they resolve inside the repository:
+
+| Import | Treated as |
+|---|---|
+| Resolves inside `repo_root` | Traced. |
+| **Relative** and doesn't resolve | A broken local dependency — counted in `unresolved_calls`. |
+| **Absolute** and doesn't resolve | `external_calls` — recorded, not traced, not counted. |
+
+The relative case admits no third-party reading: if `from .config import
+config` doesn't resolve, something local is missing, and the abort policy
+must see it. An absolute one is ambiguous — `requests` and a mistyped local
+module look identical — so it's neither traced nor counted against the
+ratio, but it's listed rather than dropped silently.
+
+An import doesn't always resolve to a *file*: a Go package, a Python package
+with an `__init__.py`, a Rust module with a `mod.rs`, and a Swift module all
+resolve to a **directory**, because no single file represents them. The
+fallback bundle expands those into their source files, entry file first so
+it's the last to go when the budget cuts.
+
+Resolving costs I/O, so the import scan keeps the resolved `Path` next to
+each relevant import and the fallback bundle consumes those paths directly
+instead of re-deriving them — the heuristic it used before only knew about
+`.py .ts .js .tsx .go .java`, so in eight of the twelve languages the bundle
+silently contained no direct imports at all.
+
 ### 4. `quality`
 Computes the completion ratio (resolved vs. discovered calls) and enforces quality modes:
 

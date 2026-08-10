@@ -129,8 +129,8 @@ register_compiler(MyContractType, MyCompiler())
    Unsupported JSON Schema constructs (``anyOf``, `oneOf`, ``$ref``, or custom formats) delegate to ``hypothesis_jsonschema.from_schema``.
 
 * ``HackerContractCompiler``:
-   * Delegates all non-attack phases (``valid``, ``boundary``, ``invalid``) directly to DefaultContractCompiler.
-   * The ``attack`` phase constructs profile-based strings, numeric extremes, mixed boolean logic, and recursive array/object mutations.
+   * Resolves every phase through the generation phase registry — an identical body to ``DefaultContractCompiler``; it exists only as the contract-type identity the ``schema_compiler`` registry dispatches on for ``HackerStrategyContract``.
+   * ``valid`` / ``boundary`` / ``invalid`` are inherited from ``BaseStrategyContract`` via the registry's MRO walk; ``attack`` is registered directly against ``HackerStrategyContract`` and constructs profile-based strings, numeric extremes, mixed boolean logic, and recursive array/object mutations.
 
 For the file-by-file map of `default/` and `hacker/` — every builder
 function, the boundary/attack value tables, and the format-pattern regexes —

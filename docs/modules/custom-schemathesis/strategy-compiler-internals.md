@@ -14,7 +14,7 @@ schema_compiler/
   __init__.py         ContractCompiler Protocol, _REGISTRY, compile_contract, register_compiler
   phases/
     registry.py         GenerationPhase, register_phase, resolve_phase (MRO walk)
-    builtin.py          registers the four built-in phases at import
+    builtin.py          registers the built-in phases at import (attack under both base and hacker)
   default/
     compiler.py        DefaultContractCompiler (resolves every phase through the registry)
     phases.py           build_valid_strategy, build_boundary_strategy, build_invalid_strategy

@@ -108,6 +108,7 @@ nav:
           - Overview: modules/custom-schemathesis/index.md
           - Architecture: modules/custom-schemathesis/architecture.md
           - Stateful fuzzing: modules/custom-schemathesis/stateful-fuzzing.md
+          - Replay: modules/custom-schemathesis/replay.md
           - Strategy compiler internals: modules/custom-schemathesis/strategy-compiler-internals.md
           - Complete reference: modules/custom-schemathesis/reference.md
   - Environment:

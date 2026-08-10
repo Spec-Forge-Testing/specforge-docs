@@ -43,6 +43,8 @@ flowchart TD
 - [Architecture](architecture.md): layer boundaries, models, compiler and engine.
 - [Stateful fuzzing](stateful-fuzzing.md): response-to-request state links and
   transition invariants.
+- [Replay](replay.md): reproducibility by record and replay — re-sending a trace,
+  fidelity by response divergence, and forward-only pacing.
 - [Strategy compiler internals](strategy-compiler-internals.md): the file-by-file
   map of how a contract field becomes a Hypothesis strategy, including the
   attack-payload builders.

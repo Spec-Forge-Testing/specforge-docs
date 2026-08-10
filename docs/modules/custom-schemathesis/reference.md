@@ -92,7 +92,8 @@ raises `PolicyError` listing the registered ones.
   * Coerces optional risk and budget models.
   * Verifies data types and allowed fields.
   * Emits the final `CompilerInput`.
-* **`policy.py`**: Independently validates correctness and estimates the overall parameter space before capping and allocating the generation budget.
+* **`policy.py`**: Independently validates correctness and estimates the overall parameter space before capping and allocating the generation budget. The per-phase split is delegated to the shared `budget.allocate_examples` leaf: a `phase_split` is read as **relative proportions** (normalized by its own sum, so a split that does not add up to 1.0 still consumes the whole budget) and distributed by the **largest-remainder** method with ties broken by phase name — so the result is independent of key order and always sums to the endpoint budget.
+* **`budget.allocate_examples`**: The single pure unit both the questionnaire policy and the engine share, so the two layers split a budget identically. At execution the **generation plan is authoritative**: a phase the plan did not fund runs zero examples, so a narrow budget runs exactly the phases it funds; only a plan-less endpoint falls back to its budget split, where a phase the split cannot cover is an error rather than a silent minimum of one.
 
 ---
 
@@ -128,8 +129,8 @@ register_compiler(MyContractType, MyCompiler())
    Unsupported JSON Schema constructs (``anyOf``, `oneOf`, ``$ref``, or custom formats) delegate to ``hypothesis_jsonschema.from_schema``.
 
 * ``HackerContractCompiler``:
-   * Delegates all non-attack phases (``valid``, ``boundary``, ``invalid``) directly to DefaultContractCompiler.
-   * The ``attack`` phase constructs profile-based strings, numeric extremes, mixed boolean logic, and recursive array/object mutations.
+   * Resolves every phase through the generation phase registry — an identical body to ``DefaultContractCompiler``; it exists only as the contract-type identity the ``schema_compiler`` registry dispatches on for ``HackerStrategyContract``.
+   * ``valid`` / ``boundary`` / ``invalid`` are inherited from ``BaseStrategyContract`` via the registry's MRO walk; ``attack`` is registered directly against ``HackerStrategyContract`` and constructs profile-based strings, numeric extremes, mixed boolean logic, and recursive array/object mutations.
 
 For the file-by-file map of `default/` and `hacker/` — every builder
 function, the boundary/attack value tables, and the format-pattern regexes —

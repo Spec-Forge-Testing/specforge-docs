@@ -12,14 +12,17 @@ and extension mechanism; this page covers what's inside `default/` and
 ```
 schema_compiler/
   __init__.py         ContractCompiler Protocol, _REGISTRY, compile_contract, register_compiler
+  phases/
+    registry.py         GenerationPhase, register_phase, resolve_phase (MRO walk)
+    builtin.py          registers the built-in phases at import (attack under both base and hacker)
   default/
-    compiler.py        DefaultContractCompiler (valid / boundary / invalid; attack falls back to valid)
+    compiler.py        DefaultContractCompiler (resolves every phase through the registry)
     phases.py           build_valid_strategy, build_boundary_strategy, build_invalid_strategy
     type_strategies.py  valid_for_type, string_strategy, array_strategy, object_strategy, compile_for_phase
     constraints.py      INT_BOUNDARY, FLOAT_BOUNDARY and shared numeric helpers
   hacker/
-    compiler.py         HackerContractCompiler (delegates to default for non-attack phases)
-    builders.py         build_attack_payloads, _encode_variants, mutate_object
+    compiler.py         HackerContractCompiler (identical body; attack is a registered phase)
+    builders.py         build_attack_payloads, build_hacker_attack, _encode_variants, mutate_object
     tables.py           per-attack-vector string tables (data only)
 ```
 
@@ -27,11 +30,35 @@ schema_compiler/
 dependency runs one way — `hacker/` builds on top of `default/`, never the
 reverse.
 
+## `phases/` — the generation phase registry
+
+A phase (`valid` / `boundary` / `invalid` / `attack`, and any a future mode
+adds) is a registered unit, not a branch in a conditional. A `GenerationPhase`
+pairs a name and a contract type with the builder that compiles it, and
+`resolve_phase(contract, phase)` **walks the contract's MRO**: it looks up
+`(type(contract), phase)`, then each base class, returning the first match. An
+unknown phase raises `StrategyCompilationError` listing the phases reachable for
+that contract.
+
+The MRO walk is what lets a subclass inherit its base's phases. `builtin.py`
+registers `valid`/`boundary`/`invalid` under `BaseStrategyContract` plus
+`attack` twice — under `BaseStrategyContract` mapped to `build_valid_strategy`
+(a base contract has no offensive knobs) and under `HackerStrategyContract`
+mapped to `build_hacker_attack`. So a Hacker contract resolves `attack` to the
+offensive builder and inherits the other three from the base, with no special
+case in the compiler. `builtin.py` is imported for its side effect by
+`phases/__init__.py`; consumers import `resolve_phase` from the leaf
+`phases.registry`, not the package, to avoid a partial-initialization cycle.
+
+Adding a phase is registering a row (`register_phase(...)`) — no core edit. This
+is the same registry pattern as the execution-mode, strategy-mode and
+contract-type registries.
+
 ## `default/compiler.py` — `DefaultContractCompiler`
 
-Dispatches by phase to the builders in `phases.py`. The `attack` phase falls
-back silently to `build_valid_strategy`: `BaseStrategyContract` has no
-offensive knobs to drive it.
+One line: `resolve_phase(contract, phase).build(contract)`. All phase dispatch
+lives in the registry, so this class is now just the contract-type identity the
+`schema_compiler` registry dispatches on.
 
 ## `default/phases.py` — builders per phase
 
@@ -60,8 +87,9 @@ offensive knobs to drive it.
 - **`object_strategy`** — `st.fixed_dictionaries(required={...},
   optional={...})`, built recursively from `contract.properties`.
 - **`compile_for_phase(contract, phase)`** — the recursive dispatcher for
-  nested contracts. Imports `phases.py` lazily to break the circular
-  dependency `phases → type_strategies → phases`.
+  nested contracts (array items, object properties). Resolves through the phase
+  registry like the top-level compilers, so an unknown nested phase raises
+  instead of silently building `valid`.
 - **`strategy_from_jsonschema`** — a patchable attribute pointing at
   `hypothesis_jsonschema.from_schema` when installed, or `None`. Used by
   `fallback_from_jsonschema` for constructs the native builders don't cover
@@ -86,12 +114,18 @@ Pure tables and helpers, no Hypothesis imports. Used by both `default/` and
 
 ## `hacker/compiler.py` — `HackerContractCompiler`
 
-Composes over `DefaultContractCompiler`: delegates every phase except
-`attack`. For `attack`, calls `_build_attack(contract)`, which pulls the
-offensive knobs off the contract and calls `build_attack_payloads`.
+Its body is identical to `DefaultContractCompiler` —
+`resolve_phase(contract, phase).build(contract)`. It survives as the
+contract-type identity the `schema_compiler` registry dispatches on for
+`HackerStrategyContract`; the phase behavior comes entirely from the registry,
+where `attack` is registered against `HackerStrategyContract` and the other
+three are inherited from the base via the MRO walk.
 
 ## `hacker/builders.py` — payload construction
 
+- **`build_hacker_attack(contract)`** — the registered builder for the
+  `(HackerStrategyContract, attack)` phase. Pulls the offensive knobs off the
+  contract and calls `build_attack_payloads`.
 - **`build_attack_payloads(value_type, profiles, *, include_encoded_variants,
   include_nulls, include_large_values, minimum, maximum)`** — dispatches by
   type:

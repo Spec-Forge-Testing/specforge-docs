@@ -86,4 +86,5 @@ Typed domain exceptions are exported from ``core_ast.exceptions``.
 | **5. Quality** | Measure completion & select context budget mode | Mode & Fallback plan |
 | **6. Packager** | Assemble sanitized XML-tagged payload | `LLMPayload` |
 
-*For in-depth stage specs, exceptions, and extensibility, see the [Implementation Reference](reference.md).*
+*For in-depth stage specs, exceptions, and extensibility, see the [Implementation Reference](reference.md).
+For function signatures, examples and exceptions per module, see the [API Reference](api-reference.md).*

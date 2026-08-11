@@ -106,31 +106,31 @@ The entry point `compile(CompilerInput) -> EngineInput` processes each HTTP zone
 * **Output Hierarchy**: `CompiledRequestPart` objects are grouped into `CompiledEndpointStrategies`, which assemble into `CompiledExecutionEndpoint`.
 
 ### Dispatch Registry & Extensibility
-Contract types map to specialized compilers via a dispatch protocol:
+There is one compilation dispatch: the generation phase registry. `compile_contract` is its facade:
 
 ```python
-class ContractCompiler(Protocol):
-    def compile_contract(self, contract: BaseStrategyContract, phase: str) -> SearchStrategy: ...
+def compile_contract(contract: BaseStrategyContract, phase: str) -> SearchStrategy:
+    return resolve_phase(contract, phase).build(contract)
 ```
 
-* **Default Mapping**: ``BaseStrategyContract`` maps to ``DefaultContractCompiler``.
-* **Hacker Mapping**: ``HackerStrategyContract`` maps to ``HackerContractCompiler``.
-* **Error Handling**: An unregistered contract type raises ``StrategyCompilationError``.
-* **Extension Pattern**: Implement **ContractCompiler** and register it:
+* **Resolution**: `resolve_phase(contract, phase)` looks up `(type(contract), phase)`, then walks the contract's MRO, returning the first registered `GenerationPhase`.
+* **Default Mapping**: ``valid`` / ``boundary`` / ``invalid`` are registered against ``BaseStrategyContract``.
+* **Hacker Mapping**: ``attack`` is registered against ``HackerStrategyContract``; the other three are inherited from the base via the MRO walk.
+* **Error Handling**: An unknown phase for a contract raises ``StrategyCompilationError``, listing the phases reachable for that contract.
+* **Extension Pattern**: Register a phase for your contract type — no new compiler layer:
 
 ```python
-register_compiler(MyContractType, MyCompiler())
+register_phase(GenerationPhase(name="my_phase", contract_type=MyContractType, build=my_builder))
 ```
 
-### Compiler Implementations
+### Phase Builders
 
-* ``*DefaultContractCompiler``:
+* **Default phases** (`valid` / `boundary` / `invalid`):
    * Native generation for constants, enums, scalar, object, and array strategies, boundary values, and intentionally invalid inputs.
    Unsupported JSON Schema constructs (``anyOf``, `oneOf`, ``$ref``, or custom formats) delegate to ``hypothesis_jsonschema.from_schema``.
 
-* ``HackerContractCompiler``:
-   * Resolves every phase through the generation phase registry — an identical body to ``DefaultContractCompiler``; it exists only as the contract-type identity the ``schema_compiler`` registry dispatches on for ``HackerStrategyContract``.
-   * ``valid`` / ``boundary`` / ``invalid`` are inherited from ``BaseStrategyContract`` via the registry's MRO walk; ``attack`` is registered directly against ``HackerStrategyContract`` and constructs profile-based strings, numeric extremes, mixed boolean logic, and recursive array/object mutations.
+* **Attack phase** (`build_hacker_attack`, registered against ``HackerStrategyContract``):
+   * Constructs profile-based strings, numeric extremes, mixed boolean logic, and recursive array/object mutations.
 
 For the file-by-file map of `default/` and `hacker/` — every builder
 function, the boundary/attack value tables, and the format-pattern regexes —

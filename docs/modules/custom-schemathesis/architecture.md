@@ -17,6 +17,15 @@ contracts or strategy modes.
 `HackerStrategyContract` adds offensive knobs but not concrete payloads. Immutable
 allowed-field tables enforce the permitted LLM output by JSON Schema type.
 
+Each offensive knob lives at the scope that can consume it: **per-value** knobs
+(`attack_profiles`, the `include_*` toggles) stay on the per-parameter
+`HackerStrategyContract`; **per-endpoint** knobs (`focus_fields`, `aggressiveness`,
+`mutation_depth`, ...) live on `EndpointAttackContract`; **per-request** knobs
+(`include_repeated_requests`) are execution-mode options (`StatelessOptions`). The
+compiler's signature is `compile_contract(contract, phase)` — one parameter in, one
+value generator out — so a knob describing the whole endpoint or the request cannot be
+honored from there; giving each its own home is what keeps every field consumable.
+
 Everything a strategy mode decides lives in a **`StrategyModeProfile`**: which phases
 compile, how examples split across them, which contract fields are legal, and which
 contract type the mode accepts. The default profile compiles `valid`, `boundary` and

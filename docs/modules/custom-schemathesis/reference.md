@@ -56,12 +56,12 @@ The former `stateful` / `stateful_config` pair still works for one version and e
 
 ### Strategy Contracts & Models
 * **`BaseStrategyContract`**: Closed standard contract enforcing JSON Schema constraints, `nullable`, and `extra="forbid"`.
-* **`HackerStrategyContract`**: Extends `BaseStrategyContract` with offensive security controls:
-  * `attack_profiles`, focus/sensitive fields, aggressiveness, mutation depth, invalid-input ratio.
-  * Encoded, null, unicode, and control-character variants.
+* **`HackerStrategyContract`**: Extends `BaseStrategyContract` with **per-value** offensive knobs only:
+  * `attack_profiles` (payload-family selection) and the `include_*` toggles (encoded, null, large, empty, unicode, control-character, nested-object, ... variants).
   * *Note:* Never stores a payload directly; compilation determines concrete values dynamically.
-* **`ALLOWED_FIELDS_BY_TYPE` (and Hacker Variant)**: Immutable type-to-field lookup tables acting as the single source of truth for parameters the LLM is permitted to configure.
-* **`EndpointRiskContract` & `EndpointBudgetContract`**: Decoupled, independent contracts—risk prioritization and sample spend allocation address separate operational concerns.
+* **`EndpointAttackContract`**: **Endpoint-scoped** attack configuration — `attack_profiles`, `focus_fields`, `sensitive_fields`, `aggressiveness`, `mutation_depth` — describing the whole endpoint rather than a single value. Held by `EndpointInfo.attack`.
+* **`ALLOWED_FIELDS_BY_TYPE` (and Hacker variant)**: Immutable type-to-field lookup tables acting as the single source of truth for parameters the LLM is permitted to configure. The hacker variant is **derived** from the model's own per-value fields, so a new per-value knob extends it automatically and endpoint/request-scoped knobs can never leak in.
+* **`EndpointRiskContract` & `EndpointBudgetContract`**: Decoupled, independent contracts—risk prioritization (pure scoring metadata) and sample-spend allocation (`phase_split`, the single source of truth for the phase budget) address separate operational concerns.
 * **`EndpointInfo`**: Encapsulates endpoint identity alongside dedicated contracts for all HTTP zones: path, query, header, and body.
 
 ### Pipeline Input Containers

@@ -23,8 +23,10 @@ contract type the mode accepts. The default profile compiles `valid`, `boundary`
 `invalid`; the hacker profile adds `attack`. The compiler asks the profile instead of
 branching on the mode, so a new mode is a `register_profile` call, not an edit.
 
-The compiler compiles path, query, header and body separately, and a second registry
-lets new contract types supply their own compiler through `register_compiler`.
+The compiler compiles path, query, header and body separately. All phase dispatch
+runs through the generation phase registry: `compile_contract(contract, phase)` resolves
+`(type(contract), phase)` by walking the contract's MRO, so a new contract type extends
+the compiler by registering its phases with `register_phase`, not by adding a compiler.
 
 ## Execution
 

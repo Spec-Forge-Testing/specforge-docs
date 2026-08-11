@@ -11,17 +11,15 @@ and extension mechanism; this page covers what's inside `default/` and
 
 ```
 schema_compiler/
-  __init__.py         ContractCompiler Protocol, _REGISTRY, compile_contract, register_compiler
+  __init__.py         re-exports compile_contract, register_phase, GenerationPhase, strategy_from_jsonschema
   phases/
-    registry.py         GenerationPhase, register_phase, resolve_phase (MRO walk)
+    registry.py         GenerationPhase, register_phase, resolve_phase (MRO walk), compile_contract
     builtin.py          registers the built-in phases at import (attack under both base and hacker)
   default/
-    compiler.py        DefaultContractCompiler (resolves every phase through the registry)
     phases.py           build_valid_strategy, build_boundary_strategy, build_invalid_strategy
     type_strategies.py  valid_for_type, string_strategy, array_strategy, object_strategy, compile_for_phase
     constraints.py      INT_BOUNDARY, FLOAT_BOUNDARY and shared numeric helpers
   hacker/
-    compiler.py         HackerContractCompiler (identical body; attack is a registered phase)
     builders.py         build_attack_payloads, build_hacker_attack, _encode_variants, mutate_object
     tables.py           per-attack-vector string tables (data only)
 ```
@@ -51,14 +49,9 @@ case in the compiler. `builtin.py` is imported for its side effect by
 `phases.registry`, not the package, to avoid a partial-initialization cycle.
 
 Adding a phase is registering a row (`register_phase(...)`) — no core edit. This
-is the same registry pattern as the execution-mode, strategy-mode and
-contract-type registries.
-
-## `default/compiler.py` — `DefaultContractCompiler`
-
-One line: `resolve_phase(contract, phase).build(contract)`. All phase dispatch
-lives in the registry, so this class is now just the contract-type identity the
-`schema_compiler` registry dispatches on.
+is the same registry pattern as the execution-mode and strategy-mode registries.
+`compile_contract(contract, phase)` is the facade over `resolve_phase(...).build(...)`
+and the single compilation dispatch — there is no separate per-contract-type compiler.
 
 ## `default/phases.py` — builders per phase
 
@@ -111,15 +104,6 @@ Pure tables and helpers, no Hypothesis imports. Used by both `default/` and
   concrete value.
 - `multiple_of_filter`, `boundary_int_filter`, `is_out_of_range` —
   predicates used as `.filter()` calls or for manual candidate selection.
-
-## `hacker/compiler.py` — `HackerContractCompiler`
-
-Its body is identical to `DefaultContractCompiler` —
-`resolve_phase(contract, phase).build(contract)`. It survives as the
-contract-type identity the `schema_compiler` registry dispatches on for
-`HackerStrategyContract`; the phase behavior comes entirely from the registry,
-where `attack` is registered against `HackerStrategyContract` and the other
-three are inherited from the base via the MRO walk.
 
 ## `hacker/builders.py` — payload construction
 

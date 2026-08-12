@@ -17,11 +17,49 @@ as-is.
    plain `schema.sql` file.
 2. **Repositories (`repositories/`)** — one DAO per entity, fully encapsulating
    parametrized SQL (`INSERT`, `SELECT`) to shield the database against injection.
+   They never commit on their own — the transaction owner does.
 3. **DTOs (`models.py`)** — everything entering or leaving the engine is validated
    through immutable Pydantic models.
 4. **Domain exceptions (`exceptions.py`)** — any persistence failure raises a
    handleable domain error (e.g. `RunNotFoundError`) instead of a raw SQLite driver
    exception.
+
+## Transactional boundary (Unit of Work)
+
+A composed write spans several tables — `project → analysis → analysis_endpoints →
+run → run_metrics → run_endpoint_stats → crash_reports → artifact`. Persisting a run
+is one such write, and it must be **all-or-nothing**: a failure halfway through cannot
+leave a partial or orphaned analysis behind. `StorageEngine` provides that boundary as
+a transaction-scoped **Unit of Work**.
+
+`engine.transaction()` is a context manager (SQLAlchemy `engine.begin()` semantics) that
+owns **one** connection and **one** transaction, and yields a `UnitOfWork` whose
+repositories are already bound to it:
+
+```python
+with engine.transaction() as uow:
+    project = uow.projects.get_or_create(name="demo", repo_path="/repos/demo")
+    analysis_id = uow.analyses.create(project_id=project.id, ...)
+    run_id = uow.runs.create(analysis_id=analysis_id, ...)
+    uow.run_metrics.create(run_id=run_id, ...)
+    # ... every write shares the same connection
+```
+
+The `with` block *is* the transaction — there is no `uow.commit()`:
+
+- **Clean exit → commit.** Every write in the block is committed at once.
+- **Any exception → rollback.** The whole block is rolled back and the error re-raised.
+- **Connection lifecycle.** A file database gets a fresh connection that is **closed**
+  on exit (fixing a per-call leak); the shared `:memory:` connection is reused and
+  **never** closed.
+
+Repositories bound to a `UnitOfWork` do not commit — the block decides. Every
+multi-table producer should write through this boundary.
+
+The design also rejects the heavier alternatives on purpose: a full Fowler Unit of Work
+(identity map + change-tracking) is over-engineering for immediate `INSERT`s, a dual
+`engine | connection` constructor reintroduces a hidden mode, and an engine-held "active
+connection" would be hidden, non-thread-safe mutable state.
 
 ## Data Models (DTOs)
 
@@ -131,24 +169,26 @@ as-is.
 
 ## On-disk artifact persistence (`artifacts/`)
 
-Heavy artifacts (specs, reports) don't live inside SQLite: they're written as files, and the `artifacts` table only stores path, hash, and metadata. The `storage/artifacts/` package exposes a single public function:
+Heavy artifacts (specs, reports) don't live inside SQLite: they're written as files, and the `artifacts` table only stores path, hash, and metadata. The `storage/artifacts/` package exposes a single public function, which takes the `UnitOfWork` so the index row joins the caller's transaction:
 
 ```python
 from storage.artifacts import save_artifact
 
-record = save_artifact(
-    engine,
-    kind="report_html",
-    filename="report.html",
-    content=html_bytes,
-    run_id=run_id,  # or analysis_id= for recipe-level artifacts
-)
+with engine.transaction() as uow:
+    record = save_artifact(
+        uow,
+        kind="report_html",
+        filename="report.html",
+        content=html_bytes,
+        run_id=run_id,  # or analysis_id= for recipe-level artifacts
+    )
 ```
 
 - **Two folders, not one**: `data/artifacts/analyses/<analysis_id>/` for recipe artifacts (`openapi.json`, `semantic_contract.json`, `generated_test.py` — written once) and `data/artifacts/runs/<run_id>/` for run artifacts (`report.json`, `report.html` — one per execution). The root is configurable via `CORETEST_ARTIFACTS_ROOT` to isolate tests.
 - **Exclusive level validated before touching disk**: passing both or neither of `analysis_id`/`run_id` raises `InvalidArtifactLevelError` without writing any file.
 - **Deduplication by hash**: if an artifact of the same level and `kind` with identical content (same SHA-256) already exists, the existing record is returned without rewriting the file or inserting a new row.
 - **Content-addressed on disk**: each file is written under a hash subdirectory (`.../<digest>/<filename>`), so a later save with different content under the same kind can never overwrite a previously recorded artifact's file.
+- **File first, row inside the transaction**: the file is written before the row is inserted. A rollback discards the row but may leave the file as an orphan — harmless, since the content-addressed path can never corrupt a valid artifact and the unreferenced file is dead weight a future retention sweep can reclaim.
 
 ## Testing
 

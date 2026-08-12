@@ -32,7 +32,9 @@ flowchart TD
 An **analysis** is the reproducible recipe (resolved contracts and execution settings);
 a **run** is one execution of that recipe. Repositories encapsulate parameterized SQL,
 Pydantic DTOs validate data at the boundary, and domain exceptions prevent SQLite
-driver errors from leaking to callers.
+driver errors from leaking to callers. A composed multi-table write (persisting a run)
+runs as one all-or-nothing transaction through a **Unit of Work** — see the
+[data model](data-model.md#transactional-boundary-unit-of-work).
 
 ## Read next
 

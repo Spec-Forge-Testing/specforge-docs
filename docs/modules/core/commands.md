@@ -229,6 +229,13 @@ are all derived from the registry — no other file needs editing.
     storage failure surfaces as a warning without losing the run's output, and a
     missing `storage` install degrades gracefully.
 
+    The saved run is a **shareable reproducible recipe**, so no credential value is
+    ever stored — not even redacted: the execution config keeps header *names* only,
+    and any `user:pass@` in the base URL is stripped (a replay re-injects the real
+    values from the live config). The run also records its outcome `status`
+    (`completed`/`truncated`), the replay `fidelity` when it is one, and the engine
+    version as provenance.
+
 ??? "`!` — run system commands"
 
     ```text

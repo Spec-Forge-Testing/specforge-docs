@@ -104,9 +104,10 @@ connection" would be hidden, non-thread-safe mutable state.
       | `executed_at` | `datetime` | When the run started. |
       | `duration_ms` | `int \| None` | Total run duration, in milliseconds. |
       | `executed_against_repo_hash` | `str` | Hash of the repo it actually ran against. |
-      | `status` | `str` | Final run outcome (e.g. `SUCCESS`, `FAILED`). |
+      | `status` | `str` | Final run outcome, from a closed vocabulary: `completed` or `truncated` (`aborted` and `failed` are reserved for producers not wired yet). |
       | `ordinal` | `int` | Position of the run within its analysis (1 = original). |
       | `is_original` | `bool` | Whether this run generated and recorded the trace. |
+      | `fidelity` | `str \| None` | Replay fidelity: `exact` / `reduced`, or `NULL` for an original run (only a replay has a fidelity to report). |
 
 ??? "`RunMetricsRecord` - Aggregate **stats for a run**."
 

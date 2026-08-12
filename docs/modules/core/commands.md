@@ -220,6 +220,15 @@ are all derived from the registry — no other file needs editing.
     with `--timeout` / `--max-concurrency`. The target API must already be running;
     infrastructure failures (server down, timeout) are reported, never fatal.
 
+    Every run is **saved by default** through the [storage engine](../storage/index.md):
+    a project → analysis → run hierarchy with metrics, per-endpoint stats, crash
+    reports and the execution trace as a critical artifact, written in one atomic
+    transaction — a mid-write failure rolls the whole run back. `--no-save` opts out;
+    `--project` overrides the stored project name (default: the spec's `info.title`,
+    falling back to the file stem). The report always renders before persisting, so a
+    storage failure surfaces as a warning without losing the run's output, and a
+    missing `storage` install degrades gracefully.
+
 ??? "`!` — run system commands"
 
     ```text

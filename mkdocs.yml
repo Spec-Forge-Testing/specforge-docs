@@ -113,3 +113,8 @@ nav:
           - Complete reference: modules/custom-schemathesis/reference.md
   - Environment:
       - LLM Providers: environment/llm-providers.md
+  - Testing:
+      - Overview: testing/index.md
+      - RealWorld corpus: testing/real-world.md
+      - EMB corpus: testing/emb.md
+      - Integration suite: testing/suite.md

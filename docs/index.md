@@ -13,3 +13,4 @@ fuzzing to discover deep bugs in web applications.
 - [Architecture → Overview](architecture/overview.md) for how the pipeline fits together.
 - [Modules](modules/core/index.md) for a per-package deep dive.
 - [Environment → LLM Providers](environment/llm-providers.md) for model/provider configuration.
+- [Testing](testing/index.md) for the `tests-repos` corpora and the integration suite that runs Spec Forge against real APIs.

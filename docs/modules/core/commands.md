@@ -236,6 +236,50 @@ are all derived from the registry — no other file needs editing.
     (`completed`/`truncated`), the replay `fidelity` when it is one, and the engine
     version as provenance.
 
+??? "`history` — browse persisted projects, analyses and runs"
+
+    ```text
+    SpecForge ❯ history
+    SpecForge ❯ history --project 1
+    SpecForge ❯ history --analysis 3
+    SpecForge ❯ history --analysis 3 --status truncated --since 2026-08-01 --limit 5
+    ```
+
+    Navigates everything the fuzzer has persisted, in the three levels the storage
+    schema is built around: with no flags it lists every **project** (with its
+    analysis count); `--project <id>` lists that project's **analyses** — the
+    replayable recipes, each with its label, strategy mode, engine version and run
+    count; `--analysis <id>` lists that analysis's **runs** in ordinal order.
+
+    The run listing is where the model pays off: an **original** run (`●`) is
+    visually distinct from a **replay** (`↺`), and a run whose counters would
+    mislead if compared against another's carries a **not-comparable mark** with
+    its reason — `truncated` (it stopped early, so its counters are a budget
+    prefix), `reduced fidelity` (the replay ran against a changed environment), or
+    an unknown status vocabulary from an older database.
+
+    `--status`, `--since <YYYY-MM-DD>` (UTC), `--endpoint <path>` ("runs that
+    exercised this endpoint") and `--limit <n>` filter the run listing and require
+    `--analysis`. Identifiers are always the numeric ids the previous level shows —
+    project names are not unique, ids are.
+
+    Without the `storage` install the command warns and returns instead of failing.
+
+??? "`inspect` — the full detail of one run"
+
+    ```text
+    SpecForge ❯ inspect --run 7
+    ```
+
+    Renders one run in full, in five sections: a **header** with its context
+    (project, analysis, ordinal, origin, execution time, duration, status,
+    fidelity and the comparability mark); the **metrics** funnel (requests, raw →
+    confirmed → unique → flaky findings) with the per-phase and per-category
+    breakdowns; **per-endpoint stats** including the latency percentiles
+    (p50/p95/max — a dash when the endpoint was never timed); every recorded
+    **crash** (with the same plain-English invariant labels the fuzz report uses);
+    and the run's **artifacts** (the execution trace and any run-level files).
+
 ??? "`!` — run system commands"
 
     ```text

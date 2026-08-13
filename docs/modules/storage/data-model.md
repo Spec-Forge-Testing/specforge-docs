@@ -24,6 +24,21 @@ as-is.
    handleable domain error (e.g. `RunNotFoundError`) instead of a raw SQLite driver
    exception.
 
+### Schema evolution
+
+`schema.sql` is the single source of truth for the database shape and is edited in
+place — there is no migration mechanism. The schema is applied with
+`CREATE TABLE IF NOT EXISTS`, which never adds columns to an existing table: **if the
+schema changed, delete `data/coretest.db` and let the engine recreate it.** Local
+databases are disposable development artifacts.
+
+### Engine lifecycle
+
+`StorageEngine` closes deterministically: `close()` is idempotent, the engine is a
+context manager (`with StorageEngine(...) as engine:`), and a closed engine rejects
+any further use — memory- or file-backed alike — with a typed `EngineClosedError`
+instead of silently reconnecting.
+
 ## Transactional boundary (Unit of Work)
 
 A composed write spans several tables — `project → analysis → analysis_endpoints →
@@ -134,6 +149,21 @@ connection" would be hidden, non-thread-safe mutable state.
       | `requests` | `int` | Requests sent to this endpoint during the run. |
       | `findings_raw` | `int` | Violations found for this endpoint, before shrinking. |
       | `crash_count` | `int` | Materialized count of this endpoint's `crash_reports` rows (not a copy). |
+      | `latency` | `LatencyRecord` | The endpoint's latency distribution, nested from seven flat columns. |
+
+??? "`LatencyRecord` - An endpoint's **latency distribution**, in milliseconds."
+
+      Stored as seven flat `latency_*` columns on `run_endpoint_stats` and re-nested
+      into this value object on read. The engine emits zeros rather than absence, so
+      the columns are `NOT NULL DEFAULT 0`: `count` is what tells "no samples timed"
+      apart from genuinely zero latencies. Percentiles are nearest-rank (always an
+      observed sample, never interpolated).
+
+      | Field | Type | Description |
+      |---|---|---|
+      | `count` | `int` | Number of latency samples timed for this endpoint. |
+      | `min_ms` / `max_ms` / `mean_ms` | `float` | Extremes and mean, in milliseconds. |
+      | `p50_ms` / `p95_ms` / `p99_ms` | `float` | Nearest-rank percentiles, in milliseconds. |
 
 ??? "`CrashReportRecord` - A distinct **defect found** during a run."
 
@@ -194,8 +224,17 @@ with engine.transaction() as uow:
 ## Testing
 
 The module has native support for **in-memory** databases for isolated testing:
-repositories can be injected with `StorageEngine(db_path=":memory:")` and share the
-same connection across unit tests.
+repositories can be injected with an isolated engine and share the same connection
+across a test. Prefer the context manager so no connection outlives the test:
+
+```python
+with StorageEngine(db_path=":memory:") as engine:
+    ...
+```
+
+Both this module's suite and its consumers turn leaked connections into errors
+(`filterwarnings` in `pyproject.toml`), so an unclosed engine is a red test, not a
+warning.
 
 The Docker test command is in
 [Development & Testing](../../getting-started/development.md#module-commands).

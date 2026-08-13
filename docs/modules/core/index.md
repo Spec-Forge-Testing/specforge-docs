@@ -13,6 +13,8 @@ putting domain logic in the user interface.
 | **`trace`** | Analysis | Static code tracing from an OpenAPI endpoint. |
 | **`ast-extract`** | Analysis | Inspects extracted code structures and LLM context. |
 | **`fuzz`** | Execution | Compiles strategies from schema and fuzzes a live API. |
+| **`history`** | History | Browses persisted projects, analyses and runs, with filters. |
+| **`inspect`** | History | Shows one run in full: metrics, latency, crashes, artifacts. |
 | **`!`** | System | Executes system shell commands directly from REPL. |
 | **`theme`** | Settings | Switches the CLI UI color theme. |
 

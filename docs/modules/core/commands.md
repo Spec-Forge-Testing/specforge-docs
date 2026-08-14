@@ -280,6 +280,47 @@ are all derived from the registry — no other file needs editing.
     **crash** (with the same plain-English invariant labels the fuzz report uses);
     and the run's **artifacts** (the execution trace and any run-level files).
 
+??? "`replay` — re-send an analysis's recorded trace against a live API"
+
+    ```text
+    SpecForge ❯ replay --analysis 3
+    SpecForge ❯ replay --analysis 3 --no-save
+    SpecForge ❯ replay --analysis 3 --no-preserve-timing
+    ```
+
+    Re-sends the exact requests recorded in an analysis's execution trace —
+    verbatim: no regeneration, no shrinking, no seed. The trace is the
+    **analysis's recipe** (all of its runs share it), which is why the command
+    takes an analysis id, not a run id; `inspect --run <id>` shows the analysis
+    id in its header, and `history --project <id>` lists them.
+
+    Every request that violated an invariant when recorded gets its own
+    **verdict**:
+
+    - **present** (✖) — the API answered with the same status, or a different
+      one that still violates (a `500` turned `502` is still broken).
+    - **possibly resolved** (✓) — the response changed cleanly *and* the replay
+      ran with **exact** fidelity: every other request answered as recorded.
+    - **inconclusive** (⚠) — the response changed, but the surrounding trace
+      diverged (reduced fidelity) or the request got no response at all.
+
+    "Possibly resolved" is never "resolved", by design. A replay re-sends one
+    recorded stimulus: a clean answer proves *this request* no longer triggers
+    the defect, not that the defect's class is gone. And the negative claim
+    needs a clean context — under **reduced fidelity** the environment
+    observably changed, so a defect that stopped answering `500` is
+    *inconclusive*, never resolved; the report states this explicitly.
+
+    The command refuses recipes it cannot replay whole, **before sending a
+    single request**: an empty trace, a missing or tampered trace artifact
+    (content is hash-verified on read), and traces that need credential header
+    values — stored recipes keep header *names* only, never values.
+
+    `--save` (default on) appends the replay to the same analysis as a new run
+    with the next ordinal, so `history --analysis <id>` shows original and
+    replays side by side. `--no-preserve-timing` skips the recorded pacing
+    between requests, which can change the outcome of timing-sensitive defects.
+
 ??? "`!` — run system commands"
 
     ```text

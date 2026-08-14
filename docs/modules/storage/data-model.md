@@ -221,6 +221,17 @@ with engine.transaction() as uow:
 - **Content-addressed on disk**: each file is written under a hash subdirectory (`.../<digest>/<filename>`), so a later save with different content under the same kind can never overwrite a previously recorded artifact's file.
 - **File first, row inside the transaction**: the file is written before the row is inserted. A rollback discards the row but may leave the file as an orphan — harmless, since the content-addressed path can never corrupt a valid artifact and the unreferenced file is dead weight a future retention sweep can reclaim.
 
+Reading back goes through `load_artifact(record)`, which verifies the bytes against the recorded SHA-256 **on every read** — this is what makes replaying a persisted recipe trustworthy: the bytes re-sent are provably the bytes recorded.
+
+```python
+from storage import load_artifact
+
+content = load_artifact(record)  # bytes, verified against record.sha256
+```
+
+- A file altered on disk raises `ArtifactIntegrityError`, carrying both the expected and the actual hash; a deleted file raises `ArtifactFileMissingError`. Neither case is ever returned silently.
+- It takes no `UnitOfWork`: content is immutable once written, so the read needs no transaction.
+
 ## Testing
 
 The module has native support for **in-memory** databases for isolated testing:

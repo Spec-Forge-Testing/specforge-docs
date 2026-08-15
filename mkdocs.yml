@@ -117,4 +117,5 @@ nav:
       - Overview: testing/index.md
       - RealWorld corpus: testing/real-world.md
       - EMB corpus: testing/emb.md
+      - Polyglot corpus: testing/polyglot.md
       - Integration suite: testing/suite.md

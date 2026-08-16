@@ -12,7 +12,7 @@ Each corpus answers a different question and none of them overlap:
 | [RealWorld](real-world.md) | Does Spec Forge tolerate all 12 languages? | 12 implementations of the **same** contract, one per `core_ast`-supported language |
 | [EMB](emb.md) | Does it find real bugs? | 36 real open-source APIs — the EvoMaster benchmark |
 | [Polyglot](polyglot.md) | Does it find real bugs outside the JVM? | One real production API per language (10/11 wired) |
-| [Integration suite](suite.md) | Does the pipeline hold together end to end? | One folder per module, exercised against all 37 contracts and 12 implementations |
+| [Integration suite](suite.md) | Does the pipeline hold together end to end? | One folder per module, exercised against all 37 contracts and 12 implementations, plus a separate `polyglot` track (10 contracts) |
 
 In RealWorld the spec is held constant and the source code is the only
 variable, which isolates language support. In EMB it's the opposite: real
@@ -77,17 +77,22 @@ implementations without shelling out to the scripts) while **`emb/` and
 close before their fuzzing-stage test folders can exist. See
 [EMB → Pending](emb.md#pending-a-python-api).
 
-`polyglot/` isn't wired into the suite below at all yet — see
-[Polyglot → Consumers](polyglot.md#consumers).
+`polyglot/`'s **specs** are wired into `contract_engine/`'s static track — see
+[Polyglot → Consumers](polyglot.md#consumers) — but its **APIs** aren't
+bootable from the suite yet, for the same reason `emb/` isn't: no Python
+class like `real-world/corpus.py` exists for it, and nothing needs one until
+the fuzzing-stage folder does.
 
 ```mermaid
 flowchart LR
     subgraph Corpora
         RW[("RealWorld<br/><i>12 languages, 1 contract</i>")]
         EMB[("EMB<br/><i>36 real APIs, all JVM</i>")]
+        POLY[("Polyglot<br/><i>10 real APIs, one per language</i>")]
     end
     RW --> Suite["tests/<br/><i>pytest, one folder per stage</i>"]
     EMB --> Suite
+    POLY -->|"specs only, separate<br/>catalog/fixture"| Suite
     Suite -->|"specforge_cli.services<br/>(never lib/ directly)"| Pipeline["Spec Forge pipeline"]
 ```
 

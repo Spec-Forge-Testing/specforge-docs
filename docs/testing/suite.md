@@ -125,11 +125,23 @@ exactly 37 contracts, or the RealWorld one is missing, the session refuses to
 start. It doesn't test Spec Forge — it tests that the harness is looking at
 what it thinks it's looking at.
 
+**`polyglot` is a separate track inside `contract_engine/`, not a 38th entry
+in that pass.** Several of its specs take 60s+ or never return against
+`parse_contract` as it stands today (measured live — see the Contract Engine
+epic), so folding them into the single in-process pass above would hang the
+whole session before any test could run. `catalogo_polyglot()` and the
+`ingesta_polyglot` fixture mirror the pattern but ingest each spec in its own
+subprocess under a 150s timeout, the same isolation
+`lib/contract_engine/tests/support.py::run_parse_in_child` already uses for
+its own hanging fixture. A real timeout becomes one more `TimeoutExpired`
+row in `esperado/`, not a stuck suite.
+
 ## Status
 
 | Folder | Covers | Status |
 | --- | --- | --- |
-| `contract_engine/` | 2 functions × 37 contracts | Run. **27 of 74 red** |
+| `contract_engine/` | 2 functions × 37 contracts (RealWorld + EMB) | Run. **27 of 74 red** |
+| `contract_engine/` — `polyglot` track | 2 functions × 10 contracts, separate catalog/fixture | Run. **8 of 10 red** |
 | `core_ast/` | 2 functions × 12 implementations | Written, **not run yet**: inherits whatever the previous stage delivers |
 
 `custom_schemathesis` and `semantic_inference` aren't tested yet: those
@@ -157,6 +169,37 @@ the 19 Swagger 2.0 contracts, **only 7 reach the version check** — the rest
 die earlier in validation, so the user sees "Validation error" instead of
 "Swagger 2.0 not supported" — and `prance`'s `ResolutionError` **reaches the
 CLI raw** in 4 contracts, against the repository's own convention.
+
+### `polyglot` track: 8 of 10 red
+
+`php` (InvoiceNinja, 379 endpoints) and `c_sharp` (Jellyfin, 382 endpoints)
+load clean — `entra: true`. The other 8 all fail, for two different reasons:
+
+**Fast, real rejections (7):** `go` (Swagger 2.0 — `contract_engine` only
+accepts 3.x, see the Contract Engine epic), `java` (a `"100"` string default
+on an `integer` field), `ruby` (a `"null"` string default on an `integer`
+field), `python` (a 2020-12 `itemSchema` keyword under an OAS 3.1
+meta-schema), `rust` (an enum default that doesn't match the enum's own
+values), `javascript` (a response schema that fails every branch of a
+`oneOf`), and `kotlin` (`RecursionError` — schema recursion deep enough that
+Python's own call-stack limit trips before `contract_engine` gets a chance to
+reject it cleanly).
+
+**Doesn't finish inside the 150s budget (1):** `typescript` (Directus),
+confirmed to never return at all, independent of budget — `c_sharp` and
+`ruby` looked the same on a slower machine (150s wasn't enough there either)
+until re-measured inside the actual Docker image, where both finish well
+inside budget with a real result. `esperado/` records what Docker — the
+suite's one authoritative environment — actually produces, not what a
+slower host measures.
+
+None of this is `polyglot`-specific brokenness: every one of these failure
+modes is already tracked as a `contract_engine` defect against real specs
+from other corpora too (see [EMB → `27 of 74 red`](#contract_engine-27-of-74-red)
+above). `polyglot` just adds more real evidence of the same gaps, including
+the one gap neither RealWorld nor EMB could show at all: `parse_contract`
+doesn't scale to large real contracts, full stop, independent of Swagger vs
+OpenAPI.
 
 ### `core_ast/`: written, not run
 

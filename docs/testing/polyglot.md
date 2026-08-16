@@ -86,12 +86,18 @@ contract.
 
 ## Consumers
 
-Not wired into the suite yet — [AI-228](https://linear.app/ai-pbt/issue/AI-228)
-tracks adding `polyglot` to `contract_engine`'s integration suite. Until then,
-`specs/*.json` can be validated standalone; booting a candidate is only
-needed once the fuzzing stage exists, same as `real-world/` and `emb/`.
+Wired into `tests/contract_engine/` as a separate track — see
+[Integration suite → `polyglot` track](suite.md#polyglot-track-8-of-10-red).
+**`php` (InvoiceNinja) and `c_sharp` (Jellyfin) load clean; 8 of 10 reject or
+time out.**
+Go/Gotify fails for a different reason than the rest: not a schema-shape
+rejection but a version rejection, the same fact
+[EMB → Consumers](emb.md#consumers) documents for its 19 Swagger 2.0 SUTs. It
+clears once [AI-198](https://linear.app/ai-pbt/issue/AI-198) lands.
 
-Go/Gotify will fail there for a different reason than the rest: not a
-schema-shape rejection but a version rejection, the same fact
-[EMB → Consumers](emb.md#consumers) documents for its 19 Swagger 2.0 SUTs.
-It clears once [AI-198](https://linear.app/ai-pbt/issue/AI-198) lands.
+Booting a candidate's **API** — as opposed to reading its **spec** — is still
+not wired into the suite: that needs a Python class like
+`real-world/corpus.py`, which `polyglot/` doesn't have yet any more than
+`emb/` does (see [Test Corpora → Only the fuzzing stage needs a live
+API](index.md#only-the-fuzzing-stage-needs-a-live-api)). Nothing needs it
+until the fuzzing-stage folder exists.

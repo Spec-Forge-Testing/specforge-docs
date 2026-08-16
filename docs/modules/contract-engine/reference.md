@@ -15,7 +15,7 @@ flowchart LR
     D --> E["unified contract<br/><i>(for the engine)</i>"]
 ```
 
-The package targets Python 3.11+. Its installation, test and lint commnds are in
+The package targets Python 3.11+. Its installation, test and lint commands are in
 [Development & Testing](../../getting-started/development.md#module-commands).
 
 ## Module layout
@@ -24,9 +24,9 @@ The package targets Python 3.11+. Its installation, test and lint commnds are in
 src/contract_engine/
 ├── exceptions.py     # domain exceptions
 ├── models/           # data models (ResolvedContract, EndpointDefinition, unified contract re-export)
-├── ingestion/         # parse_contract
-├── adapters/          # ASTAdapter
-└── fusion/             # fuse_contract (normalizer, llm_input, merger, façade)
+├── ingestion/        # loader · version · resolution · facade (parse_contract)
+├── adapters/         # ASTAdapter
+└── fusion/           # fuse_contract (normalizer, llm_input, merger, façade)
 ```
 
 The unified contract model itself lives in the shared kernel `specforge-contracts`
@@ -52,9 +52,9 @@ from contract_engine import (
 
 ### 1. Ingestion — `parse_contract`
 
-Reads a YAML or JSON OpenAPI file, resolves every internal `$ref` inline
-(handling circular references safely), validates it against the OpenAPI 3.x
-standard, and returns an immutable `ResolvedContract`.
+Reads a YAML or JSON OpenAPI file, resolves its `$ref` pointers inline,
+validates it against the OpenAPI 3.x standard, and returns an immutable
+`ResolvedContract`.
 
 ```python
 from contract_engine import parse_contract
@@ -62,14 +62,71 @@ from contract_engine import parse_contract
 contract = parse_contract("openapi.yaml")
 
 print(contract.openapi_version)   # "3.0.3"
-print(contract.spec["paths"])     # fully resolved spec dict (no $ref left)
+print(contract.spec["paths"])     # resolved spec dict
 ```
 
-Invalid input raises a domain exception instead of failing silently:
+A cyclic schema cannot be expanded forever, so a handful of pointers survive
+resolution as bare document-relative `$ref`s — the marker the recursion handler
+would attach does not reach them. Nothing distinguishes them, so a deliberate
+cycle and a reference that could not be resolved look alike to anything
+downstream.
 
-- `SchemaFileNotFoundError` — file missing or unsupported extension.
-- `UnsupportedSchemaVersionError` — Swagger 2.0 or anything below OpenAPI 3.0.
-- `SchemaValidationError` — the spec does not conform to the standard.
+#### The stages, and why the order matters
+
+`parse_contract` is a façade over three units, one of which runs twice:
+
+```mermaid
+flowchart LR
+    A[Path] --> B["loader<br/><i>read the document</i>"]
+    B --> C["version<br/><i>reject a bad declaration</i>"]
+    C --> D["resolution<br/><i>resolve $ref and validate</i>"]
+    D --> E["version<br/><i>report the version</i>"]
+    E --> F[ResolvedContract]
+```
+
+The two `version` steps apply different policies. Before resolution it rejects
+an unsupported declaration, and also a supported one written unquoted
+(`openapi: 3.0` decodes as a float and crashes `prance` before it can report the
+document as malformed). It tolerates a document that declares nothing at all,
+because the validator names the missing field better than a version verdict
+could. After resolution it requires a supported version and returns it for the
+contract.
+
+Judging the declaration on the raw document is what makes the verdict truthful:
+otherwise any validation error preempts the version check, and a spec in an
+unsupported dialect gets reported by whatever else happens to be wrong with it.
+An acceptance gate over a real-world spec corpus pins the rule — every spec
+declaring Swagger 2.0 fails on the version, not on a later stage.
+
+#### Error taxonomy
+
+Every failure is a typed domain exception carrying context; the module never
+returns `None`, prints, or lets a third-party error escape.
+
+```
+ContractEngineError
+├── SchemaIngestionError            (always carries .filepath)
+│   ├── SchemaFileNotFoundError     missing file or unsupported extension
+│   ├── SchemaDecodeError           unreadable, unparseable, or not a mapping
+│   ├── UnsupportedSchemaVersionError   not OpenAPI 3.x (Swagger 2.0, 4.x, undeclared)
+│   ├── SchemaResolutionError       a $ref could not be resolved
+│   ├── SchemaComplexityError       too deeply nested to resolve
+│   └── SchemaValidationError       does not conform to the standard
+└── SemanticContractError           the LLM contract is malformed (fusion)
+```
+
+Catch `SchemaIngestionError` to handle any *raised* ingestion failure uniformly;
+catch a leaf to tell them apart. The `loader` and `resolution` units are adapters
+over `prance` and translate every failure of the parse, so a third-party error
+surfaces as a domain exception rather than reaching the caller raw.
+
+Not every failure is raised: ingestion enforces no timeout and no depth cap, so
+a sufficiently recursive spec never returns. Parse untrusted specs under your
+own budget.
+
+> **`prance` is pinned to an exact version:** it decides how `$ref` resolution
+> behaves, which is exactly what the ingestion tests characterize. An unpinned
+> upgrade silently rewrites that behavior.
 
 ### 2. Adaptation — `ASTAdapter`
 

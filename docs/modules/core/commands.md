@@ -265,20 +265,45 @@ are all derived from the registry — no other file needs editing.
 
     Without the `storage` install the command warns and returns instead of failing.
 
-??? "`inspect` — the full detail of one run"
+??? "`inspect` — the full detail of one run, or of one crash"
 
     ```text
     SpecForge ❯ inspect --run 7
+    SpecForge ❯ inspect --crash 12
     ```
 
-    Renders one run in full, in five sections: a **header** with its context
-    (project, analysis, ordinal, origin, execution time, duration, status,
+    `--run <id>` renders one run in full, in five sections: a **header** with its
+    context (project, analysis, ordinal, origin, execution time, duration, status,
     fidelity and the comparability mark); the **metrics** funnel (requests, raw →
     confirmed → unique → flaky findings) with the per-phase and per-category
     breakdowns; **per-endpoint stats** including the latency percentiles
     (p50/p95/max — a dash when the endpoint was never timed); every recorded
-    **crash** (with the same plain-English invariant labels the fuzz report uses);
-    and the run's **artifacts** (the execution trace and any run-level files).
+    **crash** — with its id, the same plain-English invariant labels the fuzz
+    report uses, and the **minimal payload that reproduces it**, so a saved run
+    shows no less than the report printed when the fuzzing finished; and the run's
+    **artifacts** (the execution trace and any run-level files).
+
+    `--crash <id>` answers *what actually failed*, taking the id from the crash
+    table above. It shows the request's **minimal payload** broken down by zone,
+    its **sanitized headers**, and the **body the API responded with** — which is
+    usually where the error message lives. When the crash carries them, it also
+    shows the **stack trace** and the **transition sequence**: the chain of
+    requests that produced a stateful finding. The two flags are mutually
+    exclusive.
+
+    Payload values keep the spelling they travelled the wire with (`null` and
+    `true`, not Python's `None` and `True`), so anything copied out of the CLI is
+    still valid JSON.
+
+    Two rules keep the output readable no matter what the API returned:
+
+    - An **empty response body is reported as such** — never as the `—` that
+      means "no data recorded" everywhere else. An API answering `500` with no
+      message is a different fact from a field that was never saved, and telling
+      them apart is often the first clue.
+    - **Long values never flood the terminal.** Each one is cut to a bounded
+      length, and the block's footer says how many characters it is hiding, so a
+      truncated body is never mistaken for a short one.
 
 ??? "`replay` — re-send an analysis's recorded trace against a live API"
 

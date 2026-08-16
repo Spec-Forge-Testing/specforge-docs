@@ -28,19 +28,20 @@ Only one candidate at a time, same port 8000 as `real-world/` and `emb/`.
   `emb/upstream`.
 * **`specs/<language>.json`** — that candidate's real OpenAPI contract,
   already captured. This is what `contract_engine` consumes; `candidates/` is
-  only there to get the API running.
+  only there to get the API running. Exception: `go.json` is Swagger 2.0
+  (Gotify's real spec), not OpenAPI 3.x — see [AI-198](https://linear.app/ai-pbt/issue/AI-198).
 * **`MANIFEST.tsv`** — one row per language: the source commit SHA (for
   `core_ast`) and the Docker image + digest (for `up.sh`). The only record of
   which version each candidate is.
 
-## Status: 9/11 wired, 1 closed without a candidate, 1 blocked by the engine
+## Status: 10/11 wired, 1 closed without a candidate
 
 | Language | Candidate | License | OpenAPI mechanism |
 | --- | --- | --- | --- |
 | Python | [Mealie](https://github.com/mealie-recipes/mealie) | MIT | Native FastAPI `/docs` — captured live |
 | JavaScript | [NodeBB](https://github.com/NodeBB/NodeBB) | GPL-3.0 | Published Write API (v3) spec, split across multiple files — bundled into one document |
 | TypeScript | [Directus](https://github.com/directus/directus) *(replaces Medusa — no maintained official image existed)* | MSCL (converts to GPL-3.0 four years after each release; permits internal/research use) | Native `/server/specs/oas` — dynamic by permission, captured authenticated as admin (68 paths vs. 10 unauthenticated) |
-| Go | [Gotify](https://github.com/gotify/server) | MIT | Native `/docs` / `swagger.json` — **blocked**: real spec is Swagger 2.0, `contract_engine` only accepts OpenAPI 3.x ([AI-198](https://linear.app/ai-pbt/issue/AI-198)) |
+| Go | [Gotify](https://github.com/gotify/server) | MIT | Native `/swagger` — captured live. **Swagger 2.0, not OpenAPI 3.x**: `contract_engine` only accepts 3.x today ([AI-198](https://linear.app/ai-pbt/issue/AI-198)) |
 | Java | [Keycloak](https://github.com/keycloak/keycloak) | Apache-2.0 | Captured from Keycloak's official docs site |
 | C# | [Jellyfin](https://github.com/jellyfin/jellyfin) | GPL-3.0 | Native Swashbuckle `/api-docs/openapi.json` — captured live (first request takes ~9s, generated on demand) |
 | Ruby | [Mastodon](https://github.com/mastodon/mastodon) | AGPL-3.0 | **Not served at runtime** (`/openapi.json`, `/openapi.yaml`, `/api-docs` all 404, verified live) — captured from a community spec sourced from the official docs; no official OpenAPI exists |
@@ -73,7 +74,7 @@ named Docker volumes instead — still local, still torn down on
 `docker compose down`, just not `tmpfs`. See the comment in
 `candidates/php/compose.specforge.yml` for the full reasoning.
 
-**The spec isn't always captured live.** Three of the nine wired candidates
+**The spec isn't always captured live.** Three of the ten wired candidates
 (Ruby, PHP, Rust) don't serve their OpenAPI contract at runtime at all —
 confirmed live, not assumed from documentation. For those, `specs/<language>.json`
 comes from the closest real source instead: a community spec sourced from
@@ -89,3 +90,8 @@ Not wired into the suite yet — [AI-228](https://linear.app/ai-pbt/issue/AI-228
 tracks adding `polyglot` to `contract_engine`'s integration suite. Until then,
 `specs/*.json` can be validated standalone; booting a candidate is only
 needed once the fuzzing stage exists, same as `real-world/` and `emb/`.
+
+Go/Gotify will fail there for a different reason than the rest: not a
+schema-shape rejection but a version rejection, the same fact
+[EMB → Consumers](emb.md#consumers) documents for its 19 Swagger 2.0 SUTs.
+It clears once [AI-198](https://linear.app/ai-pbt/issue/AI-198) lands.

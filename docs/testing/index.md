@@ -11,7 +11,7 @@ Each corpus answers a different question and none of them overlap:
 |---|---|---|
 | [RealWorld](real-world.md) | Does Spec Forge tolerate all 12 languages? | 12 implementations of the **same** contract, one per `core_ast`-supported language |
 | [EMB](emb.md) | Does it find real bugs? | 36 real open-source APIs — the EvoMaster benchmark |
-| [Polyglot](polyglot.md) | Does it find real bugs outside the JVM? | One real production API per language (9/11 wired) |
+| [Polyglot](polyglot.md) | Does it find real bugs outside the JVM? | One real production API per language (10/11 wired) |
 | [Integration suite](suite.md) | Does the pipeline hold together end to end? | One folder per module, exercised against all 37 contracts and 12 implementations |
 
 In RealWorld the spec is held constant and the source code is the only
@@ -97,7 +97,7 @@ flowchart LR
   what it cost to get each stack running.
 - [EMB corpus](emb.md) — the 36-SUT benchmark, what each SUT exposes, and the
   seeded-state caveat to keep in mind when reading `500`s.
-- [Polyglot corpus](polyglot.md) — 9 of 11 language candidates wired, what
+- [Polyglot corpus](polyglot.md) — 10 of 11 language candidates wired, what
   each one's OpenAPI contract actually comes from, and the rules its
   implementation follows.
 - [Integration suite](suite.md) — how `esperado/`/`output/` decide

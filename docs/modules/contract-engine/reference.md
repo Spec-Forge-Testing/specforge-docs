@@ -24,7 +24,7 @@ The package targets Python 3.11+. Its installation, test and lint commands are i
 src/contract_engine/
 ├── exceptions.py     # domain exceptions
 ├── models/           # data models (ResolvedContract, EndpointDefinition, unified contract re-export)
-├── ingestion/        # loader · version · resolution · facade (parse_contract)
+├── ingestion/        # loader · version · resolution · conformance · facade
 ├── adapters/         # ASTAdapter
 └── fusion/           # fuse_contract (normalizer, llm_input, merger, façade)
 ```
@@ -53,8 +53,8 @@ from contract_engine import (
 ### 1. Ingestion — `parse_contract`
 
 Reads a YAML or JSON OpenAPI file, resolves its `$ref` pointers inline,
-validates it against the OpenAPI 3.x standard, and returns an immutable
-`ResolvedContract`.
+checks it against the OpenAPI 3.x standard, and returns an immutable
+`ResolvedContract` carrying whatever defects it found.
 
 ```python
 from contract_engine import parse_contract
@@ -63,6 +63,7 @@ contract = parse_contract("openapi.yaml")
 
 print(contract.openapi_version)   # "3.0.3"
 print(contract.spec["paths"])     # resolved spec dict
+print(contract.deviations)        # defects reported, not rejected
 ```
 
 A cyclic schema cannot be expanded forever, so a handful of pointers survive
@@ -73,30 +74,72 @@ downstream.
 
 #### The stages, and why the order matters
 
-`parse_contract` is a façade over three units, one of which runs twice:
+`parse_contract` is a façade over four units:
 
 ```mermaid
 flowchart LR
     A[Path] --> B["loader<br/><i>read the document</i>"]
-    B --> C["version<br/><i>reject a bad declaration</i>"]
-    C --> D["resolution<br/><i>resolve $ref and validate</i>"]
-    D --> E["version<br/><i>report the version</i>"]
+    B --> C["version<br/><i>require a supported version</i>"]
+    C --> D["resolution<br/><i>resolve the $ref graph</i>"]
+    D --> E["conformance<br/><i>report the defects found</i>"]
     E --> F[ResolvedContract]
 ```
 
-The two `version` steps apply different policies. Before resolution it rejects
-an unsupported declaration, and also a supported one written unquoted
-(`openapi: 3.0` decodes as a float and crashes `prance` before it can report the
-document as malformed). It tolerates a document that declares nothing at all,
-because the validator names the missing field better than a version verdict
-could. After resolution it requires a supported version and returns it for the
-contract.
+The version gate runs on the raw document, before any of the expensive work. It
+rejects an unsupported declaration, an undeclared version, and a supported one
+written unquoted (`openapi: 3.0` decodes as a float, which `prance` cannot parse
+as a version). Running it first also means a document that declares nothing does
+not pay for full `$ref` resolution before being turned away on a fact available
+in its first line.
 
 Judging the declaration on the raw document is what makes the verdict truthful:
 otherwise any validation error preempts the version check, and a spec in an
 unsupported dialect gets reported by whatever else happens to be wrong with it.
 An acceptance gate over a real-world spec corpus pins the rule — every spec
 declaring Swagger 2.0 fails on the version, not on a later stage.
+
+#### Tolerance
+
+A defect the pipeline never consumes does not justify turning a contract away.
+`conformance` reports what it finds instead of rejecting, and the report travels
+on the contract itself:
+
+```python
+contract = parse_contract("openapi.yaml")
+
+for deviation in contract.deviations:
+    print(deviation.scope, deviation.pointer, deviation.detail)
+```
+
+Each `ContractDeviation` says **where** the defect is and **what the validator
+said** — nothing more. It carries no usability verdict, because ingestion cannot
+know one: whether an endpoint is actually fuzzable is decided later, by the
+component that compiles it.
+
+| Field | Meaning |
+|---|---|
+| `scope` | `DOCUMENT`, `PATH_ITEM` or `OPERATION` — how precisely the defect was located |
+| `pointer` | JSON Pointer (RFC 6901) to the node, when the error anchors in one |
+| `path_url` / `method` | the endpoint, on `PATH_ITEM` and `OPERATION` scope |
+| `code` | `SPEC_CONFORMANCE`, or `SPEC_SEMANTICS` when the validator gave the rule its own exception type |
+| `detail` | the validator's message, verbatim |
+
+`scope` fixes which of `path_url`/`method` must be present, and the DTO enforces
+that pairing: a misattributed deviation fails to construct rather than reading
+like a well-attributed one.
+
+> **A deviation is only located as precisely as the validator located it.** The
+> pointer comes from the error's own path, walked against the document and checked
+> against the failing instance. When it does not anchor there — a defect inside a
+> `default` value, or a rule the validator reports without a path — the deviation
+> is `DOCUMENT`-scoped with no pointer. A location the library did not give us is
+> not re-derived: a plausible-but-wrong pointer is worse than none.
+
+Still fatal: an unreadable or undecodable file, a document that is not a mapping,
+a version below OpenAPI 3.x, and a `$ref` that cannot be resolved.
+
+The CLI prints the deviations after a successful load and closes with a warning
+rather than a success, so a degraded load never looks like a clean one.
 
 #### Error taxonomy
 

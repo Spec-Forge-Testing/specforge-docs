@@ -138,6 +138,20 @@ row in `esperado/`, not a stuck suite.
 
 ## Status
 
+> **These numbers predate the ingestion work, and the harness has not been
+> re-run.** Everything below was measured before the Contract Engine widened its
+> entry edge — tolerant validation, bounded resolution, cycle reporting and
+> Swagger 2.0 translation. The `esperado/` baselines still encode the old
+> verdicts, so the harness will now report *unexpected passes*: contracts it
+> recorded as rejected are accepted today, and one of its metrics counts a
+> rejection reason that no longer exists.
+>
+> The in-repo corpus gate, which is current, measures **32 of the 36 EMB
+> contracts accepted** (16 of 19 Swagger 2.0, 16 of 17 OpenAPI 3.x). The four
+> that remain out are rejected for a cause of their own — each references a
+> schema its own file never defines — not for their dialect. Regenerating
+> `esperado/` is outstanding work in the harness repository.
+
 | Folder | Covers | Status |
 | --- | --- | --- |
 | `contract_engine/` | 2 functions × 37 contracts (RealWorld + EMB) | Run. **27 of 74 red** |

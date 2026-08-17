@@ -24,7 +24,7 @@ The package targets Python 3.11+. Its installation, test and lint commands are i
 src/contract_engine/
 ├── exceptions.py     # domain exceptions
 ├── models/           # data models (ResolvedContract, EndpointDefinition, unified contract re-export)
-├── ingestion/        # loader · version · resolution · expansion · conformance · references · location · facade
+├── ingestion/        # loader · version · resolution · expansion · conformance · references · location · swagger2/ · facade
 ├── adapters/         # ASTAdapter
 └── fusion/           # fuse_contract (normalizer, llm_input, merger, façade)
 ```
@@ -54,14 +54,16 @@ from contract_engine import (
 
 Reads a YAML or JSON OpenAPI file, resolves its `$ref` pointers inline,
 checks it against the OpenAPI 3.x standard, and returns an immutable
-`ResolvedContract` carrying whatever defects it found.
+`ResolvedContract` carrying whatever defects it found. A Swagger 2.0 document is
+accepted too, and translated on the way in.
 
 ```python
 from contract_engine import parse_contract
 
 contract = parse_contract("openapi.yaml")
 
-print(contract.openapi_version)   # "3.0.3"
+print(contract.openapi_version)   # "3.0.3" — the dialect of contract.spec
+print(contract.source_version)    # "3.0.3" — what the file declared
 print(contract.spec["paths"])     # resolved spec dict
 print(contract.deviations)        # defects reported, not rejected
 ```
@@ -74,7 +76,7 @@ latter is still fatal, and is raised long before this point.
 
 #### The stages, and why the order matters
 
-`parse_contract` is a façade over five units:
+`parse_contract` is a façade over six units:
 
 ```mermaid
 flowchart LR
@@ -84,28 +86,29 @@ flowchart LR
     D --> E["expansion<br/><i>bound what it expands to</i>"]
     E --> F["conformance<br/><i>defects of the document</i>"]
     E --> G["references<br/><i>cycles the resolver cut</i>"]
-    F --> H[ResolvedContract]
-    G --> H
+    F --> T["swagger2<br/><i>translate, if 2.0</i>"]
+    G --> T
+    T --> H[ResolvedContract]
 ```
 
 `conformance` reads the document as written; `references` reads the resolved
 spec, since a truncated cycle only exists there. Both report through the same
-`ContractDeviation`, and a sixth unit, `location`, holds the vocabulary they
+`ContractDeviation`, and a seventh unit, `location`, holds the vocabulary they
 share: how a path into the document becomes a scope, a JSON Pointer and an
 endpoint.
 
 The version gate runs on the raw document, before any of the expensive work. It
-rejects an unsupported declaration, an undeclared version, and a supported one
-written unquoted (`openapi: 3.0` decodes as a float, which `prance` cannot parse
-as a version). Running it first also means a document that declares nothing does
-not pay for full `$ref` resolution before being turned away on a fact available
-in its first line.
+accepts OpenAPI 3.x and Swagger 2.0, and rejects an unsupported declaration, an
+undeclared version, and a supported one written unquoted (`openapi: 3.0` decodes
+as a float, which `prance` cannot parse as a version). Running it first also
+means a document that declares nothing does not pay for full `$ref` resolution
+before being turned away on a fact available in its first line.
 
 Judging the declaration on the raw document is what makes the verdict truthful:
-otherwise any validation error preempts the version check, and a spec in an
-unsupported dialect gets reported by whatever else happens to be wrong with it.
-An acceptance gate over a real-world spec corpus pins the rule — every spec
-declaring Swagger 2.0 fails on the version, not on a later stage.
+otherwise any validation error preempts the version check, and a document gets
+reported by whatever else happens to be wrong with it. An acceptance gate over a
+real-world spec corpus pins the rule from the other side — no spec is ever turned
+away on its dialect, and every residual rejection names a cause of its own.
 
 #### Tolerance
 
@@ -151,12 +154,55 @@ like a well-attributed one.
 > not re-derived: a plausible-but-wrong pointer is worse than none.
 
 Still fatal: an unreadable or undecodable file, a document that is not a mapping,
-a version below OpenAPI 3.x, and a `$ref` that cannot be resolved.
+a version outside OpenAPI 3.x and Swagger 2.0, a construct with no 3.x equivalent,
+and a `$ref` that cannot be resolved.
 
 The CLI prints every finding after a successful load, and closes with a warning
 rather than a success **when the document is at fault**, so a degraded load never
 looks like a clean one — and a valid contract that merely happens to be recursive
 never looks degraded.
+
+#### Swagger 2.0
+
+A Swagger 2.0 document is accepted and translated into OpenAPI 3.x. The dialect
+does not survive ingestion: `contract.spec` is always 3.x, and no stage
+downstream branches on where it came from.
+
+```python
+contract = parse_contract("swagger.json")
+
+contract.source_version    # "2.0"   — what the file declared
+contract.openapi_version   # "3.0.3" — the dialect of contract.spec
+```
+
+Both fields exist because collapsing them would be a lie in one direction or the
+other. Downstream needs to know what it is reading; the user needs to see the
+file described as what they wrote. The CLI renders exactly that:
+`Swagger 2.0, translated to OpenAPI 3.0.3`.
+
+**Translation runs after resolution**, which is the decision the whole unit rests
+on. Once every `$ref` is inlined there are no JSON Pointers left to rewrite —
+the expensive, fragile half of any spec converter — and what remains is
+structural mapping: `host`/`basePath`/`schemes` into `servers`, a `body`
+parameter into a `requestBody`, `consumes`/`produces` into media types,
+`collectionFormat` into `style`/`explode`, `securityDefinitions` into
+`components.securitySchemes`.
+
+Two consequences worth knowing:
+
+- **`definitions` stays where it is.** Moving it under `components.schemas`
+  would break the document-relative `$ref` that a truncated reference cycle
+  leaves behind, and no consumer reads it: after resolution, every schema an
+  endpoint uses is already inlined.
+- **Deviations are reported in the source dialect.** `conformance` and
+  `references` both run before translation, so a finding points at the file the
+  user wrote, not at an intermediate document they never saw.
+
+Where a Swagger 2.0 construct has no 3.x equivalent at all — an unknown
+`securityDefinitions` type, an unknown OAuth2 flow — translation raises
+`SchemaConversionError` rather than guessing. Approximating would change the
+contract's meaning with no symptom: the contract loads, the fuzzer runs, and the
+requests go out in a shape the document never declared.
 
 #### Error taxonomy
 
@@ -168,9 +214,10 @@ ContractEngineError
 ├── SchemaIngestionError            (always carries .filepath)
 │   ├── SchemaFileNotFoundError     missing file or unsupported extension
 │   ├── SchemaDecodeError           unreadable, unparseable, or not a mapping
-│   ├── UnsupportedSchemaVersionError   not OpenAPI 3.x (Swagger 2.0, 4.x, undeclared)
+│   ├── UnsupportedSchemaVersionError   neither OpenAPI 3.x nor Swagger 2.0 (1.x, 4.x, undeclared)
 │   ├── SchemaResolutionError       a $ref could not be resolved
 │   ├── SchemaComplexityError       too deep to process, or expands past the bound
+│   ├── SchemaConversionError       a Swagger 2.0 construct with no OpenAPI 3.x equivalent
 │   └── SchemaValidationError       does not conform to the standard
 └── SemanticContractError           the LLM contract is malformed (fusion)
 ```

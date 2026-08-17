@@ -24,7 +24,7 @@ The package targets Python 3.11+. Its installation, test and lint commands are i
 src/contract_engine/
 ├── exceptions.py     # domain exceptions
 ├── models/           # data models (ResolvedContract, EndpointDefinition, unified contract re-export)
-├── ingestion/        # loader · version · resolution · conformance · facade
+├── ingestion/        # loader · version · resolution · expansion · conformance · references · location · facade
 ├── adapters/         # ASTAdapter
 └── fusion/           # fuse_contract (normalizer, llm_input, merger, façade)
 ```
@@ -67,23 +67,32 @@ print(contract.deviations)        # defects reported, not rejected
 ```
 
 A cyclic schema cannot be expanded forever, so a handful of pointers survive
-resolution as bare document-relative `$ref`s — the marker the recursion handler
-would attach does not reach them. Nothing distinguishes them, so a deliberate
-cycle and a reference that could not be resolved look alike to anything
-downstream.
+resolution as bare document-relative `$ref`s. Each one is reported as a
+`REFERENCE_CYCLE` finding anchored at its destination, so a deliberate cycle is
+no longer indistinguishable from a reference that could not be resolved — the
+latter is still fatal, and is raised long before this point.
 
 #### The stages, and why the order matters
 
-`parse_contract` is a façade over four units:
+`parse_contract` is a façade over five units:
 
 ```mermaid
 flowchart LR
     A[Path] --> B["loader<br/><i>read the document</i>"]
     B --> C["version<br/><i>require a supported version</i>"]
     C --> D["resolution<br/><i>resolve the $ref graph</i>"]
-    D --> E["conformance<br/><i>report the defects found</i>"]
-    E --> F[ResolvedContract]
+    D --> E["expansion<br/><i>bound what it expands to</i>"]
+    E --> F["conformance<br/><i>defects of the document</i>"]
+    E --> G["references<br/><i>cycles the resolver cut</i>"]
+    F --> H[ResolvedContract]
+    G --> H
 ```
+
+`conformance` reads the document as written; `references` reads the resolved
+spec, since a truncated cycle only exists there. Both report through the same
+`ContractDeviation`, and a sixth unit, `location`, holds the vocabulary they
+share: how a path into the document becomes a scope, a JSON Pointer and an
+endpoint.
 
 The version gate runs on the raw document, before any of the expensive work. It
 rejects an unsupported declaration, an undeclared version, and a supported one
@@ -121,8 +130,14 @@ component that compiles it.
 | `scope` | `DOCUMENT`, `PATH_ITEM` or `OPERATION` — how precisely the defect was located |
 | `pointer` | JSON Pointer (RFC 6901) to the node, when the error anchors in one |
 | `path_url` / `method` | the endpoint, on `PATH_ITEM` and `OPERATION` scope |
-| `code` | `SPEC_CONFORMANCE`, or `SPEC_SEMANTICS` when the validator gave the rule its own exception type |
+| `code` | `SPEC_CONFORMANCE`, `SPEC_SEMANTICS` when the validator gave the rule its own exception type, or `REFERENCE_CYCLE` |
 | `detail` | the validator's message, verbatim |
+
+Not every finding faults the document. A `REFERENCE_CYCLE` says the resolver
+truncated a recursive schema — legal OpenAPI, worth knowing about, but not a
+defect. Ask `describes_document_defect(code)` rather than counting deviations: it
+is a total mapping over the enum, so a code it does not classify raises instead of
+quietly landing on the safe side.
 
 `scope` fixes which of `path_url`/`method` must be present, and the DTO enforces
 that pairing: a misattributed deviation fails to construct rather than reading
@@ -138,8 +153,10 @@ like a well-attributed one.
 Still fatal: an unreadable or undecodable file, a document that is not a mapping,
 a version below OpenAPI 3.x, and a `$ref` that cannot be resolved.
 
-The CLI prints the deviations after a successful load and closes with a warning
-rather than a success, so a degraded load never looks like a clean one.
+The CLI prints every finding after a successful load, and closes with a warning
+rather than a success **when the document is at fault**, so a degraded load never
+looks like a clean one — and a valid contract that merely happens to be recursive
+never looks degraded.
 
 #### Error taxonomy
 
@@ -153,7 +170,7 @@ ContractEngineError
 │   ├── SchemaDecodeError           unreadable, unparseable, or not a mapping
 │   ├── UnsupportedSchemaVersionError   not OpenAPI 3.x (Swagger 2.0, 4.x, undeclared)
 │   ├── SchemaResolutionError       a $ref could not be resolved
-│   ├── SchemaComplexityError       too deeply nested to resolve
+│   ├── SchemaComplexityError       too deep to process, or expands past the bound
 │   └── SchemaValidationError       does not conform to the standard
 └── SemanticContractError           the LLM contract is malformed (fusion)
 ```
@@ -163,9 +180,28 @@ catch a leaf to tell them apart. The `loader` and `resolution` units are adapter
 over `prance` and translate every failure of the parse, so a third-party error
 surfaces as a domain exception rather than reaching the caller raw.
 
-Not every failure is raised: ingestion enforces no timeout and no depth cap, so
-a sufficiently recursive spec never returns. Parse untrusted specs under your
-own budget.
+#### Bounds
+
+Resolution inlines a `$ref` by sharing the target object, so the spec it produces
+is a **DAG, not a tree**. Directus resolves in 0.09 s into 6 632 unique nodes —
+which a tree-shaped walk sees as 3.33e10. Nothing hangs *inside* ingestion; the
+cost belongs to whoever walks what ingestion returns, and the validator is only
+first in line, ahead of `json.dumps`, the adapter and persistence.
+
+So what is bounded is **the artifact**, not the running time:
+
+- a cyclic `$ref` is expanded **once** and then truncated — the recursion limit
+  was acting as an exponent (3.33e10 → 6.01e4 on the same spec), and it only ever
+  applies to a `$ref` that re-enters itself;
+- the expanded size is computed over the DAG by memoizing per subtree —
+  `O(unique nodes)`, milliseconds even on the pathological cases — and a spec past
+  the bound is rejected with `SchemaComplexityError` before anything downstream
+  walks it.
+
+Every stage is bounded by a computable function of its input, so ingestion
+terminates. That is an argument, not a promise: there is **no wall-clock
+timeout**, and no static bound rules out a spec nobody has seen. If you need a
+hard deadline for untrusted specs, impose it at the call site.
 
 > **`prance` is pinned to an exact version:** it decides how `$ref` resolution
 > behaves, which is exactly what the ingestion tests characterize. An unpinned

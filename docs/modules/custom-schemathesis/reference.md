@@ -386,9 +386,17 @@ turns on a loop:
    `(method, path, invariant)` in a `suppressed` set.
 2. Rules keep checking already-seen signatures but don't re-raise on them, so the
    next pass can surface a *different* defect.
-3. The loop stops when a pass finds nothing new, or the configured cap is hit.
+3. A suppressed defect still applies its declared **productions**: a defective
+   producer keeps feeding its bundle, so the endpoints behind it stay reachable
+   instead of starving for the rest of the run. Only its own transition probes are
+   skipped — a probe fired after a broken step reports a derived symptom of that
+   step, not an independent defect, and reporting it would spend a pass from a
+   budget meant for *distinct* defects.
+4. The loop stops when a pass finds nothing new, or the configured cap is hit.
 
-Every defect keeps its own independent shrinking.
+Every defect keeps its own independent shrinking, and **each pass reports exactly one
+defect**: Hypothesis's own multi-failure reporting is disabled, leaving the loop as the
+single authority on how many distinct defects a run surfaces.
 
 ```python
 run(engine_input, config)                                # stateless (default)

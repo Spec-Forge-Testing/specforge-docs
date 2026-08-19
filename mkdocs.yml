@@ -93,6 +93,7 @@ nav:
           - Overview: modules/core-ast/index.md
           - Reference: modules/core-ast/reference.md
           - API Reference: modules/core-ast/api-reference.md
+          - Decision records: modules/core-ast/adr.md
           - Integration Tests: modules/core-ast/integration-tests.md
       - Contract Engine:
           - Overview: modules/contract-engine/index.md

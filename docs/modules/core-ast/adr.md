@@ -120,3 +120,59 @@ The package cannot guarantee on its own that its answer reflects the current
 state of disk — it guarantees that it reflects the state at the first scan of
 this process. Any host that keeps a session open across edits is responsible for
 saying when to forget.
+
+---
+
+## ADR-004 — Constants live with the stage that uses them
+
+**Status:** accepted · every stage · supersedes the single `cte/constants.py`
+
+### Context
+
+Every constant in the package lived in one 155-line `cte/constants.py`, and the
+only namespace was a prefix in the name (`LOCATOR_`, `TRACER_`, `AST_BUILDER_`).
+
+Measuring which stage actually imports which constant showed two things:
+
+- **Of twenty constants, exactly one is used by more than one stage.**
+  `EXTENSION_TO_LANGUAGE` is read by `ast_builder`, `locator`, `quality` and
+  `tracer`. Every other constant had a single consumer.
+- **The prefixes were lying.** Eight of the nine `TRACER_*` constants are
+  consumed by `quality`, not by the tracer — thresholds, budget limits, the
+  critical-keyword list. Only `TRACER_NON_TRACEABLE_CALLS_BY_LANGUAGE` belongs to
+  the tracer. `models/tracer_result.py` appeared to be a second consumer of the
+  thresholds, but only names them in a docstring; it does not import them.
+
+A shared module that is 95% private to one consumer is not a shared module. It
+just makes every stage's constants look like everyone's business, and lets a
+prefix drift away from the code it names.
+
+### Decision
+
+One `constants.py` per stage, holding what only that stage uses.
+`cte/constants.py` keeps what **two or more** stages share — today
+`EXTENSION_TO_LANGUAGE` and the `words()` helper that builds the vocabularies,
+and nothing else.
+
+Names lose the stage prefix, because the module now provides it:
+`TRACER_MAX_FILES` becomes `quality.constants.MAX_FILES`.
+
+A data file moves with the constant that points at it: `patterns.toml` now lives
+in `locator/`, its only reader, which also removes the `parent.parent` walk that
+`PATTERNS_PATH` and `AST_BUILDER_TAGS_DIR` needed to climb out of `cte/`.
+
+### Consequences
+
+`cte/constants.py` went from 155 lines to 22. Each stage's table is small enough
+to read whole, and a constant's blast radius is visible from where it is
+declared.
+
+Promoting a constant to `cte/` is now a deliberate step rather than the default.
+That is the point: it forces the question of whether both stages really mean the
+same thing by it.
+
+The cost of dropping the prefixes is that two stages now declare
+`EXCLUDE_DIR_PATTERNS` with **different contents** — the locator excludes build
+output and dependencies, `quality` also excludes tests, migrations and generated
+code. Same name, different meaning, which the old prefixes hid rather than
+solved. No module imports both today; one that needs to will have to alias.

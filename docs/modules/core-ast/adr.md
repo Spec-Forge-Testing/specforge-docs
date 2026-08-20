@@ -707,3 +707,84 @@ the tag query never sees it and the failure surfaces one stage later, as
 So the gate does what it claims — it does not reject a usable tree — but "usable"
 is not the same as "everything in it is reachable". Any future work on partial
 syntax tolerance belongs in the query, not here.
+
+---
+
+## ADR-021 — An `operationId` only names the handler if it names something callable
+
+**Status:** accepted · `api.py` · `extractor/function.py`
+
+### Context
+
+`_resolve_target` takes a shortcut: if the contract's `operationId` matches a
+definition in the located file, use it as the handler name and skip inference.
+
+It checked against *every* definition, types included. That held only because the
+tag queries were incomplete — several languages did not capture types at all. The
+moment they did, RealWorld's `operationId: CreateArticle` started matching axum's
+`struct CreateArticle`, the request body, and the pipeline returned a struct as
+the handler for `POST /articles`.
+
+### Decision
+
+The shortcut requires a **callable**: `collect_callable_names` keeps only names
+captured under `definition.function` or `definition.method`.
+`collect_definition_names` still returns everything and is what the tracer uses,
+where a type is a legitimate local definition — a constructor call is a real
+dependency.
+
+### Consequences
+
+A contract whose `operationId` genuinely names a class handler — a Django
+class-based view, say — no longer takes the shortcut and falls through to
+inference, which has to find it through the route declaration instead. No
+endpoint in the corpus does this; all 228 produce byte-identical extractions
+before and after.
+
+The wider lesson is about the failure mode, not the rule: this bug was invisible
+while a second component was also wrong. Completing the tag queries is what
+exposed it. Two defects that cancel out read as correct until one is fixed.
+
+---
+
+## ADR-022 — The tag queries and `[class_keywords]` are checked against each other
+
+**Status:** accepted · `ast_builder/tags/` · `tests/test_ast_builder/test_tag_queries.py`
+
+### Context
+
+`patterns.toml [class_keywords]` says what a type declaration looks like **in
+text**; the `.scm` files say what one looks like **in the tree**. Nothing kept
+them in agreement, and seven of eleven extensions had drifted: TypeScript and
+JavaScript captured no class at all, Go captured no `type`, Rust no `struct`,
+`enum` or `trait`, and Java, C# and PHP missed most of theirs.
+
+`c_sharp.scm` also captured `(identifier) @name` without the `name:` field, so
+the first identifier child of a method declaration — the **return type** — was
+recorded as the method's name. `extract_function("ArticleResponse")` returned the
+body of `GetArticle`.
+
+### Decision
+
+Every keyword in `[class_keywords]` must be captured by that language's query,
+enforced by a parametrised test that parses one sample per keyword. Deliberate
+exceptions live in a table with their reason, and the test fails if an exception
+starts being captured — so the list can only shrink by accident, never grow.
+
+Two exceptions exist today, both TypeScript's `interface` and `abstract class`,
+for the reason in the next section.
+
+### Consequences
+
+**A shared query can only name node types that exist in every grammar sharing
+it.** JavaScript's grammar has no `type_identifier` and no
+`interface_declaration`, and a query naming either fails to *compile* for
+JavaScript — not silently, but the file becomes unloadable. That is why the class
+name is captured with the wildcard `(_)` and why TypeScript's interfaces are not
+captured at all: neither an interface nor an abstract class can be a handler or
+be called, so capturing them would not repay splitting the file and reviving the
+duplication [ADR-019](adr.md#adr-019) removed.
+
+The suite grew by 58 cases and now compiles all twelve queries against their real
+grammars, which is the check that would have caught the C# defect the day it was
+written.

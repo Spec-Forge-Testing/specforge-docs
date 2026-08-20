@@ -1210,3 +1210,81 @@ The cost is that every analyzer is tied to its grammar's field names, which are
 not stable across tree-sitter versions the way node types roughly are. A field
 rename does not raise: `child_by_field_name` returns `None` and the import
 silently disappears.
+
+---
+
+## ADR-035 — Nine resolvers, one template, two hooks
+
+**Status:** accepted · `resolver/`
+
+### Context
+
+Nine languages need an import turned into a path on disk. They differ in
+separator, extension, and where a project keeps its source — but the shape of the
+work is identical: build candidate paths, return the first that exists.
+
+### Context of the alternative
+
+Writing nine independent resolvers means nine copies of that loop, and nine
+places to fix when the loop is wrong.
+
+### Decision
+
+One `PathResolver` template with exactly **two** hooks:
+
+- `_bases()` — which paths to try, and in what order.
+- `_probe()` — what counts as found.
+
+Everything else is class attributes: separator, extensions, package files, index
+files, search subdirectories. Java, C# and Kotlin override neither hook — they
+are attributes only.
+
+`resolve()` takes the whole `ImportEntry`, not pre-split arguments, so a resolver
+that needs `is_relative` or `relative_level` reads them itself instead of the
+caller branching on language before calling.
+
+### Consequences
+
+Two hooks is a bet that the variation between languages falls on exactly those
+two axes. It has held for nine, but it is a ceiling: a language that needs to
+decide *after* probing — try a path, look inside the file, then choose — has no
+place to do it without a third hook or a full override.
+
+`resolve()` returning `Path | None` rather than raising keeps "not found on disk"
+as the ordinary outcome it is for any third-party import;
+`UnresolvableDependencyError` is reserved for a language with no resolver at all.
+
+---
+
+## ADR-036 — An import can resolve to a directory, or to an index file
+
+**Status:** accepted · `resolver/strategies.py`
+
+### Context
+
+Not every import names a file. `from app.services import x` names a Python
+package; `use crate::http` names a Rust module; `import "example.com/x/pkg"`
+names a Go package. And in JS/TS, `from './utils'` names a *directory* whose
+`index.ts` is the file meant.
+
+### Decision
+
+Two different outcomes, declared per language:
+
+- `PACKAGE_FILES` (`__init__.py`, `mod.rs`) — the presence of that file makes the
+  import resolve to the **directory**. No single file represents the package, so
+  handing back one of them would be arbitrary.
+- `INDEX_FILES` (`index.ts`, `index.js`) — the presence makes it resolve to
+  **that file**, because in JS/TS the index *is* the module.
+
+Go always resolves to a directory; Swift resolves to a directory or to the
+file of the same name.
+
+### Consequences
+
+A resolved path is not necessarily a file, and every consumer has to handle both.
+The tracer sweeps a directory for the definition it is after
+([ADR-029](adr.md#adr-029)), and the fallback bundle expands it into its source
+files — which it did not always do: `_try_add` required `is_file()`, so Go
+packages, Python packages, Rust modules and Swift modules were dropped in
+silence, in eight of the twelve languages.

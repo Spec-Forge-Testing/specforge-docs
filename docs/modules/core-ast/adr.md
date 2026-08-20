@@ -176,3 +176,122 @@ The cost of dropping the prefixes is that two stages now declare
 output and dependencies, `quality` also excludes tests, migrations and generated
 code. Same name, different meaning, which the old prefixes hid rather than
 solved. No module imports both today; one that needs to will have to alias.
+
+---
+
+## ADR-005 — The route vocabulary is deliberately narrow
+
+**Status:** accepted · `locator/constants.py`
+
+### Context
+
+A contract path (`/articles/{slug}`) is turned into a regex that has to match
+however a framework wrote it. Two pieces of that translation look over-specified
+and invite simplification.
+
+### Decision
+
+**Where a route ends** (`BOUNDARY`) accepts a quote, a comma, whitespace, end of
+input — or `?$`, because Django writes routes as regexes (`r'^tags/?$'`), not as
+literals. The trailing slash is optional: `"/tags/"` and `"/tags"` are the same
+route.
+
+A closing parenthesis and a closing bracket are **excluded on purpose**. Admit
+either and a parameter's wildcard eats part of Django's own regex —
+`(?P<slug>[-\w` followed by `]` — so `/articles/{slug}` matches
+`^articles/(?P<slug>[-\w]+)/favorite/?$`, which is a different route.
+
+**What stands in for a parameter** (`ANY_SEGMENT`) is not "any segment": it must
+*look* like a parameter. All twelve frameworks mark them with one of `{`, `:`,
+`<` or `*`, and requiring one is what stops `/articles/{slug}` from matching
+`articles/feed`.
+
+### Consequences
+
+Both regexes are harder to read than the obvious version, and both will look
+wrong to someone tidying them up. A framework that delimits routes some other way
+needs a deliberate widening here, with a test for the route it must *not* match.
+
+---
+
+## ADR-006 — An extension inherits another's rules only within the same language
+
+**Status:** accepted · `locator/constants.py`
+
+### Context
+
+`.tsx` had byte-identical entries to `.ts` in five tables of `patterns.toml`:
+same NestJS, same Express, same keywords. Editing one and forgetting the other
+left that extension on the old rule.
+
+`.kt` and `.java` also share their entries today, because the Spring annotations
+are the same.
+
+### Decision
+
+`EXTENSION_ALIASES` maps an extension to the one it inherits from, expanded into
+every table when `patterns.toml` is loaded. It contains `.tsx → .ts` and nothing
+else. **Kotlin is deliberately left duplicated.**
+
+An alias is only for extensions of the *same* language. `.tsx` is TypeScript with
+JSX. Kotlin merely agrees with Java today.
+
+### Consequences
+
+The inherited entry is *replaced* by an own entry, not merged with it. So the day
+someone adds a Ktor pattern to `.kt`, that entry wins and Kotlin silently loses
+every Spring pattern — which is exactly why the duplication stays.
+
+---
+
+## ADR-007 — A wildcard-only route form can name a handler, never choose a file
+
+**Status:** accepted · `locator/patterns.py`
+
+### Context
+
+A contract path made only of parameters expands to a form with no literal
+segment. `@Delete(':slug')` is a legitimate declaration, and its regex is
+effectively `[^/]+`.
+
+### Decision
+
+Every form carries whether it has a literal segment (`PathForm.literal`, computed
+by `_has_literal`). The locator keeps only forms with a literal; the handler
+resolver takes them all, via `route_patterns(..., solo_literales=False)`.
+
+### Consequences
+
+The same expression is trusted in one stage and refused in the other, which reads
+like an inconsistency until you see why: inside a file already chosen,
+`[^/]+` distinguishes `@Delete("{slug}")` from `@Delete("{slug}/comments/{id}")`;
+across a repository it matches every one-segment route there is, so it would
+point at every file at once.
+
+---
+
+## ADR-008 — Every pattern is scoped to one language
+
+**Status:** accepted · `locator/patterns.py` · `locator/scanner.py`
+
+### Context
+
+Searching a repository for a definition needs a regex, and the shape of a
+definition differs per language. The cheap approach is to build one regex with
+every language's alternatives and run it over every file.
+
+Java and C# have no keyword before a method name, so their entry in
+`[function_keywords]` is empty and they fall back to the universal heuristic
+`\bNAME\s*\(` — which also matches a **call site**, not just a definition.
+
+### Decision
+
+Files are grouped by extension and each group is searched with the pattern its
+own language produces (`search_by_extension`). No pattern ever merges the twelve.
+
+### Consequences
+
+Searching costs one pass per extension present instead of one pass total. In
+exchange, a Python file that merely *calls* `createArticle()` no longer passes for
+the controller that defines it — which is what the merged pattern did, in every
+language, as soon as Java or C# was among the candidates.

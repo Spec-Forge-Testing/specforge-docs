@@ -432,3 +432,171 @@ and the mount strategy rescue endpoints that `path_decorator` left ambiguous.
 The error a caller sees is not necessarily from the last strategy tried, which
 can be surprising when debugging: it is from the most specific one that found
 anything at all.
+
+---
+
+## ADR-013 — Naming a handler uses method-level declarations only
+
+**Status:** accepted · `locator/handler.py`
+
+### Context
+
+Once the file is located, the handler's name is inferred by finding the route
+declaration and taking the definition that follows it.
+
+A class-level prefix (`@Controller('articles')`) matches the whole controller, so
+"the definition that follows" is whichever function is *first in the file* — not
+the one for this endpoint. That is how NestJS returned `constructor`, and how a
+GET returned `createArticle`.
+
+### Decision
+
+Only method-level declarations are used for naming. The class prefix locates the
+file (it is a locator strategy) and is never used to name.
+
+JS and TS need an extra pattern for this: a class method carries none of the
+keywords in `[function_keywords]` — `function` does not appear in
+`async findAll(@Query() q)` — so without `METHOD_DEFINITION` the file is located
+and the handler cannot be named.
+
+`METHOD_DEFINITION` requires **start of line**, and applies to exactly three
+extensions:
+
+- Start of line, because the loose heuristic `\bNAME\s*\(` also matches call
+  sites, and in a routes file what follows the handler is usually another call —
+  `module.exports = router.routes()` — which would name the handler `routes`.
+- Three extensions, because everywhere else it is wrong or unnecessary. Python,
+  Ruby, Go, Rust, Kotlin and Swift do carry a keyword; Java and C# already fall
+  back to the universal heuristic. Applied to all, Django's `urls.py` — where
+  every line opens with `url(` — named every handler `url`.
+
+### Consequences
+
+A framework that declares routes only at class level cannot have its handler
+named, even when its file is located. That is the intended failure: the endpoint
+raises `HandlerNameNotFoundError` rather than returning the first function in the
+file.
+
+---
+
+## ADR-014 — The keyword-less heuristic needs two guards
+
+**Status:** accepted · `locator/handler.py`
+
+### Context
+
+Java and C# have no keyword before a method name, so their entry in
+`[function_keywords]` is empty and `definition_regex` falls back to
+`\bNAME\s*\(`. That shape is not unique to definitions: an **annotation with
+arguments** has it too.
+
+### Decision
+
+Two guards, both only meaningful for those languages:
+
+- `_first_definition_in` skips any match whose line starts with `[` or `@`.
+  Without it, `[Authorize(AuthenticationSchemes = ...)]` sitting between the route
+  decorator and the method made the handler `Authorize`.
+- `_referenced_name` returns `None` outright when the extension has no
+  definition keywords. Its whole safety rests on checking "is this name defined
+  in this file", and with the universal heuristic that check also passes for a
+  call — so any attribute on the line would pass for the handler.
+
+### Consequences
+
+Java and C# get less from the shortcuts than the other ten languages: they never
+take the "handler named inside the declaration" path (ADR-015) and rely on the
+definition that follows. Widening the heuristic for them means finding a way to
+tell a definition from a call without a keyword, which regex alone does not give.
+
+---
+
+## ADR-015 — A handler named inside the declaration wins, if this file defines it
+
+**Status:** accepted · `locator/handler.py`
+
+### Context
+
+Half a dozen frameworks put the handler *inside* the route declaration rather
+than below it: `router.GET("/feed", ArticleFeed)` in Gin,
+`Route::get('tags', 'TagController@index')` in Laravel. Taking "the next
+definition in the file" there returns some other route's handler.
+
+### Decision
+
+The name referenced by the declaration itself is preferred — but only when it is
+**defined in this same file**.
+
+### Consequences
+
+That single requirement is what makes the shortcut safe. When the reference
+points outside — Koa's `ctrl.get`, where `ctrl` is a required module — nothing is
+invented: the shortcut declines and the normal path continues, and if that fails
+too, ADR-016 takes over.
+
+---
+
+## ADR-016 — Following a reference out of the routes file, and the single-definition rule
+
+**Status:** accepted · `locator/handler.py`
+
+### Context
+
+Sometimes the routes file is not the controller at all. Four shapes appear in the
+corpus:
+
+| Shape | Example | Framework |
+| --- | --- | --- |
+| Qualified reference to a sibling | `get(listing::list_articles)` | axum |
+| Chain through a `require` | `ctrl.feed.get` | Koa |
+| Class and method as text | `'ArticleController@index'` | Laravel |
+| Method of a typed variable | `closure: articles.getArticles` | Vapor |
+
+### Decision
+
+Each shape is followed, in that order, and every one of them ends in the same
+check: **the name must have exactly one definition** in the repository.
+
+The qualified reference is stricter still — the qualifier has to name a sibling
+file that *also* defines the function. That double requirement is what makes it
+safe: Koa's `ctrl` is a variable, finds no `ctrl` file next to it, and falls
+through instead of guessing.
+
+### Consequences
+
+A handler called `index`, `get` or `show` will fail the single-definition rule in
+almost any repository, and the endpoint is reported as not found. That is the
+correct outcome under the governing rule — ambiguity resolved by guessing is how
+the wrong controller reaches the LLM.
+
+The `require` chain is followed up to `MAX_REQUIRE_HOPS` (6). Koa needs four:
+router → controllers index → controller → the controller it delegates to.
+
+---
+
+## ADR-017 — With parameters in the path, the declaration that writes them wins
+
+**Status:** accepted · `locator/handler.py` · `locator/matcher.py`
+
+### Context
+
+The wildcard standing in for `{slug}` matches any segment, so the pattern built
+for `/articles/{slug}` also matches a literal `"/api/articles/feed"` — which is a
+different route of the same contract. Whichever appears first in the file wins,
+and `GET /articles/{slug}` returned the handler for `/feed`.
+
+### Decision
+
+When the contract path contains a parameter, a declaration that also writes it as
+a parameter is preferred over one that does not. The check is the same in four
+places — naming a handler, following a qualified reference, searching the
+repository, and breaking ties between mounted modules — and it always prefers
+rather than requires: a non-parameterised match is kept as a fallback when
+nothing better appears.
+
+### Consequences
+
+The same three-line check is repeated at four call sites instead of being lifted
+into a shared helper. Each site has a different notion of "the candidates" — a
+name, a `(file, name)` pair, a match object — so factoring it would mean a
+callback and more indirection than the check itself costs.

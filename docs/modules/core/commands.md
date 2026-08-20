@@ -233,8 +233,8 @@ are all derived from the registry — no other file needs editing.
     ever stored — not even redacted: the execution config keeps header *names* only,
     and any `user:pass@` in the base URL is stripped (a replay re-injects the real
     values from the live config). The run also records its outcome `status`
-    (`completed`/`truncated`), the replay `fidelity` when it is one, and the engine
-    version as provenance.
+    (`completed`/`truncated`/`aborted`), the replay `fidelity` when it is one, and the
+    engine version as provenance.
 
 ??? "`history` — browse persisted projects, analyses and runs"
 
@@ -254,9 +254,10 @@ are all derived from the registry — no other file needs editing.
     The run listing is where the model pays off: an **original** run (`●`) is
     visually distinct from a **replay** (`↺`), and a run whose counters would
     mislead if compared against another's carries a **not-comparable mark** with
-    its reason — `truncated` (it stopped early, so its counters are a budget
-    prefix), `reduced fidelity` (the replay ran against a changed environment), or
-    an unknown status vocabulary from an older database.
+    its reason — `truncated` (it stopped early against its own limits, so its counters
+    are a budget prefix), `aborted` (a fault stopped it: the target stopped responding,
+    or a state link could not be honored), `reduced fidelity` (the replay ran against a
+    changed environment), or an unknown status vocabulary from an older database.
 
     `--status`, `--since <YYYY-MM-DD>` (UTC), `--endpoint <path>` ("runs that
     exercised this endpoint") and `--limit <n>` filter the run listing and require

@@ -312,6 +312,14 @@ have broken the API. The output is what `json.load` accepts, not strict RFC 8259
 A run that was cut short says so through `TruncationRecord` (reason, endpoint, and how
 many requests that endpoint managed to send). Without that mark, a partial trace replays
 as though it were complete and any before/after comparison drawn from it is wrong.
+`requests_sent` counts what reached the wire, so a request the client refused to send is
+excluded — the same predicate the trace itself uses to decide what to record.
+
+The reasons split by what the operator should do about them. `deadline_exceeded` and
+`infrastructure_abort` are a run meeting its own limits: widen the budget. `target_down`
+and `state_link_abort` are a fault that stopped it, and they carry a `detail` with the
+engine's own message — for a state link, the field or zone that could not be honored,
+which is the only actionable part.
 
 **Stateful limitation:** the state machine minimizes by re-running shorter sequences, and
 those re-runs go through the same collector. In stateful mode the trace therefore also
@@ -351,6 +359,7 @@ stateless path.
 |---|---|
 | `StateConsumption.invalidates` | `True` **removes** the value from its bundle on consumption (via `hypothesis.stateful.consumes`), so a deleted resource can't be reused. Default `False`: the value stays reusable (e.g. the same `id` serves both `GET` and `DELETE`). |
 | `TransitionInvariant.echoed_fields` | Beyond the status code, asserts the follow-up probe's body **reflects** the fields sent in the triggering request (e.g. after `PUT {price: 10}`, `GET` must return `price == 10`). Empty ⇒ status-only check. |
+| `TransitionInvariant.trigger_statuses` | Statuses of the **triggering** step under which the invariant applies. `None` (default) ⇒ any status, which is what leaves an undeclared transition behaving as before. Read the default carefully: it is deliberately *not* the same as `StateProduction.on_status`, whose `None` means any 2xx. |
 
 #### The state machine (`state_machine.py`)
 
@@ -366,15 +375,25 @@ flowchart LR
 
 * One Hypothesis `Bundle` per declared bundle name.
 * One `@rule()` per endpoint, running the pipeline above.
-* `@precondition()` blocks consuming a bundle no endpoint has produced yet —
-  preserves logical request ordering.
+* A rule that consumes a bundle only becomes eligible once something has produced
+  into it. That is Hypothesis's own empty-bundle filter, which the machine relies on
+  rather than declaring a second, weaker precondition of its own.
 * The first broken invariant makes the rule **raise** `StatefulViolationError`, so
   Hypothesis shrinks the **sequence of operations** to a minimal reproducer —
   unlike the stateless fuzzer, which collects findings and shrinks the *payload*.
 
 `transitions.py` builds the follow-up probe by reusing `ContextInjector`, delegates
 the 5xx check to the existing `ResponseValidator`, and adds the expected-status and
-`echoed_fields` comparisons (`InvariantViolation.STATE_TRANSITION`).
+`echoed_fields` comparisons (`InvariantViolation.STATE_TRANSITION`). It also owns
+`applies_after`, the predicate behind `trigger_statuses`.
+
+A probe is skipped outright in two cases, both engine semantics rather than contract
+policy. When the triggering step **broke its own invariant**, the follow-up would report
+a symptom derived from that break rather than an independent defect. When the target
+**never answered** the triggering step at all — a timeout, a refused connection, a
+request the client could not send — the follow-up says nothing about whether the
+transition happened: without that rule, a `DELETE` that timed out followed by a `GET`
+returning 200 is reported as "the resource survived", for a request that never landed.
 
 #### Multiple bugs per run (loop-until-dry, opt-in)
 

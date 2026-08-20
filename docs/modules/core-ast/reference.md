@@ -170,7 +170,12 @@ None of this lives in control flow: every shape above is an entry in a table in
 
 **Design decisions — `import_analyzer`.** Each language gets its own
 `BaseImportAnalyzer` subclass (Strategy pattern), so the engine never branches on
-language. Analyzers walk the tree manually rather than through `.scm` queries —
+language. Six of the twelve share one more layer: Java, C#, Kotlin, Swift, Rust
+and PHP all write `<keyword> a.b.c`, so they are declared over
+`DeclarativeImportAnalyzer` as four class attributes — which node is the
+statement, which child holds the path, the segment separator, what to strip —
+instead of reimplementing the walk. Python, TypeScript, Go and Ruby have their
+own, because their grammars split the statement differently. Analyzers walk the tree manually rather than through `.scm` queries —
 import syntax varies too much per grammar (`import_from_statement` in Python vs.
 `import_declaration` in Go vs. a `require` call in Ruby) for one declarative
 capture set to cover cleanly. `get_analyzer()` returns `None` for an unsupported

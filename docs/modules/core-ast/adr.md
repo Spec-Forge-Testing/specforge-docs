@@ -1089,3 +1089,124 @@ here.
 Being context-sensitive is what keeps the cost acceptable: the list can be
 generous, because a repository that genuinely defines one of these names still
 gets it traced.
+
+---
+
+## ADR-031 — Imports are split three ways, not two
+
+**Status:** accepted · `import_analyzer/filtering.py`
+
+### Context
+
+An import either resolves to a file inside the repository or it does not. The
+two-way split loses the distinction that matters: an unresolved import can be a
+third-party library or a broken local dependency, and only the second is a
+problem.
+
+### Decision
+
+`ImportScan` keeps four fields, from three outcomes:
+
+- **resolved inside the repo and used in the snippet** → `relevant`, the only
+  traceable ones, plus `resolved_paths` alongside them.
+- **relative and unresolved** → `broken_local`. A relative import admits no
+  third-party reading: `from .services import x` can only mean a file of this
+  repository, so failing to find it is a real loss and counts against the ratio.
+- **absolute and unresolved** → `external`. It may be `requests` or a mistyped
+  local module, and the source alone cannot say which
+  ([ADR-028](adr.md#adr-028)).
+
+`resolved_paths` is carried rather than re-derived because resolution costs I/O
+and already happened here. The fallback planner used to rebuild those paths with
+its own extension heuristic, which knew six extensions and no ecosystem layouts,
+and therefore found nothing in eight of the twelve languages.
+
+### Consequences
+
+The relative/absolute test is a proxy for intent, and it is only as good as the
+language's conventions. In Go and Java every import is absolute, so a broken
+local dependency there always lands in `external` and never lowers the ratio —
+the whole `broken_local` bucket is effectively Python, TypeScript and Ruby.
+
+---
+
+## ADR-032 — A file never imports itself
+
+**Status:** accepted · `import_analyzer/filtering.py`
+
+### Context
+
+Resolution of an absolute import starts from the importing file's own directory.
+So `app/services/jwt.py` writing `import jwt` to use PyJWT resolved to
+**itself**.
+
+The third-party library then passed for a local module, and everything hanging
+off it — every `jwt.encode`, `jwt.decode` — became a dependency of a file that
+does not define them, and counted as broken.
+
+### Decision
+
+A resolution that lands on the importing file is discarded, and the import
+continues down the classification as if it had not resolved.
+
+### Consequences
+
+A file that genuinely imports itself does not exist in any of the twelve
+languages, so nothing legitimate is lost. What this does not cover is the same
+collision one directory up: a `services/jwt.py` next to a `services/auth.py`
+that writes `import jwt` still shadows the library, and the only way to tell is
+knowing what is installed.
+
+---
+
+## ADR-033 — A grouped import becomes one name per symbol
+
+**Status:** accepted · `import_analyzer/analyzers.py`
+
+### Context
+
+Several languages bring in more than one symbol per statement:
+`use axum::{Json, Router}`, `import { a, b } from 'm'`. Read literally, the
+imported name of the first is the string `{Json, Router}`.
+
+### Decision
+
+The group is expanded: one entry per symbol, with the module path shared.
+
+### Consequences
+
+Without it neither `Json` nor `Router` exists for the tracer, so a call to
+`Json(...)` finds no import and counts as a **broken dependency** rather than a
+third-party library — the failure is not a missed trace, it is a wrong
+classification that lowers `completion_ratio`. The local case is worse:
+`use crate::http::{ApiContext, Error}` left neither name traceable.
+
+---
+
+## ADR-034 — Import parsing reads grammar fields, never positions
+
+**Status:** accepted · `import_analyzer/analyzers.py`
+
+### Context
+
+`from x.y import a` has two parts to tell apart: the module path and the imported
+name. Both are identifiers, and the tempting way to separate them is by position
+— first child is the module, the rest are names — or by comparing their text.
+
+### Decision
+
+Both come from named fields: `module_name` for the path, `name` for each imported
+symbol. The declarative family does the same with `STATEMENT_TYPES` and
+`PATH_TYPES`.
+
+### Consequences
+
+Position and text comparison both break on `from deep import deep`, where the two
+parts are the same string: the name was dropped and the dependency was never
+traced. Idiomatic Python is full of that shape — `from config import config`,
+`from settings import settings`.
+
+The cost is that every analyzer is tied to its grammar's field names, which are
+not stable across tree-sitter versions the way node types roughly are. A field
+rename does not raise: `child_by_field_name` returns `None` and the import
+silently disappears.

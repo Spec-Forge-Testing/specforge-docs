@@ -639,3 +639,71 @@ The real cost lands on CI, which installs only the base dependencies: 22 tests
 that need an optional grammar are skipped there and only ever run locally. Tests
 that need one must carry `@pytest.mark.requires_grammar`, or they pass locally and
 fail in CI — which is exactly what happened once.
+
+---
+
+## ADR-019 — Languages that share a grammar's shape share its tag query
+
+**Status:** accepted · `ast_builder/constants.py`
+
+### Context
+
+Ten `.scm` files cover twelve languages. JavaScript, TypeScript and TSX had three
+files that were the same file copied: adding a capture meant writing it three
+times, and forgetting one left that language without it.
+
+### Decision
+
+`SHARED_TAG_QUERIES` maps a language to the query file it borrows. JavaScript and
+TSX both use `typescript.scm`.
+
+The grammars genuinely differ — JSX is not TypeScript — but the nodes that *name a
+definition* are the same three shapes, and those are the only thing the query
+captures.
+
+### Consequences
+
+This is the same idea as [ADR-006](adr.md#adr-006) —`.tsx` inheriting `.ts`'s
+rules in `patterns.toml`— arrived at independently in another stage, keyed by
+language instead of by extension. Two tables express one thought, and a language
+added to one is not added to the other.
+
+The condition for sharing is narrower here than it looks: not "similar languages"
+but "the same node types name a definition". A grammar that names definitions
+differently needs its own file even if the language is a close relative.
+
+---
+
+## ADR-020 — The syntax gate only rejects an unusable tree
+
+**Status:** accepted · `ast_builder/manager.py`
+
+### Context
+
+tree-sitter is error tolerant: it returns a tree for input it could not fully
+parse. `build_context` has to decide what is too broken to use.
+
+### Decision
+
+Reject only when the root node *is* an `ERROR`, or when it has no children and
+carries an error. Anything else is handed on, errors and all: a broken function
+elsewhere in the file should not cost the handler.
+
+### Consequences
+
+Measured, on a file with one unparseable function and one good handler:
+
+| Where the damage is | Result |
+| --- | --- |
+| Garbage before the handler | handler extracted |
+| Broken function *after* the handler | handler extracted |
+| Broken function *before* the handler | **handler lost** |
+
+The third row is not caught by this gate and is not meant to be. tree-sitter's
+recovery swallows the following definition into the broken one's `ERROR` node, so
+the tag query never sees it and the failure surfaces one stage later, as
+`TargetNodeNotFoundError` from the extractor.
+
+So the gate does what it claims — it does not reject a usable tree — but "usable"
+is not the same as "everything in it is reachable". Any future work on partial
+syntax tolerance belongs in the query, not here.

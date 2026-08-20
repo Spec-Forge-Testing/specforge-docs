@@ -600,3 +600,42 @@ The same three-line check is repeated at four call sites instead of being lifted
 into a shared helper. Each site has a different notion of "the candidates" — a
 name, a `(file, name)` pair, a match object — so factoring it would mean a
 callback and more indirection than the check itself costs.
+
+---
+
+## ADR-018 — Five grammars ship with the package, seven are an optional extra
+
+**Status:** accepted · `ast_builder/`
+
+### Context
+
+Twelve languages need twelve tree-sitter grammars. Making all twelve hard
+dependencies means every install pays for every language; making all twelve
+optional means a bare install cannot parse anything.
+
+### Decision
+
+Five grammars — Python, JavaScript, TypeScript, TSX, Go — are hard dependencies,
+imported at module load and held in `LANGUAGE_FACTORIES`. The other seven are the
+`[golden-path]` extra, listed by module name in `DYNAMIC_LANGUAGE_MODULES` and
+imported on first use.
+
+A grammar that is not installed raises `UnsupportedLanguageError`, the same
+exception as an unsupported extension: from the caller's side, "this file is
+outside the Golden Path" is one situation, not two.
+
+The dynamic path looks for the grammar under two attribute names, `language` and
+`language_<name>`. Nine packages expose `language`; `tree_sitter_php` exposes
+`language_php`. A package following neither convention is treated as not
+supported rather than probed with ever less likely names.
+
+### Consequences
+
+Two tables and two branches in `get_language` for what is one concept. They are
+kept side by side in `ast_builder/constants.py` so the split is visible; putting
+one in the code and the other in a table is how they drift.
+
+The real cost lands on CI, which installs only the base dependencies: 22 tests
+that need an optional grammar are skipped there and only ever run locally. Tests
+that need one must carry `@pytest.mark.requires_grammar`, or they pass locally and
+fail in CI — which is exactly what happened once.

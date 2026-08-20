@@ -1044,3 +1044,48 @@ counted as unresolved.
 The list of four languages is a judgement about how they resolve names, not
 something derived from the grammars. A thirteenth language with package scoping
 has to be added there by hand or its siblings are never swept.
+
+---
+
+## ADR-030 — The non-traceable table is per language and includes what is never imported
+
+**Status:** accepted · `tracer/constants.py`
+
+### Context
+
+A call the tracer cannot follow is not automatically a problem: `print`, `len`,
+`console.log` and `fmt.Println` are the language, not the repository. Chasing them
+wastes work; counting them as unresolved sinks `completion_ratio` for every
+endpoint.
+
+### Decision
+
+One vocabulary of non-traceable names per language, consulted only for **simple**
+calls — a qualified one is already decided by whether its base is a repo import
+([ADR-026](adr.md#adr-026)) — and overridden when the name is explicitly imported
+or defined locally, so a repository with its own `map` still gets it traced.
+
+The table is not just the standard library. Three groups earned their place from
+concrete failures:
+
+- **Go type conversions** — `uint(id)` is syntactically a call and no import or
+  definition explains it.
+- **JDK collection methods** — invoked unqualified in the double-brace idiom
+  (`new HashMap<>() {{ put("tags", ...); }}`) that Spring uses to build
+  responses, so they arrive as local calls and counted as unresolved in nearly
+  every controller.
+- **`ControllerBase` members in C#** — `Ok`, `NotFound`, `BadRequest` and the
+  rest are called with no import because the class inherits them, so no
+  import-based resolution can ever reach them.
+
+### Consequences
+
+The table is a vocabulary maintained by hand, and it is only as good as the
+failures someone has already seen. A framework whose base class contributes
+unqualified methods — the pattern behind two of the three groups above — will
+look like a controller full of broken dependencies until its methods are added
+here.
+
+Being context-sensitive is what keeps the cost acceptable: the list can be
+generous, because a repository that genuinely defines one of these names still
+gets it traced.

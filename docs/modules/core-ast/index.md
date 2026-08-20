@@ -54,24 +54,33 @@ print(payload.estimated_tokens)    # approximate size of the bundle
 print(payload.is_partial_context)  # True if some context could not be resolved
 ```
 
-If you only need the plain text context:
+For a whole contract, `analyze_endpoints` shares one parser across endpoints and
+isolates each outcome, so one endpoint that cannot be located does not cost you the
+rest:
 
 ```python
-from core_ast import build_endpoint_code_bundle
+from core_ast import analyze_endpoints
 
-# Returns payload.system_context as a plain string
-raw_text = build_endpoint_code_bundle(endpoint, repo_root="/path/to/api/repo")
+for result in analyze_endpoints(endpoints, repo_root="/path/to/api/repo"):
+    if result.ok:
+        print(result.analysis.locator.filepath, result.analysis.locator.confidence)
+    else:
+        print(result.endpoint.path, type(result.error).__name__)
 ```
 
 ## Public API Re-exports
 
 The root core_ast package exports:
 
-* ``build_endpoint_payload``: Full pipeline execution $\rightarrow$ ``LLMPayload``.
-* ``build_endpoint_code_bundle`` / ``export_endpoint_bundle``: Full pipeline
-execution $\rightarrow$ ``str``. 
-* ``build_llm_payload``: Packages pre-extracted context (``ExtractedContext`` + ``TracerResult``).
-* ``LLMPayload``: The output DTO.
+* ``analyze_endpoint`` / ``analyze_endpoints``: full pipeline $\rightarrow$
+``EndpointAnalysis`` / one ``EndpointAnalysisResult`` per endpoint. Keeps everything
+the run learned, not just the payload.
+* ``build_endpoint_payload``: the same run narrowed to ``LLMPayload``.
+* ``build_llm_payload``: packages pre-extracted context (``ExtractedContext`` +
+``TracerResult``).
+* ``resolve_handler_name``: the handler's name inside a file already located.
+* ``EndpointDefinition``, ``EndpointAnalysis``, ``EndpointAnalysisResult``,
+``ProcessedFunction``, ``LLMPayload``: the DTOs.
 
 Typed domain exceptions are exported from ``core_ast.exceptions``.
 

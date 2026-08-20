@@ -8,108 +8,164 @@ Recommended entry point:
 
 - `core_ast.build_endpoint_payload(endpoint, repo_root, parser_manager=None) -> LLMPayload`
   — the typed, XML-tagged context bundle the inference engine consumes.
-- `core_ast.build_endpoint_code_bundle(...) -> str` returns the payload's `system_context`
-  (kept for string consumers); `core_ast.export_endpoint_bundle(...)` remains as a reexport.
+- `core_ast.analyze_endpoints(endpoints, repo_root, parser_manager=None)` for a whole
+  contract: one result per endpoint, each carrying its analysis or the domain error
+  that stopped it.
 
 ---
 
 ## `locator`
 
-**Purpose:** given an endpoint from the OpenAPI contract, locate the physical file in
-the repository where its controller is implemented.
+**Purpose:** given an endpoint from the OpenAPI contract, find the file that
+implements its controller and the function inside it that serves the endpoint.
 
 | File | Responsibility |
 |---|---|
-| `locator/scanner.py` | Filesystem crawl with filters |
-| `locator/matcher.py` | Search heuristics and the public function |
+| `locator/constants.py` | Route vocabulary, exclusion lists, cache size |
+| `locator/scanner.py` | Filesystem: candidate files, reading, searching |
+| `locator/patterns.py` | `patterns.toml`, route shapes, definition regexes |
+| `locator/matcher.py` | `locate_controller` — which file |
+| `locator/handler.py` | `resolve_handler_location` — which function |
+
+`matcher` and `handler` never import each other; both build on `patterns`.
 
 ### `scanner.py`
 
 #### `scan_repository(repo_root: Path) -> list[Path]`
 
-Public. Returns every valid source file in the repository.
+Public. Every source file of the repository, sorted, as absolute paths.
 
-**Filter pipeline:** validates `repo_root` exists and is a directory (raises
-`RepositoryNotFoundError` / `RepositoryNotADirectoryError`) → loads `.gitignore` via
-`pathspec` → `Path.rglob("*")` → filters by supported extension
-(`EXTENSION_TO_LANGUAGE.keys()`) → excludes test paths (`_is_test_path`) → returns a
-sorted list of absolute paths.
+**Filter pipeline:** validates `repo_root` (raises `RepositoryNotFoundError` /
+`RepositoryNotADirectoryError`) → loads `.gitignore` via `pathspec` →
+`Path.rglob("*")` → supported extension → not a test path → not build output or a
+dependency directory ([ADR-001](adr.md#adr-001)).
 
-`.gitignore` encoding errors are silenced; the scan continues without that filter.
+The result is cached per repository and copied on the way out, so a caller cannot
+corrupt the cache ([ADR-002](adr.md#adr-002)).
 
-#### `_load_gitignore(repo_root: Path) -> pathspec.PathSpec | None`
+#### `clear_scan_cache() -> None`
 
-Returns a compiled `PathSpec`, or `None` if the file doesn't exist or fails to decode
-(silent fail).
+Public. Forgets every cached scan. A long-running process must call it after the
+repository changes on disk ([ADR-003](adr.md#adr-003)).
 
-#### `_is_test_path(path: Path) -> bool`
+#### `leer(filepath: Path) -> str | None`
 
-True if a parent directory matches `TEST_DIR_PATTERNS` (`tests`, `spec`, …) or the
-filename matches `TEST_FILE_PATTERNS` (`test_`, `.spec.`, …). Both live in
-`cte/constants.py`.
+The text of a file, or `None` when it cannot be read. `UnicodeDecodeError` and
+`OSError` are swallowed: one unreadable file never fails a whole search.
+
+#### `search_by_extension(files, build_pattern) -> list[Path]`
+
+Groups the files by extension and searches each group with the pattern its own
+language produces. Never merges the twelve languages into one regex
+([ADR-008](adr.md#adr-008)).
+
+### `patterns.py`
+
+#### `load_patterns() -> dict`
+
+`patterns.toml`, read once and cached, with extension aliases already expanded
+([ADR-006](adr.md#adr-006)).
+
+#### `definition_regex(extension: str, name: str) -> str`
+
+The fragment that recognises a definition of `name`. With keywords in
+`[function_keywords]`: `(?:kw1|kw2)\s+NAME\b`. Without them — Java, C#, unknown
+extension — the universal heuristic `\bNAME\s*\(`.
+
+#### `path_forms(path: str) -> list[PathForm]`
+
+The ways the contract path may have been written, most specific first:
+`path_decorator` (0.8), `path_prefixed` (0.65) and one `path_suffix` (0.5) per
+left-trim. `path_heads` is the mirror image, returning the class-level prefixes
+(0.4).
+
+Each form knows whether it still has a literal segment. A form made only of
+wildcards can name a handler but must never choose a file
+([ADR-007](adr.md#adr-007)).
+
+#### `route_patterns(endpoint_path, method, extension, solo_literales=False)`
+
+The route declarations to try inside a file already located: every form combined
+with every template of the extension, plus the method-only decorator (`@Get()`).
+
+#### `defines(filepath, name, extension) -> bool` · `unique_definer(files, token, excluded) -> Path | None`
+
+Whether a file declares a name as function or as type, and the single file in the
+repository that defines a token — `None` when zero or more than one do.
 
 ### `matcher.py`
 
 #### `locate_controller(repo_root: Path | str, endpoint_def: EndpointDefinition) -> LocatorResult`
 
-**Main public function.** Implements the cascade heuristic.
+**Main public function.** Runs the cascade of seven strategies and returns the first
+that leaves exactly one candidate.
 
 ```python
 from core_ast.locator.matcher import locate_controller
 from core_ast.models.locator import EndpointDefinition
 
-endpoint = EndpointDefinition(path="/api/users", method="post", operation_id="create_user")
+endpoint = EndpointDefinition(path="/tags", method="get", operation_id="GetTags")
 result = locate_controller("/path/to/repo", endpoint)
-# result.filepath       -> Path("/path/to/repo/src/routes/users.py")
-# result.match_strategy -> "operation_id"
-# result.confidence     -> 1.0
+# result.filepath       -> Path("/path/to/repo/app/api/routes/tags.py")
+# result.match_strategy -> "mount_prefix"
+# result.confidence     -> 0.45
+# result.scope          -> None
 ```
 
-**Cascade:**
+| Strategy | Confidence | Notes |
+|---|---:|---|
+| `operation_id` | 1.00 | Only when the contract declares one |
+| `path_decorator` | 0.80 | |
+| `path_prefixed` | 0.65 | |
+| `path_suffix` | 0.50 | One per left-trim of the path |
+| `mount_prefix` | 0.45 | May also return a `scope` |
+| `class_prefix` | 0.40 | Narrowed by which candidate declares this method |
+| `resource_route` | 0.35 | Also returns the `handler` name |
 
-1. **Primary** (`operation_id`): builds a regex from language keywords (TOML),
-   searches for the function signature. `confidence=1.0`.
-2. **Secondary** (route decorator): builds a regex from decorator templates (TOML),
-   searches for `@app.post("/path")` or equivalent. `confidence=0.8`.
+An ambiguous strategy is remembered and the cascade continues; if none resolves, the
+**most specific** ambiguity found is what gets raised
+([ADR-012](adr.md#adr-012)).
 
-**Raises:** `ControllerNotFoundError` (no file matches), `AmbiguousControllerError`
-(more than one match, includes the candidate list), or `RepositoryNotFoundError` /
-`RepositoryNotADirectoryError` delegated from `scan_repository`.
+**Raises:** `ControllerNotFoundError`, `AmbiguousControllerError`, or
+`RepositoryNotFoundError` / `RepositoryNotADirectoryError` delegated from
+`scan_repository`.
 
-#### `_build_operation_id_pattern(operation_id: str) -> re.Pattern`
+### `handler.py`
 
-Combined regex to detect the function signature in any Golden Path language. For
-languages with keywords (`def`, `func`, `function`): `(?:keyword)\s+NAME\b`. For
-languages without one (Java, C#): `\bNAME\s*\(`. Keywords come from
-`cte/patterns.toml → [function_keywords]`.
+#### `resolve_handler_location(controller_path, endpoint_path, method, scope=None, repo_root=None) -> tuple[Path, str]`
 
-#### `_build_decorator_pattern(path: str, method: str) -> re.Pattern`
+**Main public function.** The file and the function that serve the endpoint. Usually
+the file is the one that declares the route; the exception is a declaration that
+points elsewhere — a sibling module, a `require` chain, a `Class@method` string, or a
+method of a typed variable ([ADR-016](adr.md#adr-016)).
 
-Regex for route decorators (`@app.post`, `@GetMapping`, …). Templates come from
-`cte/patterns.toml → [route_decorators.by_extension]`, interpolating `{method}`,
-`{METHOD}`, `{Method}`.
+#### `resolve_handler_name(controller_path, endpoint_path, method, scope=None) -> str`
 
-#### `_search_in_files(files: list[Path], pattern: re.Pattern) -> list[Path]`
+The function inside a given file. Finds the route declaration and takes the
+definition that follows it, using **method-level declarations only**
+([ADR-013](adr.md#adr-013)).
 
-Searches the pattern across candidate files. Files raising `UnicodeDecodeError` or
-`OSError` are skipped silently.
+**Raises:** `HandlerNameNotFoundError` when no declaration or recognisable
+definition is found.
 
 ### Data models (`models/locator.py`)
 
 ```python
 class EndpointDefinition(BaseModel):
-    path: str  # "/api/users/{id}"
-    method: str  # "get", "post", ...
+    path: str                       # "/articles/{slug}"
+    method: str                     # "get", "post", ...
     operation_id: str | None
-    parameters: list | None
+    parameters: list[dict]
     request_body: dict | None
-    responses: dict | None
+    responses: dict
 
 
 class LocatorResult(BaseModel):
     filepath: Path
-    match_strategy: str  # "operation_id" | "path_decorator"
-    confidence: float  # 1.0 | 0.8
+    match_strategy: str             # "operation_id" ... "resource_route"
+    confidence: float               # 1.00 ... 0.35
+    scope: str | None               # the function holding the relative routes
+    handler: str | None             # when the strategy also produced the name
 ```
 
 ---

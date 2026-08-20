@@ -6,30 +6,76 @@ extension boundaries of `core-ast`.
 ## Module Layout
 
 ```text
-src/
+src/core_ast/
+├── __init__.py         # Public surface
+├── api.py              # Orchestrators (analyze_endpoint, analyze_endpoints)
 ├── exceptions.py       # Typed domain exceptions
-├── core_ast.py         # Public API re-exports
-├── api.py              # Orchestrators (build_endpoint_payload, etc.)
-├── models/             # Pydantic DTOs (EndpointDefinition, ASTContext, ExtractedContext, TracerResult, LLMPayload)
-├── cte/                # Config: Language patterns (patterns.toml) & constants
-├── locator/            # Handler search strategy
-├── ast_builder/        # Tree-sitter file parsing
+├── models/             # Pydantic DTOs that cross stages
+├── cte/                # Only what two or more stages share (ADR-004)
+├── locator/            # Which file, and which function inside it
+├── ast_builder/        # Tree-sitter parsing + .scm tag queries
 ├── extractor/          # Byte-slicing function extraction
 ├── import_analyzer/    # Import statement parser (Strategy per language)
 ├── resolver/           # Physical path resolution (Strategy per language)
 ├── tracer/             # Recursive dependency call graph
-├── quality/            # Quality thresholds & fallback planning
+├── quality/            # Mode policy & fallback planning
 └── packager/           # XML serialization, sanitization & token estimation
 ```
+
+Every stage owns its constants (`<stage>/constants.py`); `cte/constants.py` holds
+only what two or more stages read. See [ADR-004](adr.md#adr-004).
 
 ## Detailed Stage reference
 
 ### 1. `locator`
-Scans the repo while honoring `.gitignore` and skipping tests. Matches `operation_id`
-first, falling back to route decorators. Patterns live in `cte/patterns.toml`.
-- **Exceptions:** Raises `ControllerNotFoundError` (no matches) or
-`AmbiguousControllerError` (includes candidates).
-- **Output:** Filepath, match strategy, and confidence score.
+
+Answers two questions that are easy to conflate: **which file** serves the endpoint,
+and **which function** inside it.
+
+```text
+locator/
+├── constants.py    # Route vocabulary, exclusions, cache size
+├── scanner.py      # Filesystem: candidates, reading, searching by extension
+├── patterns.py     # patterns.toml, route shapes, definition regexes
+├── matcher.py      # locate_controller — which file
+├── handler.py      # resolve_handler_location — which function
+└── patterns.toml   # Every per-language rule
+```
+
+`patterns.py` is the machinery both consumers share; `matcher` and `handler` do not
+import each other. Dependencies run one way: `constants → scanner → patterns →
+{matcher, handler}`.
+
+**Which file.** `locate_controller` walks strategies from most to least specific and
+returns the first that leaves exactly one candidate, carrying the confidence of the
+strategy that hit:
+
+| Strategy | What it found | Confidence |
+|---|---|---:|
+| `operation_id` | A definition named like the contract's `operationId` | 1.00 |
+| `path_decorator` | The whole path, written in a decorator | 0.80 |
+| `path_prefixed` | The path with a prefix in front (`/api/tags`) | 0.65 |
+| `path_suffix` | Only the tail; the prefix comes from a mount | 0.50 |
+| `mount_prefix` | Two hops: the literal prefix in a mount, then the module mounted | 0.45 |
+| `class_prefix` | Only the class-level prefix; says nothing about the method | 0.40 |
+| `resource_route` | Nothing is written: route and handler both come from convention | 0.35 |
+
+An ambiguous strategy does not abort the cascade — see
+[ADR-012](adr.md#adr-012). The last two strategies are documented in
+[ADR-010](adr.md#adr-010) and [ADR-011](adr.md#adr-011).
+
+**Which function.** The contract's `operationId` and the function's name in code are
+independent conventions — RealWorld declares `GetTags` for a handler called
+`get_all_tags` — so `resolve_handler_location` infers it: find the route declaration
+and take the definition that follows, with four fallbacks for frameworks that name
+the handler inside the declaration or in another file
+([ADR-015](adr.md#adr-015), [ADR-016](adr.md#adr-016)).
+
+- **Exceptions:** `ControllerNotFoundError` (nothing matched),
+  `AmbiguousControllerError` (carries its candidates), `HandlerNameNotFoundError`
+  (file located, function not nameable).
+- **Output:** filepath, match strategy, confidence, and optionally the scope or the
+  handler name when the strategy produced one.
 
 **Technology choices**
 
@@ -37,13 +83,18 @@ first, falling back to route decorators. Patterns live in `cte/patterns.toml`.
 |---|---|---|---|
 | `pathspec` for `.gitignore` | Full gitignore format (globstar, negations) — the de facto Python standard for this. | `fnmatch` (no globstar/negation support); manual parsing (error-prone, costly to maintain) | Small external dependency (<50 KB). |
 | `re` (stdlib regex) for the primary heuristic | One O(n) pass per candidate file, no external dependency. | `tree-sitter` for the primary search — more precise, but a full parse per candidate is O(n) parse + O(m) query, expensive on large repos; a `grep` subprocess — OS-dependent, not portable, hard to test | Can false-positive inside strings/comments; tolerable combined with the extension/test-path filter. |
-| `tomllib` for pattern config | Stdlib since Python 3.11; no dependency; TOML reads better than JSON for rule config. | — | Requires Python ≥ 3.11. A new language is a `cte/patterns.toml` edit, never a code change. |
+| `tomllib` for pattern config | Stdlib since Python 3.11; no dependency; TOML reads better than JSON for rule config. | — | Requires Python ≥ 3.11. A new language is a `locator/patterns.toml` edit, never a code change. |
 
-**Design principles:** deterministic (same input → same output or exception);
-stateless (no cross-call cache, which simplifies ephemeral-container deployment);
-fails with information (`AmbiguousControllerError` carries its candidate list,
+**Design principles:** deterministic (same input → same output or exception); fails
+with information (`AmbiguousControllerError` carries its candidate list,
 `ControllerNotFoundError` carries `path`/`method`); tolerates bad encoding by
-skipping the file rather than failing the whole scan.
+skipping the file rather than failing the whole scan; and never guesses between two
+candidates, because a confident wrong answer costs more downstream than a miss.
+
+The repository scan **is** cached, per repository and for the life of the process —
+it used to be stateless, and stopped being so deliberately
+([ADR-002](adr.md#adr-002)). A long-running host must call `clear_scan_cache()`
+between runs ([ADR-003](adr.md#adr-003)).
 
 ### 2. `ast_builder` & `extractor`
 - **`ast_builder`:** Reads raw bytes into an `ASTContext` containing the tree, tag query,

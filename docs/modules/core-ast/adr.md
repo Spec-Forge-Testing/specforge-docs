@@ -954,3 +954,93 @@ single text node and yields **no calls at all** — not an error, just silence.
 `SNIPPET_PREAMBLE` prepends what the language needs. A language added later that
 has the same property will look like a function with no dependencies until
 someone notices.
+
+---
+
+## ADR-028 — Unresolved and external are different failures
+
+**Status:** accepted · `tracer/engine.py`
+
+### Context
+
+A call the tracer cannot follow can mean two very different things, and only one
+of them should count against the endpoint.
+
+`completion_ratio` is `resolved / (resolved + unresolved)`, and the mode policy
+reads it. Counting the wrong thing there either hides real losses or drowns every
+endpoint in noise from `requests` and `console.log`.
+
+### Decision
+
+**Unresolved** means: this looks like a dependency of this repository and it was
+not found. Something is wrong — a broken relative import, a function missing from
+the file an import resolved to.
+
+**External** means: no resolution could ever reach it, so its absence is not a
+loss. Three cases end up here:
+
+- A call with no import bringing it in and no definition in the file or its
+  package. It is a parameter being invoked — `repo_type(conn)` inside
+  `get_repository(repo_type)` — a local variable, or a member inherited from a
+  third-party class.
+- A qualified call whose qualifier turns out to be a **type** in the target file:
+  `ArticleForResponse.from_orm(...)` invokes something pydantic put on the base
+  class, not something this repository wrote. A missing `services.process` is the
+  opposite — `services` is the file, not a definition inside it — and stays
+  unresolved.
+- An absolute import that did not resolve, decided earlier by `ImportScan`.
+
+External calls are recorded on the result but excluded from the ratio.
+
+### Consequences
+
+The distinction rests on a guess that cannot be verified without knowing the
+installed environment: a mistyped local module and a third-party package are
+genuinely indistinguishable from the source alone. Both land in `external`, so a
+broken local dependency of that shape does **not** lower the ratio. Closing that
+gap means reading the analysed repository's declared dependencies, which is a new
+per-language mechanism and deliberately out of scope.
+
+Both classifications are recorded, so the loss is visible even when it does not
+move the number.
+
+---
+
+## ADR-029 — Where the package is the directory, siblings are swept
+
+**Status:** accepted · `tracer/engine.py`
+
+### Context
+
+In Java, Kotlin, C# and Go a symbol from the same package is used with no import
+at all. `data class User` lives in `model/User.kt` and `model/Article.kt` writes
+`var author: User = User()` without a single import line; in Go, `routers.go` and
+`models.go` share a package and call each other unqualified.
+
+Looking only at imports, those dependencies came out unresolved and dragged down
+the `completion_ratio` of everything passing through them.
+
+### Decision
+
+For those four languages, a call with no import and no local definition is looked
+for among the sibling files of the same directory, reusing the same sweep an
+import that resolves to a folder already uses.
+
+The sweep requires the sibling to **define** the name, confirmed on the tree.
+Mentioning it is not enough, and that is not a detail: in a Go package the test
+that exercises a function sorts before the file that defines it —
+`unit_test.go` before `utils.go` — so a mention-based match extracted from the
+wrong file and the dependency stayed unresolved anyway.
+
+The mention survives as a cheap pre-filter, to avoid parsing the whole package.
+
+### Consequences
+
+Correctness now depends on the tag query capturing what the sibling defines. A
+type-only Go file was invisible to this sweep until the queries were completed
+([ADR-022](adr.md#adr-022)), and the failure was silent: the dependency simply
+counted as unresolved.
+
+The list of four languages is a judgement about how they resolve names, not
+something derived from the grammars. A thirteenth language with package scoping
+has to be added there by hand or its siblings are never swept.

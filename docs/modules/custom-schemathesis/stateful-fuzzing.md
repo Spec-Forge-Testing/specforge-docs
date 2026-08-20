@@ -19,7 +19,9 @@ stateful fuzzer consumes it; the normal async fuzzer ignores it.
 The engine executes generated chains, carries state between requests and reports a
 transition sequence with any cross-endpoint finding. A run stops at the first
 broken invariant by default — cheap, one bug at a time — but can be configured to
-keep searching for distinct bugs in the same run instead.
+keep searching for distinct bugs in the same run instead. In that mode an
+already-reported defect stops the report, not the chain: the request still contributes
+the state it declared, so the endpoints depending on it keep being exercised.
 
 Detailed lifecycle, configuration and invariants remain in the
 [complete reference](reference.md#stateful-fuzzing).

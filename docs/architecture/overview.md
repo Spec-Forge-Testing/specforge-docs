@@ -64,7 +64,7 @@ docker-compose.yml           # monorepo orchestration (root entry point)
 | Module | Responsibility |
 | :--- | :--- |
 | `core/` | Interactive CLI/REPL (Typer, Rich, prompt_toolkit): navigation + command orchestration. |
-| `lib/contract_engine/` | Validates OpenAPI 3.x (`prance`), flattens endpoints, fuses base schemas with LLM invariants. Rejects Swagger 2.0. |
+| `lib/contract_engine/` | Validates OpenAPI 3.x (`prance`), translates Swagger 2.0 into it, flattens endpoints, fuses base schemas with LLM invariants. |
 | `lib/core_ast/` | Deterministic, stateless AST analysis (`tree-sitter`); locates routes/handlers/deps via `patterns.toml`. |
 | `lib/semantic_inference/` | Provider-agnostic LLM interface (`LiteLLM`): retries, fallbacks, invariant inference. |
 | `lib/custom_schemathesis/` | Compiles contracts to Hypothesis strategies; runs stateless/stateful async HTTP fuzzing (`httpx`). |

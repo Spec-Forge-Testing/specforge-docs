@@ -29,7 +29,8 @@ Only one candidate at a time, same port 8000 as `real-world/` and `emb/`.
 * **`specs/<language>.json`** — that candidate's real OpenAPI contract,
   already captured. This is what `contract_engine` consumes; `candidates/` is
   only there to get the API running. Exception: `go.json` is Swagger 2.0
-  (Gotify's real spec), not OpenAPI 3.x — see [AI-198](https://linear.app/ai-pbt/issue/AI-198).
+  (Gotify's real spec), which `contract_engine` translates into OpenAPI 3.x on
+  ingestion.
 * **`MANIFEST.tsv`** — one row per language: the source commit SHA (for
   `core_ast`) and the Docker image + digest (for `up.sh`). The only record of
   which version each candidate is.
@@ -41,7 +42,7 @@ Only one candidate at a time, same port 8000 as `real-world/` and `emb/`.
 | Python | [Mealie](https://github.com/mealie-recipes/mealie) | MIT | Native FastAPI `/docs` — captured live |
 | JavaScript | [NodeBB](https://github.com/NodeBB/NodeBB) | GPL-3.0 | Published Write API (v3) spec, split across multiple files — bundled into one document |
 | TypeScript | [Directus](https://github.com/directus/directus) *(replaces Medusa — no maintained official image existed)* | MSCL (converts to GPL-3.0 four years after each release; permits internal/research use) | Native `/server/specs/oas` — dynamic by permission, captured authenticated as admin (68 paths vs. 10 unauthenticated) |
-| Go | [Gotify](https://github.com/gotify/server) | MIT | Native `/swagger` — captured live. **Swagger 2.0, not OpenAPI 3.x**: `contract_engine` only accepts 3.x today ([AI-198](https://linear.app/ai-pbt/issue/AI-198)) |
+| Go | [Gotify](https://github.com/gotify/server) | MIT | Native `/swagger` — captured live. **Swagger 2.0**, translated into OpenAPI 3.x on ingestion |
 | Java | [Keycloak](https://github.com/keycloak/keycloak) | Apache-2.0 | Captured from Keycloak's official docs site |
 | C# | [Jellyfin](https://github.com/jellyfin/jellyfin) | GPL-3.0 | Native Swashbuckle `/api-docs/openapi.json` — captured live (first request takes ~9s, generated on demand) |
 | Ruby | [Mastodon](https://github.com/mastodon/mastodon) | AGPL-3.0 | **Not served at runtime** (`/openapi.json`, `/openapi.yaml`, `/api-docs` all 404, verified live) — captured from a community spec sourced from the official docs; no official OpenAPI exists |
@@ -90,10 +91,10 @@ Wired into `tests/contract_engine/` as a separate track — see
 [Integration suite → `polyglot` track](suite.md#polyglot-track-8-of-10-red).
 **`php` (InvoiceNinja) and `c_sharp` (Jellyfin) load clean; 8 of 10 reject or
 time out.**
-Go/Gotify fails for a different reason than the rest: not a schema-shape
-rejection but a version rejection, the same fact
-[EMB → Consumers](emb.md#consumers) documents for its 19 Swagger 2.0 SUTs. It
-clears once [AI-198](https://linear.app/ai-pbt/issue/AI-198) lands.
+Those verdicts predate the ingestion work and the track has not been re-run —
+see the warning on [Integration suite → Status](suite.md#status). Go/Gotify in
+particular failed on its version rather than its schema shape, and that reason no
+longer exists: Swagger 2.0 is translated on ingestion.
 
 Booting a candidate's **API** — as opposed to reading its **spec** — is still
 not wired into the suite: that needs a Python class like

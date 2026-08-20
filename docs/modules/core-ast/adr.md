@@ -849,3 +849,108 @@ return whichever came first. It also means an intermediate segment must itself b
 captured as a definition — which is why `typescript.scm` captures an object key
 whose value is a function or an object, and only those two, so that ordinary
 configuration keys do not become definitions.
+
+---
+
+## ADR-025 — Call detection is table-driven, and walks the tree by hand
+
+**Status:** accepted · `tracer/call_detector.py`
+
+### Context
+
+Twelve grammars express one idea — a call, with or without a base — in nine
+different shapes. Two obvious approaches: a branch per language, or a `.scm`
+query per language like the extractor uses.
+
+### Decision
+
+Neither. Everything resolves through tables of node types and field names
+(`CALL_NODE_TYPES`, `BASE_FIELDS`, `NAME_FIELDS`, …), and the tree is walked by
+hand rather than queried.
+
+Tables because a branch per language is a branch per language forever: adding one
+means editing control flow, and the twelve shapes do not partition cleanly — they
+overlap. Adding a language should be adding entries.
+
+By hand rather than `.scm` because a query would make call detection depend on
+every Golden Path grammar shipping one, and on those queries agreeing on capture
+names. The tag queries already carry that coupling for definitions; extending it
+to calls doubles the surface that has to stay in sync.
+
+### Consequences
+
+Adding a language means extending the tables and nothing else — but it also means
+the tables are the only documentation of which node type belongs to which
+grammar, and nothing checks that an entry is still real. A grammar that renames a
+node type leaves a dead string in a frozenset, silently.
+
+Before this was generalised, **six of the twelve languages detected zero calls**.
+`expected_calls` was 0, `completion_ratio` 1.0 by definition, and the mode
+`surgical` — a perfect-completeness report over a payload that was just the
+controller. A detector that finds nothing does not look broken from the outside.
+
+---
+
+## ADR-026 — A call is reported qualified, and the tracer decides what to do with it
+
+**Status:** accepted · `tracer/call_detector.py`
+
+### Context
+
+`obj.method()` can be a dependency worth following or noise. `services.process()`
+is real if `services` is an import that resolved inside the repository;
+`self.compute()` and `svc.charge()` are not.
+
+The detector cannot tell: it sees one snippet and knows nothing about imports.
+
+### Decision
+
+The detector returns the **qualified** name, base included, and the tracer
+decides. A multi-segment base collapses to its last segment — the module that
+names the function — normalised to a dot: `crate::services::process()` becomes
+`services.process`.
+
+The last segment because that is what identifies the module; the earlier ones are
+the path to it, which the resolver reconstructs anyway from the import. The dot
+because the tracer should split on one separator, not on whichever the language
+happened to use.
+
+### Consequences
+
+One rule at the other end — *keep it only if the base is an import that resolved
+inside the repository* — drops `self.compute()` and `svc.charge()` without a
+special case for either, and keeps the tracer out of the standard library and
+third-party packages.
+
+The cost is that the detector's output is not the code's own vocabulary:
+`services.process` never appears literally in a Rust file. Anything comparing
+detector output against source text has to account for that.
+
+---
+
+## ADR-027 — The snippet is reparsed on its own
+
+**Status:** accepted · `tracer/call_detector.py`
+
+### Context
+
+Calls are looked for inside the extracted function, not the whole file. The
+function's node is already in the file's tree, so it could be walked there.
+
+### Decision
+
+The snippet is parsed again, standalone, from the bytes the extractor produced.
+
+### Consequences
+
+Cheaper to reason about than carrying a node plus a byte range through the
+tracer, and it makes the boundary literal: what gets walked is exactly what the
+LLM will read.
+
+It also costs one parse per traced function, and it introduces a problem that
+does not exist in the file's own tree: some languages do not recognise their own
+code without an opening marker. A bare PHP function without `<?php` parses as a
+single text node and yields **no calls at all** — not an error, just silence.
+`SNIPPET_PREAMBLE` prepends what the language needs. A language added later that
+has the same property will look like a function with no dependencies until
+someone notices.

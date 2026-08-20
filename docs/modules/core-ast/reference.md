@@ -147,6 +147,27 @@ modules.
 - **Tracer:** Recursively resolves `call_detector` matches until reaching depth limits or
 cyclic symbols. Unmapped calls are logged as `unresolved_calls`.
 
+**How the twelve grammars describe a call.** The detector has to recognise one
+idea across twelve syntaxes, and they disagree on two axes at once.
+
+*Where the called name sits* — three arrangements, which are the three branches
+of `_callee_node`:
+
+| Arrangement | Languages |
+| --- | --- |
+| The call node carries the name itself | Java, Ruby, PHP |
+| A `function` field points at it | Python, JS/TS, Go, Rust, C# |
+| It is the first named child, with no field | Kotlin, Swift |
+
+*How a qualified call is spelled* — `obj.method`, `pkg::func`, `receiver->name`.
+The detector normalises all of them to a single dotted form and keeps only the
+last segment of the base, because that is the segment naming the module (see
+[ADR-026](adr.md#adr-026)).
+
+None of this lives in control flow: every shape above is an entry in a table in
+`tracer/constants.py`, and adding a language means adding entries
+([ADR-025](adr.md#adr-025)).
+
 **Design decisions — `import_analyzer`.** Each language gets its own
 `BaseImportAnalyzer` subclass (Strategy pattern), so the engine never branches on
 language. Analyzers walk the tree manually rather than through `.scm` queries —

@@ -1571,3 +1571,42 @@ Mixing the two also means two idioms for the same job in one package. The
 compensation is that a pydantic model in `models/` signals "someone outside
 depends on this shape", which is exactly what you want to know before changing a
 field.
+
+---
+
+## ADR-045 — An exception says what happened, not what to do about it
+
+**Status:** accepted · `exceptions.py`
+
+### Context
+
+Three of the package's exceptions used to carry instructions in their message:
+
+> `Extensión '.cob' no pertenece al Golden Path. El orquestador debe activar el
+> mecanismo de fallback.`
+>
+> `Función 'x' no encontrada en 'y'. El orquestador debe enviar el archivo
+> completo como fallback.`
+
+They were written when a single orchestrator consumed the package and the
+recovery was assumed to be one thing.
+
+### Decision
+
+The message states the fact. What to do about it belongs to the caller, and the
+package already gives it what it needs to decide: a typed exception, its
+attributes, and `ENDPOINT_ANALYSIS_ERRORS` saying which failures are per-endpoint
+([ADR-043](adr.md#adr-043)).
+
+### Consequences
+
+Two callers can now respond differently to the same exception without one of
+them contradicting the text it prints. The CLI shows the message to a person;
+`analyze_endpoints` records it per endpoint; neither is told to "activate the
+fallback mechanism", a phrase that named nothing in the code by the time it was
+removed.
+
+The rule also applies to docstrings on the exception classes, which had drifted
+into naming a single cause as the definition — `TargetNodeNotFoundError` was
+documented as "(outdated Swagger)", one possible cause, when the common one today
+is a handler the tag query does not capture.

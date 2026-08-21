@@ -305,7 +305,7 @@ class ExtractedContext(BaseModel):
 
 | File | Responsibility |
 |---|---|
-| `import_analyzer/base.py` | `BaseImportAnalyzer` ABC, shared `_decode` helper |
+| `import_analyzer/base.py` | `BaseImportAnalyzer` ABC and its shared helpers |
 | `import_analyzer/factory.py` | `get_analyzer(language_name)` — per-language singletons |
 | `import_analyzer/__init__.py` | Public `analyze_imports(ast_context)` |
 | `PythonImportAnalyzer` | `from x import y`, `import x`, relative imports |
@@ -327,7 +327,7 @@ class BaseImportAnalyzer(ABC):
     def analyze(self, tree, source_bytes) -> list[ImportEntry]: ...
 
     @staticmethod
-    def _decode(node, source_bytes) -> str:
+    def node_text(node, source_bytes) -> str:   # in ast_builder/nodes.py
         return source_bytes[node.start_byte : node.end_byte].decode("utf-8")
 ```
 
@@ -582,7 +582,7 @@ def compute_completion_ratio(expected_calls: int, resolved_calls: int) -> float:
 #### `detect_forced_abort(unresolved_calls: list[str]) -> str | None`
 
 Returns a reason string if any unresolved call contains a
-`TRACER_CRITICAL_KEYWORDS` term (`"auth"`, `"payment"`, `"verify"`, `"fraud"`, …), or
+`CRITICAL_KEYWORDS` term (`"auth"`, `"payment"`, `"verify"`, `"fraud"`, …), or
 `None` otherwise.
 
 #### `decide_mode(expected_calls, resolved_calls, unresolved_calls) -> tuple[str, float, str | None]`
@@ -595,7 +595,7 @@ mode, ratio, reason = decide_mode(10, 7, ["missing_func"])
 **Logic:** compute the ratio → if `detect_forced_abort` fires, `("fallback", ratio, reason)`
 regardless of ratio → else `ratio >= 0.67` → `"surgical"`; `ratio >= 0.33` →
 `"hybrid"`; else `"fallback"`. Thresholds are
-`TRACER_THRESHOLD_SURGICAL` / `TRACER_THRESHOLD_HYBRID` in `cte/constants.py`.
+`THRESHOLD_SURGICAL` / `THRESHOLD_HYBRID` in `quality/constants.py`.
 
 ### `fallback_planner.py`
 
@@ -616,8 +616,8 @@ files, truncated = build_fallback_bundle(
 direct local imports; 3) `_find_candidates_for_unresolved()` — files mentioning an
 unresolved call.
 
-**Hard budget** (defaults in `cte/constants.py`): `TRACER_MAX_FILES = 10`,
-`TRACER_MAX_TOTAL_LINES = 2000`, `TRACER_MAX_LINES_PER_FILE = 500`.
+**Hard budget** (defaults in `quality/constants.py`): `MAX_FILES = 10`,
+`MAX_TOTAL_LINES = 2000`, `MAX_LINES_PER_FILE = 500`.
 
 #### `_resolve_import_paths(imports, controller_path, repo_root) -> list[Path]`
 

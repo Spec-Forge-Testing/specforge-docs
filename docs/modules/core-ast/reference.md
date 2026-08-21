@@ -114,7 +114,7 @@ source path, line bounds).
 > siblings grouped under a `decorated_definition` node, not children of
 > `function_definition`. Without ascending to the parent, byte-slicing would start
 > at `def`, dropping the `@decorator` lines. `_include_decorators` checks
-> `node.parent.type in DECORATOR_NODE_TYPES` (a `frozenset` in `cte/constants.py`)
+> `node.parent.type in DECORATOR_NODE_TYPES` (a `frozenset` in `extractor/constants.py`)
 > and returns the parent when it applies.
 
 **Why tree-sitter.** An incremental, deterministic, multi-language parser
@@ -282,11 +282,11 @@ silently contained no direct imports at all.
 ### 4. `quality`
 Computes the completion ratio (resolved vs. discovered calls) and enforces quality modes:
 
-| Mode | Condition (`cte/constants.py`) | Shipped Context |
+| Mode | Condition (`quality/constants.py`) | Shipped Context |
 |---|---|---|
-| `surgical` | `completion_ratio >= TRACER_THRESHOLD_SURGICAL` (`0.60`) | Controller & exact dependency chain |
-| `hybrid` | `TRACER_THRESHOLD_HYBRID <= ratio < 0.60` (`0.25`–`0.60`) | Dependency chain + bounded fallback files |
-| `fallback` | `ratio < 0.25` **or** an unresolved call matches `TRACER_CRITICAL_KEYWORDS` | Bounded fallback files only |
+| `surgical` | `completion_ratio >= THRESHOLD_SURGICAL` (`0.60`) | Controller & exact dependency chain |
+| `hybrid` | `THRESHOLD_HYBRID <= ratio < 0.60` (`0.25`–`0.60`) | Dependency chain + bounded fallback files |
+| `fallback` | `ratio < 0.25` **or** an unresolved call matches `CRITICAL_KEYWORDS` | Bounded fallback files only |
 
 The critical-keyword override wins regardless of ratio: an unresolved call named
 `verify_token` forces `fallback` even at `completion_ratio == 1.0`. The keyword set
@@ -298,11 +298,11 @@ The fallback file bundle (`hybrid`/`fallback` modes) is capped by a hard budget:
 
 | Limit | Default | Purpose |
 |---|---|---|
-| `TRACER_MAX_FILES` | `10` | Max files added to the bundle. |
-| `TRACER_MAX_TOTAL_LINES` | `2000` | Max combined lines across all bundle files. |
-| `TRACER_MAX_LINES_PER_FILE` | `500` | Per-file line cap — a 3000-line file still only "costs" 500 against the budget, but ships in full. |
+| `MAX_FILES` | `10` | Max files added to the bundle. |
+| `MAX_TOTAL_LINES` | `2000` | Max combined lines across all bundle files. |
+| `MAX_LINES_PER_FILE` | `500` | Per-file line cap — a 3000-line file still only "costs" 500 against the budget, but ships in full. |
 
-Directories matching `TRACER_EXCLUDE_DIR_PATTERNS` (`tests/`, `vendor/`,
+Directories matching `EXCLUDE_DIR_PATTERNS` (`tests/`, `vendor/`,
 `node_modules/`, `migrations/`, …) never enter the fallback bundle.
 
 **Why pure functions for the mode decision.** `policy.py` holds no state and
@@ -310,7 +310,7 @@ does no I/O — `compute_completion_ratio`, `detect_forced_abort` and
 `decide_mode` are the part of the system most likely to change (threshold
 tuning, new critical keywords), so keeping them pure keeps that tuning cheap to
 test and change without touching anything else. Critical keywords live in
-`cte/constants.py`, not inline, for the same reason.
+its stage's `constants.py`, not inline, for the same reason.
 
 **Fallback bundle priority (`fallback_planner.py`):** 1) the controller file,
 always first; 2) direct local import targets; 3) files that mention an
@@ -348,7 +348,7 @@ context. No silent None returns or hidden truncations.
 
 Adding a language is a config + strategy change, never a core-dispatch edit:
 
-1. **Locator** — add a `.py`/`.go`/... entry to `cte/patterns.toml`:
+1. **Locator** — add a `.py`/`.go`/... entry to `locator/patterns.toml`:
 
     ```toml
     [function_keywords]
@@ -375,9 +375,9 @@ construction — they only consume the DTOs the strategies above produce.
 | To add | Change |
 |---|---|
 | A new AST node type for call detection | One entry in `_NODE_EXTRACTORS` (`tracer/call_detector.py`). |
-| A new critical keyword | One entry in `TRACER_CRITICAL_KEYWORDS` (`cte/constants.py`). |
-| A new excluded directory for the fallback bundle | One entry in `TRACER_EXCLUDE_DIR_PATTERNS` (`cte/constants.py`). |
-| Different surgical/hybrid thresholds | `TRACER_THRESHOLD_SURGICAL` / `TRACER_THRESHOLD_HYBRID` (`cte/constants.py`). |
+| A new critical keyword | One entry in `CRITICAL_KEYWORDS` (`quality/constants.py`). |
+| A new excluded directory for the fallback bundle | One entry in `EXCLUDE_DIR_PATTERNS` (`quality/constants.py`). |
+| Different surgical/hybrid thresholds | `THRESHOLD_SURGICAL` / `THRESHOLD_HYBRID` (`quality/constants.py`). |
 
 ### Not implemented: search by line coordinate
 
@@ -393,7 +393,7 @@ added later without breaking the existing interface.
   never crosses a module boundary, so the orchestrator can catch one exception
   hierarchy instead of Python's.
 - **Constants centralized, never duplicated.** Shared knowledge
-  (`cte/constants.py`) — critical keywords, thresholds, excluded directories,
+  (`quality/constants.py`) — critical keywords, thresholds, excluded directories,
   decorator node types — has exactly one owner; no module redefines what
   another needs.
 - **Pydantic v2 at every boundary.** Every DTO crossing a stage boundary
@@ -417,7 +417,7 @@ must never break:
 ## Development & Testing
 
 Use the Core AST commands in
-[Development & Testing](../../getting-started/development.md#module-commands).
+[Development & Testing](../../getting-started/development.md#test-a-compose-module).
 
 Integration-test setup and output conventions are documented separately in
 [Integration Tests](integration-tests.md).

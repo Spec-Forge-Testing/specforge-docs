@@ -1531,3 +1531,43 @@ vanished between the scan and the parse is not an ordinary per-endpoint outcome.
 
 `ok` on the result tells the two apart without the caller matching on exception
 types.
+
+---
+
+## ADR-044 — Pydantic on the boundaries, dataclasses inside
+
+**Status:** accepted · `models/`
+
+### Context
+
+Ten DTOs carry data between stages. Pydantic validates, coerces and can emit a
+JSON schema; a dataclass does none of that and costs nothing.
+
+Using pydantic for all ten is the consistent choice. It also means every internal
+accumulator pays validation on every mutation, for data that no external caller
+ever sees.
+
+### Decision
+
+Pydantic for anything that crosses out of the package or between stages as a
+result — `EndpointDefinition`, `LocatorResult`, `ExtractedContext`,
+`TracerResult`, `LLMPayload`, `EndpointAnalysis`. A plain dataclass for what
+stays inside: `DependencyContext`, the tracer's accumulator, and `ImportEntry`,
+which passes between three stages but is built and read only by them.
+
+`ASTContext` is pydantic with `arbitrary_types_allowed`, which buys almost no
+validation — `tree` and `tag_query` are `Any` — and is there for uniformity with
+the other stage outputs.
+
+### Consequences
+
+The line is "does anything outside this package construct or inspect it", and it
+is a judgement, not a rule a reader can derive. `ImportEntry` is the awkward
+case: it crosses three stages, so it looks like a boundary type, but it is
+frozen, small, and built exclusively by the analyzers — validating it would only
+catch a bug in code that lives next to it.
+
+Mixing the two also means two idioms for the same job in one package. The
+compensation is that a pydantic model in `models/` signals "someone outside
+depends on this shape", which is exactly what you want to know before changing a
+field.

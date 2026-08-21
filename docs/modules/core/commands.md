@@ -199,6 +199,7 @@ are all derived from the registry — no other file needs editing.
 
     ```text
     SpecForge ❯ fuzz -f openapi.yaml --base-url http://localhost:8000
+    SpecForge ❯ fuzz -f openapi.yaml --base-url http://localhost:8000 --stateful
     ```
 
     `fuzz` runs the execution engine end to end **without the LLM or source analysis**:
@@ -213,12 +214,28 @@ are all derived from the registry — no other file needs editing.
       shrinking → unique after de-duplication → flaky).
     - **Category breakdown** — requests grouped by outcome (success, client/server
       error, timeout, availability).
-    - **Crashes** — one row per minimal reproducer: method, endpoint, phase, the
-      violated invariant, the status code and the smallest failing payload.
+    - **Crashes** — one row per minimal reproducer: method, endpoint, phase, how many
+      prior steps set it up (a dash for a single request), the violated invariant,
+      the status code and the smallest failing payload.
 
     Narrow the run with `--endpoint <path>` and/or `--method <verb>`, and tune execution
     with `--timeout` / `--max-concurrency`. The target API must already be running;
     infrastructure failures (server down, timeout) are reported, never fatal.
+
+    `--stateful` switches to [stateful fuzzing](../custom-schemathesis/stateful-fuzzing.md):
+    requests are **chained into sequences** instead of each operation being fuzzed on
+    its own, which surfaces order-dependent failures — a resource created, deleted,
+    then read. `--endpoint`/`--method` still narrow the sequences to the matching
+    operations, and the run is saved like any other. Two limits: a stateful run is
+    markedly slower, and the data flow between requests — an id returned by one call
+    feeding the next — is not compiled from the spec yet, so sequences share no
+    values. A stateful finding is reported by the step that failed; the **Prior
+    steps** column says how many requests set it up, which is the cue to open
+    `inspect --crash <id>` for the sequence. A transition the API answered with an
+    unexpected status shows as `unexpected transition status`. The run is cut short
+    and reported as `aborted` when the target stops answering, or when a state link —
+    the declared hand-off from one request's response into the next request — cannot
+    be honored; the engine's diagnosis is reported with it.
 
     Every run is **saved by default** through the [storage engine](../storage/index.md):
     a project → analysis → run hierarchy with metrics, per-endpoint stats, crash
@@ -234,7 +251,9 @@ are all derived from the registry — no other file needs editing.
     and any `user:pass@` in the base URL is stripped (a replay re-injects the real
     values from the live config). The run also records its outcome `status`
     (`completed`/`truncated`/`aborted`), the replay `fidelity` when it is one, and the
-    engine version as provenance.
+    engine version as provenance. The analysis records whether the run was stateful
+    and, when it was, the effective budget it ran with (`stateful_config`: examples,
+    steps per sequence and distinct bugs per sequence).
 
 ??? "`history` — browse persisted projects, analyses and runs"
 
@@ -248,8 +267,9 @@ are all derived from the registry — no other file needs editing.
     Navigates everything the fuzzer has persisted, in the three levels the storage
     schema is built around: with no flags it lists every **project** (with its
     analysis count); `--project <id>` lists that project's **analyses** — the
-    replayable recipes, each with its label, strategy mode, engine version and run
-    count; `--analysis <id>` lists that analysis's **runs** in ordinal order.
+    replayable recipes, each with its label, strategy mode, whether it was stateful,
+    engine version and run count; `--analysis <id>` lists that analysis's **runs** in
+    ordinal order.
 
     The run listing is where the model pays off: an **original** run (`●`) is
     visually distinct from a **replay** (`↺`), and a run whose counters would

@@ -9,9 +9,10 @@ unchanged for endpoints that declare no state links.
 
 - **Production:** a response field stored in a named state bundle.
 - **Consumption:** a stored value reinjected into a request zone.
-- **Invariant:** a condition checked after a state transition. It may declare the
-  triggering statuses it applies after, so an invariant that only holds once the
-  resource was really created is not checked after a rejected attempt.
+- **Invariant:** a condition checked after a state transition. It applies after a
+  trigger that took effect — any 2xx by default, or exactly the statuses it declares —
+  so an invariant that only holds once the resource was really created is not checked
+  after a rejected attempt.
 
 The compiler carries this optional contract into `CompiledExecutionEndpoint`. The
 stateful fuzzer consumes it; the normal async fuzzer ignores it.
@@ -30,6 +31,15 @@ promised, a captured value that is unusable — stops the run rather than corrup
 chain. It no longer discards what the run had already found: the confirmed defects come
 back, and the trace records where the run stopped and why, so the report is a shorter
 run rather than a lost one.
+
+A target that stops answering is cut per endpoint, not per run. Each endpoint has a
+circuit breaker: after `MAX_INFRA_FAILURES` consecutive transport failures it opens, and
+that endpoint's rule returns without sending while every other rule keeps running. A
+transition probe counts against the endpoint it probes. The trace says so:
+`infrastructure_abort` names the first endpoint that opened while the run went on;
+`target_down` means every rule endpoint the run reached opened, which the CLI reports as
+an aborted run. A broken state link keeps its own `state_link_abort` even when a breaker
+had opened first — the reason a run stopped is the reason that stopped it.
 
 Detailed lifecycle, configuration and invariants remain in the
 [complete reference](reference.md#stateful-fuzzing).

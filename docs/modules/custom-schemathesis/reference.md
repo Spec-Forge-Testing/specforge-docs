@@ -180,10 +180,12 @@ engine's two execution strategies:
   `shrink(finding, config) -> CrashReport | None`.
 * **`StatefulFuzzStrategy`** — stateful testing over the whole endpoint set.
   Exposes `name` and
-  `fuzz_sequence(endpoints, config) -> (list[ExecutionResult], list[CrashReport])`.
+  `fuzz_sequence(endpoints, config, stateful_config) -> StatefulExplorationOutcome`
+  (results, already-minimized crash reports, and the truncation record when a
+  circuit breaker opened).
 
-`run(..., stateful=...)` picks between the two; nothing else in the engine
-branches on strategy type.
+`run(..., mode=...)` picks the runner and the runner its strategy; nothing else in the
+engine branches on strategy type.
 
 Registering the runner rather than the fuzz strategy is deliberate: a replay generates
 nothing and a load run has no contract to compile, so what varies between modes is the
@@ -315,11 +317,14 @@ as though it were complete and any before/after comparison drawn from it is wron
 `requests_sent` counts what reached the wire, so a request the client refused to send is
 excluded — the same predicate the trace itself uses to decide what to record.
 
-The reasons split by what the operator should do about them. `deadline_exceeded` and
-`infrastructure_abort` are a run meeting its own limits: widen the budget. `target_down`
-and `state_link_abort` are a fault that stopped it, and they carry a `detail` with the
-engine's own message — for a state link, the field or zone that could not be honored,
-which is the only actionable part.
+The reasons split by what the operator should do about them. `deadline_exceeded` is a
+run meeting its own budget: widen it. `infrastructure_abort` is one endpoint that stopped
+answering while the run went on without it — endpoint-local, so the run is truncated,
+not lost. `target_down` and `state_link_abort` are a fault that stopped the run: the
+target itself is gone (a liveness probe confirmed it in stateless mode; every rule
+endpoint the stateful run reached had its circuit breaker open), or a state link could
+not be honored. Only `state_link_abort` carries a `detail` — the engine's own message
+naming the field or zone that could not be honored, which is the only actionable part.
 
 **Stateful limitation:** the state machine minimizes by re-running shorter sequences, and
 those re-runs go through the same collector. In stateful mode the trace therefore also
@@ -359,7 +364,7 @@ stateless path.
 |---|---|
 | `StateConsumption.invalidates` | `True` **removes** the value from its bundle on consumption (via `hypothesis.stateful.consumes`), so a deleted resource can't be reused. Default `False`: the value stays reusable (e.g. the same `id` serves both `GET` and `DELETE`). |
 | `TransitionInvariant.echoed_fields` | Beyond the status code, asserts the follow-up probe's body **reflects** the fields sent in the triggering request (e.g. after `PUT {price: 10}`, `GET` must return `price == 10`). Empty ⇒ status-only check. |
-| `TransitionInvariant.trigger_statuses` | Statuses of the **triggering** step under which the invariant applies. `None` (default) ⇒ any status, which is what leaves an undeclared transition behaving as before. Read the default carefully: it is deliberately *not* the same as `StateProduction.on_status`, whose `None` means any 2xx. |
+| `TransitionInvariant.trigger_statuses` | Statuses of the **triggering** step under which the invariant applies. `None` (default) ⇒ any 2xx — the same predicate as `StateProduction.on_status` (`status_match.matches_declared_statuses`), so productions and transitions answer "did this step take effect?" the same way. Declare them for a flow that is not a plain 2xx write: a redirect, an async accept, or an error the invariant is about, such as `[404]` on a `DELETE` asserting the follow-up `GET` agrees the resource is gone. A 5xx is rejected at contract construction: a server error is reported as the defect itself and its step is never probed, so the declaration would be dead. |
 
 #### The state machine (`state_machine.py`)
 
@@ -387,13 +392,81 @@ the 5xx check to the existing `ResponseValidator`, and adds the expected-status 
 `echoed_fields` comparisons (`InvariantViolation.STATE_TRANSITION`). It also owns
 `applies_after`, the predicate behind `trigger_statuses`.
 
-A probe is skipped outright in two cases, both engine semantics rather than contract
+A probe is skipped outright in three cases, all engine semantics rather than contract
 policy. When the triggering step **broke its own invariant**, the follow-up would report
 a symptom derived from that break rather than an independent defect. When the target
 **never answered** the triggering step at all — a timeout, a refused connection, a
 request the client could not send — the follow-up says nothing about whether the
 transition happened: without that rule, a `DELETE` that timed out followed by a `GET`
 returning 200 is reported as "the resource survived", for a request that never landed.
+And when the trigger's status is **outside the invariant's scope** — a 409 or a 401 on
+a step that declares no `trigger_statuses` — the operation was refused, so a resource
+that did not change is the API behaving correctly, not a `STATE_TRANSITION` defect.
+
+#### A dead endpoint stops being sent to (`circuit_breaker.py`, `truncation.py`)
+
+The stateless path cuts an endpoint after `MAX_INFRA_FAILURES` consecutive transport
+failures and moves on to the next one. The stateful translation of "move on" is not a
+per-run counter: Hypothesis interleaves rules, so with one healthy and one dead endpoint
+a run-wide streak would abort the whole run by chance — a `(1/2)^5` shot at any given
+position, about one in 32 — and throw away the healthy endpoint's findings. The unit is
+therefore a
+**circuit breaker per endpoint** (`EndpointCircuitBreaker`), keyed by `endpoint_id`,
+with the same threshold and no half-open state: once open, the endpoint stays out for
+the rest of the run.
+
+What counts is what the stateless streak counts: `TIMEOUT` and `AVAILABILITY`
+(`TARGET_FAILURE_CATEGORIES`). Any answer — a 4xx included — resets the streak, since
+something came back. A request the client never sent (`UNSENDABLE_REQUEST`) is neutral:
+it neither advances nor clears, because it says nothing about the target.
+
+`StatefulCollector.record` is the single registration point for an executed request;
+the rule body and the transition probe both go through it, and it feeds the breaker. An
+open breaker **short-circuits**: the rule returns before touching the orchestrator,
+contributing nothing to its bundle, and a probe whose follow-up endpoint opened is
+skipped. Hypothesis keeps generating until the configured budget is spent, and that rule
+then costs CPU only, zero I/O. Raising from the rule instead was rejected: a rule
+exception is Hypothesis's
+"this sequence falsifies the property" channel, so it would shrink against a target that
+is timing out, and an abort latched on the last rule of the last example would have
+nowhere left to fire. A Hypothesis `@precondition` reading the breaker was measured and
+rejected too: the breaker is run state that lives outside the machine, so rule
+eligibility changes between generation and shrink replays, which Hypothesis reports as
+`FlakyStrategyDefinition` — one dead endpoint killed the whole run and every confirmed
+finding with it.
+
+The verdict is read after `run_state_machine_as_test` returns and lands in
+`StatefulExplorationOutcome.truncation`, one record per run:
+
+| Breakers open | `TruncationRecord` |
+|---|---|
+| none | `None` — a clean run |
+| some, but not every reached rule endpoint | `infrastructure_abort`, naming the **first** endpoint of any kind to open — where degradation started; the run went on without it |
+| every rule endpoint the run reached | `target_down`, naming the **last** rule endpoint to open — the cut that ended the run |
+
+"Reached" means the endpoint put at least one request on the wire (`was_sent`): a
+consumer whose bundle never filled never ran, so it cannot testify either way — unless
+another endpoint's transition probe reached it, in which case that traffic is what
+testifies — and producer-plus-consumer is the common shape of a stateful flow. An
+endpoint reached **only** as a probe target, one that is not in the fuzzed set, can be
+named by `infrastructure_abort` — its id is honest and appears in the trace — but never
+by `target_down`, which filters to rule endpoints; a follow-up endpoint that is itself
+fuzzed is a rule endpoint like any other. `requests_sent` counts the wire-reaching
+requests to the named endpoint; timeouts count, since they were sent.
+
+The link-error path carries no breaker truncation: a `StatefulLinkError` that interrupts
+the run hands back the exploration it interrupted (`partial_exploration`, the same DTO)
+and the runner records `state_link_abort`, whatever the breakers were doing. With nothing
+to hand back — a contract that fails while the machine is still being built — there is no
+shorter run to report and the error stays a hard failure. A
+`FlakyFailure` out of Hypothesis is a dropped finding, as on the stateless side — except
+that it is an exception group, and a `StatefulLinkError` inside it is unwrapped and
+re-raised with its progress rather than lost.
+
+Known gap, tracked separately: a short-circuited rule still draws — and so consumes —
+the bundle value it does not use, because Hypothesis draws `consumes()` before the body
+runs. It predates the breaker (the same rule used to consume the same ids and burn a
+timeout each), and the fix is rebuilding the machine per pass with live endpoints only.
 
 #### Multiple bugs per run (loop-until-dry, opt-in)
 
@@ -450,7 +523,7 @@ Centralizes operational defaults including maximum example counts, phase splits 
 | `PolicyError` | A contract, rule or field breaks a questionnaire constraint. |
 | `StrategyCompilationError` | A contract has no registered compiler to translate it into a Hypothesis strategy. |
 | `EngineError` | An execution-time invariant of the engine is violated (e.g. a missing path param). |
-| `StatefulLinkError` | A state link can't be honored during stateful fuzzing. Subclass of `EngineError`. |
+| `StatefulLinkError` | A state link can't be honored during stateful fuzzing. Subclass of `EngineError`; carries the offending `endpoint_id` and, once exploration had started, the exploration it interrupted (`partial_exploration`). |
 
 ### Architectural Invariants
 When modifying this module, the following core invariants must be maintained:

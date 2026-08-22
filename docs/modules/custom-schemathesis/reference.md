@@ -162,7 +162,7 @@ ownership of the HTTP client's lifetime.
 
 | Mode | Runner | Options | Procedure |
 | :--- | :--- | :--- | :--- |
-| `stateless` | `StatelessRunner` | — | Explore per endpoint, then shrink each finding. |
+| `stateless` | `StatelessRunner` | — | Explore per endpoint, group the findings by symptom, then shrink one representative per group. |
 | `stateful` | `StatefulRunner` | `StatefulConfig` | Chain endpoints; the state machine minimizes as it goes. |
 
 ```python
@@ -334,8 +334,10 @@ stateless path.
 ### Two-Phase Testing Pipeline
 
 * **Explore Phase**: Executes tests and records all failures without raising exceptions, allowing test generation to continue uninterrupted. If transport failures pile up to `MAX_INFRA_FAILURES` in a row, that endpoint aborts and the run moves on to the next one — a dead endpoint never stalls the whole run. The abort is recorded in the trace as a truncation, so a partial run is never mistaken for a complete one. Exploration returns an `ExplorationOutcome` (results, raw findings, and the truncation when there was one).
-* **Shrink Phase**: Each raw finding is sequentially minimized using `hypothesis.find`.
-  * Findings that fail to reproduce during shrinking are discarded as flaky.
+* **Shrink Phase**: Raw findings are first **grouped by signature** — endpoint, phase, violated invariant, status code and the *shape* of the response body (keys and their types, digit runs masked; never the values) — by the pure `engine/core/finding_grouper.py`. One representative per group is then minimized with `hypothesis.find` by `engine/core/shrink_coordinator.py` (pure, with `shrink` injected): a flaky (`None`) or divergent (another status) first representative promotes a second member, never a third (`MAX_REPRESENTATIVES_PER_SIGNATURE = 2`). A systematic failure — every example of an endpoint answering the same 500, every request to an authenticated endpoint answering 401 — therefore costs one shrink search, not one per example.
+  * The search accepts a candidate only when it reproduces the finding's own violation **and status**, so minimization cannot drift to a different symptom. The report is built from one more request; a report whose status still diverges is kept as evidence but stands only for itself.
+  * Findings that fail to reproduce during shrinking are discarded as flaky. Members never attempted are counted in `RunStats.findings_collapsed`, and the requests the phase put on the wire in `RunStats.requests_shrink` — measured on `AsyncOrchestrator.wire_requests`, the engine's one transport counter, so the number is comparable with the target's access log. `findings_raw == findings_confirmed + findings_flaky + findings_collapsed` holds by construction, and `findings_confirmed` counts representatives that reproduced.
+  * `CrashReport.represented_findings` says how many raw findings a report stands for: itself, its unshrunk group mates and the duplicates deduplication absorbed. A group whose two representatives both diverged leaves its members counted as collapsed with no report claiming them. A stateful crash always represents 1: that mode minimizes as it goes and has no separate shrink phase.
   * Sequential execution avoids shared-state pollution, side effects, and rate-limit interference.
 
 ### Validation, Redaction & Deduplication

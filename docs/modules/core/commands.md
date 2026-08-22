@@ -204,19 +204,26 @@ are all derived from the registry — no other file needs editing.
 
     `fuzz` runs the execution engine end to end **without the LLM or source analysis**:
     it parses the contract, compiles Hypothesis strategies straight from the schema,
-    fuzzes the live API at `--base-url` and shrinks every failure to its minimal
-    reproducer. The schema constraints alone (`type`, `minimum`, `enum`, `pattern`, …)
-    are enough to surface `5xx` crashes and undeclared responses.
+    fuzzes the live API at `--base-url`, groups the failures by symptom and shrinks one
+    representative per symptom to its minimal reproducer. The schema constraints alone
+    (`type`, `minimum`, `enum`, `pattern`, …) are enough to surface `5xx` crashes and
+    undeclared responses.
 
     The command prints:
 
-    - **Run summary** — total requests and the finding funnel (raw → confirmed after
-      shrinking → unique after de-duplication → flaky).
+    - **Run summary** — the exploration requests, the requests shrinking sent apart
+      from them, and the finding funnel: raw → confirmed (one representative per
+      symptom, still failing after shrinking) → collapsed (same symptom as a
+      confirmed one, never shrunk) → flaky → unique after de-duplication.
+      `raw == confirmed + flaky + collapsed` always holds. A stateful run has no
+      separate shrink phase, so its report shows neither shrink requests nor
+      collapsed findings.
     - **Category breakdown** — requests grouped by outcome (success, client/server
       error, timeout, availability).
     - **Crashes** — one row per minimal reproducer: method, endpoint, phase, how many
       prior steps set it up (a dash for a single request), the violated invariant,
-      the status code and the smallest failing payload.
+      the status code, how many raw findings the crash stands for (`Represents`;
+      stateless runs only) and the smallest failing payload.
 
     Narrow the run with `--endpoint <path>` and/or `--method <verb>`, and tune execution
     with `--timeout` / `--max-concurrency`. The target API must already be running;

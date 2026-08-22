@@ -9,7 +9,7 @@ contracts or strategy modes.
 | `models` | Typed DTOs | Owns contracts, endpoint metadata, budgets and results. |
 | `questionnaire` | LLM template → `CompilerInput` | Builds, validates and resolves contracts. |
 | `strategy_compiler` | `CompilerInput` → `EngineInput` | Compiles one strategy per HTTP zone and phase. |
-| `engine` | `EngineInput` → `EngineRunResult` | Sends requests, validates responses, shrinks and deduplicates findings. |
+| `engine` | `EngineInput` → `EngineRunResult` | Sends requests, validates responses, groups findings by symptom, shrinks one representative per group and deduplicates the reports. |
 
 ## Contracts and compilation
 

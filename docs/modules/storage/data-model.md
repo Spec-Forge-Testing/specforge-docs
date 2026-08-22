@@ -28,9 +28,12 @@ as-is.
 
 `schema.sql` is the single source of truth for the database shape and is edited in
 place — there is no migration mechanism. The schema is applied with
-`CREATE TABLE IF NOT EXISTS`, which never adds columns to an existing table: **if the
-schema changed, delete `data/coretest.db` and let the engine recreate it.** Local
-databases are disposable development artifacts.
+`CREATE TABLE IF NOT EXISTS`, which never adds columns to an existing table, so the
+engine stamps a fingerprint of `schema.sql` into SQLite's `user_version` and refuses
+to open a file built from a different one (`SchemaMismatchError`). The refusal happens
+when the engine is constructed, before any run executes — never inside a persistence
+transaction after a run: **delete `data/coretest.db` and let the engine recreate it.**
+Local databases are disposable development artifacts.
 
 ### Engine lifecycle
 
@@ -133,9 +136,11 @@ connection" would be hidden, non-thread-safe mutable state.
       | `run_id` | `int` | Foreign key (and primary key) to `RunRecord.id`. |
       | `total_requests` | `int` | Total requests sent during the run. |
       | `findings_raw` | `int` | Violations found during exploration, before shrinking. |
-      | `findings_confirmed` | `int` | Findings that still reproduced after shrinking. |
+      | `findings_confirmed` | `int` | Representatives that still reproduced after shrinking. |
       | `findings_unique` | `int` | Distinct defects (`== len(crash_reports)`). |
-      | `findings_flaky` | `int` | Findings that failed to reproduce. |
+      | `findings_flaky` | `int` | Representatives that failed to reproduce. |
+      | `findings_collapsed` | `int` | Findings never shrunk: a representative of their signature stood for them. `findings_raw == findings_confirmed + findings_flaky + findings_collapsed`. Zero for modes without a shrink phase. |
+      | `requests_shrink` | `int` | Requests the shrinking phase put on the wire; not part of `total_requests`. Zero for modes without a shrink phase. |
       | `by_phase` | `str \| None` | Request breakdown by phase, as JSON. |
       | `by_category` | `str \| None` | Request breakdown by error category, as JSON. |
 
@@ -180,6 +185,7 @@ connection" would be hidden, non-thread-safe mutable state.
       | `response_body` | `str` | Body of the failing response. |
       | `stack_trace` | `str \| None` | Filled in later by the Auto-Fixer; the engine leaves it `None`. |
       | `transition_sequence` | `str \| None` | Request chain as JSON, stateful findings only. |
+      | `represented_findings` | `int` | Raw findings this report stands for: itself, its unshrunk group mates and the duplicates it absorbed. Always 1 for stateful findings. |
 
 ??? "`ArtifactRecord` - A **recipe-level artifact** or a **report-level one**"
 

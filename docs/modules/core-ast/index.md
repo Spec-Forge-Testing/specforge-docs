@@ -28,7 +28,7 @@ flowchart LR
 ## Development requirements
 
 The package targets Python 3.11+. Installation and verification commands are in
-[Development & Testing](../../getting-started/development.md#module-commands).
+[Development & Testing](../../getting-started/development.md#test-a-compose-module).
 
 Seven languages load on demand (Java, C#, Ruby, PHP, Rust, Kotlin, Swift) via
 `golden-path` extra. Token counting uses ``tiktoken`` via ``tokens``. Neither
@@ -54,37 +54,83 @@ print(payload.estimated_tokens)    # approximate size of the bundle
 print(payload.is_partial_context)  # True if some context could not be resolved
 ```
 
-If you only need the plain text context:
+For a whole contract, `analyze_endpoints` shares one parser across endpoints and
+isolates each outcome, so one endpoint that cannot be located does not cost you the
+rest:
 
 ```python
-from core_ast import build_endpoint_code_bundle
+from core_ast import analyze_endpoints
 
-# Returns payload.system_context as a plain string
-raw_text = build_endpoint_code_bundle(endpoint, repo_root="/path/to/api/repo")
+for result in analyze_endpoints(endpoints, repo_root="/path/to/api/repo"):
+    if result.ok:
+        print(result.analysis.locator.filepath, result.analysis.locator.confidence)
+    else:
+        print(result.endpoint.path, type(result.error).__name__)
 ```
 
 ## Public API Re-exports
 
 The root core_ast package exports:
 
-* ``build_endpoint_payload``: Full pipeline execution $\rightarrow$ ``LLMPayload``.
-* ``build_endpoint_code_bundle`` / ``export_endpoint_bundle``: Full pipeline
-execution $\rightarrow$ ``str``. 
-* ``build_llm_payload``: Packages pre-extracted context (``ExtractedContext`` + ``TracerResult``).
-* ``LLMPayload``: The output DTO.
+* ``analyze_endpoint`` / ``analyze_endpoints``: full pipeline $\rightarrow$
+``EndpointAnalysis`` / one ``EndpointAnalysisResult`` per endpoint. Keeps everything
+the run learned, not just the payload.
+* ``build_endpoint_payload``: the same run narrowed to ``LLMPayload``.
+* ``build_llm_payload``: packages pre-extracted context (``ExtractedContext`` +
+``TracerResult``).
+* ``resolve_handler_name``: the handler's name inside a file already located.
+* ``EndpointDefinition``, ``EndpointAnalysis``, ``EndpointAnalysisResult``,
+``ProcessedFunction``, ``LLMPayload``: the DTOs.
 
 Typed domain exceptions are exported from ``core_ast.exceptions``.
 
-## High-Level Pipeline Flow
+## The pipeline
 
-| Stage | Responsibility | Main Output |
+Each stage narrows the uncertainty: from a repository to a file, from a file to a
+function, from a function to its call graph.
+
+| Stage | Question it answers | Output |
 |---|---|---|
-| **1. Locator** | Find the endpoint handler file | Location result / Metadata |
-| **2. AST Builder** | Parse source bytes with tree-sitter | `ASTContext` |
-| **3. Extractor** | Byte-slice the exact target function | `ExtractedContext` |
-| **4. Import & Tracer** | Resolve imports & follow dependency calls recursively | `TracerResult` |
-| **5. Quality** | Measure completion & select context budget mode | Mode & Fallback plan |
-| **6. Packager** | Assemble sanitized XML-tagged payload | `LLMPayload` |
+| **1. Locator** | Which file serves this endpoint, and which function in it? | `LocatorResult` |
+| **2. AST builder** | What is the tree, and how do I find definitions in it? | `ASTContext` |
+| **3. Extractor** | What exactly is this function's source? | `ExtractedContext` |
+| **4. Tracer** | What does it call, and where does that live? | `DependencyContext` |
+| **5. Quality** | Is what we gathered enough, and if not, what ships instead? | mode + bundle |
+| **6. Packager** | How does the model read it? | `LLMPayload` |
 
-*For in-depth stage specs, exceptions, and extensibility, see the [Implementation Reference](reference.md).
-For function signatures, examples and exceptions per module, see the [API Reference](api-reference.md).*
+`import_analyzer` and `resolver` are not stages: the tracer invokes them to turn
+an import into a path on disk.
+
+```mermaid
+flowchart LR
+    E["endpoint<br/>+ repo"] --> L[locator] --> B[ast_builder] --> X[extractor] --> T[tracer]
+    T --> Q[quality] --> P[packager] --> O["LLMPayload"]
+    T -.-> X
+    C["import_analyzer<br/>resolver"] -.-> T
+```
+
+The dotted line back to the extractor is the recursion: every dependency the
+tracer resolves is extracted and traced in turn, up to 15 levels.
+
+## The rule behind the design
+
+> **Being wrong is worse than not finding.**
+
+If the package returns the wrong handler, the LLM infers another endpoint's
+business rules, and those false invariants become false findings against the
+endpoint actually under test. A miss costs five minutes; a confident wrong answer
+poisons everything downstream.
+
+That rule is why nearly every function here has a guard returning `None`, why the
+locator raises rather than choosing between two candidates, and why a match
+carries a confidence score. The decisions it produced are recorded one by one in
+the [decision records](adr.md).
+
+## Where to read next
+
+| If you want to | Read |
+|---|---|
+| Understand how a stage works | [Implementation Reference](reference.md) |
+| Call a function, or know what it raises | [API Reference](api-reference.md) |
+| Know *why* something is the way it is | [Decision records](adr.md) |
+| Run or extend the suites | [Testing](integration-tests.md) |

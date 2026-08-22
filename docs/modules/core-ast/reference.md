@@ -6,30 +6,76 @@ extension boundaries of `core-ast`.
 ## Module Layout
 
 ```text
-src/
+src/core_ast/
+├── __init__.py         # Public surface
+├── api.py              # Orchestrators (analyze_endpoint, analyze_endpoints)
 ├── exceptions.py       # Typed domain exceptions
-├── core_ast.py         # Public API re-exports
-├── api.py              # Orchestrators (build_endpoint_payload, etc.)
-├── models/             # Pydantic DTOs (EndpointDefinition, ASTContext, ExtractedContext, TracerResult, LLMPayload)
-├── cte/                # Config: Language patterns (patterns.toml) & constants
-├── locator/            # Handler search strategy
-├── ast_builder/        # Tree-sitter file parsing
+├── models/             # Pydantic DTOs that cross stages
+├── cte/                # Only what two or more stages share (ADR-004)
+├── locator/            # Which file, and which function inside it
+├── ast_builder/        # Tree-sitter parsing + .scm tag queries
 ├── extractor/          # Byte-slicing function extraction
 ├── import_analyzer/    # Import statement parser (Strategy per language)
 ├── resolver/           # Physical path resolution (Strategy per language)
 ├── tracer/             # Recursive dependency call graph
-├── quality/            # Quality thresholds & fallback planning
+├── quality/            # Mode policy & fallback planning
 └── packager/           # XML serialization, sanitization & token estimation
 ```
+
+Every stage owns its constants (`<stage>/constants.py`); `cte/constants.py` holds
+only what two or more stages read. See [ADR-004](adr.md#adr-004).
 
 ## Detailed Stage reference
 
 ### 1. `locator`
-Scans the repo while honoring `.gitignore` and skipping tests. Matches `operation_id`
-first, falling back to route decorators. Patterns live in `cte/patterns.toml`.
-- **Exceptions:** Raises `ControllerNotFoundError` (no matches) or
-`AmbiguousControllerError` (includes candidates).
-- **Output:** Filepath, match strategy, and confidence score.
+
+Answers two questions that are easy to conflate: **which file** serves the endpoint,
+and **which function** inside it.
+
+```text
+locator/
+├── constants.py    # Route vocabulary, exclusions, cache size
+├── scanner.py      # Filesystem: candidates, reading, searching by extension
+├── patterns.py     # patterns.toml, route shapes, definition regexes
+├── matcher.py      # locate_controller — which file
+├── handler.py      # resolve_handler_location — which function
+└── patterns.toml   # Every per-language rule
+```
+
+`patterns.py` is the machinery both consumers share; `matcher` and `handler` do not
+import each other. Dependencies run one way: `constants → scanner → patterns →
+{matcher, handler}`.
+
+**Which file.** `locate_controller` walks strategies from most to least specific and
+returns the first that leaves exactly one candidate, carrying the confidence of the
+strategy that hit:
+
+| Strategy | What it found | Confidence |
+|---|---|---:|
+| `operation_id` | A definition named like the contract's `operationId` | 1.00 |
+| `path_decorator` | The whole path, written in a decorator | 0.80 |
+| `path_prefixed` | The path with a prefix in front (`/api/tags`) | 0.65 |
+| `path_suffix` | Only the tail; the prefix comes from a mount | 0.50 |
+| `mount_prefix` | Two hops: the literal prefix in a mount, then the module mounted | 0.45 |
+| `class_prefix` | Only the class-level prefix; says nothing about the method | 0.40 |
+| `resource_route` | Nothing is written: route and handler both come from convention | 0.35 |
+
+An ambiguous strategy does not abort the cascade — see
+[ADR-012](adr.md#adr-012). The last two strategies are documented in
+[ADR-010](adr.md#adr-010) and [ADR-011](adr.md#adr-011).
+
+**Which function.** The contract's `operationId` and the function's name in code are
+independent conventions — RealWorld declares `GetTags` for a handler called
+`get_all_tags` — so `resolve_handler_location` infers it: find the route declaration
+and take the definition that follows, with four fallbacks for frameworks that name
+the handler inside the declaration or in another file
+([ADR-015](adr.md#adr-015), [ADR-016](adr.md#adr-016)).
+
+- **Exceptions:** `ControllerNotFoundError` (nothing matched),
+  `AmbiguousControllerError` (carries its candidates), `HandlerNameNotFoundError`
+  (file located, function not nameable).
+- **Output:** filepath, match strategy, confidence, and optionally the scope or the
+  handler name when the strategy produced one.
 
 **Technology choices**
 
@@ -37,13 +83,18 @@ first, falling back to route decorators. Patterns live in `cte/patterns.toml`.
 |---|---|---|---|
 | `pathspec` for `.gitignore` | Full gitignore format (globstar, negations) — the de facto Python standard for this. | `fnmatch` (no globstar/negation support); manual parsing (error-prone, costly to maintain) | Small external dependency (<50 KB). |
 | `re` (stdlib regex) for the primary heuristic | One O(n) pass per candidate file, no external dependency. | `tree-sitter` for the primary search — more precise, but a full parse per candidate is O(n) parse + O(m) query, expensive on large repos; a `grep` subprocess — OS-dependent, not portable, hard to test | Can false-positive inside strings/comments; tolerable combined with the extension/test-path filter. |
-| `tomllib` for pattern config | Stdlib since Python 3.11; no dependency; TOML reads better than JSON for rule config. | — | Requires Python ≥ 3.11. A new language is a `cte/patterns.toml` edit, never a code change. |
+| `tomllib` for pattern config | Stdlib since Python 3.11; no dependency; TOML reads better than JSON for rule config. | — | Requires Python ≥ 3.11. A new language is a `locator/patterns.toml` edit, never a code change. |
 
-**Design principles:** deterministic (same input → same output or exception);
-stateless (no cross-call cache, which simplifies ephemeral-container deployment);
-fails with information (`AmbiguousControllerError` carries its candidate list,
+**Design principles:** deterministic (same input → same output or exception); fails
+with information (`AmbiguousControllerError` carries its candidate list,
 `ControllerNotFoundError` carries `path`/`method`); tolerates bad encoding by
-skipping the file rather than failing the whole scan.
+skipping the file rather than failing the whole scan; and never guesses between two
+candidates, because a confident wrong answer costs more downstream than a miss.
+
+The repository scan **is** cached, per repository and for the life of the process —
+it used to be stateless, and stopped being so deliberately
+([ADR-002](adr.md#adr-002)). A long-running host must call `clear_scan_cache()`
+between runs ([ADR-003](adr.md#adr-003)).
 
 ### 2. `ast_builder` & `extractor`
 - **`ast_builder`:** Reads raw bytes into an `ASTContext` containing the tree, tag query,
@@ -63,7 +114,7 @@ source path, line bounds).
 > siblings grouped under a `decorated_definition` node, not children of
 > `function_definition`. Without ascending to the parent, byte-slicing would start
 > at `def`, dropping the `@decorator` lines. `_include_decorators` checks
-> `node.parent.type in DECORATOR_NODE_TYPES` (a `frozenset` in `cte/constants.py`)
+> `node.parent.type in DECORATOR_NODE_TYPES` (a `frozenset` in `extractor/constants.py`)
 > and returns the parent when it applies.
 
 **Why tree-sitter.** An incremental, deterministic, multi-language parser
@@ -96,9 +147,35 @@ modules.
 - **Tracer:** Recursively resolves `call_detector` matches until reaching depth limits or
 cyclic symbols. Unmapped calls are logged as `unresolved_calls`.
 
+**How the twelve grammars describe a call.** The detector has to recognise one
+idea across twelve syntaxes, and they disagree on two axes at once.
+
+*Where the called name sits* — three arrangements, which are the three branches
+of `_callee_node`:
+
+| Arrangement | Languages |
+| --- | --- |
+| The call node carries the name itself | Java, Ruby, PHP |
+| A `function` field points at it | Python, JS/TS, Go, Rust, C# |
+| It is the first named child, with no field | Kotlin, Swift |
+
+*How a qualified call is spelled* — `obj.method`, `pkg::func`, `receiver->name`.
+The detector normalises all of them to a single dotted form and keeps only the
+last segment of the base, because that is the segment naming the module (see
+[ADR-026](adr.md#adr-026)).
+
+None of this lives in control flow: every shape above is an entry in a table in
+`tracer/constants.py`, and adding a language means adding entries
+([ADR-025](adr.md#adr-025)).
+
 **Design decisions — `import_analyzer`.** Each language gets its own
 `BaseImportAnalyzer` subclass (Strategy pattern), so the engine never branches on
-language. Analyzers walk the tree manually rather than through `.scm` queries —
+language. Six of the twelve share one more layer: Java, C#, Kotlin, Swift, Rust
+and PHP all write `<keyword> a.b.c`, so they are declared over
+`DeclarativeImportAnalyzer` as four class attributes — which node is the
+statement, which child holds the path, the segment separator, what to strip —
+instead of reimplementing the walk. Python, TypeScript, Go and Ruby have their
+own, because their grammars split the statement differently. Analyzers walk the tree manually rather than through `.scm` queries —
 import syntax varies too much per grammar (`import_from_statement` in Python vs.
 `import_declaration` in Go vs. a `require` call in Ruby) for one declarative
 capture set to cover cleanly. `get_analyzer()` returns `None` for an unsupported
@@ -205,11 +282,11 @@ silently contained no direct imports at all.
 ### 4. `quality`
 Computes the completion ratio (resolved vs. discovered calls) and enforces quality modes:
 
-| Mode | Condition (`cte/constants.py`) | Shipped Context |
+| Mode | Condition (`quality/constants.py`) | Shipped Context |
 |---|---|---|
-| `surgical` | `completion_ratio >= TRACER_THRESHOLD_SURGICAL` (`0.60`) | Controller & exact dependency chain |
-| `hybrid` | `TRACER_THRESHOLD_HYBRID <= ratio < 0.60` (`0.25`–`0.60`) | Dependency chain + bounded fallback files |
-| `fallback` | `ratio < 0.25` **or** an unresolved call matches `TRACER_CRITICAL_KEYWORDS` | Bounded fallback files only |
+| `surgical` | `completion_ratio >= THRESHOLD_SURGICAL` (`0.60`) | Controller & exact dependency chain |
+| `hybrid` | `THRESHOLD_HYBRID <= ratio < 0.60` (`0.25`–`0.60`) | Dependency chain + bounded fallback files |
+| `fallback` | `ratio < 0.25` **or** an unresolved call matches `CRITICAL_KEYWORDS` | Bounded fallback files only |
 
 The critical-keyword override wins regardless of ratio: an unresolved call named
 `verify_token` forces `fallback` even at `completion_ratio == 1.0`. The keyword set
@@ -221,11 +298,11 @@ The fallback file bundle (`hybrid`/`fallback` modes) is capped by a hard budget:
 
 | Limit | Default | Purpose |
 |---|---|---|
-| `TRACER_MAX_FILES` | `10` | Max files added to the bundle. |
-| `TRACER_MAX_TOTAL_LINES` | `2000` | Max combined lines across all bundle files. |
-| `TRACER_MAX_LINES_PER_FILE` | `500` | Per-file line cap — a 3000-line file still only "costs" 500 against the budget, but ships in full. |
+| `MAX_FILES` | `10` | Max files added to the bundle. |
+| `MAX_TOTAL_LINES` | `2000` | Max combined lines across all bundle files. |
+| `MAX_LINES_PER_FILE` | `500` | Per-file line cap — a 3000-line file still only "costs" 500 against the budget, but ships in full. |
 
-Directories matching `TRACER_EXCLUDE_DIR_PATTERNS` (`tests/`, `vendor/`,
+Directories matching `EXCLUDE_DIR_PATTERNS` (`tests/`, `vendor/`,
 `node_modules/`, `migrations/`, …) never enter the fallback bundle.
 
 **Why pure functions for the mode decision.** `policy.py` holds no state and
@@ -233,7 +310,7 @@ does no I/O — `compute_completion_ratio`, `detect_forced_abort` and
 `decide_mode` are the part of the system most likely to change (threshold
 tuning, new critical keywords), so keeping them pure keeps that tuning cheap to
 test and change without touching anything else. Critical keywords live in
-`cte/constants.py`, not inline, for the same reason.
+its stage's `constants.py`, not inline, for the same reason.
 
 **Fallback bundle priority (`fallback_planner.py`):** 1) the controller file,
 always first; 2) direct local import targets; 3) files that mention an
@@ -271,7 +348,7 @@ context. No silent None returns or hidden truncations.
 
 Adding a language is a config + strategy change, never a core-dispatch edit:
 
-1. **Locator** — add a `.py`/`.go`/... entry to `cte/patterns.toml`:
+1. **Locator** — add a `.py`/`.go`/... entry to `locator/patterns.toml`:
 
     ```toml
     [function_keywords]
@@ -298,9 +375,9 @@ construction — they only consume the DTOs the strategies above produce.
 | To add | Change |
 |---|---|
 | A new AST node type for call detection | One entry in `_NODE_EXTRACTORS` (`tracer/call_detector.py`). |
-| A new critical keyword | One entry in `TRACER_CRITICAL_KEYWORDS` (`cte/constants.py`). |
-| A new excluded directory for the fallback bundle | One entry in `TRACER_EXCLUDE_DIR_PATTERNS` (`cte/constants.py`). |
-| Different surgical/hybrid thresholds | `TRACER_THRESHOLD_SURGICAL` / `TRACER_THRESHOLD_HYBRID` (`cte/constants.py`). |
+| A new critical keyword | One entry in `CRITICAL_KEYWORDS` (`quality/constants.py`). |
+| A new excluded directory for the fallback bundle | One entry in `EXCLUDE_DIR_PATTERNS` (`quality/constants.py`). |
+| Different surgical/hybrid thresholds | `THRESHOLD_SURGICAL` / `THRESHOLD_HYBRID` (`quality/constants.py`). |
 
 ### Not implemented: search by line coordinate
 
@@ -316,7 +393,7 @@ added later without breaking the existing interface.
   never crosses a module boundary, so the orchestrator can catch one exception
   hierarchy instead of Python's.
 - **Constants centralized, never duplicated.** Shared knowledge
-  (`cte/constants.py`) — critical keywords, thresholds, excluded directories,
+  (`quality/constants.py`) — critical keywords, thresholds, excluded directories,
   decorator node types — has exactly one owner; no module redefines what
   another needs.
 - **Pydantic v2 at every boundary.** Every DTO crossing a stage boundary
@@ -340,7 +417,7 @@ must never break:
 ## Development & Testing
 
 Use the Core AST commands in
-[Development & Testing](../../getting-started/development.md#module-commands).
+[Development & Testing](../../getting-started/development.md#test-a-compose-module).
 
 Integration-test setup and output conventions are documented separately in
 [Integration Tests](integration-tests.md).

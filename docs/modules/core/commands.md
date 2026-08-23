@@ -200,6 +200,7 @@ are all derived from the registry — no other file needs editing.
     ```text
     SpecForge ❯ fuzz -f openapi.yaml --base-url http://localhost:8000
     SpecForge ❯ fuzz -f openapi.yaml --base-url http://localhost:8000 --stateful
+    SpecForge ❯ fuzz -f openapi.yaml --base-url http://localhost:8000 --identities identities.toml
     ```
 
     `fuzz` runs the execution engine end to end **without the LLM or source analysis**:
@@ -214,20 +215,53 @@ are all derived from the registry — no other file needs editing.
     - **Run summary** — the exploration requests, the requests shrinking sent apart
       from them, and the finding funnel: raw → confirmed (one representative per
       symptom, still failing after shrinking) → collapsed (same symptom as a
-      confirmed one, never shrunk) → flaky → unique after de-duplication.
-      `raw == confirmed + flaky + collapsed` always holds. A stateful run has no
-      separate shrink phase, so its report shows neither shrink requests nor
-      collapsed findings.
+      confirmed one, never shrunk) → unverified (never attempted, because the run
+      was cut before shrinking started) → flaky → unique after de-duplication.
+      `raw == confirmed + flaky + collapsed + unverified` always holds. A stateful
+      run has no separate shrink phase, so its report shows neither shrink requests
+      nor collapsed or unverified findings.
     - **Category breakdown** — requests grouped by outcome (success, client/server
       error, timeout, availability).
     - **Crashes** — one row per minimal reproducer: method, endpoint, phase, how many
       prior steps set it up (a dash for a single request), the violated invariant,
       the status code, how many raw findings the crash stands for (`Represents`;
-      stateless runs only) and the smallest failing payload.
+      stateless runs only), the identity it was found under (`Identity`; only shown
+      when at least one crash in the run recorded one) and the smallest failing
+      payload.
+
+    A run the target's liveness probe found dead is cut **before** shrinking, so
+    its findings were collected but never confirmed. The report never calls that a
+    clean run: it shows the **Unverified** count instead of the usual "No crashes
+    found", with a warning explaining the run was cut short — the same distinction
+    `inspect --run <id>` shows later.
 
     Narrow the run with `--endpoint <path>` and/or `--method <verb>`, and tune execution
     with `--timeout` / `--max-concurrency`. The target API must already be running;
     infrastructure failures (server down, timeout) are reported, never fatal.
+
+    `--identities <file>.toml` declares who the requests are sent as — a TOML list
+    of labelled credential sets, any of them possibly anonymous (a label with no
+    headers):
+
+    ```toml
+    [[identities]]
+    label = "anonymous"
+
+    [[identities]]
+    label = "alice"
+    [identities.headers]
+    Authorization = "Bearer alice-token"
+    ```
+
+    Labels must be unique — they key findings, crash reports and replays. Each
+    endpoint phase's example budget is split evenly across the declared identities
+    (the remainder to the first ones, and one the budget cannot reach gets no
+    share), and a finding is shrunk under the identity that found it, never
+    re-drawn. A stateful sequence draws one identity when it starts and keeps it
+    for every step, since a sequence is a session. The same symptom found under two
+    identities is two findings, never one — so the crash tables gain the
+    **Identity** column above. The label is persisted with the crash and the run's
+    trace; the credentials never are (see below).
 
     `--stateful` switches to [stateful fuzzing](../custom-schemathesis/stateful-fuzzing.md):
     requests are **chained into sequences** instead of each operation being fuzzed on
@@ -255,8 +289,10 @@ are all derived from the registry — no other file needs editing.
 
     The saved run is a **shareable reproducible recipe**, so no credential value is
     ever stored — not even redacted: the execution config keeps header *names* only,
-    and any `user:pass@` in the base URL is stripped (a replay re-injects the real
-    values from the live config). The run also records its outcome `status`
+    any `user:pass@` in the base URL is stripped, and the declared identities are
+    dropped whole, labels aside — a crash keeps the label it was found under, the
+    trace keeps the label each request was sent under, and a replay re-supplies the
+    values from `--identities <file>.toml`. The run also records its outcome `status`
     (`completed`/`truncated`/`aborted`), the replay `fidelity` when it is one, and the
     engine version as provenance. The analysis records whether the run was stateful
     and, when it was, the effective budget it ran with (`stateful_config`: examples,
@@ -303,21 +339,23 @@ are all derived from the registry — no other file needs editing.
     `--run <id>` renders one run in full, in five sections: a **header** with its
     context (project, analysis, ordinal, origin, execution time, duration, status,
     fidelity and the comparability mark); the **metrics** funnel (requests, raw →
-    confirmed → unique → flaky findings) with the per-phase and per-category
-    breakdowns; **per-endpoint stats** including the latency percentiles
-    (p50/p95/max — a dash when the endpoint was never timed); every recorded
-    **crash** — with its id, the same plain-English invariant labels the fuzz
-    report uses, and the **minimal payload that reproduces it**, so a saved run
-    shows no less than the report printed when the fuzzing finished; and the run's
-    **artifacts** (the execution trace and any run-level files).
+    confirmed → unique → flaky → **Unverified** findings — never shrunk because the
+    run was cut short) with the per-phase and per-category breakdowns;
+    **per-endpoint stats** including the latency percentiles (p50/p95/max — a dash
+    when the endpoint was never timed); every recorded **crash** — with its id, the
+    same plain-English invariant labels the fuzz report uses, the identity it was
+    found under (**Identity**; shown when at least one crash recorded one), and the
+    **minimal payload that reproduces it**, so a saved run shows no less than the
+    report printed when the fuzzing finished; and the run's **artifacts** (the
+    execution trace and any run-level files).
 
     `--crash <id>` answers *what actually failed*, taking the id from the crash
     table above. It shows the request's **minimal payload** broken down by zone,
-    its **sanitized headers**, and the **body the API responded with** — which is
-    usually where the error message lives. When the crash carries them, it also
-    shows the **stack trace** and the **transition sequence**: the chain of
-    requests that produced a stateful finding. The two flags are mutually
-    exclusive.
+    its **sanitized headers**, the **identity it was found under**, and the
+    **body the API responded with** — which is usually where the error message
+    lives. When the crash carries them, it also shows the **stack trace** and the
+    **transition sequence**: the chain of requests that produced a stateful
+    finding. The two flags are mutually exclusive.
 
     Payload values keep the spelling they travelled the wire with (`null` and
     `true`, not Python's `None` and `True`), so anything copied out of the CLI is
@@ -339,6 +377,7 @@ are all derived from the registry — no other file needs editing.
     SpecForge ❯ replay --analysis 3
     SpecForge ❯ replay --analysis 3 --no-save
     SpecForge ❯ replay --analysis 3 --no-preserve-timing
+    SpecForge ❯ replay --analysis 3 --identities identities.toml
     ```
 
     Re-sends the exact requests recorded in an analysis's execution trace —
@@ -366,8 +405,18 @@ are all derived from the registry — no other file needs editing.
 
     The command refuses recipes it cannot replay whole, **before sending a
     single request**: an empty trace, a missing or tampered trace artifact
-    (content is hash-verified on read), and traces that need credential header
-    values — stored recipes keep header *names* only, never values.
+    (content is hash-verified on read), a trace recorded under an identity label
+    that `--identities <file>.toml` does not declare — the stored recipe keeps
+    labels only, never credentials, so the check comes first — and, once every
+    label resolves, traces that still need a credential header value no declared
+    identity carries; stored recipes keep header *names* only, never values.
+    Header values set for the whole run (`config.headers`) cannot be re-supplied
+    yet — only an `--identities` file can.
+
+    `--identities <file>.toml` re-supplies the identities the run was recorded
+    under, from the same file shape `fuzz` reads. A missing label surfaces as a
+    **Missing Identities** panel naming every label the trace needs, before
+    anything is sent.
 
     `--save` (default on) appends the replay to the same analysis as a new run
     with the next ordinal, so `history --analysis <id>` shows original and

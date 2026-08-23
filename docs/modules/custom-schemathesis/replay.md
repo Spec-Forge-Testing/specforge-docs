@@ -46,6 +46,17 @@ against another environment (staging vs production) is a config change, not a fi
 edit — and a config header the trace referenced but the current config lacks is a
 hard error, never a silently degraded request.
 
+Identities are never persisted either: only the **label** each request was built
+under travels with the trace and, when one triggered a finding, with the crash
+report — the identity's credentials never do. A replay re-supplies the values live,
+from the identities passed to it. `rehydrate_request` resolves each traced
+request's identity by label against the ones it was given and merges its headers
+in the same layer a live run would; a label the trace recorded that the replay was
+not given raises `EngineError` — the exact request cannot be rebuilt without it.
+The CLI turns that into a pre-flight instead: it refuses the whole replay, naming
+every missing label, before a single request goes out (see the `replay` command
+in [core commands](../core/commands.md)).
+
 ## What a replay evaluates
 
 Without the compiled endpoints, a replay can only re-flag the contract-free

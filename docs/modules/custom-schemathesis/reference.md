@@ -241,6 +241,7 @@ creates its own.
 | :--- | :--- |
 | **`ContextInjector`** | Builds an immutable request blueprint from assembled zone payloads, and records which header names came from the run config. |
 | **`ErrorClassifier`** | Categorizes HTTP responses and transport-level failures. |
+| **`identities.py`** | Pure: `share_budget` splits a stateless phase's example budget evenly across the declared identities; `identity_strategy` draws one for a stateful sequence. |
 | **`ResponseValidator`** | A thin facade that composes registered **response oracles** (see below) to decide which invariant a response violated. |
 | **`hypothesis_settings`** | Single source of the Hypothesis settings each strategy runs with. |
 | **`AsyncHttpFuzzer`** | Default stateless execution strategy. |
@@ -256,6 +257,12 @@ site: `exploration_settings(n)`, `shrink_settings()` and `stateful_settings(conf
 
 `deadline=None` everywhere, because a real HTTP round trip would trip it without any
 defect being present.
+
+`stateful_settings` also takes `reserved_steps`, added on top of `stateful_step_count`
+so the machine's own setup rules never take a step from the user's declared budget.
+With identities declared, the `@initialize` rule that draws one costs a step — Hypothesis
+counts it like any other — so `setup_step_count` (`state_machine.py`) reserves exactly
+one for it; with none declared it reserves zero and `stateful_step_count` is unchanged.
 
 **No example database (`database=None`) — a decision, not a forgotten default.**
 Hypothesis otherwise persists failing examples under `.hypothesis/` in the working
@@ -334,18 +341,21 @@ stateless path.
 ### Two-Phase Testing Pipeline
 
 * **Explore Phase**: Executes tests and records all failures without raising exceptions, allowing test generation to continue uninterrupted. If transport failures pile up to `MAX_INFRA_FAILURES` in a row, that endpoint aborts and the run moves on to the next one — a dead endpoint never stalls the whole run. The abort is recorded in the trace as a truncation, so a partial run is never mistaken for a complete one. Exploration returns an `ExplorationOutcome` (results, raw findings, and the truncation when there was one).
-* **Shrink Phase**: Raw findings are first **grouped by signature** — endpoint, phase, violated invariant, status code and the *shape* of the response body (keys and their types, digit runs masked; never the values) — by the pure `engine/core/finding_grouper.py`. One representative per group is then minimized with `hypothesis.find` by `engine/core/shrink_coordinator.py` (pure, with `shrink` injected): a flaky (`None`) or divergent (another status) first representative promotes a second member, never a third (`MAX_REPRESENTATIVES_PER_SIGNATURE = 2`). A systematic failure — every example of an endpoint answering the same 500, every request to an authenticated endpoint answering 401 — therefore costs one shrink search, not one per example.
+  * **Liveness probe**: after `MAX_CONSECUTIVE_SERVER_ERRORS` 5xx in a row on one endpoint, the fuzzer re-sends the last **safe** request it saw answered cleanly anywhere in the run — this endpoint's or another's — restricted to `SAFE_PROBE_METHODS = {GET, HEAD, OPTIONS}`, never a write, which would create a second resource outside the budget. Any HTTP answer, a 500 included, proves the process is up; only a transport failure declares it `TARGET_DOWN`, which cuts the run before shrinking. No safe baseline seen yet means no probe at all, and confirming one endpoint's liveness stops it from being probed again for the rest of that pass (`liveness_confirmed`) — one extra request per endpoint, at most.
+  * **Identities**: with `ExecutionConfig.identities` declared, each phase's example budget is split evenly across them (`engine/core/identities.py::share_budget`; the remainder goes to the first identities, and one the budget cannot reach gets no share); with none declared, a single anonymous pass runs exactly as before. `RawFinding.identity` records which one produced a given finding, and shrinking re-executes under that same identity rather than re-drawing.
+* **Shrink Phase**: Raw findings are first **grouped by signature** — endpoint, phase, violated invariant, status code, the identity label the request was sent under, and the *shape* of the response body (keys and their types, digit runs masked; never the values) — by the pure `engine/core/finding_grouper.py`, so the same symptom found under two identities groups, and later reports, separately. One representative per group is then minimized with `hypothesis.find` by `engine/core/shrink_coordinator.py` (pure, with `shrink` injected): a flaky (`None`) or divergent (another status) first representative promotes a second member, never a third (`MAX_REPRESENTATIVES_PER_SIGNATURE = 2`). A systematic failure — every example of an endpoint answering the same 500, every request to an authenticated endpoint answering 401 — therefore costs one shrink search, not one per example.
   * The search accepts a candidate only when it reproduces the finding's own violation **and status**, so minimization cannot drift to a different symptom. The report is built from one more request; a report whose status still diverges is kept as evidence but stands only for itself.
-  * Findings that fail to reproduce during shrinking are discarded as flaky. Members never attempted are counted in `RunStats.findings_collapsed`, and the requests the phase put on the wire in `RunStats.requests_shrink` — measured on `AsyncOrchestrator.wire_requests`, the engine's one transport counter, so the number is comparable with the target's access log. `findings_raw == findings_confirmed + findings_flaky + findings_collapsed` holds by construction, and `findings_confirmed` counts representatives that reproduced.
+  * Findings that fail to reproduce during shrinking are discarded as flaky. Group members never attempted, because a representative of their signature already was, are counted in `RunStats.findings_collapsed`; findings never attempted at all, because the run was cut before shrinking started (`TARGET_DOWN`), are counted in `RunStats.findings_unverified` instead — the run never got the chance to try them, which is a different fact from trying and failing. The requests the phase put on the wire land in `RunStats.requests_shrink` — measured on `AsyncOrchestrator.wire_requests`, the engine's one transport counter, so the number is comparable with the target's access log. `findings_raw == findings_confirmed + findings_flaky + findings_collapsed + findings_unverified` holds by construction, and `findings_confirmed` counts representatives that reproduced.
   * `CrashReport.represented_findings` says how many raw findings a report stands for: itself, its unshrunk group mates and the duplicates deduplication absorbed. A group whose two representatives both diverged leaves its members counted as collapsed with no report claiming them. A stateful crash always represents 1: that mode minimizes as it goes and has no separate shrink phase.
   * Sequential execution avoids shared-state pollution, side effects, and rate-limit interference.
 
 ### Validation, Redaction & Deduplication
 
 * **Response oracles (`engine/core/oracles/`)**: Response validation is the module's fifth extension registry. An **oracle** is a registered unit — `name`, `order`, and a `check(context) -> OracleVerdict` — and `ResponseValidator` is now a thin facade that pre-resolves the applicable response contract into a `ResponseContext` once and then composes the registered oracles in `order`. A verdict carries `(violation, terminal)`: an oracle can pass, stop the pipeline, emit a violation, or emit-and-continue. The five built-ins reproduce the former `if`-chain exactly, in precedence order: **infra** (10, transport failures suppress all findings), **server-error** (20, any 5xx is `NOT_A_SERVER_ERROR` and stops — never softened by a declared range), **status-code** (30), **content-type** (40), **schema** (50). Because all five are terminal-on-violation, `check` still yields at most one violation today; the *emit-and-continue* verdict is the seat a future oracle (semantic property, latency SLA, access control) registers into — a new invariant is a row plus an additive `InvariantViolation` member, never a core edit. Transport failures are never contract violations.
+* **A response with no representation gets no content-type verdict.** `ResponseContext.has_body` (resolved once, in `build_context`) is `False` for a zero-byte or whitespace-only body — what gin, Express and Spring answer errors with — and `True` for every JSON value, `null` included, and any text beyond whitespace. `content-type` (40) skips outright when `has_body` is `False`. `schema` (50) tolerates an empty non-2xx the same way — an empty 404 or 401 is normal — but a 2xx that promised a body and sent none is still validated against it: `""` against an `object` schema is `RESPONSE_SCHEMA_CONFORMANCE`, against a `string` schema it is a valid empty string.
 * **Status-range contract resolution**: `resolve_response_contract` (models layer) matches a status against the declared responses by OpenAPI precedence — exact code, then range (`2XX`/`4XX`/`5XX`, case-insensitive), then `default`. The engine consumes a resolved `ResponseContract | None` and never learns OpenAPI's range grammar; a `201` declared only as `"2XX"` no longer produces a spurious status-conformance finding.
 * **Secret Redaction**: Sensitive headers (`Authorization`, `Cookie`, `X-Api-Key`) are scrubbed from **crash reports** before persistence. The execution trace uses a different mechanism — it *omits* config-sourced headers by origin, keeping their names and never their values, because a redacted trace could not be replayed. Do not merge the two: one is redaction against a fixed list, the other is omission by origin.
-* **Report Deduplication**: Two reports are considered identical if they share the same endpoint, method, phase, invariant, status, and canonical minimal payload. Only one instance is stored to prevent CLI/stat skew, while total defect counts are preserved in aggregate counters.
+* **Report Deduplication**: Two reports are considered identical if they share the same endpoint, method, phase, invariant, status, identity label, and canonical minimal payload. Only one instance is stored to prevent CLI/stat skew, while total defect counts are preserved in aggregate counters.
 
 
 ### Stateful Fuzzing
@@ -382,6 +392,11 @@ flowchart LR
 
 * One Hypothesis `Bundle` per declared bundle name.
 * One `@rule()` per endpoint, running the pipeline above.
+* With `ExecutionConfig.identities` declared, an `@initialize(identity=identity_strategy(...))`
+  rule draws one identity when the sequence starts and stores it; every `@rule` and every
+  transition probe of that sequence reuses it — a sequence is one session, not a
+  per-step draw. With no identities declared the rule is not added, and the machine
+  behaves exactly as before.
 * A rule that consumes a bundle only becomes eligible once something has produced
   into it. That is Hypothesis's own empty-bundle filter, which the machine relies on
   rather than declaring a second, weaker precondition of its own.
@@ -477,7 +492,8 @@ A rule stops at its first failure, so by default `fuzz_sequence` does **one pass
 turns on a loop:
 
 1. Each pass reports one defect and records its signature
-   `(method, path, invariant)` in a `suppressed` set.
+   `(method, path, invariant, identity label)` in a `suppressed` set — the same
+   defect found under a different identity is a different one, so it is not suppressed.
 2. Rules keep checking already-seen signatures but don't re-raise on them, so the
    next pass can surface a *different* defect.
 3. A suppressed defect still applies its declared **productions**: a defective
@@ -507,7 +523,10 @@ silently picking one would hide the mistake.
 `StatefulConfig` fields: `max_distinct_bugs` (default `1`), `max_examples`
 (sequences per pass), `step_count` (max steps per sequence). Findings reuse
 `CrashReport` with its optional `transition_sequence` field (the steps leading to
-the failure) rather than a second report type.
+the failure) rather than a second report type. `CrashReport.identity_label` is
+read off the minimal sequence's own re-executed step, never off the identity
+Hypothesis's shrinker happened to minimize toward — the report names the identity
+that actually reproduced the failure.
 
 ---
 

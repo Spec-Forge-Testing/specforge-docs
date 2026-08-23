@@ -139,7 +139,8 @@ connection" would be hidden, non-thread-safe mutable state.
       | `findings_confirmed` | `int` | Representatives that still reproduced after shrinking. |
       | `findings_unique` | `int` | Distinct defects (`== len(crash_reports)`). |
       | `findings_flaky` | `int` | Representatives that failed to reproduce. |
-      | `findings_collapsed` | `int` | Findings never shrunk: a representative of their signature stood for them. `findings_raw == findings_confirmed + findings_flaky + findings_collapsed`. Zero for modes without a shrink phase. |
+      | `findings_collapsed` | `int` | Findings never shrunk: a representative of their signature stood for them. Zero for modes without a shrink phase. |
+      | `findings_unverified` | `int` | Findings never attempted at all, because the run was cut before shrinking started (`TARGET_DOWN`). `findings_raw == findings_confirmed + findings_flaky + findings_collapsed + findings_unverified`. Zero for modes without a shrink phase. |
       | `requests_shrink` | `int` | Requests the shrinking phase put on the wire; not part of `total_requests`. Zero for modes without a shrink phase. |
       | `by_phase` | `str \| None` | Request breakdown by phase, as JSON. |
       | `by_category` | `str \| None` | Request breakdown by error category, as JSON. |
@@ -186,6 +187,7 @@ connection" would be hidden, non-thread-safe mutable state.
       | `stack_trace` | `str \| None` | Filled in later by the Auto-Fixer; the engine leaves it `None`. |
       | `transition_sequence` | `str \| None` | Request chain as JSON, stateful findings only. |
       | `represented_findings` | `int` | Raw findings this report stands for: itself, its unshrunk group mates and the duplicates it absorbed. Always 1 for stateful findings. |
+      | `identity_label` | `str \| None` | The identity the failing request was sent under; `None` when the run declared none. |
 
 ??? "`ArtifactRecord` - A **recipe-level artifact** or a **report-level one**"
 

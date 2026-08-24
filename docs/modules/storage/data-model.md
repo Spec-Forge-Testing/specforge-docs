@@ -126,6 +126,12 @@ connection" would be hidden, non-thread-safe mutable state.
       | `ordinal` | `int` | Position of the run within its analysis (1 = original). |
       | `is_original` | `bool` | Whether this run generated and recorded the trace. |
       | `fidelity` | `str \| None` | Replay fidelity: `exact` / `reduced`, or `NULL` for an original run (only a replay has a fidelity to report). |
+      | `truncation_reason` | `str \| None` | Why the run was cut short (engine reason token); `NULL` when it completed. |
+      | `truncation_endpoint_id` | `str \| None` | Endpoint being explored when the run was cut short; `NULL` when it completed. |
+
+      `truncation_reason` and `truncation_endpoint_id` are set together or not
+      at all — enforced both by a schema `CHECK` and by a typed
+      `IncompleteTruncationError` raised before the write.
 
 ??? "`RunMetricsRecord` - Aggregate **stats for a run**."
 
@@ -199,11 +205,11 @@ connection" would be hidden, non-thread-safe mutable state.
       | `id` | `int` | Auto-incrementing primary key. |
       | `analysis_id` | `int \| None` | Set for analysis-level artifacts. |
       | `run_id` | `int \| None` | Set for run-level artifacts. |
-      | `kind` | `str` | Artifact type (e.g. `execution_trace`, `report_html`). |
+      | `kind` | `str` | Artifact type: `execution_trace` at the analysis level; `report_json`/`report_html` at the run level (see [Run report](../core/reports.md)). |
       | `path` | `str` | Path on disk. |
       | `sha256` | `str` | Hash of the artifact's content. |
       | `size_bytes` | `int` | Size in bytes. |
-      | `critical` | `bool` | Whether losing it breaks reproducibility. |
+      | `critical` | `bool` | Whether losing it breaks reproducibility. `execution_trace` is critical; the report pair is not — both are derivable from the run's other persisted data. |
       | `compressed` | `bool` | Whether it's stored compressed. |
 
 ## On-disk artifact persistence (`artifacts/`)

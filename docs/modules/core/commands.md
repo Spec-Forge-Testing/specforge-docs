@@ -337,17 +337,19 @@ are all derived from the registry — no other file needs editing.
     ```
 
     `--run <id>` renders one run in full, in five sections: a **header** with its
-    context (project, analysis, ordinal, origin, execution time, duration, status,
-    fidelity and the comparability mark); the **metrics** funnel (requests, raw →
-    confirmed → unique → flaky → **Unverified** findings — never shrunk because the
-    run was cut short) with the per-phase and per-category breakdowns;
-    **per-endpoint stats** including the latency percentiles (p50/p95/max — a dash
-    when the endpoint was never timed); every recorded **crash** — with its id, the
-    same plain-English invariant labels the fuzz report uses, the identity it was
-    found under (**Identity**; shown when at least one crash recorded one), and the
-    **minimal payload that reproduces it**, so a saved run shows no less than the
-    report printed when the fuzzing finished; and the run's **artifacts** (the
-    execution trace and any run-level files).
+    context (project, analysis, ordinal, origin, execution time, duration, status —
+    plus, when the run was cut short, **why and where** — fidelity and the
+    comparability mark); the **metrics** funnel (requests, raw → confirmed → unique
+    → flaky → **Unverified** findings — never shrunk because the run was cut short)
+    with the per-phase and per-category breakdowns; **per-endpoint stats** including
+    the latency percentiles (p50/p95/max — a dash when the endpoint was never
+    timed); every recorded **crash** — with its id, the same plain-English invariant
+    labels the fuzz report uses, the identity it was found under (**Identity**;
+    shown when at least one crash recorded one), and the **minimal payload that
+    reproduces it**, so a saved run shows no less than the report printed when the
+    fuzzing finished; and the run's **artifacts** — the execution trace plus the
+    `report.json`/`report.html` pair every save now leaves (see
+    [Run report](reports.md)).
 
     `--crash <id>` answers *what actually failed*, taking the id from the crash
     table above. It shows the request's **minimal payload** broken down by zone,
@@ -423,6 +425,41 @@ are all derived from the registry — no other file needs editing.
     replays side by side. `--no-preserve-timing` skips the recorded pacing
     between requests, which can change the outcome of timing-sensitive defects.
 
+??? "`compare` — diff two runs' defects"
+
+    ```text
+    SpecForge ❯ compare --before 3 --after 7
+    ```
+
+    Pairs every defect from `--before <id>` and `--after <id>` by **symptom** —
+    method, path, phase, invariant, status code and identity — deliberately
+    never by its minimal payload: shrinking runs again each time against a
+    target that may have changed between the two runs, so a defect that never
+    actually left can still shrink to a different reproducer. `compare` shows
+    the payload alongside each defect as its counterexample instead, and flags
+    a pairing whose two reproducers differ ("same symptom, different
+    reproducer").
+
+    Each pairing gets one of four verdicts:
+
+    - **new** — found only in `--after`.
+    - **persisted** — found in both.
+    - **possibly resolved** — found only in `--before`, and nothing taints the
+      comparison.
+    - **inconclusive** — found only in `--before`, but a caveat taints
+      `--after` or the pair itself: a different engine version, a different
+      spec revision, or either run being `truncated`, `aborted` or of
+      **reduced fidelity** — the same not-comparable signal `history` and
+      `inspect` already show.
+
+    A fresh appearance is never downgraded by a caveat — it is reported as
+    **new** regardless — and the diff is never blocked by a caveat either: it
+    is still produced, with every reason listed in a "Not directly comparable"
+    panel. A defect seen more than once on either side shows its
+    `before → after` occurrence count instead of silently collapsing to a
+    single representative. The two runs can belong to the same analysis or to
+    two different ones.
+
 ??? "`!` — run system commands"
 
     ```text
@@ -468,6 +505,34 @@ are all derived from the registry — no other file needs editing.
     Bundled themes: `default`, `mono`, `nord`, `dracula`, `solarized`, `matrix`. They
     are token→style maps in `ui/theme.py`; the active theme can also be chosen at
     startup with `SPECFORGE_THEME=<name>`.
+
+## Machine-readable output (`--json-output`)
+
+`fuzz`, `replay`, `inspect`, `history` and `compare` all accept
+`--json-output`, which replaces every panel with exactly one JSON object on
+stdout. Every human-readable message — panels, spinners, warnings — is
+written to stderr instead, so piping or redirecting a command's stdout
+captures the document and nothing else.
+
+The envelope is the same shape for every command and every outcome:
+
+```json
+{"schema_version": "1.0", "command": "fuzz", "status": "ok", "data": { ... }, "error": null, "warnings": []}
+{"schema_version": "1.0", "command": "fuzz", "status": "error", "data": null, "error": {"code": "...", "message": "..."}, "warnings": []}
+```
+
+`status` is `ok` or `error`, never both, and every key is present regardless
+of outcome — set to `null` or an empty list when unused — so a consumer can
+always index into a known shape. `data` is the [run report](reports.md)
+document for `fuzz`/`replay`/`inspect --run`, one crash's own defect shape
+for `inspect --crash`, the listed rows for `history`, and the comparison
+document for `compare`. A run whose fuzzing or replay succeeded but whose
+save to storage failed still emits an `ok` envelope carrying the full
+document (`run.id` left `null`), with the failure riding along as a
+`warnings` entry rather than being lost.
+
+Full envelope shape, the `report.json`/`report.html` artifacts and the error
+code registry are documented in [Run report](reports.md).
 
 ## Example workspace — `examples/ast_demo`
 

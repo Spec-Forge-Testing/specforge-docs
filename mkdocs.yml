@@ -89,6 +89,7 @@ nav:
       - Core CLI:
           - Overview: modules/core/index.md
           - Commands: modules/core/commands.md
+          - Run report: modules/core/reports.md
       - Core AST:
           - Overview: modules/core-ast/index.md
           - Reference: modules/core-ast/reference.md

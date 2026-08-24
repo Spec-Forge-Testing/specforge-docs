@@ -16,6 +16,7 @@ putting domain logic in the user interface.
 | **`replay`** | Execution | Re-sends an analysis's recorded trace and rules a verdict per defect. |
 | **`history`** | History | Browses persisted projects, analyses and runs, with filters. |
 | **`inspect`** | History | Shows one run in full (metrics, latency, crashes, artifacts), or one crash in full (payload, headers, response body). |
+| **`compare`** | History | Diffs two runs' defect sets — appeared, persisted, possibly resolved — marking a pair that is not directly comparable. |
 | **`!`** | System | Executes system shell commands directly from REPL. |
 | **`theme`** | Settings | Switches the CLI UI color theme. |
 

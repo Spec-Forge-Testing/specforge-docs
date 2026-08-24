@@ -55,7 +55,7 @@ in the same layer a live run would; a label the trace recorded that the replay w
 not given raises `EngineError` — the exact request cannot be rebuilt without it.
 The CLI turns that into a pre-flight instead: it refuses the whole replay, naming
 every missing label, before a single request goes out (see the `replay` command
-in [core commands](../core/commands.md)).
+in [CLI Reference](../../user-guide/cli-reference.md)).
 
 ## What a replay evaluates
 

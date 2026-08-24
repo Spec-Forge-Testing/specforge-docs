@@ -16,7 +16,7 @@ flowchart LR
 ```
 
 The package targets Python 3.11+. Its installation, test and lint commands are in
-[Development & Testing](../../getting-started/development.md#module-commands).
+[Contributing & Testing](../../developer-guide/contributing.md#test-a-compose-module).
 
 ## Module layout
 

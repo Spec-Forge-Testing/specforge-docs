@@ -28,7 +28,7 @@ flowchart LR
 ## Development requirements
 
 The package targets Python 3.11+. Installation and verification commands are in
-[Development & Testing](../../getting-started/development.md#test-a-compose-module).
+[Contributing & Testing](../../developer-guide/contributing.md#test-a-compose-module).
 
 Seven languages load on demand (Java, C#, Ruby, PHP, Rust, Kotlin, Swift) via
 `golden-path` extra. Token counting uses ``tiktoken`` via ``tokens``. Neither

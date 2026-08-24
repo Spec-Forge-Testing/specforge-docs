@@ -1,9 +1,22 @@
-# Spec Forge CLI (`specforge_cli`)
+# CLI Reference
 
-Interactive REPL orchestrator for the Spec Forge pipeline. Commands self-register
-through the `@command` decorator (`repl/registry.py`) and are dispatched by
-`repl/dispatcher.py`. Presentation is a small design system under `ui/`
-(tokens → theme → components); business logic lives in pure `services/`.
+The CLI is the interactive entry point to Spec Forge. It coordinates contract
+validation, static tracing, LLM-ready context extraction and API fuzzing.
+
+## Commands summary
+
+| Command | Category | Description |
+| :--- | :--- | :--- |
+| **`doctor`** | Diagnostics | Checks environment, pipeline dependencies, and LLM setup. |
+| **`doctor --fix`** | Diagnostics | Guided automated installation and dependency fixes. |
+| **`trace`** | Analysis | Static code tracing from an OpenAPI endpoint. |
+| **`ast-extract`** | Analysis | Inspects extracted code structures and LLM context. |
+| **`fuzz`** | Execution | Compiles strategies from schema and fuzzes a live API. |
+| **`replay`** | Execution | Re-sends an analysis's recorded trace and rules a verdict per defect. |
+| **`history`** | History | Browses persisted projects, analyses and runs, with filters. |
+| **`inspect`** | History | Shows one run in full (metrics, latency, crashes, artifacts), or one crash in full (payload, headers, response body). |
+| **`!`** | System | Executes system shell commands directly from REPL. |
+| **`theme`** | Settings | Switches the CLI UI color theme. |
 
 ## Running
 
@@ -13,68 +26,7 @@ specforge          # launch the interactive REPL
 
 Inside the REPL, type `help` to list commands or `help <command>` for details.
 
-## Architecture
-
-The CLI is layered so styling, commands and logic each have one home:
-
-- **`ui/`** — the design system. `tokens.py` names semantic styles and icons,
-  `theme.py` maps them to a switchable `rich.Theme`, and `components.py` builds
-  every panel, table and message from those tokens. No raw colors live outside the
-  theme, so re-skinning is a one-file change.
-- **`config/`** — typed, grouped definitions: `paths`, `commands` and the
-  `CommandCategory` enum.
-- **`services/`** — all business logic, free of any printing: pure helpers that
-  return DTOs (`workspace`, `tracing`, `contract`) and the larger self-contained
-  subsystems (`shell/` for the `!` escape, `diagnostics/` for `doctor`).
-- **`repl/`** — the session loop, dispatcher, registry, completer and thin command
-  handlers; feature renderers live in `repl/views/` (one module per feature),
-  composed from the `ui/` components.
-- **`cli/`** — the argv entrypoints: Typer subcommands run from the shell (e.g.
-  `specforge init`), distinct from the in-REPL `repl/commands/`. Both reuse the
-  same `services/`.
-
-The registry is the single source of truth for commands: the completer and help
-derive from it, so adding a command is one file — declare it with `@command`
-(name, category, aliases, argument flags) and it appears in dispatch, help and
-completion automatically.
-
-## Adding a new command
-
-Commands are self-registering, so a new one is small and local:
-
-1. **Name** — add the command string to `config/commands.py`
-   (e.g. `CMD_FOO = "foo"`), and a `CommandCategory` to `config/categories.py` if
-   none fits.
-2. **Handler** — create `repl/commands/foo.py` and decorate the handler:
-
-   ```python
-   from specforge_cli.config import CommandCategory, commands
-   from specforge_cli.repl.registry import command
-
-
-   @command(
-       name=commands.CMD_FOO,
-       description="One-line summary shown in `help`.",
-       category=CommandCategory.GENERAL,
-       aliases=("f",),                 # optional
-       arguments=("--flag", "-x"),     # optional, feeds autocompletion
-       examples=["foo --flag"],        # optional, shown in `help foo`
-   )
-   def cmd_foo(args: list[str]) -> None:
-       result = run_foo(args)          # logic in services/
-       print_foo(result)               # presentation in repl/views/ + ui/
-   ```
-
-3. **Logic & presentation** — keep computation in `services/` (pure, returns a DTO)
-   and rendering in a `repl/views/` module built on the `ui/` components. Handlers
-   stay thin: parse args, call the service, render the result.
-4. **Register the module** — add `foo` to the imports in
-   `repl/commands/__init__.py` so the decorator runs at startup.
-
-That's it: dispatch, fuzzy-match suggestions, `help`, `help foo` and tab-completion
-are all derived from the registry — no other file needs editing.
-
-## Current Commands
+## Commands
 
 ??? "`doctor` — environment & dependency diagnostics"
 
@@ -263,7 +215,7 @@ are all derived from the registry — no other file needs editing.
     **Identity** column above. The label is persisted with the crash and the run's
     trace; the credentials never are (see below).
 
-    `--stateful` switches to [stateful fuzzing](../custom-schemathesis/stateful-fuzzing.md):
+    `--stateful` switches to [stateful fuzzing](../modules/custom-schemathesis/stateful-fuzzing.md):
     requests are **chained into sequences** instead of each operation being fuzzed on
     its own, which surfaces order-dependent failures — a resource created, deleted,
     then read. `--endpoint`/`--method` still narrow the sequences to the matching
@@ -278,7 +230,7 @@ are all derived from the registry — no other file needs editing.
     the declared hand-off from one request's response into the next request — cannot
     be honored; the engine's diagnosis is reported with it.
 
-    Every run is **saved by default** through the [storage engine](../storage/index.md):
+    Every run is **saved by default** through the [storage engine](../modules/storage/index.md):
     a project → analysis → run hierarchy with metrics, per-endpoint stats, crash
     reports and the execution trace as a critical artifact, written in one atomic
     transaction — a mid-write failure rolls the whole run back. `--no-save` opts out;
@@ -469,56 +421,8 @@ are all derived from the registry — no other file needs editing.
     are token→style maps in `ui/theme.py`; the active theme can also be chosen at
     startup with `SPECFORGE_THEME=<name>`.
 
-## Example workspace — `examples/ast_demo`
+## Example workspace
 
-`examples/ast_demo/` is a self-contained *Dummy Bank API* used to exercise the
-commands end to end and see each renderer against one consistent project. It pairs
-a handful of source handlers with the matching `openapi.yaml`:
-
-```text
-examples/ast_demo/
-├── openapi.yaml   # POST /transfer · GET /account/{account_id}
-├── handlers.py    # the FastAPI handlers (the trace targets)
-├── rules.py       # business validators called by the handlers
-├── models.py      # request/response DTOs
-└── data.py        # in-memory account fixtures
-```
-
-`transfer` carries the canonical Spec Forge bug: a non-positive `amount` escapes as
-an unhandled error and surfaces a `500` where the schema implies a clean `4xx` — a
-business invariant the OpenAPI alone never states.
-
-Run the demo from the repository root:
-
-```bash
-# 1. Validate the spec
-SpecForge ❯ contract-engine --validate -f core/examples/ast_demo/openapi.yaml
-
-# 2. List the endpoints and their engine readiness
-SpecForge ❯ contract-engine --analyze -f core/examples/ast_demo/openapi.yaml
-
-# 3. Trace the transfer handler against the example source
-SpecForge ❯ trace -c core/examples/ast_demo/openapi.yaml -p core/examples/ast_demo --operation-id transfer
-
-# 4. Inspect the extracted code and the LLM context for transfer
-SpecForge ❯ ast-extract -c core/examples/ast_demo/openapi.yaml -p core/examples/ast_demo --operation-id transfer --payload
-
-# 5. Fuzz the live API — start it first in another terminal:
-#    uvicorn handlers:app --app-dir core/examples/ast_demo --port 8000
-SpecForge ❯ fuzz -f core/examples/ast_demo/openapi.yaml --base-url http://localhost:8000
-```
-
-Step 3 locates `transfer` in `handlers.py` and follows its calls into `rules.py`
-and `data.py`, so the trace report lists the helper functions it walked across
-files. Step 4 prints the actual extracted source and the packaged LLM context for
-the same endpoint. Point `--project` at `core/examples/ast_demo` (not the whole
-repo) so the locator resolves a single, unambiguous handler. Step 5 serves those
-same handlers and fuzzes them: the schema-only run reaches the `500` (whenever
-Hypothesis happens to generate a valid `account_id`) and also flags the `422`s the
-spec never declares.
-
-## Tests
-
-Tests live under `tests/`, grouped into subpackages that mirror `src/`
-(`config/`, `ui/`, `services/`, `repl/`). Setup and test commands are in
-[Development & Testing](../../getting-started/development.md#module-commands).
+Want to see every command against one consistent project? See the
+[Example Walkthrough](example-walkthrough.md) — a self-contained Dummy Bank API
+that exercises `trace`, `ast-extract` and `fuzz` end to end.

@@ -24,8 +24,9 @@ specforge-docs/
 ├── requirements.txt
 └── docs/
     ├── index.md
-    ├── getting-started/
-    ├── architecture/
-    ├── modules/
-    └── environment/
+    ├── user-guide/       # installing and running Spec Forge
+    ├── architecture/     # conceptual overview of the pipeline
+    ├── developer-guide/  # contributing and CLI internals
+    ├── modules/          # per-package reference, nested under Developer Guide in the nav
+    └── testing/          # tests-repos corpora, nested under Developer Guide in the nav
 ```

@@ -8,9 +8,10 @@ fuzzing to discover deep bugs in web applications.
 
 ## Where to start
 
-- [Getting Started → Setup](getting-started/setup.md) for prerequisites and the quick start.
-- [Getting Started → Docker](getting-started/docker.md) for the Docker Compose workflow.
+- [User Guide → Installation](user-guide/installation.md) for prerequisites and the quick start.
+- [User Guide → CLI Reference](user-guide/cli-reference.md) for every command, and an
+  [Example Walkthrough](user-guide/example-walkthrough.md) to see them end to end.
 - [Architecture → Overview](architecture/overview.md) for how the pipeline fits together.
-- [Modules](modules/core/index.md) for a per-package deep dive.
-- [Environment → LLM Providers](environment/llm-providers.md) for model/provider configuration.
-- [Testing](testing/index.md) for the `tests-repos` corpora and the integration suite that runs Spec Forge against real APIs.
+- [Developer Guide → Modules](modules/contract-engine/index.md) for a per-package implementation deep dive.
+- [User Guide → LLM Providers](user-guide/llm-providers.md) for model/provider configuration.
+- [Developer Guide → Test Corpora](testing/index.md) for the `tests-repos` corpora and the integration suite that runs Spec Forge against real APIs.

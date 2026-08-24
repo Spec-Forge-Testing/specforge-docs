@@ -417,7 +417,7 @@ must never break:
 ## Development & Testing
 
 Use the Core AST commands in
-[Development & Testing](../../getting-started/development.md#test-a-compose-module).
+[Contributing & Testing](../../developer-guide/contributing.md#test-a-compose-module).
 
 Integration-test setup and output conventions are documented separately in
 [Integration Tests](integration-tests.md).

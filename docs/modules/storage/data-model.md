@@ -256,4 +256,4 @@ Both this module's suite and its consumers turn leaked connections into errors
 warning.
 
 The Docker test command is in
-[Development & Testing](../../getting-started/development.md#module-commands).
+[Contributing & Testing](../../developer-guide/contributing.md#exceptions).

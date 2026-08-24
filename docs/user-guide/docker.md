@@ -1,4 +1,4 @@
-# Docker Compose
+# Running with Docker
 
 The root `docker-compose.yml` is the entry point for running Spec Forge in
 containers. It groups services into profiles, so only the requested workload
@@ -18,8 +18,5 @@ Start the dummy API used for manual or demo fuzzing:
 poe demo
 ```
 
-## Working on one module
-
-Module-specific Compose files under `lib/*` remain available when you need to
-work within a package directly. Test and lint commands, including the repository
-`test` profile, are documented in [Development & Testing](development.md).
+Working on a module directly — module-specific Compose files, test and lint
+commands — is covered in [Contributing & Testing](../developer-guide/contributing.md).

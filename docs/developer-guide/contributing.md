@@ -1,7 +1,8 @@
-# Development & Testing
+# Contributing & Testing
 
 Use this page when changing Spec Forge itself. For initial CLI setup, see
-[Setup](setup.md); for runtime profiles, see [Docker Compose](docker.md).
+[Installation](../user-guide/installation.md); for runtime profiles, see
+[Docker Compose](../user-guide/docker.md).
 
 ## Test the repository
 

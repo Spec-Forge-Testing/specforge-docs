@@ -1,4 +1,4 @@
-# Setup
+# Installation & Quick Start
 
 ## Prerequisites
 
@@ -6,7 +6,7 @@
   supports Python 3.10+.
 - Docker and Docker Compose for containerized workflows.
 - A provider key only for semantic-inference integration tests; see
-  [LLM Providers](../environment/llm-providers.md).
+  [LLM Providers](llm-providers.md).
 
 ## Quick start
 
@@ -25,4 +25,5 @@ specforge
 ```
 
 Use [Docker Compose](docker.md) to run repository profiles, or
-[Development & Testing](development.md) to work on and verify a module.
+[Contributing & Testing](../developer-guide/contributing.md) to work on and
+verify a module.

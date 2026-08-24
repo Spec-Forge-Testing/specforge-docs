@@ -93,7 +93,16 @@ nav:
           - Overview: modules/core-ast/index.md
           - Reference: modules/core-ast/reference.md
           - API Reference: modules/core-ast/api-reference.md
-          - Decision records: modules/core-ast/adr.md
+          - Decision records:
+              - Overview: modules/core-ast/adr/index.md
+              - Locator: modules/core-ast/adr/locator.md
+              - AST builder: modules/core-ast/adr/ast-builder.md
+              - Extractor: modules/core-ast/adr/extractor.md
+              - Tracer: modules/core-ast/adr/tracer.md
+              - Quality: modules/core-ast/adr/quality.md
+              - Packager: modules/core-ast/adr/packager.md
+              - API: modules/core-ast/adr/api.md
+              - Foundations: modules/core-ast/adr/foundations.md
           - Integration Tests: modules/core-ast/integration-tests.md
       - Contract Engine:
           - Overview: modules/contract-engine/index.md

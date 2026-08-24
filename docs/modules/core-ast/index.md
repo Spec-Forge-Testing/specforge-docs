@@ -124,7 +124,7 @@ poisons everything downstream.
 That rule is why nearly every function here has a guard returning `None`, why the
 locator raises rather than choosing between two candidates, and why a match
 carries a confidence score. The decisions it produced are recorded one by one in
-the [decision records](adr.md).
+the [decision records](adr/index.md).
 
 ## Where to read next
 
@@ -132,5 +132,5 @@ the [decision records](adr.md).
 |---|---|
 | Understand how a stage works | [Implementation Reference](reference.md) |
 | Call a function, or know what it raises | [API Reference](api-reference.md) |
-| Know *why* something is the way it is | [Decision records](adr.md) |
+| Know *why* something is the way it is | [Decision records](adr/index.md) |
 | Run or extend the suites | [Testing](integration-tests.md) |

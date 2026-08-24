@@ -23,7 +23,7 @@ src/core_ast/
 ```
 
 Every stage owns its constants (`<stage>/constants.py`); `cte/constants.py` holds
-only what two or more stages read. See [ADR-004](adr.md#adr-004).
+only what two or more stages read. See [ADR-004](adr/foundations.md#adr-004).
 
 ## Detailed Stage reference
 
@@ -61,15 +61,15 @@ strategy that hit:
 | `resource_route` | Nothing is written: route and handler both come from convention | 0.35 |
 
 An ambiguous strategy does not abort the cascade — see
-[ADR-012](adr.md#adr-012). The last two strategies are documented in
-[ADR-010](adr.md#adr-010) and [ADR-011](adr.md#adr-011).
+[ADR-012](adr/locator.md#adr-012). The last two strategies are documented in
+[ADR-010](adr/locator.md#adr-010) and [ADR-011](adr/locator.md#adr-011).
 
 **Which function.** The contract's `operationId` and the function's name in code are
 independent conventions — RealWorld declares `GetTags` for a handler called
 `get_all_tags` — so `resolve_handler_location` infers it: find the route declaration
 and take the definition that follows, with four fallbacks for frameworks that name
 the handler inside the declaration or in another file
-([ADR-015](adr.md#adr-015), [ADR-016](adr.md#adr-016)).
+([ADR-015](adr/locator.md#adr-015), [ADR-016](adr/locator.md#adr-016)).
 
 - **Exceptions:** `ControllerNotFoundError` (nothing matched),
   `AmbiguousControllerError` (carries its candidates), `HandlerNameNotFoundError`
@@ -93,8 +93,8 @@ candidates, because a confident wrong answer costs more downstream than a miss.
 
 The repository scan **is** cached, per repository and for the life of the process —
 it used to be stateless, and stopped being so deliberately
-([ADR-002](adr.md#adr-002)). A long-running host must call `clear_scan_cache()`
-between runs ([ADR-003](adr.md#adr-003)).
+([ADR-002](adr/locator.md#adr-002)). A long-running host must call `clear_scan_cache()`
+between runs ([ADR-003](adr/locator.md#adr-003)).
 
 ### 2. `ast_builder` & `extractor`
 - **`ast_builder`:** Reads raw bytes into an `ASTContext` containing the tree, tag query,
@@ -162,11 +162,11 @@ of `_callee_node`:
 *How a qualified call is spelled* — `obj.method`, `pkg::func`, `receiver->name`.
 The detector normalises all of them to a single dotted form and keeps only the
 last segment of the base, because that is the segment naming the module (see
-[ADR-026](adr.md#adr-026)).
+[ADR-026](adr/tracer.md#adr-026)).
 
 None of this lives in control flow: every shape above is an entry in a table in
 `tracer/constants.py`, and adding a language means adding entries
-([ADR-025](adr.md#adr-025)).
+([ADR-025](adr/tracer.md#adr-025)).
 
 **Design decisions — `import_analyzer`.** Each language gets its own
 `BaseImportAnalyzer` subclass (Strategy pattern), so the engine never branches on

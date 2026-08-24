@@ -24,7 +24,7 @@ docker-compose --profile test run --rm --entrypoint python core-ast \
 ```
 
 **Optional grammars.** Seven of the twelve languages ship as the `golden-path`
-extra ([ADR-018](adr.md#adr-018)). A test that needs one must be marked, or it
+extra ([ADR-018](adr/ast-builder.md#adr-018)). A test that needs one must be marked, or it
 passes locally and fails in CI, which installs only the base dependencies:
 
 ```python
@@ -79,7 +79,7 @@ for r in analyze_endpoints(endpoints, repo_root):
               len(a.tracer.dependency_chain), a.tracer.mode)
 ```
 
-That is how the tag-query completion ([ADR-022](adr.md#adr-022)) was verified as
+That is how the tag-query completion ([ADR-022](adr/ast-builder.md#adr-022)) was verified as
 behaviour-preserving: 24/24 stayed green through a change that did alter results,
 and only the hashes showed it.
 

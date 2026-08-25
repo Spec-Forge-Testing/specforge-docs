@@ -460,6 +460,49 @@ are all derived from the registry — no other file needs editing.
     single representative. The two runs can belong to the same analysis or to
     two different ones.
 
+??? "`prune` — retain, compress and collect the artifact store"
+
+    ```text
+    SpecForge ❯ prune                                  # report the store; touch nothing
+    SpecForge ❯ prune --compress                       # gzip what shrinks; never asks
+    SpecForge ❯ prune --keep-last 2 --dry-run          # show the plan and stop
+    SpecForge ❯ prune --keep-last 2                    # delete old run reports, after asking
+    SpecForge ❯ prune --keep-last 2 --include-traces   # also old traces — the named consent
+    SpecForge ❯ prune --collect-orphans                # sweep files no artifact row names
+    ```
+
+    `prune` is the only command that deletes anything, and it never acts
+    without showing its plan first. Bare `prune` only reports the store:
+    total size, artifacts by kind and by level, and any orphan files.
+
+    Rules **protect**; what no rule protects is a candidate, and adding a
+    rule can only ever save more, never condemn more:
+
+    - `--keep-last <n>` protects the n most recent analyses of each project,
+      with everything they produced.
+    - `--older-than <YYYY-MM-DD>` protects every analysis created on or
+      after that UTC date. An analysis with no date is always protected.
+    - `--max-size-mb <n>` is a budget, not a rule: it deletes candidates
+      oldest-first only until the store fits, and reports the shortfall when
+      it cannot get there. It cannot be combined with `--compress` — the
+      budget is computed on current sizes and cannot know what compression
+      will save, so compress first, then prune with the budget.
+
+    The consent ladder: compressing is free (`--compress` gzips any artifact
+    it shrinks without changing its digest or its directory — a compressed
+    trace still replays, still verified). Deleting regenerable run reports
+    asks once, with the plan on screen; `--yes` skips the prompt. Deleting a
+    recorded trace needs `--include-traces` **and** the confirmation — `--yes`
+    alone never reaches one — and the prompt names every analysis that stops
+    being replayable. A terminal that cannot answer is a no: without a TTY
+    and without `--yes`, the plan is shown and nothing is applied. There is
+    no default policy — `prune` with no flags deletes nothing, ever.
+
+    History, metrics and crash reports are never touched — they live in the
+    database, not the artifact store — and `history --project` shows a
+    **Replayable** column derived from the trace's presence, so a consented
+    trace deletion is visible the moment it happens.
+
 ??? "`!` — run system commands"
 
     ```text
@@ -508,7 +551,7 @@ are all derived from the registry — no other file needs editing.
 
 ## Machine-readable output (`--json-output`)
 
-`fuzz`, `replay`, `inspect`, `history` and `compare` all accept
+`fuzz`, `replay`, `inspect`, `history`, `compare` and `prune` all accept
 `--json-output`, which replaces every panel with exactly one JSON object on
 stdout. Every human-readable message — panels, spinners, warnings — is
 written to stderr instead, so piping or redirecting a command's stdout
@@ -526,10 +569,17 @@ of outcome — set to `null` or an empty list when unused — so a consumer can
 always index into a known shape. `data` is the [run report](reports.md)
 document for `fuzz`/`replay`/`inspect --run`, one crash's own defect shape
 for `inspect --crash`, the listed rows for `history`, and the comparison
-document for `compare`. A run whose fuzzing or replay succeeded but whose
-save to storage failed still emits an `ok` envelope carrying the full
-document (`run.id` left `null`), with the failure riding along as a
-`warnings` entry rather than being lost.
+document for `compare`, and the prune plan or outcome for `prune` (every
+`prune` envelope carries an `applied` boolean; without `--yes` the plan is
+emitted with `applied: false` and nothing is touched). A run whose fuzzing
+or replay succeeded but whose save to storage failed still emits an `ok`
+envelope carrying the full document (`run.id` left `null`), with the failure
+riding along as a `warnings` entry rather than being lost.
+
+One deliberate exception to "`error` means no `data`": a `prune` pass that
+fails **after** its destructive phase emits `status: error` with `data`
+still carrying `{"applied": true, "outcome": ...}`, so a consumer is never
+left unable to tell "nothing happened" from "N artifacts are gone".
 
 Full envelope shape, the `report.json`/`report.html` artifacts and the error
 code registry are documented in [Run report](reports.md).

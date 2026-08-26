@@ -81,3 +81,8 @@ the file tells you what it governs.
 | [ADR-043](api.md#adr-043) | api | A batch isolates endpoint failures, but not run failures |
 | [ADR-044](foundations.md#adr-044) | models | Pydantic on the boundaries, dataclasses inside |
 | [ADR-045](foundations.md#adr-045) | exceptions | An exception says what happened, not what to do about it |
+| [ADR-046](tracer.md#adr-046) | tracer | `self` is not an external base, it is this file |
+| [ADR-047](tracer.md#adr-047) | tracer | A PSR-4 prefix maps to the directory, not to one inside it |
+| [ADR-048](foundations.md#adr-048) | package | What gets cached is the sweep, not the bytes |
+| [ADR-049](locator.md#adr-049) | locator | A route declared as a constant is expanded before matching |
+| [ADR-050](locator.md#adr-050) | locator | The route table grows by form, and each form belongs to one language |

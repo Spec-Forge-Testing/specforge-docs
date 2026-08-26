@@ -442,3 +442,68 @@ The tracer sweeps a directory for the definition it is after
 files — which it did not always do: `_try_add` required `is_file()`, so Go
 packages, Python packages, Rust modules and Swift modules were dropped in
 silence, in eight of the twelve languages.
+
+---
+
+## ADR-046 — `self` is not an external base, it is this file { #adr-046 }
+
+**Status:** accepted · `tracer/engine.py`
+
+### Context
+
+A qualified call survives only if its base is an import that resolved inside the
+repository ([ADR-026](#adr-026)). `self` is not an import, so
+`self.get_queryset()` was discarded alongside `svc.charge()`.
+
+That rule was written from the shape of a module-level handler. In a
+class-oriented framework it is exactly backwards: `self.x` is the **only** way a
+handler reaches its own dependencies.
+
+### Decision
+
+The instance pronoun — `self`, `this`, `cls`, `$this` — resolves as a local
+definition, which is what it is: a method of the same file.
+
+### Consequences
+
+Django went from tracing **zero** of its 19 endpoints to seven. Nothing else
+moved: no endpoint changed controller or handler, because this does not touch
+where the handler is, only how much context is gathered from it.
+
+The four other frameworks that trace nothing — ASP.NET, Laravel, Rails, Vapor —
+were not fixed by this, and each fails differently: an instance field as
+qualifier (`mediator.Send`), a member of an imported type
+(`Article.loadRelations`), and in Rails a controller so thin that there is
+genuinely almost nothing of the repository to trace.
+
+---
+
+## ADR-047 — A PSR-4 prefix maps to the directory, not to one inside it { #adr-047 }
+
+**Status:** accepted · `resolver/strategies.py`
+
+### Context
+
+A PSR-4 prefix names where the code starts. With `"App\": "app/"`, the class
+`App\Article` lives in `app/Article.php`.
+
+The resolver kept the first segment and looked for `app/App/Article.php`, so
+**no Laravel import resolved** and all three in a controller counted as
+third-party libraries.
+
+### Decision
+
+A candidate without the prefix is tried too, **last** — so a path that exists as
+written still wins first.
+
+### Consequences
+
+`Illuminate\Http\Request` still returns `None`, which is correct: it is genuinely
+external.
+
+This moves no metric on its own. The call that exposes the case,
+`Article::loadRelations()`, is an Eloquent scope: the method is defined as
+`scopeLoadRelations` and the framework drops the prefix when invoking it. But
+without the import resolving there was no way to reach that point at all — which
+is worth recording, because a change that moves no number is the one someone
+reverts believing it does nothing.

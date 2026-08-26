@@ -138,3 +138,44 @@ The rule also applies to docstrings on the exception classes, which had drifted
 into naming a single cause as the definition — `TargetNodeNotFoundError` was
 documented as "(outdated Swagger)", one possible cause, when the common one today
 is a handler the tag query does not capture.
+
+---
+
+## ADR-048 — What gets cached is the sweep, not the bytes { #adr-048 }
+
+**Status:** accepted · `locator/`, `ast_builder/manager.py`
+
+### Context
+
+Analysing 2 308 endpoints of production APIs did not finish. Fourteen hours in,
+the process had read **6 TB** with memory flat at 315 MB: it was not hung, it was
+re-reading the same files millions of times.
+
+Three things were repeating per endpoint, and only one of them mattered.
+
+### Decision
+
+Three caches, ordered by what they actually cost:
+
+- **The sweep by symbol** (`_files_defining`). Resolving a mount asks about one
+  symbol at a time, and each question walks the whole repository applying a regex
+  per file. Symbols repeat across endpoints — the same router mounts many routes
+  — so the same sweep was redone over and over. **This is the one that mattered.**
+- **File reads** (`leer`), so the same candidate is not read once per endpoint.
+- **Parsed trees** (`build_context`), so a controller is not reparsed per
+  endpoint.
+
+`clear_scan_cache` forgets the sweep and the reads together, because they expire
+together: if the repository changed on disk, both are equally stale.
+
+### Consequences
+
+Measured with cProfile on six endpoints: **995 556 calls to `re.search`, 29.9s of
+39.7s**. Caching the sweep took JavaScript from 5.85s to 0.60s per endpoint and
+Python from 1.65s to 0.56s — ten times faster on the worst case.
+
+The other two moved the clock by nothing. The content was already in memory and
+the regex ran over it anyway; they are correct, and now that the sweep does not
+repeat they do avoid the I/O and the parsing that remain, but neither was the
+fix. The lesson is the ordering: two plausible caches were built and measured
+before profiling, and profiling would have found the real one first.

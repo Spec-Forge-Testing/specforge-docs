@@ -535,3 +535,94 @@ The same three-line check is repeated at four call sites instead of being lifted
 into a shared helper. Each site has a different notion of "the candidates" — a
 name, a `(file, name)` pair, a match object — so factoring it would mean a
 callback and more indirection than the check itself costs.
+
+---
+
+## ADR-049 — A route declared as a constant is expanded before matching { #adr-049 }
+
+**Status:** accepted · `locator/scanner.py`
+
+### Context
+
+Java and C# let the route be declared apart and referenced from the annotation:
+
+```java
+public static final String ROUTE = "/tan";
+@PostMapping(ROUTE)
+```
+
+To a route pattern that is an identifier, not a route. The endpoint was not
+found, and worse: it fell back to the handler of the route without the suffix.
+In `market`, `PUT /customer/cart/delivery` returned `addItem`, which serves
+`PUT /customer/cart` — one endpoint handing over another's code.
+
+### Decision
+
+Each reference is replaced by its literal **inside annotations only**, before
+the patterns run. When the constant lives in another class — `Constant.V1`,
+`Constants.API_RESOURCE_CONTRIBUTORS` — a few levels are climbed looking for
+`<Class>.java`: the constants class is usually a sibling of the package that uses
+it, not an arbitrary file of the repository.
+
+Java also allows writing the modifier once and chaining constants with commas, so
+the declaration and the `name = "value"` pairs inside it are read separately.
+
+### Consequences
+
+Restricting expansion to annotations is what makes it safe: outside them the same
+identifier may be a method's name — a constant `B` and a method `B()` coexist
+without trouble — and substituting it would make the method unfindable. The
+unscoped version did exactly that.
+
+Resolving more routes also surfaces ambiguity that was hidden. In
+`cwa-verification` the internal controller declares the same full route as the
+external one; while its constant did not resolve it never competed, and now
+`POST /version/v1/testresult` is genuinely ambiguous — which by
+[ADR-016](#adr-016) is the right answer.
+
+Measured against 349 endpoints derived from source: 305 → 313.
+
+---
+
+## ADR-050 — The route table grows by form, and each form belongs to one language { #adr-050 }
+
+**Status:** accepted · `locator/patterns.toml`
+
+### Context
+
+Measured against expectations derived from source rather than captured from the
+pipeline, the locator sat at 87%. The misses were not exotic: they were ordinary
+ways of writing a route that the table did not know.
+
+### Decision
+
+Four forms were added, each to the languages that actually produce it:
+
+- **JAX-RS in Java.** The table only knew Spring, so no `@Path` project located
+  anything — `restcountries` was 0/22 and `scout-api` 4/49. The verb and the
+  route are separate adjacent annotations, and both orders occur.
+- **`@RequestMapping` without `method`.** Spring treats it as the handler of
+  *every* verb, and webgoat's contract declares all seven for those routes; only
+  the GET was being found.
+- **The route inside an array.** `value = {"/x"}` in Java, and Kotlin's own two
+  spellings, `arrayOf("/x")` and `["/x"]`. `tracking-system` writes every route
+  that way and located none of its 67.
+- **Attributes in any order.** Java does not order annotation attributes;
+  `@RequestMapping(method = POST, value = "/x")` is as valid as the reverse.
+
+### Consequences
+
+87% → 91% on the derived corpus, and the failures that remain are no longer of
+this kind.
+
+Two guards are what keep the additions from costing more than they give. The
+JAX-RS patterns require the method to have a **body**, because a REST client
+interface declares the same annotations for the route it *consumes* — without
+that, microcks' connector outbid its own controller. And `@RequestMapping` with
+no `method` must not be followed by a class declaration, because the class-level
+annotation has no `method` either; without that guard the handler became the
+first function in the file.
+
+Each form is scoped to the languages whose grammar produces it. Widening Java's
+pattern to accept `arrayOf` would be accepting something Java never writes, and
+every such widening is a chance to match the wrong file.

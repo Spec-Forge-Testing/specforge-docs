@@ -30,6 +30,14 @@ carries is the run's own `executed_at` - so rebuilding the same run's report
 is byte-identical, and a byte-identical rebuild is recognized as the file
 already on disk instead of writing a duplicate.
 
+Being heavy and regenerable is exactly what makes the report pair the
+primary target of [`prune`](commands.md): a retention pass deletes old
+reports first (after showing its plan and asking), while the critical trace
+is only ever compressed - or deleted under the explicit `--include-traces`
+consent. Deleting a run's reports removes nothing the database still holds:
+its metrics, endpoint stats and crashes stay queryable through `history` and
+`inspect`.
+
 ## The `report.json` schema
 
 `ReportDocument` is a frozen, `extra="forbid"` Pydantic model: a pure function

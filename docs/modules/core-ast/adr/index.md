@@ -86,3 +86,6 @@ the file tells you what it governs.
 | [ADR-048](foundations.md#adr-048) | package | What gets cached is the sweep, not the bytes |
 | [ADR-049](locator.md#adr-049) | locator | A route declared as a constant is expanded before matching |
 | [ADR-050](locator.md#adr-050) | locator | The route table grows by form, and each form belongs to one language |
+| [ADR-051](locator.md#adr-051) | locator | An identifier is not necessarily ASCII |
+| [ADR-052](locator.md#adr-052) | locator | The same syntax asks for a route and serves it |
+| [ADR-053](locator.md#adr-053) | locator | Two more ways to write the route |

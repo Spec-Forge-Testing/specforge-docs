@@ -626,3 +626,110 @@ first function in the file.
 Each form is scoped to the languages whose grammar produces it. Widening Java's
 pattern to accept `arrayOf` would be accepting something Java never writes, and
 every such widening is a chance to match the wrong file.
+
+---
+
+## ADR-051 — An identifier is not necessarily ASCII { #adr-051 }
+
+**Status:** accepted · `locator/constants.py`
+
+### Context
+
+Seventeen patterns spelled a name as `[A-Za-z_][A-Za-z0-9_]*`. Java and Kotlin
+admit Unicode identifiers, and EMB contains an entire project written that way:
+`familie-ba-sak` names its handlers `kjørSchedulerForAutobrev`,
+`mottaFødselshendelse`, `utførSatsendringPåFagsak`.
+
+### Decision
+
+Names are matched with `[^\W\d]\w*` — "letter or underscore" under Unicode —
+kept in one constant, `NOMBRE_DE_SIMBOLO`, so the seventeen spellings cannot
+drift apart again.
+
+### Consequences
+
+The failure this fixes is the worst kind the package can produce. The
+ASCII-only pattern did not fail to match: it **skipped forward** to the next
+name that happened to be ASCII, so `GET /internal/autobrev` came back as
+`redirectTilBarnetrygd` — right file, wrong handler, plausible name, same class.
+Nothing in the result said anything was wrong.
+
+Eight endpoints of `familie-ba-sak` were affected, all in the same file. Every
+one of them would have shipped another endpoint's source to the model.
+
+Anything wider — `\w+` alone — would also match a name starting with a digit,
+which no language allows, and would start matching the numeric parts of paths.
+
+---
+
+## ADR-052 — The same syntax asks for a route and serves it { #adr-052 }
+
+**Status:** accepted · `locator/patterns.toml`
+
+### Context
+
+Twice now the locator has matched a file that **consumes** an endpoint rather
+than the one that serves it, and both times the two were syntactically
+identical:
+
+- A MicroProfile REST client interface declares `@GET` and `@Path("/x")` for the
+  route it calls, exactly as a JAX-RS resource declares the one it serves.
+- jQuery asks with `$.get("/x", callback)`; Express serves with
+  `router.get("/x", handler)`.
+
+In webgoat, `jwt-voting.js` made `GET /JWT/votings` ambiguous against the single
+Java file that actually declares it.
+
+### Decision
+
+Each case is separated by whatever distinguishes serving from asking in that
+language, and by nothing more general:
+
+- **Java**: the JAX-RS patterns require the method to have a **body**. An
+  interface method ends at `;` and implements nothing.
+- **JavaScript**: the receiver `$` is excluded. jQuery is never a router.
+
+### Consequences
+
+Both guards are narrow on purpose, and neither generalises. `axios.get(...)`,
+`fetch(...)` and `http.get(...)` are also clients and are not excluded; the day
+one of them causes a false match, it gets its own guard rather than a broader
+rule, because every widening of "what is not a route declaration" risks
+discarding one that is.
+
+The client/server confusion is a property of the corpus, not a bug of any single
+framework: a repository that contains its own frontend will keep producing it.
+
+---
+
+## ADR-053 — Two more ways to write the route { #adr-053 }
+
+**Status:** accepted · `locator/patterns.toml`
+
+### Context
+
+Two forms measured against source-derived expectations, both in Java and Kotlin,
+neither covered by [ADR-050](#adr-050).
+
+### Decision
+
+**An empty route on the method** means the route is entirely the class's.
+`@GetMapping(value = {"", "/"})` is the same as `@GetMapping` with no arguments,
+and the table already covered that idea for Go, Python and JavaScript — but the
+Java pattern required the annotation to have *no parentheses*, so the array form
+did not match.
+
+**The verb can come in an array**:
+`method = { RequestMethod.HEAD, RequestMethod.OPTIONS, RequestMethod.GET, … }`.
+The pattern expected `method = RequestMethod.X` glued to the equals sign, so of
+seven verbs it found one and the other six had no handler.
+
+### Consequences
+
+`tracking-system` went from 41/67 to 59/67 with the first and `microcks` from
+69/84 to 83/84 with the second — and webgoat gained two more, because its
+lessons that declare `POST` and `GET` together had the same problem.
+
+Both are cases of the same thing: the pattern encoded not just *what* the
+annotation says but *how it was spelled*. Every such assumption is a place where
+a project that writes it differently disappears from the results without a word.

@@ -42,18 +42,28 @@ its metrics, endpoint stats and crashes stay queryable through `history` and
 
 `ReportDocument` is a frozen, `extra="forbid"` Pydantic model: a pure function
 of a run's persisted data, never a live object. It carries a `schema_version`
-("1.0" today), bumped when the shape changes in a way a reader cannot ignore.
+("1.1" today), bumped when the shape changes in a way a reader cannot ignore.
+1.1 is additive over 1.0: it adds `run.signal`/`run.signal_causes`,
+`coverage`, and `endpoints[].examples_planned`.
 
 | Field | Description |
 | --- | --- |
 | `tool` | Which tool produced the document (`name`), and the engine version that ran the analyzed API. |
 | `project` | The analyzed project's name. |
 | `analysis` | The recipe the run executed: id, label, strategy mode, whether it was stateful, and the repo hash it was generated against. |
-| `run` | The run's own identity and outcome: id, ordinal, origin (original/replay), `executed_at`, duration, `status`, `fidelity`, its comparability mark, and - when the run was cut short - `truncation` (`reason` plus `endpoint_id`), otherwise `null`. |
+| `run` | The run's own identity and outcome: id, ordinal, origin (original/replay), `executed_at`, duration, `status`, `fidelity`, its comparability mark, `signal`/`signal_causes` (see below), and - when the run was cut short - `truncation` (`reason` plus `endpoint_id`), otherwise `null`. |
 | `metrics` | The finding funnel and request counters, `null` when a run recorded none. |
-| `endpoints` | One entry per endpoint touched: requests, raw findings, crash count and its latency distribution. |
+| `endpoints` | One entry per endpoint touched: requests, `examples_planned`, raw findings, crash count and its latency distribution. |
+| `coverage` | The declared-endpoint partition behind the run - `declared`/`targeted`/`excluded`/`filtered`/`exercised` counts plus `excluded_endpoints` (method, path, reason) - `null` for a replay, which never compiles. |
 | `defects` | One entry per crash: identity, reproducer and what the run observed - the same shape `inspect --crash <id>` and `compare` project a crash through. |
 | `replay` | What only a replay knows - fidelity, divergences and a verdict per recorded defect - `null` for an original run. |
+
+`run.signal` is `"clean"` or `"degraded"`, `null` for a replay (coverage is a
+compilation-time fact a replay never produces, so trustworthiness there is
+read from `fidelity` instead); `run.signal_causes` lists why when degraded -
+`no_responses`, `endpoints_excluded` and/or `endpoints_unreached`. See
+[Coverage and the run's signal](commands.md#coverage-and-the-runs-signal) for
+what each cause means and how it is derived.
 
 `run.truncation` and `run.status`/`run.fidelity` read from the same columns
 `history` and `inspect --run <id>` already show; see the
@@ -81,16 +91,24 @@ empty list, never a missing key - so a consumer can always index into a known
 shape. A run whose fuzzing or replay succeeded but whose save to storage
 failed still emits an `ok` envelope carrying the full document (`run.id` left
 `null`), with the failure riding along as a `warnings` entry: a save failure
-never discards the findings a run actually produced.
+never discards the findings a run actually produced. A degraded `fuzz` run's
+`ok` envelope carries that signal the same way, as a `warnings` entry coded
+`degraded_signal` naming the cause - alongside a save failure's, if there is
+one.
 
 ## Error codes
 
 `error.code` is drawn from a fixed, versioned registry - one entry per domain
 exception a command can raise (across `fuzz`, `replay`, `history`,
-`persistence`, `identities`, `compare` and the report service itself) - plus
-three fallbacks: `unexpected_error` for anything not in the registry,
+`persistence`, `identities`, `compare`, `coverage`, `report` and `retention`)
+- plus three fallbacks: `unexpected_error` for anything not in the registry,
 `invalid_arguments` for a malformed invocation, and a per-command
-`_unavailable` code for a missing dependency. A refusal caught before any
-exception is raised - a missing library, bad flags - is reported through the
-same envelope, never a bare panel or a silent exit. Codes are stable across
-releases; a breaking change to the registry bumps `schema_version`.
+`_unavailable` code for a missing dependency. New in this registry:
+`coverage_accounting_failed` (the declared-endpoint partition doesn't add up),
+`fuzz_no_compilable_endpoints` (every selected endpoint was excluded, so
+`fuzz` refuses before sending anything), `replay_url_credentials_missing` and
+`replay_target_mismatch` (`replay --base-url` missing or pointed at a
+different host than the trace was recorded against). A refusal caught before
+any exception is raised - a missing library, bad flags - is reported through
+the same envelope, never a bare panel or a silent exit. Codes are stable
+across releases; a breaking change to the registry bumps `schema_version`.

@@ -215,8 +215,9 @@ are all derived from the registry — no other file needs editing.
     - **Run summary** — the exploration requests, the requests shrinking sent apart
       from them, and the finding funnel: raw → confirmed (one representative per
       symptom, still failing after shrinking) → collapsed (same symptom as a
-      confirmed one, never shrunk) → unverified (never attempted, because the run
-      was cut before shrinking started) → flaky → unique after de-duplication.
+      confirmed one, never shrunk) → unverified (never attempted — the run was cut
+      before shrinking started, or the strategy could not produce a candidate to
+      try) → flaky → unique after de-duplication.
       `raw == confirmed + flaky + collapsed + unverified` always holds. A stateful
       run has no separate shrink phase, so its report shows neither shrink requests
       nor collapsed or unverified findings.
@@ -232,12 +233,16 @@ are all derived from the registry — no other file needs editing.
     A run the target's liveness probe found dead is cut **before** shrinking, so
     its findings were collected but never confirmed. The report never calls that a
     clean run: it shows the **Unverified** count instead of the usual "No crashes
-    found", with a warning explaining the run was cut short — the same distinction
-    `inspect --run <id>` shows later.
+    found" — the same distinction `inspect --run <id>` shows later.
 
     Narrow the run with `--endpoint <path>` and/or `--method <verb>`, and tune execution
     with `--timeout` / `--max-concurrency`. The target API must already be running;
     infrastructure failures (server down, timeout) are reported, never fatal.
+
+    `fuzz` accounts for every endpoint the spec declares, not only the ones that
+    ran — see *[Coverage and the run's signal](#coverage-and-the-runs-signal)*
+    below. A selection that compiles nothing at all never runs: it fails with a
+    **Nothing to Fuzz** panel naming every rejection, before a single request.
 
     `--identities <file>.toml` declares who the requests are sent as — a TOML list
     of labelled credential sets, any of them possibly anonymous (a label with no
@@ -311,8 +316,10 @@ are all derived from the registry — no other file needs editing.
     schema is built around: with no flags it lists every **project** (with its
     analysis count); `--project <id>` lists that project's **analyses** — the
     replayable recipes, each with its label, strategy mode, whether it was stateful,
-    engine version and run count; `--analysis <id>` lists that analysis's **runs** in
-    ordinal order.
+    engine version, run count and an **Endpoints** column (`targeted/declared`, plus
+    `(+N excl)` when the compiler excluded any — see *[Coverage and the run's
+    signal](#coverage-and-the-runs-signal)*); `--analysis <id>` lists that
+    analysis's **runs** in ordinal order.
 
     The run listing is where the model pays off: an **original** run (`●`) is
     visually distinct from a **replay** (`↺`), and a run whose counters would
@@ -336,11 +343,13 @@ are all derived from the registry — no other file needs editing.
     SpecForge ❯ inspect --crash 12
     ```
 
-    `--run <id>` renders one run in full, in five sections: a **header** with its
+    `--run <id>` renders one run in full: a **header** with its
     context (project, analysis, ordinal, origin, execution time, duration, status —
     plus, when the run was cut short, **why and where** — fidelity and the
-    comparability mark); the **metrics** funnel (requests, raw → confirmed → unique
-    → flaky → **Unverified** findings — never shrunk because the run was cut short)
+    comparability mark); its declared-endpoint **coverage** and **signal** (see
+    *[Coverage and the run's signal](#coverage-and-the-runs-signal)* — skipped for
+    a replay); the **metrics** funnel (requests, raw → confirmed → unique
+    → flaky → **Unverified** findings — never shrunk)
     with the per-phase and per-category breakdowns; **per-endpoint stats** including
     the latency percentiles (p50/p95/max — a dash when the endpoint was never
     timed); every recorded **crash** — with its id, the same plain-English invariant
@@ -380,6 +389,7 @@ are all derived from the registry — no other file needs editing.
     SpecForge ❯ replay --analysis 3 --no-save
     SpecForge ❯ replay --analysis 3 --no-preserve-timing
     SpecForge ❯ replay --analysis 3 --identities identities.toml
+    SpecForge ❯ replay --analysis 3 --base-url https://user:pass@staging.example.com
     ```
 
     Re-sends the exact requests recorded in an analysis's execution trace —
@@ -413,12 +423,19 @@ are all derived from the registry — no other file needs editing.
     label resolves, traces that still need a credential header value no declared
     identity carries; stored recipes keep header *names* only, never values.
     Header values set for the whole run (`config.headers`) cannot be re-supplied
-    yet — only an `--identities` file can.
+    yet — only an `--identities` file can. The same applies to a recorded URL's
+    `user:pass@` userinfo, which the recipe keeps the host of but never the
+    credential: a trace that needs it without one supplied is a **Missing URL
+    Credentials** refusal, and a `--base-url <url>` that targets a different host
+    than the one recorded is a **Target Mismatch** refusal — a replay cannot be
+    pointed at a different host.
 
     `--identities <file>.toml` re-supplies the identities the run was recorded
     under, from the same file shape `fuzz` reads. A missing label surfaces as a
     **Missing Identities** panel naming every label the trace needs, before
-    anything is sent.
+    anything is sent. `--base-url <url>` re-supplies the recorded target's
+    userinfo the same way — the recipe keeps its host but never a `user:pass@`
+    it carried.
 
     `--save` (default on) appends the replay to the same analysis as a new run
     with the next ordinal, so `history --analysis <id>` shows original and
@@ -432,13 +449,16 @@ are all derived from the registry — no other file needs editing.
     ```
 
     Pairs every defect from `--before <id>` and `--after <id>` by **symptom** —
-    method, path, phase, invariant, status code and identity — deliberately
-    never by its minimal payload: shrinking runs again each time against a
+    method, path, invariant, status code and identity, five of the six terms
+    the engine dedups a single run's crashes on, deliberately without the
+    sixth, the minimal payload: shrinking runs again each time against a
     target that may have changed between the two runs, so a defect that never
     actually left can still shrink to a different reproducer. `compare` shows
     the payload alongside each defect as its counterexample instead, and flags
     a pairing whose two reproducers differ ("same symptom, different
-    reproducer").
+    reproducer"). Phase is in neither key — the generator's intention, not a
+    property of the defect — but the **Phase** column still shows each crash's
+    own (the later side's, falling back to the earlier one).
 
     Each pairing gets one of four verdicts:
 
@@ -549,6 +569,35 @@ are all derived from the registry — no other file needs editing.
     are token→style maps in `ui/theme.py`; the active theme can also be chosen at
     startup with `SPECFORGE_THEME=<name>`.
 
+## Coverage and the run's signal
+
+`fuzz` accounts for every endpoint the spec declares, not only the ones that ran.
+Each falls into exactly one of three buckets: **targeted** (selected and
+compiled), **excluded** (selected, but the compiler rejected it, and says why),
+or **filtered** (never selected, by `--endpoint`/`--method`). The close line
+names the partition — `Fuzzed 87 of 88 declared endpoint(s) (1 excluded)` — with
+the excluded endpoints and their reasons listed under it, capped so a large
+corpus doesn't flood the close. A selection that compiles nothing at all never
+runs: it fails before a single request, as a **Nothing to Fuzz** panel naming
+every rejection.
+
+On top of the partition, a run earns a **signal**: `clean` unless one of three
+things degrades it — no request reached the target at all (every attempt was an
+availability, timeout or unsendable-request failure), a declared endpoint was
+excluded, or a targeted endpoint never received a request. `filtered` never
+degrades a run — narrowing the selection is the caller's own choice, not a gap.
+A degraded run never closes as a plain success and never claims "No crashes
+found"; an empty crash table says its evidence is degraded instead, and the
+close line and every excluded endpoint print as warnings.
+
+`inspect --run <id>` shows the same partition and signal for a saved run,
+between the header and the metrics — skipped for a replay, which never compiles
+and so has neither. `history --project <id>` shows the partition too, as an
+**Endpoints** column (`targeted/declared`, plus `(+N excl)` when any were
+excluded) on each analysis row. `--json-output` carries the same facts in
+`data.coverage` and `data.run.signal`/`data.run.signal_causes` — see
+*[Machine-readable output](#machine-readable-output---json-output)* below.
+
 ## Machine-readable output (`--json-output`)
 
 `fuzz`, `replay`, `inspect`, `history`, `compare` and `prune` all accept
@@ -560,8 +609,8 @@ captures the document and nothing else.
 The envelope is the same shape for every command and every outcome:
 
 ```json
-{"schema_version": "1.0", "command": "fuzz", "status": "ok", "data": { ... }, "error": null, "warnings": []}
-{"schema_version": "1.0", "command": "fuzz", "status": "error", "data": null, "error": {"code": "...", "message": "..."}, "warnings": []}
+{"schema_version": "1.1", "command": "fuzz", "status": "ok", "data": { ... }, "error": null, "warnings": []}
+{"schema_version": "1.1", "command": "fuzz", "status": "error", "data": null, "error": {"code": "...", "message": "..."}, "warnings": []}
 ```
 
 `status` is `ok` or `error`, never both, and every key is present regardless
@@ -571,10 +620,17 @@ document for `fuzz`/`replay`/`inspect --run`, one crash's own defect shape
 for `inspect --crash`, the listed rows for `history`, and the comparison
 document for `compare`, and the prune plan or outcome for `prune` (every
 `prune` envelope carries an `applied` boolean; without `--yes` the plan is
-emitted with `applied: false` and nothing is touched). A run whose fuzzing
+emitted with `applied: false` and nothing is touched). A `fuzz` document's
+`data.coverage` and `data.run.signal`/`data.run.signal_causes` carry the same
+declared-endpoint partition and signal the terminal close shows (see
+*[Coverage and the run's signal](#coverage-and-the-runs-signal)*); a replay's
+document carries neither. A run whose fuzzing
 or replay succeeded but whose save to storage failed still emits an `ok`
 envelope carrying the full document (`run.id` left `null`), with the failure
-riding along as a `warnings` entry rather than being lost.
+riding along as a `warnings` entry rather than being lost. A degraded `fuzz`
+run's `ok` envelope carries that signal the same way, as a `warnings` entry
+(`degraded_signal`) naming the cause — alongside a save failure's, if there is
+one.
 
 One deliberate exception to "`error` means no `data`": a `prune` pass that
 fails **after** its destructive phase emits `status: error` with `data`

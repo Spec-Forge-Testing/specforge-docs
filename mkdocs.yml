@@ -108,6 +108,9 @@ nav:
       - Contract Engine:
           - Overview: modules/contract-engine/index.md
           - Reference: modules/contract-engine/reference.md
+          - Decision records:
+              - Overview: modules/contract-engine/adr/index.md
+              - Ingestion: modules/contract-engine/adr/ingestion.md
       - Contracts (shared kernel): modules/contracts/index.md
       - Storage:
           - Overview: modules/storage/index.md

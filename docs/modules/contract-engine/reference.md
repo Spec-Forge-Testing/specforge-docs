@@ -69,10 +69,15 @@ print(contract.deviations)        # defects reported, not rejected
 ```
 
 A cyclic schema cannot be expanded forever, so a handful of pointers survive
-resolution as bare document-relative `$ref`s. Each one is reported as a
-`REFERENCE_CYCLE` finding anchored at its destination, so a deliberate cycle is
-no longer indistinguishable from a reference that could not be resolved — the
-latter is still fatal, and is raised long before this point.
+resolution as document-relative `$ref`s carrying `x-recursive: true`. Each one is
+reported as a `REFERENCE_CYCLE` finding anchored at its destination. The marker
+is what separates them from a pointer that survived for any other reason, and is
+public as `TRUNCATION_MARKER` for that reason (ADR-053).
+
+A pointer that names nothing at all is not fatal either. It is dropped before
+resolution runs and reported as a `DANGLING_REFERENCE`, because one absent schema
+would otherwise cost the contract every endpoint it describes correctly
+(ADR-052).
 
 #### The stages, and why the order matters
 
@@ -133,14 +138,24 @@ component that compiles it.
 | `scope` | `DOCUMENT`, `PATH_ITEM` or `OPERATION` — how precisely the defect was located |
 | `pointer` | JSON Pointer (RFC 6901) to the node, when the error anchors in one |
 | `path_url` / `method` | the endpoint, on `PATH_ITEM` and `OPERATION` scope |
-| `code` | `SPEC_CONFORMANCE`, `SPEC_SEMANTICS` when the validator gave the rule its own exception type, or `REFERENCE_CYCLE` |
+| `code` | one of the five below |
 | `detail` | the validator's message, verbatim |
 
-Not every finding faults the document. A `REFERENCE_CYCLE` says the resolver
-truncated a recursive schema — legal OpenAPI, worth knowing about, but not a
-defect. Ask `describes_document_defect(code)` rather than counting deviations: it
-is a total mapping over the enum, so a code it does not classify raises instead of
-quietly landing on the safe side.
+| Code | Says |
+|---|---|
+| `SPEC_CONFORMANCE` | the document violates the OpenAPI meta-schema |
+| `SPEC_SEMANTICS` | it violates a rule the validator gives its own exception type |
+| `REFERENCE_CYCLE` | the resolver truncated a recursive schema |
+| `DANGLING_REFERENCE` | a `$ref` names a node the document never defines |
+| `CONFORMANCE_NOT_ASSESSED` | the validator could not run at all |
+
+Not every finding faults the document. A `REFERENCE_CYCLE` is legal OpenAPI,
+worth knowing about but not a defect. `CONFORMANCE_NOT_ASSESSED` faults the
+validator rather than the spec, which may well be flawless — it exists so that an
+empty report is never mistaken for a clean bill of health when nobody looked
+(ADR-054). Ask `describes_document_defect(code)` rather than counting deviations:
+it is a total mapping over the enum, so a code it does not classify raises instead
+of quietly landing on the safe side.
 
 `scope` fixes which of `path_url`/`method` must be present, and the DTO enforces
 that pairing: a misattributed deviation fails to construct rather than reading
@@ -216,14 +231,16 @@ ContractEngineError
 │   ├── SchemaDecodeError           unreadable, unparseable, or not a mapping
 │   ├── UnsupportedSchemaVersionError   neither OpenAPI 3.x nor Swagger 2.0 (1.x, 4.x, undeclared)
 │   ├── SchemaResolutionError       a $ref could not be resolved
-│   ├── SchemaComplexityError       too deep to process, or expands past the bound
+│   ├── SchemaComplexityError       too deep to resolve, or expands past the bound
 │   ├── SchemaConversionError       a Swagger 2.0 construct with no OpenAPI 3.x equivalent
 │   └── SchemaValidationError       does not conform to the standard
 └── SemanticContractError           the LLM contract is malformed (fusion)
 ```
 
 Catch `SchemaIngestionError` to handle any *raised* ingestion failure uniformly;
-catch a leaf to tell them apart. The `loader` and `resolution` units are adapters
+catch a leaf to tell them apart. `SchemaComplexityError` raised while *validating*
+is the one exception that no longer reaches the caller: the contract resolved, so
+it is delivered with a `CONFORMANCE_NOT_ASSESSED` deviation instead (ADR-054). The `loader` and `resolution` units are adapters
 over `prance` and translate every failure of the parse, so a third-party error
 surfaces as a domain exception rather than reaching the caller raw.
 

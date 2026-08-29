@@ -82,13 +82,17 @@
   max-width: var(--sf-content-max-width);
 }
 
-/* Ancho compacto para Sidebars */
-.md-sidebar--primary {
-  width: 13.5rem;
-}
+/* Ancho compacto para Sidebars — solo en desktop. Por debajo del breakpoint de
+   Material el sidebar primario es un drawer posicionado con `left: -width`;
+   ensancharlo ahí dejaba un borde asomando con el menú "cerrado". */
+@media screen and (min-width: 76.25em) {
+  .md-sidebar--primary {
+    width: 13.5rem;
+  }
 
-.md-sidebar--secondary {
-  width: 12.5rem;
+  .md-sidebar--secondary {
+    width: 12.5rem;
+  }
 }
 
 /* Reserva siempre el espacio del scrollbar nativo en los sidebars, para que
@@ -232,14 +236,15 @@
 
 .sf-top {
   position: fixed;
-  left: 1rem;
-  bottom: 1rem;
+  /* Clear the notch / rounded corners on phones; fall back to a plain gap. */
+  left: max(0.9rem, env(safe-area-inset-left));
+  bottom: max(0.9rem, env(safe-area-inset-bottom));
   z-index: 5;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 2.4rem;
-  height: 2.4rem;
+  width: 2.6rem; /* ~52px on phones — a comfortable tap target */
+  height: 2.6rem;
   padding: 0;
   border: 1px solid var(--border-subtle);
   border-radius: 50%;
@@ -260,15 +265,33 @@
   pointer-events: auto;
 }
 
-.sf-top:hover {
+/* Hover cues are pointer-only; on touch the button just reacts to the tap. */
+@media (hover: hover) {
+  .sf-top:hover {
+    color: var(--text-bright);
+    border-color: var(--accent-color);
+  }
+}
+
+.sf-top:active {
   color: var(--text-bright);
   border-color: var(--accent-color);
 }
 
 .sf-top svg {
-  width: 1rem;
-  height: 1rem;
+  width: 1.15rem;
+  height: 1.15rem;
   fill: currentColor;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sf-top {
+    transition: opacity 0.2s ease;
+    transform: none;
+  }
+  .sf-top--show {
+    transform: none;
+  }
 }
 
 /* ==========================================================================

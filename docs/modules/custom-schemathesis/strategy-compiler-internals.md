@@ -1,4 +1,4 @@
-# Strategy compiler internals
+# Custom Schemathesis — Strategy compiler internals
 
 This page is the file-by-file map of `strategy_compiler/schema_compiler/` —
 the part of the [strategy compiler](reference.md#strategy-compiler) that turns

@@ -1,4 +1,4 @@
-# LLM Router (LiteLLM)
+# Semantic Inference — LLM router
 
 `ModelRouter` is the single choke point every inference call goes through. It
 wraps [LiteLLM](https://github.com/BerriAI/litellm) so the rest of the codebase
@@ -60,5 +60,5 @@ for schema-guided generation and self-correction:
 
 - [User Guide → LLM Providers](../../user-guide/llm-providers.md): the
   provider/variable table and credential setup.
-- [semantic_inference overview](index.md): where the router sits in the
+- [Semantic Inference overview](index.md): where the router sits in the
   inference pipeline, and the test tiers.

@@ -1,4 +1,4 @@
-# Core AST Implementation Reference
+# Core AST — Reference
 
 This page details the internal design, stage specifications, module layout, and
 extension boundaries of `core-ast`.

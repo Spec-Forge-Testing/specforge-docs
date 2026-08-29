@@ -1,4 +1,4 @@
-# semantic_inference
+# Semantic Inference
 
 Structured Inference Engine — the orchestrating brain between static analysis and
 deterministic execution.

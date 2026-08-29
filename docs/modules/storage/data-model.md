@@ -1,4 +1,4 @@
-# Storage Engine
+# Storage Engine — Data model
 
 `lib/storage` is the persistence layer for the Spec Forge pipeline. It turns the
 tool into an auditable, centralized, traceable platform.

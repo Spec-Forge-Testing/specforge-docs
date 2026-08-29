@@ -119,14 +119,14 @@ nav:
               - Data model: modules/storage/data-model.md
           - Semantic Inference:
               - Overview: modules/semantic-inference/index.md
-              - LLM Router (LiteLLM): modules/semantic-inference/llm-router.md
+              - LLM Router: modules/semantic-inference/llm-router.md
           - Custom Schemathesis:
               - Overview: modules/custom-schemathesis/index.md
               - Architecture: modules/custom-schemathesis/architecture.md
               - Stateful fuzzing: modules/custom-schemathesis/stateful-fuzzing.md
               - Replay: modules/custom-schemathesis/replay.md
               - Strategy compiler internals: modules/custom-schemathesis/strategy-compiler-internals.md
-              - Complete reference: modules/custom-schemathesis/reference.md
+              - Reference: modules/custom-schemathesis/reference.md
       - Test Corpora:
           - Overview: testing/index.md
           - RealWorld corpus: testing/real-world.md

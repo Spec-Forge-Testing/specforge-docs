@@ -1,4 +1,4 @@
-# Replay
+# Custom Schemathesis — Replay
 
 Replay is the second half of reproducibility-by-record-and-replay (not by seed):
 a recorded run's trace is **re-sent verbatim** — nothing is generated and nothing

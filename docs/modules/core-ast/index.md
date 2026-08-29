@@ -126,11 +126,11 @@ locator raises rather than choosing between two candidates, and why a match
 carries a confidence score. The decisions it produced are recorded one by one in
 the [decision records](adr/index.md).
 
-## Where to read next
+## Read next
 
 | If you want to | Read |
 |---|---|
-| Understand how a stage works | [Implementation Reference](reference.md) |
+| Understand how a stage works | [Reference](reference.md) |
 | Call a function, or know what it raises | [API Reference](api-reference.md) |
 | Know *why* something is the way it is | [Decision records](adr/index.md) |
 | Run or extend the suites | [Testing](integration-tests.md) |

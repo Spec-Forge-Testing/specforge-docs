@@ -1,4 +1,4 @@
-# Contract Engine
+# Contract Engine — Reference
 
 The Contract Engine turns an OpenAPI specification into a clean, typed contract
 that the rest of the system can consume. It reads the spec, flattens it into a

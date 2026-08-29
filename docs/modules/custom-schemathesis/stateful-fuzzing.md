@@ -1,4 +1,4 @@
-# Stateful fuzzing
+# Custom Schemathesis — Stateful fuzzing
 
 Stateful mode tests dependent endpoint sequences while keeping stateless fuzzing
 unchanged for endpoints that declare no state links.

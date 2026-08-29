@@ -55,4 +55,4 @@ didn't.
 - [Strategy compiler internals](strategy-compiler-internals.md): the file-by-file
   map of how a contract field becomes a Hypothesis strategy, including the
   attack-payload builders.
-- [Complete reference](reference.md): exhaustive component, API and design detail.
+- [Reference](reference.md): exhaustive component, API and design detail.

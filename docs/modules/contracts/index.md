@@ -60,4 +60,4 @@ from specforge_contracts import EndpointContract, EndpointParameters, SchemaProp
 The package supports Python 3.10+. Consumers add it to their test path
 (`pythonpath = ["src", "../contracts/src"]`) and install it in their runtime image.
 Installation, test and lint commands are centralized in
-[Development & Testing](../../getting-started/development.md#module-commands).
+[Contributing & Testing](../../developer-guide/contributing.md#exceptions).

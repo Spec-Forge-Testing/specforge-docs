@@ -80,56 +80,56 @@ markdown_extensions:
 
 nav:
   - Overview: index.md
-  - Getting Started:
-      - Setup: getting-started/setup.md
-      - Docker: getting-started/docker.md
-      - Development & Testing: getting-started/development.md
+  - User Guide:
+      - Installation & Quick Start: user-guide/installation.md
+      - Running with Docker: user-guide/docker.md
+      - CLI Reference: user-guide/cli-reference.md
+      - Run Report: user-guide/reports.md
+      - Example Walkthrough: user-guide/example-walkthrough.md
+      - LLM Providers: user-guide/llm-providers.md
   - Architecture: architecture/overview.md
-  - Modules:
-      - Core CLI:
-          - Overview: modules/core/index.md
-          - Commands: modules/core/commands.md
-          - Run report: modules/core/reports.md
-      - Core AST:
-          - Overview: modules/core-ast/index.md
-          - Reference: modules/core-ast/reference.md
-          - API Reference: modules/core-ast/api-reference.md
-          - Decision records:
-              - Overview: modules/core-ast/adr/index.md
-              - Locator: modules/core-ast/adr/locator.md
-              - AST builder: modules/core-ast/adr/ast-builder.md
-              - Extractor: modules/core-ast/adr/extractor.md
-              - Tracer: modules/core-ast/adr/tracer.md
-              - Quality: modules/core-ast/adr/quality.md
-              - Packager: modules/core-ast/adr/packager.md
-              - API: modules/core-ast/adr/api.md
-              - Foundations: modules/core-ast/adr/foundations.md
-          - Integration Tests: modules/core-ast/integration-tests.md
-      - Contract Engine:
-          - Overview: modules/contract-engine/index.md
-          - Reference: modules/contract-engine/reference.md
-          - Decision records:
-              - Overview: modules/contract-engine/adr/index.md
-              - Ingestion: modules/contract-engine/adr/ingestion.md
-      - Contracts (shared kernel): modules/contracts/index.md
-      - Storage:
-          - Overview: modules/storage/index.md
-          - Data model: modules/storage/data-model.md
-      - Semantic Inference:
-          - Overview: modules/semantic-inference/index.md
-          - LLM Router (LiteLLM): modules/semantic-inference/llm-router.md
-      - Custom Schemathesis:
-          - Overview: modules/custom-schemathesis/index.md
-          - Architecture: modules/custom-schemathesis/architecture.md
-          - Stateful fuzzing: modules/custom-schemathesis/stateful-fuzzing.md
-          - Replay: modules/custom-schemathesis/replay.md
-          - Strategy compiler internals: modules/custom-schemathesis/strategy-compiler-internals.md
-          - Complete reference: modules/custom-schemathesis/reference.md
-  - Environment:
-      - LLM Providers: environment/llm-providers.md
-  - Testing:
-      - Overview: testing/index.md
-      - RealWorld corpus: testing/real-world.md
-      - EMB corpus: testing/emb.md
-      - Polyglot corpus: testing/polyglot.md
-      - Integration suite: testing/suite.md
+  - Developer Guide:
+      - Contributing & Testing: developer-guide/contributing.md
+      - CLI Internals: developer-guide/cli-internals.md
+      - Modules:
+          - Core AST:
+              - Overview: modules/core-ast/index.md
+              - Reference: modules/core-ast/reference.md
+              - API Reference: modules/core-ast/api-reference.md
+              - Decision records:
+                  - Overview: modules/core-ast/adr/index.md
+                  - Locator: modules/core-ast/adr/locator.md
+                  - AST builder: modules/core-ast/adr/ast-builder.md
+                  - Extractor: modules/core-ast/adr/extractor.md
+                  - Tracer: modules/core-ast/adr/tracer.md
+                  - Quality: modules/core-ast/adr/quality.md
+                  - Packager: modules/core-ast/adr/packager.md
+                  - API: modules/core-ast/adr/api.md
+                  - Foundations: modules/core-ast/adr/foundations.md
+              - Integration Tests: modules/core-ast/integration-tests.md
+          - Contract Engine:
+              - Overview: modules/contract-engine/index.md
+              - Reference: modules/contract-engine/reference.md
+              - Decision records:
+                  - Overview: modules/contract-engine/adr/index.md
+                  - Ingestion: modules/contract-engine/adr/ingestion.md
+          - Contracts (shared kernel): modules/contracts/index.md
+          - Storage:
+              - Overview: modules/storage/index.md
+              - Data model: modules/storage/data-model.md
+          - Semantic Inference:
+              - Overview: modules/semantic-inference/index.md
+              - LLM Router: modules/semantic-inference/llm-router.md
+          - Custom Schemathesis:
+              - Overview: modules/custom-schemathesis/index.md
+              - Architecture: modules/custom-schemathesis/architecture.md
+              - Stateful fuzzing: modules/custom-schemathesis/stateful-fuzzing.md
+              - Replay: modules/custom-schemathesis/replay.md
+              - Strategy compiler internals: modules/custom-schemathesis/strategy-compiler-internals.md
+              - Reference: modules/custom-schemathesis/reference.md
+      - Test Corpora:
+          - Overview: testing/index.md
+          - RealWorld corpus: testing/real-world.md
+          - EMB corpus: testing/emb.md
+          - Polyglot corpus: testing/polyglot.md
+          - Integration suite: testing/suite.md

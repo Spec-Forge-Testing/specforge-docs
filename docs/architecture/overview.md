@@ -10,8 +10,10 @@ deep bugs (e.g. `500`s on invalid input instead of proper `4xx`s).
 2. **Analyze (AST)** — statically inspect handler code (tree-sitter, zero execution).
 3. **Infer (LLM)** — extract unstated invariants (bounds, enums, cross-field logic).
 4. **Fuse** — merge OpenAPI structure with LLM invariants into one unified contract.
-5. **Fuzz** — compile the contract into Hypothesis strategies, run async HTTP tests.
-6. **Persist** — log runs/endpoints/results to SQLite.
+5. **Fuzz** — compile the contract into Hypothesis strategies, run async HTTP tests,
+   recording every request/response as an execution trace.
+6. **Persist** — log runs/endpoints/results to SQLite, keeping the trace as the
+   artifact that makes a run replayable.
 
 ```mermaid
 flowchart TD
@@ -79,8 +81,9 @@ docker-compose.yml           # monorepo orchestration (root entry point)
   engines together.
 - **Boundary DTOs** — stages communicate only through Pydantic DTOs, never shared mutable state.
 - **Determinism** — static/transform stages are deterministic and side-effect free: same input →
-  same output or domain exception. I/O happens only at module edges. The execution engine uses
-  explicit seeds for reproducible non-determinism.
+  same output or domain exception. I/O happens only at module edges. The fuzzer is deliberately
+  non-deterministic (Hypothesis-driven, no run seed); reproducibility comes from the recorded
+  execution trace, replayed request by request.
 
 ## The unified contract
 

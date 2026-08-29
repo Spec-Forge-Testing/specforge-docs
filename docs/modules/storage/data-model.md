@@ -1,4 +1,4 @@
-# Storage Engine
+# Storage Engine — Data model
 
 `lib/storage` is the persistence layer for the Spec Forge pipeline. It turns the
 tool into an auditable, centralized, traceable platform.
@@ -205,7 +205,7 @@ connection" would be hidden, non-thread-safe mutable state.
       | `id` | `int` | Auto-incrementing primary key. |
       | `analysis_id` | `int \| None` | Set for analysis-level artifacts. |
       | `run_id` | `int \| None` | Set for run-level artifacts. |
-      | `kind` | `str` | Artifact type: `execution_trace` at the analysis level; `report_json`/`report_html` at the run level (see [Run report](../core/reports.md)). |
+      | `kind` | `str` | Artifact type: `execution_trace` at the analysis level; `report_json`/`report_html` at the run level (see [Run report](../../user-guide/reports.md)). |
       | `path` | `str` | Path on disk. |
       | `sha256` | `str` | Hash of the artifact's **logical** (uncompressed) content — the digest never changes when the file is compressed. |
       | `size_bytes` | `int` | Size on disk, in bytes — a compressed artifact records its compressed size. |
@@ -254,7 +254,7 @@ An artifact's life past `save_artifact` is owned by three operations in `storage
 - **`reclaim_artifacts(engine, records)`** deletes a batch: every row drops in one transaction (each re-read first, so the outcome reports what the index held), and files are unlinked only after the commit, only when no live row still names them. A stale id aborts the whole batch with `ArtifactNotFoundError` and nothing unlinked.
 - **`collect_orphans(engine)`** sweeps the artifacts root for files no row names — what rollbacks, `ON DELETE CASCADE` and failed unlinks leave behind. It enumerates by whitelist (only `<analyses|runs>/<id>/<digest>/<file>`; anything else, symlinks included, is reported and never touched) and removes emptied digest directories. `scan_orphans(engine)` is its read-only half, for reporting without deleting.
 
-The policy that decides *which* artifacts to compress or reclaim lives in the CLI (`prune` — see [Commands](../core/commands.md)); the storage layer owns only the mechanics and their ordering guarantees.
+The policy that decides *which* artifacts to compress or reclaim lives in the CLI (`prune` — see [CLI Reference](../../user-guide/cli-reference.md)); the storage layer owns only the mechanics and their ordering guarantees.
 
 ## Testing
 
@@ -272,4 +272,4 @@ Both this module's suite and its consumers turn leaked connections into errors
 warning.
 
 The Docker test command is in
-[Development & Testing](../../getting-started/development.md#module-commands).
+[Contributing & Testing](../../developer-guide/contributing.md#exceptions).

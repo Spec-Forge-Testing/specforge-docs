@@ -1,6 +1,6 @@
 # Run Report
 
-Every run saved through the [storage engine](../storage/index.md) - `fuzz` or
+Every run saved through the [storage engine](../modules/storage/index.md) - `fuzz` or
 `replay` - leaves a run report: the same document rendered three ways, so a
 `report.json` pulled off disk, the panels `inspect --run <id>` prints, and the
 object `--json-output` writes to stdout never disagree about what a run found.
@@ -15,7 +15,7 @@ Alongside the execution trace, a saved run writes two run-level artifacts:
 | `report_html` | `report.html` | A self-contained, shareable HTML page rendering the same document. |
 
 Both live under `data/artifacts/runs/<run_id>/`, indexed in the `artifacts`
-table like the trace - see the [data model](../storage/data-model.md) for the
+table like the trace - see the [data model](../modules/storage/data-model.md) for the
 `ArtifactRecord` shape and the content-addressed storage scheme.
 
 Neither file is critical, unlike the trace: both are derivable from data
@@ -31,7 +31,7 @@ is byte-identical, and a byte-identical rebuild is recognized as the file
 already on disk instead of writing a duplicate.
 
 Being heavy and regenerable is exactly what makes the report pair the
-primary target of [`prune`](commands.md): a retention pass deletes old
+primary target of [`prune`](cli-reference.md): a retention pass deletes old
 reports first (after showing its plan and asking), while the critical trace
 is only ever compressed - or deleted under the explicit `--include-traces`
 consent. Deleting a run's reports removes nothing the database still holds:
@@ -62,18 +62,18 @@ of a run's persisted data, never a live object. It carries a `schema_version`
 compilation-time fact a replay never produces, so trustworthiness there is
 read from `fidelity` instead); `run.signal_causes` lists why when degraded -
 `no_responses`, `endpoints_excluded` and/or `endpoints_unreached`. See
-[Coverage and the run's signal](commands.md#coverage-and-the-runs-signal) for
+[Coverage and the run's signal](cli-reference.md#coverage-and-the-runs-signal) for
 what each cause means and how it is derived.
 
 `run.truncation` and `run.status`/`run.fidelity` read from the same columns
 `history` and `inspect --run <id>` already show; see the
-[data model](../storage/data-model.md) for `RunRecord`'s full field list and
+[data model](../modules/storage/data-model.md) for `RunRecord`'s full field list and
 the closed status vocabulary.
 
 ## Machine output: `--json-output`
 
 `fuzz`, `replay`, `inspect`, `history` and `compare` all accept
-`--json-output` (see [Commands](commands.md)). It wraps the same building
+`--json-output` (see [CLI Reference](cli-reference.md)). It wraps the same building
 blocks - the run report document, a single defect, a listing, a comparison -
 in one envelope:
 

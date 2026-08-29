@@ -1,4 +1,4 @@
-# Architecture
+# Custom Schemathesis — Architecture
 
 The module has one-way layers. Each consumes the typed output of the previous one;
 the compiler does not revalidate questionnaires and the engine does not reinterpret

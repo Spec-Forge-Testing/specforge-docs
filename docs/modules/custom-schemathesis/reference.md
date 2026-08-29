@@ -1,4 +1,4 @@
-# Custom Schemathesis reference
+# Custom Schemathesis — Reference
 
 This reference records the public boundaries and implementation decisions of the
 fuzzing engine. Start with the [overview](index.md) for the short version.

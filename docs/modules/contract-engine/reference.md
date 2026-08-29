@@ -1,4 +1,4 @@
-# Contract Engine
+# Contract Engine — Reference
 
 The Contract Engine turns an OpenAPI specification into a clean, typed contract
 that the rest of the system can consume. It reads the spec, flattens it into a
@@ -16,7 +16,7 @@ flowchart LR
 ```
 
 The package targets Python 3.11+. Its installation, test and lint commands are in
-[Development & Testing](../../getting-started/development.md#module-commands).
+[Contributing & Testing](../../developer-guide/contributing.md#test-a-compose-module).
 
 ## Module layout
 

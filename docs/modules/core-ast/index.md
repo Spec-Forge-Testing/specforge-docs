@@ -28,7 +28,7 @@ flowchart LR
 ## Development requirements
 
 The package targets Python 3.11+. Installation and verification commands are in
-[Development & Testing](../../getting-started/development.md#test-a-compose-module).
+[Contributing & Testing](../../developer-guide/contributing.md#test-a-compose-module).
 
 Seven languages load on demand (Java, C#, Ruby, PHP, Rust, Kotlin, Swift) via
 `golden-path` extra. Token counting uses ``tiktoken`` via ``tokens``. Neither
@@ -126,11 +126,11 @@ locator raises rather than choosing between two candidates, and why a match
 carries a confidence score. The decisions it produced are recorded one by one in
 the [decision records](adr/index.md).
 
-## Where to read next
+## Read next
 
 | If you want to | Read |
 |---|---|
-| Understand how a stage works | [Implementation Reference](reference.md) |
+| Understand how a stage works | [Reference](reference.md) |
 | Call a function, or know what it raises | [API Reference](api-reference.md) |
 | Know *why* something is the way it is | [Decision records](adr/index.md) |
 | Run or extend the suites | [Testing](integration-tests.md) |

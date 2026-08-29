@@ -97,6 +97,7 @@
 .md-sidebar__scrollwrap {
   scrollbar-gutter: stable;
   overflow-x: hidden;
+  padding-top: 0.4rem;
 }
 
 /* ==========================================================================
@@ -148,6 +149,16 @@
   color: var(--text-bright);
 }
 
+/* Material fija el título de cada sidebar con `position: sticky` y le pone un
+   `box-shadow` grande del color del fondo para que los enlaces se "desvanezcan"
+   al pasar por detrás. Ese halo se lee como un overlay borroso en la parte
+   superior de ambos sidebars: lo quitamos y dejamos solo un fondo sólido. */
+.md-nav--primary .md-nav__title,
+.md-nav--secondary .md-nav__title {
+  box-shadow: none;
+  background-color: var(--bg-main);
+}
+
 /* Enlaces de navegación general */
 .md-nav__link {
   font-size: 0.7rem;
@@ -191,9 +202,9 @@
 }
 
 /* Material estira `.md-nav__list` con `flex: 1` para llenar el alto del
-   sidebar; eso empuja todo lo que va después (nuestra línea + el botón) al
-   fondo del contenedor cuando la lista es corta. Se cancela el stretch para
-   que la línea quede pegada al último link real. */
+   sidebar; eso empuja nuestra línea divisoria al fondo del contenedor cuando la
+   lista es corta. Se cancela el stretch para que la línea quede pegada al
+   último link real. */
 .md-sidebar--primary .md-nav--primary > .md-nav__list,
 .md-sidebar--secondary .md-nav--secondary > .md-nav__list {
   flex: initial;
@@ -211,51 +222,53 @@
   background-color: var(--border-subtle);
 }
 
-/* Botón "Back to top": reubicado por extra.js justo después de la línea
-   divisoria del sidebar derecho, y siempre visible ahí (no es el botón
-   flotante-por-scroll nativo de Material). El !important vence a la regla
-   nativa `.md-top[hidden]`, que tiene más especificidad que `.md-top` solo;
-   extra.js además remueve el atributo "hidden" apenas Material lo agrega. */
-.md-top,
-.md-top[hidden] {
-  position: relative;
-  top: auto;
-  right: auto;
-  bottom: auto;
-  width: max-content;
-  max-width: 100%;
-  margin-top: 0;
-  background: transparent;
-  box-shadow: none;
-  color: var(--text-muted);
-  font-size: 0.75rem;
-  font-weight: 600;
-  display: inline-flex !important;
+/* Botón "scroll to top". Material tiene el suyo (`.md-top`), un fly-in centrado
+   arriba cuyo JS le fija `top`/`hidden`/`transform` según la dirección del
+   scroll — imposible de reposicionar de forma estable. Lo ocultamos e
+   inyectamos `.sf-top` (extra.js), un FAB propio que nada más toca. */
+.md-top {
+  display: none !important;
+}
+
+.sf-top {
+  position: fixed;
+  left: 1rem;
+  bottom: 1rem;
+  z-index: 5;
+  display: flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.4rem 0.6rem;
-  transition: color 0.15s ease;
-  opacity: 1 !important;
-  pointer-events: auto !important;
-}
-
-.md-top:hover {
-  color: var(--text-bright);
-}
-
-.md-top svg {
-  display: none; /* Oculta ícono SVG nativo de MkDocs */
-}
-
-.md-top::before {
-  content: "↑";
-  font-size: 0.85rem;
-  font-weight: 700;
+  justify-content: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 50%;
+  background-color: var(--bg-card);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
   color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(0.5rem);
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease, color 0.15s ease,
+    border-color 0.15s ease;
 }
 
-.md-top:hover::before {
+.sf-top--show {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.sf-top:hover {
   color: var(--text-bright);
+  border-color: var(--accent-color);
+}
+
+.sf-top svg {
+  width: 1rem;
+  height: 1rem;
+  fill: currentColor;
 }
 
 /* ==========================================================================

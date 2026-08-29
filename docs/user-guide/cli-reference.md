@@ -57,10 +57,6 @@ Inside the REPL, type `help` to list commands or `help <command>` for details.
     - **warning** (⚠) — a not-yet-wired pipeline stage, the test runtime, or missing LLM
       configuration. These degrade a capability but don't block the CLI.
 
-    The diagnostic logic is pure and deterministic: `specforge_cli.services.diagnostics.run_diagnostics`
-    returns a `DiagnosticReport` DTO and never prints; the CLI renders it. The check
-    catalog and severities are declared as data in `services/diagnostics/requirements.py`.
-
 ??? "`doctor --fix` — guided installation"
 
     ```text
@@ -76,11 +72,6 @@ Inside the REPL, type `help` to list commands or `help <command>` for details.
     to show the resulting state. Manual fixes (the `.env.local` file, `LLM_MODEL`,
     credentials) are listed but never auto-applied. Honors `SPECFORGE_SYSTEM_COMMANDS`:
     when system commands are disabled, the plan is shown but nothing is executed.
-
-    The planning is pure (`services/diagnostics/planner.py`: a `DiagnosticReport` →
-    `FixPlan`) and the execution is a thin orchestration over the injectable
-    `CommandExecutor` seam (`services/diagnostics/fixer.py`), so both are unit-tested
-    without installing anything.
 
     > Like the rest of the Rich UI, `doctor` emits status glyphs (✔ ⚠ ✖). On a
     > legacy Windows console these require a UTF-8 capable terminal; redirecting output
@@ -500,10 +491,6 @@ Inside the REPL, type `help` to list commands or `help <command>` for details.
     - **Disable in CI/CD.** Set `SPECFORGE_SYSTEM_COMMANDS=0` (or `false` / `no` /
       `off`) to turn the escape off in non-interactive environments.
 
-    The executor is decoupled from rendering behind a `CommandExecutor` seam: it
-    streams typed output events that the Rich CLI renders today and a future desktop
-    frontend can consume directly.
-
     > Scope: the primary target is Linux/Docker (Windows is best-effort). v1 runs a
     > single program without a shell (no pipes, redirection or built-ins like `dir`)
     > and is not interactive (no `vim` / `rebase -i`); a PTY-backed executor for full
@@ -517,10 +504,8 @@ Inside the REPL, type `help` to list commands or `help <command>` for details.
     ```
 
     Switching the theme re-skins **everything** — console output, the banner and the
-    REPL prompt — because each is rendered through semantic tokens, not raw colours.
-    Bundled themes: `default`, `mono`, `nord`, `dracula`, `solarized`, `matrix`. They
-    are token→style maps in `ui/theme.py`; the active theme can also be chosen at
-    startup with `SPECFORGE_THEME=<name>`.
+    REPL prompt. Bundled themes: `default`, `mono`, `nord`, `dracula`, `solarized`,
+    `matrix`; the theme can also be chosen at startup with `SPECFORGE_THEME=<name>`.
 
 ## Coverage and the run's signal
 

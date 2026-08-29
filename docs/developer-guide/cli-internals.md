@@ -34,6 +34,23 @@ derive from it, so adding a command is one file — declare it with `@command`
 (name, category, aliases, argument flags) and it appears in dispatch, help and
 completion automatically.
 
+## Seams that keep logic testable
+
+Every command computes a result DTO in `services/` and renders it in
+`repl/views/`; the split is what lets the logic run under test with no terminal
+and no network. Three seams are worth knowing:
+
+- **`diagnostics/` (`doctor`, `doctor --fix`)** — the check catalog and
+  severities are data in `requirements.py`, so adding or re-rating a check is a
+  table edit. `run_diagnostics` returns a `DiagnosticReport`; `planner.py` turns
+  that into a `FixPlan`; `fixer.py` applies it over an injectable
+  `CommandExecutor`. Nothing installs or prints on the tested path.
+- **`shell/` (`!`)** — the same `CommandExecutor` seam streams typed output
+  events. The Rich views render them today; another frontend could consume them
+  directly.
+- **`ui/theme.py` (`theme`)** — each bundled theme is a token→style map and no
+  raw colour exists outside it, so a re-skin is a one-file change.
+
 ## Adding a new command
 
 Commands are self-registering, so a new one is small and local:

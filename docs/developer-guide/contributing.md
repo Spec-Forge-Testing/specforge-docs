@@ -2,7 +2,20 @@
 
 Use this page when changing Spec Forge itself. For initial CLI setup, see
 [Installation](../user-guide/installation.md); for runtime profiles, see
-[Docker Compose](../user-guide/docker.md).
+[Running with Docker](../user-guide/docker.md).
+
+## Local setup
+
+Install the CLI editable, plus the task runner and the linter, then register the
+pre-commit hooks:
+
+```bash
+pip install -e core poethepoet ruff
+poe setup-hooks
+```
+
+`poe` drives the repo-wide tasks (`poe test`, `poe dev`, `poe demo`); `ruff` is
+the linter every module suite expects.
 
 ## Test the repository
 

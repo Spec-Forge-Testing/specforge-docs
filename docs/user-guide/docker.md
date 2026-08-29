@@ -2,7 +2,8 @@
 
 The root `docker-compose.yml` is the entry point for running Spec Forge in
 containers. It groups services into profiles, so only the requested workload
-starts.
+starts. The `poe` shortcuts below need [`poethepoet`](https://poethepoet.natn.io/)
+on the host (`pip install poethepoet`).
 
 ## CLI (`dev` profile)
 

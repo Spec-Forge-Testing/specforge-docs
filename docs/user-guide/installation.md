@@ -2,19 +2,17 @@
 
 ## Prerequisites
 
-- Python 3.11+ for the repository and most modules. `specforge-contracts`
-  supports Python 3.10+.
-- Docker and Docker Compose for containerized workflows.
-- A provider key only for semantic-inference integration tests; see
-  [LLM Providers](llm-providers.md).
+- Python 3.11+ for the CLI. `specforge-contracts` supports Python 3.10+.
+- Docker and Docker Compose only for the [containerized workflow](docker.md).
+- An LLM provider key only if you run semantic inference directly — no CLI
+  command needs one today. See [LLM Providers](llm-providers.md).
 
 ## Quick start
 
-From the repository root, install the CLI and its development tools:
+From the repository root, install the CLI:
 
 ```bash
-pip install -e core poethepoet ruff
-poe setup-hooks
+pip install -e core
 ```
 
 Initialize a target project, then start the interactive shell:
@@ -24,6 +22,10 @@ specforge init
 specforge
 ```
 
-Use [Docker Compose](docker.md) to run repository profiles, or
-[Contributing & Testing](../developer-guide/contributing.md) to work on and
-verify a module.
+Inside the shell, `help` lists every command; the [CLI Reference](cli-reference.md)
+explains each one, and the [Example Walkthrough](example-walkthrough.md) runs them
+end to end against a sample API.
+
+To run Spec Forge in containers instead, see [Running with Docker](docker.md). To
+work on Spec Forge itself, see
+[Contributing & Testing](../developer-guide/contributing.md).

@@ -30,3 +30,10 @@ Two levels of validation are included:
 
 Test commands are centralized in
 [Contributing & Testing](../../developer-guide/contributing.md#exceptions).
+
+## Read next
+
+- [LLM Router](llm-router.md): the LiteLLM call site, the retry-vs-fallback
+  policy, and why adding a provider is a config change.
+- [LLM Providers](../../user-guide/llm-providers.md): the provider/credential
+  table and where the config file lives.

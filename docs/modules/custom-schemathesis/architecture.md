@@ -8,7 +8,7 @@ contracts or strategy modes.
 |---|---|---|
 | `models` | Typed DTOs | Owns contracts, endpoint metadata, budgets and results. |
 | `questionnaire` | LLM template → `CompilerInput` | Builds, validates and resolves contracts. |
-| `strategy_compiler` | `CompilerInput` → `EngineInput` | Compiles one strategy per HTTP zone and phase. |
+| `strategy_compiler` | `CompilerInput` → `CompilationOutcome` | Compiles one strategy per HTTP zone and phase. |
 | `engine` | `EngineInput` → `EngineRunResult` | Sends requests, validates responses, groups findings by symptom, shrinks one representative per group and deduplicates the reports. |
 
 ## Contracts and compilation
@@ -36,6 +36,13 @@ The compiler compiles path, query, header and body separately. All phase dispatc
 runs through the generation phase registry: `compile_contract(contract, phase)` resolves
 `(type(contract), phase)` by walking the contract's MRO, so a new contract type extends
 the compiler by registering its phases with `register_phase`, not by adding a compiler.
+
+`compile(CompilerInput) -> CompilationOutcome` compiles each endpoint independently: a
+rejection (an unresolvable path parameter, an uncompilable contract) does not abort the
+batch, it is caught and turned into an `EndpointExclusion` — the endpoint's identity plus
+why — while the rest of the batch keeps compiling. `CompilationOutcome` carries the
+endpoints that did compile (`engine_input`) alongside every exclusion, so the caller
+decides what an all-or-partial rejection means for the run.
 
 ## Execution
 

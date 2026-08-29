@@ -57,6 +57,18 @@ The CLI turns that into a pre-flight instead: it refuses the whole replay, namin
 every missing label, before a single request goes out (see the `replay` command
 in [CLI Reference](../../user-guide/cli-reference.md)).
 
+A URL's `user:pass@` userinfo is omitted the same way, by origin rather than
+redaction: the trace keeps the recorded URL with its userinfo stripped, plus
+`TracedRequest.omitted_url_userinfo`, so a request that never had one stays
+distinguishable from one that did. Rehydration re-injects it from the live
+`ExecutionConfig.base_url` and refuses — again `EngineError` — when that URL
+carries none, or when it targets a different host than the one recorded: a
+credential is bound to the host it was issued for, not to whichever host a
+replay happens to target. The CLI exposes this as `--base-url <url>`, which
+may only re-supply the credential for the target the trace was already
+recorded against — a replay never retargets a recorded request to a
+different host.
+
 ## What a replay evaluates
 
 Without the compiled endpoints, a replay can only re-flag the contract-free

@@ -84,6 +84,7 @@ nav:
       - Installation & Quick Start: user-guide/installation.md
       - Running with Docker: user-guide/docker.md
       - CLI Reference: user-guide/cli-reference.md
+      - Run Report: user-guide/reports.md
       - Example Walkthrough: user-guide/example-walkthrough.md
       - LLM Providers: user-guide/llm-providers.md
   - Architecture: architecture/overview.md
@@ -109,6 +110,9 @@ nav:
           - Contract Engine:
               - Overview: modules/contract-engine/index.md
               - Reference: modules/contract-engine/reference.md
+              - Decision records:
+                  - Overview: modules/contract-engine/adr/index.md
+                  - Ingestion: modules/contract-engine/adr/ingestion.md
           - Contracts (shared kernel): modules/contracts/index.md
           - Storage:
               - Overview: modules/storage/index.md

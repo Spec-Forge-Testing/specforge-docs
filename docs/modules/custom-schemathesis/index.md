@@ -25,18 +25,25 @@ flowchart TD
     subgraph Compilation ["2. Compilation Phase"]
         direction LR
         CI --> SC["strategy compiler"]
-        SC --> EI["EngineInput"]
+        SC --> CO["CompilationOutcome"]
     end
 
     subgraph Execution ["3. Execution Phase"]
         direction LR
-        EI --> E["engine"]
+        CO --> E["engine"]
         E --> API[("Target API")]
     end
 
     Config ==> Compilation
     Compilation ==> Execution
 ```
+
+`compile_strategies` compiles the batch endpoint by endpoint: a contract that
+fails to translate does not abort the run, it becomes an `EndpointExclusion`
+(the endpoint's identity plus why) and the rest keeps compiling.
+`CompilationOutcome` carries both `engine_input` — what did compile, handed to
+`run` — and `exclusions`, so whoever orchestrates decides what to do with what
+didn't.
 
 ## Read next
 

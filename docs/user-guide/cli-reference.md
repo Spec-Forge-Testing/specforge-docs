@@ -25,7 +25,8 @@ validation, static tracing, LLM-ready context extraction and API fuzzing.
 specforge          # launch the interactive REPL
 ```
 
-Inside the REPL, type `help` to list commands or `help <command>` for details.
+Inside the REPL, type `help` to list commands or `help <command>` for details —
+any command invoked with `--help`/`-h` renders the same panel.
 
 ## Commands
 
@@ -165,9 +166,18 @@ Inside the REPL, type `help` to list commands or `help <command>` for details.
       `raw == confirmed + flaky + collapsed + unverified` always holds. A stateful
       run has no separate shrink phase, so its report shows neither shrink requests
       nor collapsed or unverified findings.
-    - **Category breakdown** — requests grouped by outcome (success, client/server
-      error, timeout, availability).
-    - **Crashes** — one row per minimal reproducer: method, endpoint, phase, how many
+    - **Category breakdown** — requests grouped by outcome, labeled in plain
+      English: successful response, 4xx client error, 5xx server error, contract
+      violation, request timed out, target unreachable, and `unsendable request
+      (refused by the engine; never sent)` for values the engine refused to put
+      on the wire — counted as requests, but they never reached the target.
+    - **Crashes** — a summary line first, tallying the unique crashes by invariant
+      and status (`33 unique crashes: 2 × 5xx server error (500), 28 × wrong
+      Content-Type (401), …`), then one row per minimal reproducer, **most severe
+      first**: 5xx server errors lead, contract violations follow, and within an
+      invariant the crash representing more raw findings comes first — the same
+      order `report.json` sorts its defects, so the screen and the document never
+      disagree. Each row: method, endpoint, phase, how many
       prior steps set it up (a dash for a single request), the violated invariant,
       the status code, how many raw findings the crash stands for (`Represents`;
       stateless runs only), the identity it was found under (`Identity`; only shown
@@ -278,6 +288,10 @@ Inside the REPL, type `help` to list commands or `help <command>` for details.
     `--analysis`. Identifiers are always the numeric ids the previous level shows —
     project names are not unique, ids are.
 
+    Filesystem paths in the tables (a project's repo path, an artifact's path)
+    are clipped from the left to their tail (`…package/src/main.py`), so a deep
+    path never wraps its row.
+
     Without the `storage` install the command warns and returns instead of failing.
 
 ??? "`inspect` — the full detail of one run, or of one crash"
@@ -294,9 +308,12 @@ Inside the REPL, type `help` to list commands or `help <command>` for details.
     *[Coverage and the run's signal](#coverage-and-the-runs-signal)* — skipped for
     a replay); the **metrics** funnel (requests, raw → confirmed → unique
     → flaky → **Unverified** findings — never shrunk)
-    with the per-phase and per-category breakdowns; **per-endpoint stats** including
+    with the per-phase and per-category breakdowns (category tokens labeled in
+    plain English, as in the fuzz report); **per-endpoint stats** including
     the latency percentiles (p50/p95/max — a dash when the endpoint was never
-    timed); every recorded **crash** — with its id, the same plain-English invariant
+    timed); every recorded **crash** — under the same per-invariant summary line
+    and in the same severity-first order as the fuzz report, with its id, the
+    same plain-English invariant
     labels the fuzz report uses, the identity it was found under (**Identity**;
     shown when at least one crash recorded one), and the **minimal payload that
     reproduces it**, so a saved run shows no less than the report printed when the
@@ -358,6 +375,14 @@ Inside the REPL, type `help` to list commands or `help <command>` for details.
     needs a clean context — under **reduced fidelity** the environment
     observably changed, so a defect that stopped answering `500` is
     *inconclusive*, never resolved; the report states this explicitly.
+
+    The verdict table shows **one row per distinct verdict** with its count
+    (`×29`), in first-occurrence order: a defect recorded 29 times renders as
+    one `POST /users/login invalid 500 → 500 present ×29` row instead of 29
+    identical ones, and a mixed outcome (25 `present` + 4 `possibly resolved`
+    for the same defect) stays two rows, never averaged. The grouping is
+    presentation only — the saved document and `--json-output` keep one
+    verdict per request.
 
     The command refuses recipes it cannot replay whole, **before sending a
     single request**: an empty trace, a missing or tampered trace artifact

@@ -55,7 +55,7 @@ of a run's persisted data, never a live object. It carries a `schema_version`
 | `metrics` | The finding funnel and request counters, `null` when a run recorded none. |
 | `endpoints` | One entry per endpoint touched: requests, `examples_planned`, raw findings, crash count and its latency distribution. |
 | `coverage` | The declared-endpoint partition behind the run - `declared`/`targeted`/`excluded`/`filtered`/`exercised` counts plus `excluded_endpoints` (method, path, reason) - `null` for a replay, which never compiles. |
-| `defects` | One entry per crash: identity, reproducer and what the run observed - the same shape `inspect --crash <id>` and `compare` project a crash through. |
+| `defects` | One entry per crash, ordered most-severe-first (the same order the live crash tables render): identity, reproducer and what the run observed - the same shape `inspect --crash <id>` and `compare` project a crash through. |
 | `replay` | What only a replay knows - fidelity, divergences and a verdict per recorded defect - `null` for an original run. |
 
 `run.signal` is `"clean"` or `"degraded"`, `null` for a replay (coverage is a

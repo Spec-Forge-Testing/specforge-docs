@@ -99,16 +99,17 @@ one.
 ## Error codes
 
 `error.code` is drawn from a fixed, versioned registry - one entry per domain
-exception a command can raise (across `fuzz`, `replay`, `history`,
-`persistence`, `identities`, `compare`, `coverage`, `report` and `retention`)
-- plus three fallbacks: `unexpected_error` for anything not in the registry,
+exception any service module can raise, kept complete by a test - plus three
+fallbacks: `unexpected_error` for anything not in the registry,
 `invalid_arguments` for a malformed invocation, and a per-command
 `_unavailable` code for a missing dependency. New in this registry:
-`coverage_accounting_failed` (the declared-endpoint partition doesn't add up),
-`fuzz_no_compilable_endpoints` (every selected endpoint was excluded, so
-`fuzz` refuses before sending anything), `replay_url_credentials_missing` and
-`replay_target_mismatch` (`replay --base-url` missing or pointed at a
-different host than the trace was recorded against). A refusal caught before
-any exception is raised - a missing library, bad flags - is reported through
-the same envelope, never a bare panel or a silent exit. Codes are stable
-across releases; a breaking change to the registry bumps `schema_version`.
+`no_matching_endpoints` (the `--endpoint`/`--method` filters selected no
+endpoint), `coverage_accounting_failed` (the declared-endpoint partition
+doesn't add up), `fuzz_no_compilable_endpoints` (every selected endpoint was
+excluded, so `fuzz` refuses before sending anything),
+`replay_url_credentials_missing` and `replay_target_mismatch` (`replay
+--base-url` missing or pointed at a different host than the trace was recorded
+against). A refusal caught before any exception is raised - a missing library,
+bad flags - is reported through the same envelope, never a bare panel or a
+silent exit. Codes are stable across releases; a breaking change to the
+registry bumps `schema_version`.

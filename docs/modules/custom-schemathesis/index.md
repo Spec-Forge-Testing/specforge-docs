@@ -6,7 +6,8 @@ them asynchronously against the target API.
 
 ## What it adds over generic schema fuzzing
 
-1. **Type-scoped contracts:** an LLM can fill only fields allowed for each type.
+1. **Type-scoped contracts:** a producer can fill only fields allowed for each
+   type, and the policy layer rejects anything else before compilation.
 2. **Bounded generation:** the parameter space is estimated and divided into
    `valid`, `boundary`, `invalid` and, in hacker mode, `attack` phases.
 3. **Risk-aware effort:** endpoint risk and generation budget are independent,
@@ -16,15 +17,16 @@ them asynchronously against the target API.
 
 ```mermaid
 flowchart TD
-    subgraph Config ["1. Configuration Phase"]
+    subgraph Boundary ["1. Boundary Phase"]
         direction LR
-        SM["StrategyMode"] --> Q["questionnaire"]
-        Q --> CI["CompilerInput"]
+        EC["EndpointContract<br/><i>(kernel)</i>"] --> AD["orchestrator adapter"]
+        AD --> CI["CompilerInput"]
+        CI --> PV["policy validators"]
     end
 
     subgraph Compilation ["2. Compilation Phase"]
         direction LR
-        CI --> SC["strategy compiler"]
+        PV --> SC["strategy compiler"]
         SC --> CO["CompilationOutcome"]
     end
 
@@ -34,9 +36,18 @@ flowchart TD
         E --> API[("Target API")]
     end
 
-    Config ==> Compilation
+    Boundary ==> Compilation
     Compilation ==> Execution
 ```
+
+The engine never touches the LLM's output. The producer — the LLM, or a fixture
+— emits the shared kernel's `EndpointContract`; the orchestrator's adapter
+translates it into a `CompilerInput`; the engine's `policy` layer validates that
+input against the strategy mode's profile; `compile_strategies` compiles it and
+`run` executes it. The transition and semantic-property vocabulary
+(`TransitionInvariant`, `ZoneLocation`, `SemanticProperty`) is not the engine's
+own: it is imported from `specforge_contracts`, so the same objects travel from
+the producer to the engine untranslated.
 
 `compile_strategies` compiles the batch endpoint by endpoint: a contract that
 fails to translate does not abort the run, it becomes an `EndpointExclusion`

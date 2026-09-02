@@ -51,6 +51,53 @@ and no network. Three seams are worth knowing:
 - **`ui/theme.py` (`theme`)** — each bundled theme is a token→style map and no
   raw colour exists outside it, so a re-skin is a one-file change.
 
+## The fuzz seam (`services/fuzz/`)
+
+`core` is the only layer allowed to know both the Contract Engine and the
+execution engine at once, and `services/fuzz/` is where that seam lives.
+`runner.run_fuzzing` loads and selects the endpoints, derives the state links
+from the spec (`state_link.build_state_links`, over the full declared list so a
+producer and its consumer still chain when the filter keeps only one), asks the
+optional contract producer for each selected endpoint, fuses what it returns
+over the OpenAPI base (`services/contract.fuse_endpoint_contract`, a thin seam
+over the Contract Engine's `fuse_contract`) and hands everything to
+`adapter.endpoints_to_compiler_input`.
+
+The producer is a `Protocol` — `produce(endpoint, *, agent_profile) ->
+EndpointContract | None`, `None` leaving that endpoint schema-only — so where
+an enriched contract comes from is swappable. One implementation exists today:
+`FixtureContractProducer(directory)`, behind `fuzz --contracts <dir>`, which
+loads every `*.json` directly under the directory as a kernel `EndpointContract`
+and indexes it by the `method`/`path_url` it declares. The `agent_profile` a
+producer is asked for derives from the chosen strategy
+(`constants.STRATEGY_TO_AGENT_PROFILE`: `DEFAULT → "qa"`, `HACKER →
+"security"`); the producer never selects the mode itself. The runner checks
+the produced contract's identity against the endpoint before fusing, since
+fusion stamps the endpoint's own identity onto its result. An LLM-backed
+producer is a follow-up, and produced contracts are not persisted with the
+analysis.
+
+The adapter's fused path (`_contract_to_info`) projects the kernel sections onto
+the engine's own types: `risk` as is; `attack`'s five endpoint-level fields into
+`EndpointAttackContract`; each `field_hints["zone.field"]` — in
+`StrategyMode.HACKER` only, since the default profile rejects hacker contracts —
+promotes the addressed parameter or dotted body field to a
+`HackerStrategyContract` carrying the hint's profiles and toggles (a nested body
+path re-types its ancestors as knob-less containers; an unset toggle is left out
+so the engine's default applies); and each `transitions` entry is re-bound to
+the deterministic `StateProduction` whose bundle name, or `response_field` leaf,
+matches its `bundle` — exact name first — and appended to the deterministic
+`StateLinkContract`. `semantic_properties` are validated for field references
+and carried through.
+
+Failures are typed and stop the run before any request: a hint on an undeclared
+zone or field, or a transition with no match or an ambiguous one, is an
+`UnsupportedSchemaConstructError` naming the endpoint and the offending key; a
+fixture that fails to load, a duplicate for one endpoint, a contract served for
+another endpoint, or a fusion the Contract Engine rejects is a
+`ContractProducerError(source, detail)` (JSON error code
+`fuzz_contract_producer`).
+
 ## Adding a new command
 
 Commands are self-registering, so a new one is small and local:

@@ -67,7 +67,7 @@ docker-compose.yml           # monorepo orchestration (root entry point)
 | Module | Responsibility |
 | :--- | :--- |
 | `core/` | Interactive CLI/REPL (Typer, Rich, prompt_toolkit): navigation + command orchestration. |
-| `lib/contracts/` | Shared kernel (`specforge_contracts`): the canonical `EndpointContract` and the transition/semantic-property vocabulary every stage imports. |
+| `lib/contracts/` | Shared kernel (`specforge_contracts`): the canonical `EndpointContract` and the risk, attack, transition and semantic-property vocabulary every stage imports. |
 | `lib/contract_engine/` | Validates OpenAPI 3.x (`prance`), translates Swagger 2.0 into it, flattens endpoints, fuses base schemas with LLM invariants. |
 | `lib/core_ast/` | Deterministic, stateless AST analysis (`tree-sitter`); locates routes/handlers/deps via `patterns.toml`. |
 | `lib/semantic_inference/` | Provider-agnostic LLM interface (`LiteLLM`): retries, fallbacks, invariant inference. |
@@ -101,6 +101,10 @@ The boundary object between the AI side and the execution engine is `EndpointCon
   OpenAPI base. The LLM only contributes validation constraints, never overrides identity.
 - **One vocabulary end to end** — the execution engine never sees the LLM's output. The
   producer emits the kernel's `EndpointContract`, the orchestrator's adapter translates it into
-  the engine's `CompilerInput`, and the engine's `policy` layer validates it. The transition and
-  semantic-property types (`TransitionInvariant`, `SemanticProperty`) are imported by the engine
-  from the kernel, not redefined, so they cross that seam untranslated.
+  the engine's `CompilerInput`, and the engine's `policy` layer validates it. The shared
+  vocabulary (`EndpointRisk`, the `AttackProfile` literal, `TransitionInvariant`,
+  `SemanticProperty`) is imported by the engine from the kernel, not redefined, so it crosses
+  that seam untranslated; the types the engine keeps of its own — the per-value
+  `HackerStrategyContract`, the endpoint-level `EndpointAttackContract`, the state-link family
+  — are filled by the adapter from the contract's `attack`, its `field_hints` and its
+  `transitions`.

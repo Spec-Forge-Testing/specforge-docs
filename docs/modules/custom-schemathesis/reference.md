@@ -57,22 +57,25 @@ The former `stateful` / `stateful_config` pair still works for one version and e
 `DeprecationWarning`.
 
 The package root also exports the four policy validators the orchestrator runs before
-compiling — see *Policy layer* below.
+compiling — see *Policy layer* below — and the contract types the orchestrator's adapter
+builds for the fuzz input: `EndpointAttackContract`, `HackerStrategyContract` and the
+kernel's `TransitionInvariant`, alongside the state-link family.
 
 ## Models and Policy
 
 ### Strategy Contracts & Models
 * **`BaseStrategyContract`**: Closed standard contract enforcing JSON Schema constraints, `nullable`, and `extra="forbid"`.
 * **`HackerStrategyContract`**: Extends `BaseStrategyContract` with **per-value** offensive knobs only:
-  * `attack_profiles` (payload-family selection) and the `include_*` toggles (encoded, null, large, empty, unicode, control-character, nested-object, ... variants).
+  * `attack_profiles` (payload-family selection, typed as the kernel's `AttackProfile` literal — `HackerAttackProfile` is an alias of it) and the `include_*` toggles (encoded, null, large, empty, unicode, control-character, nested-object, ... variants).
   * *Note:* Never stores a payload directly; compilation determines concrete values dynamically.
-* **`EndpointAttackContract`**: **Endpoint-scoped** attack configuration — `attack_profiles`, `focus_fields`, `sensitive_fields`, `aggressiveness`, `mutation_depth` — describing the whole endpoint rather than a single value. Held by `EndpointInfo.attack`.
+* **`EndpointAttackContract`**: **Endpoint-scoped** attack configuration — `attack_profiles`, `focus_fields`, `sensitive_fields`, `aggressiveness`, `mutation_depth` — describing the whole endpoint rather than a single value. Held by `EndpointInfo.attack`. It has no `field_hints`: the kernel's per-field `FieldAttack` hints are promoted by the orchestrator onto the addressed field's `HackerStrategyContract`, under the hacker profile only.
 * **`ALLOWED_FIELDS_BY_TYPE` (and Hacker variant)**: Immutable type-to-field lookup tables acting as the single source of truth for parameters the LLM is permitted to configure. The hacker variant is **derived** from the model's own per-value fields, so a new per-value knob extends it automatically and endpoint/request-scoped knobs can never leak in.
-* **`EndpointRiskContract` & `EndpointBudgetContract`**: Decoupled, independent contracts—risk prioritization (pure scoring metadata) and sample-spend allocation (`phase_split`, the single source of truth for the phase budget) address separate operational concerns.
-* **`EndpointInfo`**: Encapsulates endpoint identity alongside dedicated contracts for all HTTP zones: path, query, header, and body — plus the optional `risk`, `budget`, `attack`, `state_link` and `semantic_properties` slots. `semantic_properties` is a list of the kernel's `SemanticProperty`, carried from the producer and validated for field references by the orchestrator; no engine component consumes it yet.
+* **`EndpointRiskContract` & `EndpointBudgetContract`**: Decoupled, independent contracts—risk prioritization (pure scoring metadata; `EndpointRiskContract` is the kernel's `EndpointRisk` under the engine's name, not a copy) and sample-spend allocation (`phase_split`, the single source of truth for the phase budget) address separate operational concerns.
+* **`EndpointInfo`**: Encapsulates endpoint identity alongside dedicated contracts for all HTTP zones: path, query, header, and body — plus the optional `risk`, `budget`, `attack`, `state_link` and `semantic_properties` slots. `semantic_properties` is a list of the kernel's `SemanticProperty`, carried from the producer and validated for field references by the orchestrator; no engine component consumes it yet. `risk` and `attack` are carried the same way — projected from the fused contract by the orchestrator, read by no engine component yet; what the attack phase reads is the per-value `HackerStrategyContract`.
 
 ### Shared vocabulary from the kernel (`models/compiler/contracts/`)
 
+`EndpointRisk` (re-exported as `EndpointRiskContract`), the `AttackProfile` literal,
 `TransitionInvariant`, `ZoneLocation` and the `SemanticProperty` expression tree
 (`SemanticProperty`, `PropertyClass`, `PropertyExpression`, `FieldReference`,
 `LiteralExpression`, `BinaryOperation`, `LogicalCombination`, `Conditional`,
@@ -82,7 +85,8 @@ compiling — see *Policy layer* below.
 internal imports keep one surface and the objects the producer emits reach the engine
 untranslated. `StateProduction`, `StateConsumption` and `StateLinkContract` stay
 engine-owned in `state_link.py`: they describe how the fuzzer chains requests, which is
-execution, not producer vocabulary.
+execution, not producer vocabulary. `EndpointAttackContract` is engine-owned too,
+deliberately without the kernel's `field_hints`.
 
 ### Pipeline Input Containers
 * **`CompilerInput`**: Global `StrategyMode` paired with the target endpoint list.
@@ -440,11 +444,19 @@ stateless path.
 * **Stateless Fallback**: Endpoints without `StateLinkContract` retain standard stateless behavior.
 * **Execution**: State links are passed via `CompiledExecutionEndpoint` and consumed exclusively by `StatefulFuzzer`. Stateful findings can output the complete multi-request sequence required to reproduce cross-endpoint bugs.
 * **Who fills the contract today**: the orchestrator, not inference — its fuzz service
-  derives `StateLinkContract`s from the OpenAPI endpoint definitions
-  (`build_state_links`) and its adapter attaches them to each `EndpointInfo`. The
-  engine is agnostic about the producer. The kernel's `EndpointContract.transitions`
-  carries the same `TransitionInvariant` type for a producer-declared invariant, but
-  the adapter does not read it yet.
+  derives every production and consumption from the OpenAPI endpoint definitions
+  (`build_state_links`: native `links` first, then a POST/PUT-to-sibling id
+  convention that reads only the top-level properties of a `2xx` response schema,
+  so an enveloped response needs a native `links` entry) and its adapter attaches
+  them to each `EndpointInfo`. The engine is agnostic about the producer. A
+  producer's `EndpointContract.transitions` — the same `TransitionInvariant` type —
+  are merged in by the adapter: each transition's `bundle` is re-bound to the
+  deterministic `StateProduction` it names (an exact bundle name wins; otherwise the
+  leaf of a production's `response_field`, after the last dot, must match exactly
+  one) and the rewritten transitions are appended after any the deterministic
+  contract already carried. A transition that matches no capture, or more than one,
+  is rejected before the run rather than attached: bound to nothing, it would never
+  fire.
 
 #### Fine print on production/consumption
 

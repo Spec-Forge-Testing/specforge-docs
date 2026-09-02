@@ -27,8 +27,13 @@ The boundary vocabulary shared with the producer is not defined here. `Transitio
 `ZoneLocation` and the whole `SemanticProperty` expression tree are imported from
 `specforge_contracts` (a declared runtime dependency, `specforge-contracts>=0.2.0`) and
 re-exported from `models.compiler.contracts`, so the engine keeps a single import surface
-and the same objects travel from the producer to the engine untranslated. The kernel sits
-at the leaf of the dependency graph, so importing it inverts nothing. `StateProduction`,
+and the same objects travel from the producer to the engine untranslated. `EndpointRisk`
+— `EndpointRiskContract` is an alias of it — and the `AttackProfile` literal behind every
+`attack_profiles` field (`HackerAttackProfile` is the same alias) come from there too. The
+kernel sits at the leaf of the dependency graph, so importing it inverts nothing.
+`EndpointAttackContract` stays engine-owned and carries no `field_hints`: the kernel's
+per-field hints are the orchestrator's to promote onto the addressed field's
+`HackerStrategyContract`, and only under the hacker profile. `StateProduction`,
 `StateConsumption` and `StateLinkContract` remain engine-owned: they describe how the
 fuzzer chains requests, not what the producer asserts.
 
@@ -37,6 +42,9 @@ orchestrator copies it from the fused contract and validates every field referen
 (`input_constraint` properties against the endpoint's parameters and dotted body paths,
 `response_invariant` properties against the dotted paths of every declared response
 body). No engine component consumes the slot yet — the semantic oracle is a later phase.
+`EndpointInfo.risk` and `EndpointInfo.attack` ride along the same way, projected by the
+orchestrator from the fused contract and read by no engine component yet; what the attack
+phase actually reads is the per-value `HackerStrategyContract` a promoted hint produces.
 
 ## Contracts and compilation
 

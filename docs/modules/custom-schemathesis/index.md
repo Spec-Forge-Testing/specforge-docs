@@ -44,10 +44,10 @@ The engine never touches the LLM's output. The producer — the LLM, or a fixtur
 — emits the shared kernel's `EndpointContract`; the orchestrator's adapter
 translates it into a `CompilerInput`; the engine's `policy` layer validates that
 input against the strategy mode's profile; `compile_strategies` compiles it and
-`run` executes it. The transition and semantic-property vocabulary
-(`TransitionInvariant`, `ZoneLocation`, `SemanticProperty`) is not the engine's
-own: it is imported from `specforge_contracts`, so the same objects travel from
-the producer to the engine untranslated.
+`run` executes it. The shared vocabulary (`EndpointRisk`, the `AttackProfile`
+literal, `TransitionInvariant`, `ZoneLocation`, `SemanticProperty`) is not the
+engine's own: it is imported from `specforge_contracts`, so the same objects
+travel from the producer to the engine untranslated.
 
 `compile_strategies` compiles the batch endpoint by endpoint: a contract that
 fails to translate does not abort the run, it becomes an `EndpointExclusion`

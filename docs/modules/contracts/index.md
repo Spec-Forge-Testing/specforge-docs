@@ -25,10 +25,14 @@ stage that produces or fuses the contract imports the same models from here, so
 the AI layer, the fusion stage and the orchestrator speak exactly the same shape
 and the contract can never drift between them. The execution engine keeps its
 own request-shape models — the orchestrator projects the contract onto them —
-but takes the transition and semantic-property vocabulary from here:
+but takes its shared vocabulary from here: `EndpointRisk` (the engine's
+`EndpointRiskContract` is this very class), the `AttackProfile` literal,
 `TransitionInvariant`, `ZoneLocation` and the `SemanticProperty` expression tree
 are imported by `custom_schemathesis`, not copied, so the objects a producer
-emits reach the engine untranslated.
+emits reach the engine untranslated. The engine's endpoint-level
+`EndpointAttackContract` stays its own and has no `field_hints`: the
+orchestrator projects the five endpoint-level fields of `attack` onto it and
+promotes each `FieldAttack` hint onto the addressed field's per-value contract.
 
 ## Why a separate package?
 
@@ -44,7 +48,7 @@ and acyclic.
 ```python
 from specforge_contracts import (
     EndpointContract, EndpointParameters, SchemaProperty,
-    EndpointRisk, EndpointAttack, FieldAttack,
+    EndpointRisk, EndpointAttack, FieldAttack, AttackProfile,
     TransitionInvariant, ZoneLocation, SemanticProperty, PropertyClass,
 )
 ```

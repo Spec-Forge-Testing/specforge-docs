@@ -144,8 +144,9 @@ any command invoked with `--help`/`-h` renders the same panel.
 
     ```text
     SpecForge ❯ fuzz -f openapi.yaml --base-url http://localhost:8000
-    SpecForge ❯ fuzz -f openapi.yaml --base-url http://localhost:8000 --stateful
+    SpecForge ❯ fuzz -f openapi.yaml --base-url http://localhost:8000 --mode stateful
     SpecForge ❯ fuzz -f openapi.yaml --base-url http://localhost:8000 --identities identities.toml
+    SpecForge ❯ fuzz -f openapi.yaml --base-url http://localhost:8000 --strategy hacker --contracts contracts/
     ```
 
     `fuzz` runs the execution engine end to end **without the LLM or source analysis**:
@@ -153,7 +154,9 @@ any command invoked with `--help`/`-h` renders the same panel.
     fuzzes the live API at `--base-url`, groups the failures by symptom and shrinks one
     representative per symptom to its minimal reproducer. The schema constraints alone
     (`type`, `minimum`, `enum`, `pattern`, …) are enough to surface `5xx` crashes and
-    undeclared responses.
+    undeclared responses. Two flags widen that baseline: `--strategy` picks the
+    strategy family the engine compiles, and `--contracts` feeds it producer-written
+    contracts on top of the schema — both described below.
 
     The command prints:
 
@@ -222,20 +225,121 @@ any command invoked with `--help`/`-h` renders the same panel.
     **Identity** column above. The label is persisted with the crash and the run's
     trace; the credentials never are (see below).
 
-    `--stateful` switches to [stateful fuzzing](../modules/custom-schemathesis/stateful-fuzzing.md):
+    `--mode` selects how the engine explores the endpoints: `stateless` (the
+    default) fuzzes each operation alone; `stateful` chains requests into
+    sequences; `performance` sustains load and, with `--latency-sla-ms <ms>`,
+    enforces that threshold as a latency oracle; `resilience` sends a fixed battery
+    of malformed-transport requests and flags an endpoint that answers `5xx`, hangs
+    or crashes instead of degrading gracefully. `--latency-sla-ms` is refused with
+    any other mode.
+
+    `--mode stateful` switches to [stateful fuzzing](../modules/custom-schemathesis/stateful-fuzzing.md):
     requests are **chained into sequences** instead of each operation being fuzzed on
     its own, which surfaces order-dependent failures — a resource created, deleted,
     then read. `--endpoint`/`--method` still narrow the sequences to the matching
-    operations, and the run is saved like any other. Two limits: a stateful run is
-    markedly slower, and the data flow between requests — an id returned by one call
-    feeding the next — is not compiled from the spec yet, so sequences share no
-    values. A stateful finding is reported by the step that failed; the **Prior
+    operations, and the run is saved like any other. The data flow between
+    requests — an id returned by one call feeding the next — is derived from the
+    spec over the full declared endpoint list, not only the selected ones: native
+    OpenAPI `links` first, then a conservative convention that pairs a `POST`/`PUT`
+    on a collection with its immediate by-id sibling whenever a `2xx` body exposes
+    an id-like field. That convention reads only the **top-level** properties of the
+    response schema, so an enveloped response (`{"article": {"slug": ...}}`) needs a
+    native `links` entry to get a deterministic capture. A stateful run is markedly
+    slower than a stateless one. A stateful finding is reported by the step that failed; the **Prior
     steps** column says how many requests set it up, which is the cue to open
     `inspect --crash <id>` for the sequence. A transition the API answered with an
     unexpected status shows as `unexpected transition status`. The run is cut short
     and reported as `aborted` when the target stops answering, or when a state link —
     the declared hand-off from one request's response into the next request — cannot
     be honored; the engine's diagnosis is reported with it.
+
+    `--strategy {default,hacker}` selects which **strategy family** the engine
+    compiles, orthogonally to `--mode`: `default` (the default) is schema-only —
+    the `valid`, `boundary` and `invalid` phases; `hacker` adds the `attack` phase
+    and widens generation toward adversarial values. The two words are the
+    engine's own `StrategyMode` values, so a new mode needs no second list here.
+
+    `--contracts <dir>` supplies **producer-written contracts**. Every `*.json`
+    file directly under the directory is one kernel `EndpointContract` — `method`,
+    `path_url`, `parameters` and `body` as JSON Schema, plus the optional `risk`,
+    `attack`, `transitions` and `semantic_properties` sections (see
+    [Spec Forge Contracts](../modules/contracts/index.md)). Files are indexed by
+    the `method`/`path_url` they declare, so the file name is a label and nothing
+    more. For each selected endpoint that has a contract, it is fused over the
+    OpenAPI base with the Contract Engine's `fuse_contract` — the producer's
+    invariants win on conflict, the base fills the gaps — and the result replaces
+    the bare schema in the compile; an endpoint with no file stays schema-only.
+    A trimmed fixture:
+
+    ```json
+    {
+      "method": "post",
+      "path_url": "/articles",
+      "body": {
+        "type": "object",
+        "required": ["article"],
+        "properties": {
+          "article": {
+            "type": "object",
+            "required": ["title", "body"],
+            "properties": {
+              "title": {"type": "string", "minLength": 1, "maxLength": 200},
+              "body": {"type": "string", "minLength": 1}
+            }
+          }
+        }
+      },
+      "risk": {"risk_score": 65, "criticality": "medium", "write_operation": true},
+      "attack": {
+        "attack_profiles": ["injection", "auth_bypass"],
+        "focus_fields": ["title", "body"],
+        "aggressiveness": 6,
+        "field_hints": {
+          "body.article.title": {
+            "attack_profiles": ["xss", "sql_injection"],
+            "include_encoded_variants": true
+          }
+        }
+      },
+      "transitions": [
+        {
+          "bundle": "slug",
+          "follow_up_method": "get",
+          "follow_up_path": "/articles/{slug}",
+          "target_field": "slug",
+          "target_zone": "path",
+          "expected_statuses": [200],
+          "echoed_fields": ["title", "body"],
+          "trigger_statuses": [201]
+        }
+      ]
+    }
+    ```
+
+    What each section becomes in the run: the enriched `parameters`/`body` shape
+    the strategies. `risk` and `attack`'s endpoint-level fields ride along to the
+    engine as they are — nothing in the engine consumes them yet, so they do not
+    change a run today. Each `field_hints["zone.field"]` entry promotes the
+    addressed parameter or dotted body field to the engine's per-value hacker
+    contract with the hint's payload families and toggles, **under `--strategy
+    hacker` only** — `default` ignores the hints. Each `transitions` entry is
+    attached to the endpoint's stateful state link, bound to the deterministic
+    capture (from the spec's `links` or the sibling convention above) whose bundle
+    name or captured field matches its `bundle`. `semantic_properties` are
+    validated against the endpoint's declared fields and carried, unconsumed.
+
+    The producer is strict, and every problem stops the run **before a single
+    request**. A path that is not a directory, a malformed or invalid file (the
+    kernel rejects unknown keys), two files declaring the same endpoint, a contract
+    served for an endpoint other than the one it declares, or a fusion the Contract
+    Engine rejects all render a **Contract Producer Error** panel naming the file
+    or endpoint and the reason (error code `fuzz_contract_producer` under
+    `--json-output`). A hint on a zone or field the endpoint does not declare, and
+    a transition whose `bundle` matches no deterministic capture — or more than
+    one — are reported as an **Unsupported Schema Construct** instead, naming the
+    endpoint and the offending hint or bundle. The produced contracts are not
+    persisted with the analysis: the run's trace is recorded and replayable as
+    usual, but the enriched recipe itself is not stored.
 
     Every run is **saved by default** through the [storage engine](../modules/storage/index.md):
     a project → analysis → run hierarchy with metrics, per-endpoint stats, crash

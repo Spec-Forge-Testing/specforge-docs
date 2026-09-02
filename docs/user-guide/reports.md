@@ -106,7 +106,9 @@ fallbacks: `unexpected_error` for anything not in the registry,
 `no_matching_endpoints` (the `--endpoint`/`--method` filters selected no
 endpoint), `coverage_accounting_failed` (the declared-endpoint partition
 doesn't add up), `fuzz_no_compilable_endpoints` (every selected endpoint was
-excluded, so `fuzz` refuses before sending anything),
+excluded, so `fuzz` refuses before sending anything), `fuzz_contract_producer`
+(a `--contracts` fixture could not be loaded, declares another endpoint, or was
+rejected by fusion),
 `replay_url_credentials_missing` and `replay_target_mismatch` (`replay
 --base-url` missing or pointed at a different host than the trace was recorded
 against). A refusal caught before any exception is raised - a missing library,

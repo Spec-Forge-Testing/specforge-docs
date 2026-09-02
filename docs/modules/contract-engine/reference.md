@@ -308,6 +308,12 @@ into the unified shape and then merged with the LLM contract. The merge policy:
   base; the LLM cannot change them.
 - **The output stays coherent.** Constraints that no longer match a field's type
   are dropped, and an `enum` collapses the field to its allowed values.
+- **Producer-only sections ride along verbatim.** `risk`, `attack`, `transitions`
+  and `semantic_properties` are not schemas and the OpenAPI base cannot carry
+  them, so whichever of them the LLM contract sets is copied into the result as
+  is. The set is derived from the kernel's `EndpointContract` fields other than
+  `method`, `path_url`, `parameters` and `body`, so a new section needs no
+  merger edit.
 
 ```python
 from contract_engine import ASTAdapter, fuse_contract, parse_contract
@@ -327,6 +333,8 @@ llm_contract = """
 unified = fuse_contract(endpoint, llm_contract)
 # -> {"method": "post", "path_url": "/users",
 #     "parameters": {"path": {}, "query": {"age": {...}}, "header": {}}, "body": {...}}
+#     plus any "risk" / "attack" / "transitions" / "semantic_properties" the
+#     LLM contract carried, copied as is
 ```
 
 `llm_contract` may be a JSON string or a dict. A malformed or invalid LLM

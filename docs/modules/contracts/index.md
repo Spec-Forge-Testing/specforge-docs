@@ -17,13 +17,18 @@ flowchart TD
     SI -.- SC
     CE -.- SC
     CO -.- SC
+    CS -.- SC
 ```
 
 It is a **dependency-light kernel**: only `pydantic`, no logic, no I/O. Every
 stage that produces or fuses the contract imports the same models from here, so
 the AI layer, the fusion stage and the orchestrator speak exactly the same shape
 and the contract can never drift between them. The execution engine keeps its
-own input models; the orchestrator projects the contract onto them.
+own request-shape models — the orchestrator projects the contract onto them —
+but takes the transition and semantic-property vocabulary from here:
+`TransitionInvariant`, `ZoneLocation` and the `SemanticProperty` expression tree
+are imported by `custom_schemathesis`, not copied, so the objects a producer
+emits reach the engine untranslated.
 
 ## Why a separate package?
 
@@ -40,9 +45,14 @@ and acyclic.
 from specforge_contracts import (
     EndpointContract, EndpointParameters, SchemaProperty,
     EndpointRisk, EndpointAttack, FieldAttack,
-    TransitionInvariant, SemanticProperty, PropertyClass,
+    TransitionInvariant, ZoneLocation, SemanticProperty, PropertyClass,
 )
 ```
+
+The expression-tree node types behind `SemanticProperty` (`FieldReference`,
+`LiteralExpression`, `BinaryOperation`, `LogicalCombination`, `Conditional`,
+`Aggregation`, and the `PropertyExpression` union) live in
+`specforge_contracts.semantic`.
 
 `EndpointContract` holds the routing identity (`method`, `path_url`) plus two
 kinds of content, each with its own wire dialect:
@@ -83,5 +93,8 @@ from the wire.
 
 The package supports Python 3.10+. Consumers add it to their test path
 (`pythonpath = ["src", "../contracts/src"]`) and install it in their runtime image.
-Installation, test and lint commands are centralized in
-[Development & Testing](../../getting-started/development.md#module-commands).
+`custom_schemathesis` goes one step further and declares it as a runtime dependency
+(`specforge-contracts>=0.2.0`), so its CI job and its `fixtures-api` Docker image
+install `lib/contracts` first — which is why that image is built from the
+repository root. Installation, test and lint commands are centralized in
+[Contributing & Testing](../../developer-guide/contributing.md).

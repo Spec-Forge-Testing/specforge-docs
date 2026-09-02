@@ -60,6 +60,15 @@ Only these modules need a different workflow:
 - **Contracts (`lib/contracts`)**: `pip install -e ".[dev]"`, then run
   `pytest -q --cov=src/specforge_contracts --cov-report=term-missing`, then
   `ruff check src tests`.
+- **Custom Schemathesis (`lib/custom_schemathesis`)**: it depends on the shared
+  kernel at runtime, so install `lib/contracts` first —
+  `pip install -e ../contracts -e ".[dev]"` from the module directory, the same
+  command CI runs — then `python -m pytest -q`. Its `fixtures-api` image is built
+  from the repository root for the same reason
+  (`docker compose run --rm fixtures-api ...` from the module directory already
+  does this). `tests/characterization/` is the Golden Master net over the
+  compiler and engine boundary; its goldens regenerate only under
+  `SPECFORGE_UPDATE_GOLDENS=1`.
 - **Storage (`lib/storage`)**: build its image with
   `docker build -t storage-engine .`, then run
   `docker run --rm storage-engine pytest -v --cov=src/storage --cov-report=term-missing`.

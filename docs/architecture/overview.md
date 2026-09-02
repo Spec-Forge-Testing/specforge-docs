@@ -53,10 +53,11 @@ managing its own dependencies, tests, and Docker setup.
 ```text
 core/                       # specforge CLI orchestrator (specforge_cli)
 lib/
+├── contracts/               # shared kernel: EndpointContract + the Spec Forge vocabulary
 ├── contract_engine/        # OpenAPI ingestion + adaptation + fusion
 ├── core_ast/                # tree-sitter static analysis
 ├── semantic_inference/      # LLM router + inference
-├── custom_schemathesis/     # questionnaire + strategy compiler + engine (stateless & stateful fuzzing)
+├── custom_schemathesis/     # policy + strategy compiler + engine (stateless & stateful fuzzing)
 └── storage/                 # SQLite persistence
 docker-compose.yml           # monorepo orchestration (root entry point)
 ```
@@ -66,6 +67,7 @@ docker-compose.yml           # monorepo orchestration (root entry point)
 | Module | Responsibility |
 | :--- | :--- |
 | `core/` | Interactive CLI/REPL (Typer, Rich, prompt_toolkit): navigation + command orchestration. |
+| `lib/contracts/` | Shared kernel (`specforge_contracts`): the canonical `EndpointContract` and the transition/semantic-property vocabulary every stage imports. |
 | `lib/contract_engine/` | Validates OpenAPI 3.x (`prance`), translates Swagger 2.0 into it, flattens endpoints, fuses base schemas with LLM invariants. |
 | `lib/core_ast/` | Deterministic, stateless AST analysis (`tree-sitter`); locates routes/handlers/deps via `patterns.toml`. |
 | `lib/semantic_inference/` | Provider-agnostic LLM interface (`LiteLLM`): retries, fallbacks, invariant inference. |
@@ -97,3 +99,8 @@ The boundary object between the AI side and the execution engine is `EndpointCon
 - `extra="forbid"` forces LLM self-correction (hallucinated keywords fail validation).
 - **Identity vs. invariants** — `method`/`path_url` are routing identity, always sourced from the
   OpenAPI base. The LLM only contributes validation constraints, never overrides identity.
+- **One vocabulary end to end** — the execution engine never sees the LLM's output. The
+  producer emits the kernel's `EndpointContract`, the orchestrator's adapter translates it into
+  the engine's `CompilerInput`, and the engine's `policy` layer validates it. The transition and
+  semantic-property types (`TransitionInvariant`, `SemanticProperty`) are imported by the engine
+  from the kernel, not redefined, so they cross that seam untranslated.

@@ -7,15 +7,16 @@ fuzzing engine. Start with the [overview](index.md) for the short version.
 
 ```mermaid
 flowchart TD
-    subgraph L1 ["1. questionnaire"]
+    subgraph L1 ["1. boundary"]
         direction LR
-        SM["StrategyMode"] --> QB["QuestionnaireBundle"]
-        QB --> CI["CompilerInput"]
+        EC["EndpointContract<br/><i>(kernel)</i>"] --> AD["orchestrator adapter"]
+        AD --> CI["CompilerInput"]
+        CI --> PV["policy validators"]
     end
 
     subgraph L2 ["2. strategy_compiler"]
         direction LR
-        CI --> CO["CompilationOutcome<br/>engine_input · exclusions"]
+        PV --> CO["CompilationOutcome<br/>engine_input · exclusions"]
     end
 
     subgraph L3 ["3. engine"]
@@ -32,18 +33,21 @@ The four layers have deliberately separate responsibilities:
 | Layer | Owns | Does not do |
 |---|---|---|
 | `models` | Typed contracts, budgets, inputs and results. | I/O or compilation. |
-| `questionnaire` | LLM template and validation. | Generate strategies or send requests. |
+| `policy` | Validation of the `CompilerInput` an external producer builds. | Build the input, generate strategies or send requests. |
 | `strategy_compiler` | Contract → Hypothesis strategy translation. | Reinterpret validated policy. |
 | `engine` | Request execution and reporting. | Know contract types or strategy mode. |
 
+The engine never touches the LLM's output. The producer (the LLM, or a fixture) emits
+the shared kernel's `EndpointContract`; the orchestrator's adapter translates it into a
+`CompilerInput`; `policy` validates that input; `compile_strategies` compiles it and
+`run` executes it. Nothing upstream of `CompilerInput` lives in this package.
+
 ### Public entry point (`main.py`)
 
-A minimal facade wires the three layers together and adds no logic of its own —
-callers only ever need these four functions:
+A minimal facade wires the layers together and adds no logic of its own —
+callers only ever need these two functions:
 
 ```python
-build_questionnaire(mode)          -> QuestionnaireBundle
-resolve_questionnaire(bundle)      -> ResolvedQuestionnaire
 compile_strategies(compiler_input) -> CompilationOutcome
 run(outcome.engine_input, config, *, mode=None, options=None) -> EngineRunResult
 ```
@@ -52,7 +56,10 @@ run(outcome.engine_input, config, *, mode=None, options=None) -> EngineRunResult
 The former `stateful` / `stateful_config` pair still works for one version and emits a
 `DeprecationWarning`.
 
-## Models and Questionnaire
+The package root also exports the four policy validators the orchestrator runs before
+compiling — see *Policy layer* below.
+
+## Models and Policy
 
 ### Strategy Contracts & Models
 * **`BaseStrategyContract`**: Closed standard contract enforcing JSON Schema constraints, `nullable`, and `extra="forbid"`.
@@ -62,7 +69,20 @@ The former `stateful` / `stateful_config` pair still works for one version and e
 * **`EndpointAttackContract`**: **Endpoint-scoped** attack configuration — `attack_profiles`, `focus_fields`, `sensitive_fields`, `aggressiveness`, `mutation_depth` — describing the whole endpoint rather than a single value. Held by `EndpointInfo.attack`.
 * **`ALLOWED_FIELDS_BY_TYPE` (and Hacker variant)**: Immutable type-to-field lookup tables acting as the single source of truth for parameters the LLM is permitted to configure. The hacker variant is **derived** from the model's own per-value fields, so a new per-value knob extends it automatically and endpoint/request-scoped knobs can never leak in.
 * **`EndpointRiskContract` & `EndpointBudgetContract`**: Decoupled, independent contracts—risk prioritization (pure scoring metadata) and sample-spend allocation (`phase_split`, the single source of truth for the phase budget) address separate operational concerns.
-* **`EndpointInfo`**: Encapsulates endpoint identity alongside dedicated contracts for all HTTP zones: path, query, header, and body.
+* **`EndpointInfo`**: Encapsulates endpoint identity alongside dedicated contracts for all HTTP zones: path, query, header, and body — plus the optional `risk`, `budget`, `attack`, `state_link` and `semantic_properties` slots. `semantic_properties` is a list of the kernel's `SemanticProperty`, carried from the producer and validated for field references by the orchestrator; no engine component consumes it yet.
+
+### Shared vocabulary from the kernel (`models/compiler/contracts/`)
+
+`TransitionInvariant`, `ZoneLocation` and the `SemanticProperty` expression tree
+(`SemanticProperty`, `PropertyClass`, `PropertyExpression`, `FieldReference`,
+`LiteralExpression`, `BinaryOperation`, `LogicalCombination`, `Conditional`,
+`Aggregation`) are **not defined in this package**. They are imported from
+`specforge_contracts` — the shared kernel, a declared runtime dependency
+(`specforge-contracts>=0.2.0`) — and re-exported from `models.compiler.contracts`, so
+internal imports keep one surface and the objects the producer emits reach the engine
+untranslated. `StateProduction`, `StateConsumption` and `StateLinkContract` stay
+engine-owned in `state_link.py`: they describe how the fuzzer chains requests, which is
+execution, not producer vocabulary.
 
 ### Pipeline Input Containers
 * **`CompilerInput`**: Global `StrategyMode` paired with the target endpoint list.
@@ -84,22 +104,34 @@ branches on the mode:
 | `phase_split` | Which phases compile (its keys **are** the phase list) and how examples divide between them. |
 | `allowed_fields_by_type` | Which contract fields are legal per JSON Schema type. |
 | `contract_type` + `allow_contract_subclasses` | Which contract type the mode accepts. |
-| `questionnaire_rules` | Derived from the allowed fields — not a second copy. |
 
 `allow_contract_subclasses` makes the asymmetry between modes explicit: `DEFAULT` sets it
 `False` so a Hacker contract is rejected, `HACKER` sets it `True`. Register a mode with
 `register_profile(...)` and read it back with `profile_for(mode)`; an unregistered mode
 raises `PolicyError` listing the registered ones.
 
-### Lifecycle Modules
-* **`questionnaire.builder`**: Takes the mode's rules from its profile and emits an empty `QuestionnaireBundle`.
-* **`questionnaire.resolver`**: 
-  * Validates the completed response.
-  * Coerces optional risk and budget models.
-  * Verifies data types and allowed fields.
-  * Emits the final `CompilerInput`.
-* **`policy.py`**: Independently validates correctness and estimates the overall parameter space before capping and allocating the generation budget. The per-phase split is delegated to the shared `budget.allocate_examples` leaf: a `phase_split` is read as **relative proportions** (normalized by its own sum, so a split that does not add up to 1.0 still consumes the whole budget) and distributed by the **largest-remainder** method with ties broken by phase name — so the result is independent of key order and always sums to the endpoint budget.
-* **`budget.allocate_examples`**: The single pure unit both the questionnaire policy and the engine share, so the two layers split a budget identically. At execution the **generation plan is authoritative**: a phase the plan did not fund runs zero examples, so a narrow budget runs exactly the phases it funds; only a plan-less endpoint falls back to its budget split, where a phase the split cannot cover is an error rather than a silent minimum of one.
+### Policy layer (`policy/validators.py`)
+
+The input-validation layer of the compiler boundary. It validates the
+`CompilerInput`/`EndpointInfo` an external producer builds, before it reaches the
+compiler; every check raises `PolicyError`. The four endpoint-level validators are
+exported from the package root:
+
+| Validator | Checks |
+| :--- | :--- |
+| `validate_endpoint_contract_types(endpoint)` | Every parameter contract in every zone declares a `type`. |
+| `validate_endpoint_contract_allowed_fields(endpoint, *, strategy_mode)` | Every contract uses only the fields the mode's profile allows for its declared type (`profile_for(strategy_mode).allowed_fields_by_type`). |
+| `validate_endpoint_contract_range_consistency(endpoint)` | Declared bounds describe a non-empty range (`minimum`/`maximum` and their exclusive variants, `minLength`/`maxLength`, `minItems`/`maxItems`). |
+| `validate_property_field_references(semantic_property, *, known_fields)` | Every field a `SemanticProperty`'s expression references is in `known_fields`. The caller supplies the set — request parameters for an `input_constraint`, response body fields for a `response_invariant` — so the validator never decides which one applies. |
+
+`collect_field_references(expression)` is the helper the last one is built on; it walks
+the expression tree and returns every referenced field name. In production these
+validators run inside the orchestrator's fuzz adapter, right after it builds each
+`EndpointInfo` from the fused contract.
+
+### Budget
+* **`strategy_compiler.combination_limits`**: Estimates the overall parameter space of an endpoint before capping and allocating the generation budget. The per-phase split is delegated to the shared `budget.allocate_examples` leaf: a `phase_split` is read as **relative proportions** (normalized by its own sum, so a split that does not add up to 1.0 still consumes the whole budget) and distributed by the **largest-remainder** method with ties broken by phase name — so the result is independent of key order and always sums to the endpoint budget.
+* **`budget.allocate_examples`**: The single pure unit both the compiler and the engine share, so the two layers split a budget identically. At execution the **generation plan is authoritative**: a phase the plan did not fund runs zero examples, so a narrow budget runs exactly the phases it funds; only a plan-less endpoint falls back to its budget split, where a phase the split cannot cover is an error rather than a silent minimum of one.
 
 ---
 
@@ -404,12 +436,15 @@ stateless path.
 * **`StateLinkContract`**: Optional contract specifying:
   * `StateProduction`: A response value to capture.
   * `StateConsumption`: Target location to inject the saved value in subsequent calls.
-  * A transition invariant to validate between steps.
+  * A `TransitionInvariant` — the kernel's type, re-exported here — to validate between steps.
 * **Stateless Fallback**: Endpoints without `StateLinkContract` retain standard stateless behavior.
 * **Execution**: State links are passed via `CompiledExecutionEndpoint` and consumed exclusively by `StatefulFuzzer`. Stateful findings can output the complete multi-request sequence required to reproduce cross-endpoint bugs.
-* **Who fills the contract today**: a fixture/spec, not inference — the module is
-  agnostic about the producer. `semantic_inference` filling it via LLM is future
-  work, tracked separately.
+* **Who fills the contract today**: the orchestrator, not inference — its fuzz service
+  derives `StateLinkContract`s from the OpenAPI endpoint definitions
+  (`build_state_links`) and its adapter attaches them to each `EndpointInfo`. The
+  engine is agnostic about the producer. The kernel's `EndpointContract.transitions`
+  carries the same `TransitionInvariant` type for a producer-declared invariant, but
+  the adapter does not read it yet.
 
 #### Fine print on production/consumption
 
@@ -571,6 +606,24 @@ that actually reproduced the failure.
 
 ---
 
+## Characterization suite (`tests/characterization/`)
+
+A Golden Master net over the compiler and engine boundary, used to prove that a
+refactor of that boundary changes no observable output. It has two halves:
+
+* **Compiler goldens** (`test_compiler_golden.py`): a deterministic projection of
+  `compile_strategies` over representative inputs — default, hacker, stateful,
+  budget-with-deadline and an undeclared path parameter — recorded as JSON under
+  `golden/`. Everything is projected except the strategy objects themselves, which
+  reduce to their phase keys.
+* **Engine replay** (`test_engine_replay.py`): a trace recorded against the in-process
+  fixtures API (`fixtures/replay_trace.json`) is re-sent in replay mode and must reach
+  exact fidelity.
+
+Goldens and the recorded trace are never rewritten silently: they regenerate only when
+`SPECFORGE_UPDATE_GOLDENS=1` is set, and a red golden is either a real behavior change
+(fix production) or an intended one (regenerate and explain why in the commit).
+
 ## Operational Constants & System Invariants
 
 ### Configuration (`src/constants.py`)
@@ -582,7 +635,7 @@ Centralizes operational defaults including maximum example counts, phase splits 
 
 | Exception | Raised when |
 |---|---|
-| `PolicyError` | A contract, rule or field breaks a questionnaire constraint. |
+| `PolicyError` | A `CompilerInput` breaks a policy-layer constraint: a contract without a `type`, a field the mode's profile does not allow, an empty range, a semantic property referencing an unknown field, or an unregistered strategy mode. |
 | `StrategyCompilationError` | A contract has no registered compiler to translate it into a Hypothesis strategy. |
 | `EngineError` | An execution-time invariant of the engine is violated (e.g. a missing path param). |
 | `StatefulLinkError` | A state link can't be honored during stateful fuzzing. Subclass of `EngineError`; carries the offending `endpoint_id` and, once exploration had started, the exploration it interrupted (`partial_exploration`). |

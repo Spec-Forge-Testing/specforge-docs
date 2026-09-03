@@ -607,6 +607,8 @@ produces it ([ADR-008](#adr-008)):
 | An empty route on the method — `@GetMapping(value = {"", "/"})` | the route is entirely the class's |
 | The verb inside an array — `method = { HEAD, OPTIONS, GET, … }` | of seven verbs it found one |
 | Attributes in any order | Java does not order annotation attributes |
+| The route behind another attribute — `@PostMapping(consumes = X, value = "/y")` | webgoat's `resetPassword` died ambiguous |
+| A route split with `+` — `"…/{version:" + Version.PATTERN + "}"` | two routes sharing a prefix became indistinguishable |
 
 Three guards keep the additions from costing more than they give:
 
@@ -624,6 +626,11 @@ Three guards keep the additions from costing more than they give:
 ### Consequences
 
 87% → 96% on the derived corpus.
+
+The JAX-RS patterns also dropped their character window: what ties an annotation
+to a method is `[^;{]`, which crosses neither a statement nor a block, and
+counting characters on top of that only adds an arbitrary ceiling — 400 lost a
+scout-api signature by 16.
 
 The first two guards answer the same confusion from opposite sides: **the same
 syntax asks for a route and serves it**. It is a property of the corpus, not of
@@ -670,3 +677,24 @@ Anything wider — `\w+` alone — would also match a name starting with a digit
 which no language allows, and would start matching the numeric parts of paths.
 
 ---
+
+---
+
+## ADR-054 — Cuando la ruta no alcanza, decide quién corrobora { #adr-054 }
+
+**Status:** accepted · `locator/matcher.py`
+
+Dos estrategias más para cuando la ruta no está donde se la busca: el
+sub-recurso de JAX-RS, que la declara una clase y la atiende otra, y el sufijo
+de Springfox, que publica `getOrders` como `getOrdersUsingGET`.
+
+Cuando queda más de un candidato desempatan señales que el código da —rutas de
+clase que no llevan al endpoint, estereotipo de controlador frente a cliente
+REST, caso exacto, y el nombre del archivo cuando **ninguno** se anuncia, que es
+lo que pasa con Swagger Inflector—. Un `operationId` que se reduce a un verbo
+genérico no decide solo: Springfox nombra `handle` a los endpoints de Actuator,
+y ese nombre lo define cualquier clase.
+
+Ningún desempate inventa candidatos, y que ninguno declare la ruta no es una
+ambigüedad entre todos sino que ninguno la atiende: el endpoint cae en
+`ControllerNotFoundError`, que es la verdad.

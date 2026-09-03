@@ -191,3 +191,6 @@ duplication [ADR-019](#adr-019) removed.
 The suite grew by 58 cases and now compiles all twelve queries against their real
 grammars, which is the check that would have caught the C# defect the day it was
 written.
+
+Lo mismo con `protocol_function_declaration` en Swift: sin él la cadena se
+cortaba antes del protocolo, aunque las interfaces de Java ya entraban.

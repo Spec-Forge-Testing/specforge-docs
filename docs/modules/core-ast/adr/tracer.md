@@ -201,6 +201,10 @@ has to be added there by hand or its siblings are never swept.
 
 ---
 
+PHP se suma después: en PSR-4 el namespace **es** la carpeta, así que la clase
+padre del mismo namespace se usa sin `use`, y ahí viven los métodos que el
+handler llama por `$this->`.
+
 ## ADR-030 — The non-traceable table is per language and includes what is never imported { #adr-030 }
 
 **Status:** accepted · `tracer/constants.py`
@@ -507,3 +511,34 @@ This moves no metric on its own. The call that exposes the case,
 without the import resolving there was no way to reach that point at all — which
 is worth recording, because a change that moves no number is the one someone
 reverts believing it does nothing.
+
+---
+
+## ADR-052 — El vocabulario de llamadas se amplía por evidencia { #adr-052 }
+
+**Status:** accepted · `tracer/constants.py`
+
+Cada gramática escribe `a.b()` a su manera y la tabla conocía solo algunas: se
+agregan al aparecer —`member_call_expression` de PHP, `field_access` y el `this`
+solo de Java, `field_expression` de Rust con su receptor bajo `value`, la
+referencia `this::x`, y el pronombre `super`, cuyo tipo es la superclase—.
+También entra el patrón `receptor . nombre (` leído entre los tokens de un
+macro, porque tree-sitter no le da estructura a lo que un macro recibe.
+
+Sin la entrada de Rust **ninguna** llamada a método del lenguaje se veía. Es lo
+que [ADR-025](#adr-025) anticipa: agregar un lenguaje es agregar entradas.
+
+---
+
+## ADR-053 — Del receptor a su tipo, y del tipo a su archivo { #adr-053 }
+
+**Status:** accepted · `tracer/engine.py`, `cte/constants.py`
+
+Un controlador llama por el campo inyectado y no por el tipo, así que se sigue
+el tipo declarado hasta su import. Cuando nada declara el tipo, lo identifica el
+nombre del receptor —`profile` → `Profile`— exigiendo que haya **exactamente
+uno** así y que **además defina el método**: pedir solo lo segundo recuperaba 10
+dependencias metiendo 172 falsas.
+
+El archivo del tipo es el que se llama como él o, si ninguno, el único que lo
+declara: un archivo por tipo es convención de Swift y Java, no de Django.

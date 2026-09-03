@@ -69,3 +69,17 @@ The encoding is pinned to `cl100k_base`, which is GPT-3.5/4's. For a different
 model family the count is close but not exact — closer than the heuristic, and
 the reason it is one constant rather than a parameter is that no caller has
 needed a second one yet.
+
+---
+
+## ADR-056 — La completitud tiene tres estados { #adr-056 }
+
+**Status:** accepted · `models/llm_payload.py`, `packager/facade.py`
+
+`is_partial_context` era «hay llamadas sin resolver o el modo no es quirúrgico»,
+así que no haber detectado **ninguna** llamada se reportaba como contexto
+completo: 68 de 242 endpoints, y los 18 de `ruby_rails`.
+
+`completeness` agrega `not_assessed`, tomado del `CONFORMANCE_NOT_ASSESSED` de
+`contract_engine`: sin una llamada detectada no hay veredicto que dar. Es el
+modo de fallo que [ADR-038](quality.md#adr-038) describe, ahora visible.

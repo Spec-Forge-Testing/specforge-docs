@@ -201,6 +201,10 @@ has to be added there by hand or its siblings are never swept.
 
 ---
 
+PHP se suma después: en PSR-4 el namespace **es** la carpeta, así que la clase
+padre del mismo namespace se usa sin `use`, y ahí viven los métodos que el
+handler llama por `$this->`.
+
 ## ADR-030 — The non-traceable table is per language and includes what is never imported { #adr-030 }
 
 **Status:** accepted · `tracer/constants.py`
@@ -442,3 +446,99 @@ The tracer sweeps a directory for the definition it is after
 files — which it did not always do: `_try_add` required `is_file()`, so Go
 packages, Python packages, Rust modules and Swift modules were dropped in
 silence, in eight of the twelve languages.
+
+---
+
+## ADR-046 — `self` is not an external base, it is this file { #adr-046 }
+
+**Status:** accepted · `tracer/engine.py`
+
+### Context
+
+A qualified call survives only if its base is an import that resolved inside the
+repository ([ADR-026](#adr-026)). `self` is not an import, so
+`self.get_queryset()` was discarded alongside `svc.charge()`.
+
+That rule was written from the shape of a module-level handler. In a
+class-oriented framework it is exactly backwards: `self.x` is the **only** way a
+handler reaches its own dependencies.
+
+### Decision
+
+The instance pronoun — `self`, `this`, `cls`, `$this` — resolves as a local
+definition, which is what it is: a method of the same file.
+
+### Consequences
+
+Django went from tracing **zero** of its 19 endpoints to seven. Nothing else
+moved: no endpoint changed controller or handler, because this does not touch
+where the handler is, only how much context is gathered from it.
+
+The four other frameworks that trace nothing — ASP.NET, Laravel, Rails, Vapor —
+were not fixed by this, and each fails differently: an instance field as
+qualifier (`mediator.Send`), a member of an imported type
+(`Article.loadRelations`), and in Rails a controller so thin that there is
+genuinely almost nothing of the repository to trace.
+
+---
+
+## ADR-047 — A PSR-4 prefix maps to the directory, not to one inside it { #adr-047 }
+
+**Status:** accepted · `resolver/strategies.py`
+
+### Context
+
+A PSR-4 prefix names where the code starts. With `"App\": "app/"`, the class
+`App\Article` lives in `app/Article.php`.
+
+The resolver kept the first segment and looked for `app/App/Article.php`, so
+**no Laravel import resolved** and all three in a controller counted as
+third-party libraries.
+
+### Decision
+
+A candidate without the prefix is tried too, **last** — so a path that exists as
+written still wins first.
+
+### Consequences
+
+`Illuminate\Http\Request` still returns `None`, which is correct: it is genuinely
+external.
+
+This moves no metric on its own. The call that exposes the case,
+`Article::loadRelations()`, is an Eloquent scope: the method is defined as
+`scopeLoadRelations` and the framework drops the prefix when invoking it. But
+without the import resolving there was no way to reach that point at all — which
+is worth recording, because a change that moves no number is the one someone
+reverts believing it does nothing.
+
+---
+
+## ADR-052 — El vocabulario de llamadas se amplía por evidencia { #adr-052 }
+
+**Status:** accepted · `tracer/constants.py`
+
+Cada gramática escribe `a.b()` a su manera y la tabla conocía solo algunas: se
+agregan al aparecer —`member_call_expression` de PHP, `field_access` y el `this`
+solo de Java, `field_expression` de Rust con su receptor bajo `value`, la
+referencia `this::x`, y el pronombre `super`, cuyo tipo es la superclase—.
+También entra el patrón `receptor . nombre (` leído entre los tokens de un
+macro, porque tree-sitter no le da estructura a lo que un macro recibe.
+
+Sin la entrada de Rust **ninguna** llamada a método del lenguaje se veía. Es lo
+que [ADR-025](#adr-025) anticipa: agregar un lenguaje es agregar entradas.
+
+---
+
+## ADR-053 — Del receptor a su tipo, y del tipo a su archivo { #adr-053 }
+
+**Status:** accepted · `tracer/engine.py`, `cte/constants.py`
+
+Un controlador llama por el campo inyectado y no por el tipo, así que se sigue
+el tipo declarado hasta su import. Cuando nada declara el tipo, lo identifica el
+nombre del receptor —`profile` → `Profile`— exigiendo que haya **exactamente
+uno** así y que **además defina el método**: pedir solo lo segundo recuperaba 10
+dependencias metiendo 172 falsas.
+
+El archivo del tipo es el que se llama como él o, si ninguno, el único que lo
+declara: un archivo por tipo es convención de Swift y Java, no de Django.

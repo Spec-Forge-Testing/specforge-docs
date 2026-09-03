@@ -535,3 +535,166 @@ The same three-line check is repeated at four call sites instead of being lifted
 into a shared helper. Each site has a different notion of "the candidates" — a
 name, a `(file, name)` pair, a match object — so factoring it would mean a
 callback and more indirection than the check itself costs.
+
+---
+
+## ADR-049 — A route declared as a constant is expanded before matching { #adr-049 }
+
+**Status:** accepted · `locator/scanner.py`
+
+### Context
+
+Java and C# let the route be declared apart and referenced from the annotation:
+
+```java
+public static final String ROUTE = "/tan";
+@PostMapping(ROUTE)
+```
+
+To a route pattern that is an identifier, not a route. The endpoint was not
+found, and worse: it fell back to the handler of the route without the suffix.
+In `market`, `PUT /customer/cart/delivery` returned `addItem`, which serves
+`PUT /customer/cart` — one endpoint handing over another's code.
+
+### Decision
+
+Each reference is replaced by its literal **inside annotations only**, before
+the patterns run. When the constant lives in another class — `Constant.V1`,
+`Constants.API_RESOURCE_CONTRIBUTORS` — a few levels are climbed looking for
+`<Class>.java`: the constants class is usually a sibling of the package that uses
+it, not an arbitrary file of the repository.
+
+Java also allows writing the modifier once and chaining constants with commas, so
+the declaration and the `name = "value"` pairs inside it are read separately.
+
+### Consequences
+
+Restricting expansion to annotations is what makes it safe: outside them the same
+identifier may be a method's name — a constant `B` and a method `B()` coexist
+without trouble — and substituting it would make the method unfindable. The
+unscoped version did exactly that.
+
+Resolving more routes also surfaces ambiguity that was hidden. In
+`cwa-verification` the internal controller declares the same full route as the
+external one; while its constant did not resolve it never competed, and now
+`POST /version/v1/testresult` is genuinely ambiguous — which by
+[ADR-016](#adr-016) is the right answer.
+
+Measured against 349 endpoints derived from source: 305 → 313.
+
+---
+
+## ADR-050 — The route table grows by form, and each form needs its guard { #adr-050 }
+
+**Status:** accepted · `locator/patterns.toml`
+
+### Context
+
+Measured against expectations derived from source rather than captured from the
+pipeline, the locator sat at 87%. The misses were not exotic: they were ordinary
+ways of writing a route that the table did not know.
+
+### Decision
+
+Forms are added as they appear, each scoped to the languages whose grammar
+produces it ([ADR-008](#adr-008)):
+
+| Form | Was missing |
+| --- | --- |
+| JAX-RS in Java — verb and route in separate adjacent annotations, either order | no `@Path` project located anything |
+| `@RequestMapping` with no `method` | Spring treats it as every verb; only the GET was found |
+| The route inside an array — `{"/x"}`, and Kotlin's `arrayOf("/x")` and `["/x"]` | `tracking-system` located none of its 67 |
+| An empty route on the method — `@GetMapping(value = {"", "/"})` | the route is entirely the class's |
+| The verb inside an array — `method = { HEAD, OPTIONS, GET, … }` | of seven verbs it found one |
+| Attributes in any order | Java does not order annotation attributes |
+| The route behind another attribute — `@PostMapping(consumes = X, value = "/y")` | webgoat's `resetPassword` died ambiguous |
+| A route split with `+` — `"…/{version:" + Version.PATTERN + "}"` | two routes sharing a prefix became indistinguishable |
+
+Three guards keep the additions from costing more than they give:
+
+- The JAX-RS patterns require the method to have a **body**. A REST client
+  interface declares the same annotations for the route it *consumes*; without
+  this, microcks' connector outbid its own controller.
+- `@RequestMapping` with no `method` must not be followed by a class
+  declaration — the class-level annotation has no `method` either, and without
+  the guard the handler became the first function in the file.
+- In JavaScript the receiver `$` is excluded. jQuery asks with
+  `$.get("/x", callback)` exactly as Express serves with
+  `router.get("/x", handler)`; in webgoat, `jwt-voting.js` made `GET /JWT/votings`
+  ambiguous against the single Java file that declares it.
+
+### Consequences
+
+87% → 96% on the derived corpus.
+
+The JAX-RS patterns also dropped their character window: what ties an annotation
+to a method is `[^;{]`, which crosses neither a statement nor a block, and
+counting characters on top of that only adds an arbitrary ceiling — 400 lost a
+scout-api signature by 16.
+
+The first two guards answer the same confusion from opposite sides: **the same
+syntax asks for a route and serves it**. It is a property of the corpus, not of
+any framework — a repository containing its own frontend keeps producing it —
+and each guard stays narrow on purpose. `axios`, `fetch` and `http.get` are also
+clients and are not excluded; the day one causes a false match it gets its own
+guard, because every widening of "what is not a route declaration" risks
+discarding one that is.
+
+What every one of these forms has in common is the mistake behind them: the
+pattern encoded not just *what* the annotation says but *how it was spelled*.
+Each such assumption is a place where a project that writes it differently
+disappears from the results without a word.
+
+## ADR-051 — An identifier is not necessarily ASCII { #adr-051 }
+
+**Status:** accepted · `locator/constants.py`
+
+### Context
+
+Seventeen patterns spelled a name as `[A-Za-z_][A-Za-z0-9_]*`. Java and Kotlin
+admit Unicode identifiers, and EMB contains an entire project written that way:
+`familie-ba-sak` names its handlers `kjørSchedulerForAutobrev`,
+`mottaFødselshendelse`, `utførSatsendringPåFagsak`.
+
+### Decision
+
+Names are matched with `[^\W\d]\w*` — "letter or underscore" under Unicode —
+kept in one constant, `NOMBRE_DE_SIMBOLO`, so the seventeen spellings cannot
+drift apart again.
+
+### Consequences
+
+The failure this fixes is the worst kind the package can produce. The
+ASCII-only pattern did not fail to match: it **skipped forward** to the next
+name that happened to be ASCII, so `GET /internal/autobrev` came back as
+`redirectTilBarnetrygd` — right file, wrong handler, plausible name, same class.
+Nothing in the result said anything was wrong.
+
+Eight endpoints of `familie-ba-sak` were affected, all in the same file. Every
+one of them would have shipped another endpoint's source to the model.
+
+Anything wider — `\w+` alone — would also match a name starting with a digit,
+which no language allows, and would start matching the numeric parts of paths.
+
+---
+
+---
+
+## ADR-054 — Cuando la ruta no alcanza, decide quién corrobora { #adr-054 }
+
+**Status:** accepted · `locator/matcher.py`
+
+Dos estrategias más para cuando la ruta no está donde se la busca: el
+sub-recurso de JAX-RS, que la declara una clase y la atiende otra, y el sufijo
+de Springfox, que publica `getOrders` como `getOrdersUsingGET`.
+
+Cuando queda más de un candidato desempatan señales que el código da —rutas de
+clase que no llevan al endpoint, estereotipo de controlador frente a cliente
+REST, caso exacto, y el nombre del archivo cuando **ninguno** se anuncia, que es
+lo que pasa con Swagger Inflector—. Un `operationId` que se reduce a un verbo
+genérico no decide solo: Springfox nombra `handle` a los endpoints de Actuator,
+y ese nombre lo define cualquier clase.
+
+Ningún desempate inventa candidatos, y que ninguno declare la ruta no es una
+ambigüedad entre todos sino que ninguno la atiende: el endpoint cae en
+`ControllerNotFoundError`, que es la verdad.

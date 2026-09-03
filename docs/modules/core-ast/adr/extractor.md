@@ -64,3 +64,16 @@ return whichever came first. It also means an intermediate segment must itself b
 captured as a definition — which is why `typescript.scm` captures an object key
 whose value is a function or an object, and only those two, so that ordinary
 configuration keys do not become definitions.
+
+---
+
+## ADR-055 — Elegir la definición dentro del archivo { #adr-055 }
+
+**Status:** accepted · `extractor/function.py`, `locator/handler.py`
+
+Un archivo define varias funciones que responden al mismo nombre, y desempatan
+la aridad del sitio de llamada y la declaración de ruta que halló el localizador.
+
+La búsqueda saltea anotaciones y también **prosa**: `pay-publicapi` escribe
+`description = "…to [take (‘capture’) a delayed payment…]"` entre la ruta y el
+método, y `take (` se leía como la definición buscada.

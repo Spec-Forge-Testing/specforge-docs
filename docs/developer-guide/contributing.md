@@ -1,7 +1,21 @@
-# Development & Testing
+# Contributing & Testing
 
 Use this page when changing Spec Forge itself. For initial CLI setup, see
-[Setup](setup.md); for runtime profiles, see [Docker Compose](docker.md).
+[Installation](../user-guide/installation.md); for runtime profiles, see
+[Running with Docker](../user-guide/docker.md).
+
+## Local setup
+
+Install the CLI editable, plus the task runner and the linter, then register the
+pre-commit hooks:
+
+```bash
+pip install -e core poethepoet ruff
+poe setup-hooks
+```
+
+`poe` drives the repo-wide tasks (`poe test`, `poe dev`, `poe demo`); `ruff` is
+the linter every module suite expects.
 
 ## Test the repository
 
@@ -46,6 +60,15 @@ Only these modules need a different workflow:
 - **Contracts (`lib/contracts`)**: `pip install -e ".[dev]"`, then run
   `pytest -q --cov=src/specforge_contracts --cov-report=term-missing`, then
   `ruff check src tests`.
+- **Custom Schemathesis (`lib/custom_schemathesis`)**: it depends on the shared
+  kernel at runtime, so install `lib/contracts` first —
+  `pip install -e ../contracts -e ".[dev]"` from the module directory, the same
+  command CI runs — then `python -m pytest -q`. Its `fixtures-api` image is built
+  from the repository root for the same reason
+  (`docker compose run --rm fixtures-api ...` from the module directory already
+  does this). `tests/characterization/` is the Golden Master net over the
+  compiler and engine boundary; its goldens regenerate only under
+  `SPECFORGE_UPDATE_GOLDENS=1`.
 - **Storage (`lib/storage`)**: build its image with
   `docker build -t storage-engine .`, then run
   `docker run --rm storage-engine pytest -v --cov=src/storage --cov-report=term-missing`.

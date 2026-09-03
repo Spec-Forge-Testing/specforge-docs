@@ -10,8 +10,10 @@ deep bugs (e.g. `500`s on invalid input instead of proper `4xx`s).
 2. **Analyze (AST)** — statically inspect handler code (tree-sitter, zero execution).
 3. **Infer (LLM)** — extract unstated invariants (bounds, enums, cross-field logic).
 4. **Fuse** — merge OpenAPI structure with LLM invariants into one unified contract.
-5. **Fuzz** — compile the contract into Hypothesis strategies, run async HTTP tests.
-6. **Persist** — log runs/endpoints/results to SQLite.
+5. **Fuzz** — compile the contract into Hypothesis strategies, run async HTTP tests,
+   recording every request/response as an execution trace.
+6. **Persist** — log runs/endpoints/results to SQLite, keeping the trace as the
+   artifact that makes a run replayable.
 
 ```mermaid
 flowchart TD
@@ -51,10 +53,11 @@ managing its own dependencies, tests, and Docker setup.
 ```text
 core/                       # specforge CLI orchestrator (specforge_cli)
 lib/
+├── contracts/               # shared kernel: EndpointContract + the Spec Forge vocabulary
 ├── contract_engine/        # OpenAPI ingestion + adaptation + fusion
 ├── core_ast/                # tree-sitter static analysis
 ├── semantic_inference/      # LLM router + inference
-├── custom_schemathesis/     # questionnaire + strategy compiler + engine (stateless & stateful fuzzing)
+├── custom_schemathesis/     # policy + strategy compiler + engine (stateless & stateful fuzzing)
 └── storage/                 # SQLite persistence
 docker-compose.yml           # monorepo orchestration (root entry point)
 ```
@@ -64,6 +67,7 @@ docker-compose.yml           # monorepo orchestration (root entry point)
 | Module | Responsibility |
 | :--- | :--- |
 | `core/` | Interactive CLI/REPL (Typer, Rich, prompt_toolkit): navigation + command orchestration. |
+| `lib/contracts/` | Shared kernel (`specforge_contracts`): the canonical `EndpointContract` and the risk, attack, transition and semantic-property vocabulary every stage imports. |
 | `lib/contract_engine/` | Validates OpenAPI 3.x (`prance`), translates Swagger 2.0 into it, flattens endpoints, fuses base schemas with LLM invariants. |
 | `lib/core_ast/` | Deterministic, stateless AST analysis (`tree-sitter`); locates routes/handlers/deps via `patterns.toml`. |
 | `lib/semantic_inference/` | Provider-agnostic LLM interface (`LiteLLM`): retries, fallbacks, invariant inference. |
@@ -79,8 +83,9 @@ docker-compose.yml           # monorepo orchestration (root entry point)
   engines together.
 - **Boundary DTOs** — stages communicate only through Pydantic DTOs, never shared mutable state.
 - **Determinism** — static/transform stages are deterministic and side-effect free: same input →
-  same output or domain exception. I/O happens only at module edges. The execution engine uses
-  explicit seeds for reproducible non-determinism.
+  same output or domain exception. I/O happens only at module edges. The fuzzer is deliberately
+  non-deterministic (Hypothesis-driven, no run seed); reproducibility comes from the recorded
+  execution trace, replayed request by request.
 
 ## The unified contract
 
@@ -94,3 +99,12 @@ The boundary object between the AI side and the execution engine is `EndpointCon
 - `extra="forbid"` forces LLM self-correction (hallucinated keywords fail validation).
 - **Identity vs. invariants** — `method`/`path_url` are routing identity, always sourced from the
   OpenAPI base. The LLM only contributes validation constraints, never overrides identity.
+- **One vocabulary end to end** — the execution engine never sees the LLM's output. The
+  producer emits the kernel's `EndpointContract`, the orchestrator's adapter translates it into
+  the engine's `CompilerInput`, and the engine's `policy` layer validates it. The shared
+  vocabulary (`EndpointRisk`, the `AttackProfile` literal, `TransitionInvariant`,
+  `SemanticProperty`) is imported by the engine from the kernel, not redefined, so it crosses
+  that seam untranslated; the types the engine keeps of its own — the per-value
+  `HackerStrategyContract`, the endpoint-level `EndpointAttackContract`, the state-link family
+  — are filled by the adapter from the contract's `attack`, its `field_hints` and its
+  `transitions`.

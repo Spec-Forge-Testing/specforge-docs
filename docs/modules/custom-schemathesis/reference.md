@@ -1,4 +1,4 @@
-# Custom Schemathesis reference
+# Custom Schemathesis — Reference
 
 This reference records the public boundaries and implementation decisions of the
 fuzzing engine. Start with the [overview](index.md) for the short version.
@@ -7,20 +7,21 @@ fuzzing engine. Start with the [overview](index.md) for the short version.
 
 ```mermaid
 flowchart TD
-    subgraph L1 ["1. questionnaire"]
+    subgraph L1 ["1. boundary"]
         direction LR
-        SM["StrategyMode"] --> QB["QuestionnaireBundle"]
-        QB --> CI["CompilerInput"]
+        EC["EndpointContract<br/><i>(kernel)</i>"] --> AD["orchestrator adapter"]
+        AD --> CI["CompilerInput"]
+        CI --> PV["policy validators"]
     end
 
     subgraph L2 ["2. strategy_compiler"]
         direction LR
-        CI --> EI["EngineInput"]
+        PV --> CO["CompilationOutcome<br/>engine_input · exclusions"]
     end
 
     subgraph L3 ["3. engine"]
         direction LR
-        EI --> ERR[("EngineRunResult<br/>crash reports · stats · trace")]
+        CO --> ERR[("EngineRunResult<br/>crash reports · stats · trace")]
     end
 
     L1 ==> L2
@@ -32,41 +33,70 @@ The four layers have deliberately separate responsibilities:
 | Layer | Owns | Does not do |
 |---|---|---|
 | `models` | Typed contracts, budgets, inputs and results. | I/O or compilation. |
-| `questionnaire` | LLM template and validation. | Generate strategies or send requests. |
+| `policy` | Validation of the `CompilerInput` an external producer builds. | Build the input, generate strategies or send requests. |
 | `strategy_compiler` | Contract → Hypothesis strategy translation. | Reinterpret validated policy. |
 | `engine` | Request execution and reporting. | Know contract types or strategy mode. |
 
+The engine never touches the LLM's output. The producer (the LLM, or a fixture) emits
+the shared kernel's `EndpointContract`; the orchestrator's adapter translates it into a
+`CompilerInput`; `policy` validates that input; `compile_strategies` compiles it and
+`run` executes it. Nothing upstream of `CompilerInput` lives in this package.
+
 ### Public entry point (`main.py`)
 
-A minimal facade wires the three layers together and adds no logic of its own —
-callers only ever need these four functions:
+A minimal facade wires the layers together and adds no logic of its own —
+callers only ever need these two functions:
 
 ```python
-build_questionnaire(mode)          -> QuestionnaireBundle
-resolve_questionnaire(bundle)      -> ResolvedQuestionnaire
-compile_strategies(compiler_input) -> EngineInput
-run(engine_input, config, *, mode=None, options=None) -> EngineRunResult
+compile_strategies(compiler_input) -> CompilationOutcome
+run(outcome.engine_input, config, *, mode=None, options=None) -> EngineRunResult
 ```
 
 `mode` defaults to `ExecutionMode.STATELESS`; `options` carries that mode's settings.
 The former `stateful` / `stateful_config` pair still works for one version and emits a
 `DeprecationWarning`.
 
-## Models and Questionnaire
+The package root also exports the four policy validators the orchestrator runs before
+compiling — see *Policy layer* below — and the contract types the orchestrator's adapter
+builds for the fuzz input: `EndpointAttackContract`, `HackerStrategyContract` and the
+kernel's `TransitionInvariant`, alongside the state-link family.
+
+## Models and Policy
 
 ### Strategy Contracts & Models
 * **`BaseStrategyContract`**: Closed standard contract enforcing JSON Schema constraints, `nullable`, and `extra="forbid"`.
 * **`HackerStrategyContract`**: Extends `BaseStrategyContract` with **per-value** offensive knobs only:
-  * `attack_profiles` (payload-family selection) and the `include_*` toggles (encoded, null, large, empty, unicode, control-character, nested-object, ... variants).
+  * `attack_profiles` (payload-family selection, typed as the kernel's `AttackProfile` literal — `HackerAttackProfile` is an alias of it) and the `include_*` toggles (encoded, null, large, empty, unicode, control-character, nested-object, ... variants).
   * *Note:* Never stores a payload directly; compilation determines concrete values dynamically.
-* **`EndpointAttackContract`**: **Endpoint-scoped** attack configuration — `attack_profiles`, `focus_fields`, `sensitive_fields`, `aggressiveness`, `mutation_depth` — describing the whole endpoint rather than a single value. Held by `EndpointInfo.attack`.
+* **`EndpointAttackContract`**: **Endpoint-scoped** attack configuration — `attack_profiles`, `focus_fields`, `sensitive_fields`, `aggressiveness`, `mutation_depth` — describing the whole endpoint rather than a single value. Held by `EndpointInfo.attack`. It has no `field_hints`: the kernel's per-field `FieldAttack` hints are promoted by the orchestrator onto the addressed field's `HackerStrategyContract`, under the hacker profile only.
 * **`ALLOWED_FIELDS_BY_TYPE` (and Hacker variant)**: Immutable type-to-field lookup tables acting as the single source of truth for parameters the LLM is permitted to configure. The hacker variant is **derived** from the model's own per-value fields, so a new per-value knob extends it automatically and endpoint/request-scoped knobs can never leak in.
-* **`EndpointRiskContract` & `EndpointBudgetContract`**: Decoupled, independent contracts—risk prioritization (pure scoring metadata) and sample-spend allocation (`phase_split`, the single source of truth for the phase budget) address separate operational concerns.
-* **`EndpointInfo`**: Encapsulates endpoint identity alongside dedicated contracts for all HTTP zones: path, query, header, and body.
+* **`EndpointRiskContract` & `EndpointBudgetContract`**: Decoupled, independent contracts—risk prioritization (pure scoring metadata; `EndpointRiskContract` is the kernel's `EndpointRisk` under the engine's name, not a copy) and sample-spend allocation (`phase_split`, the single source of truth for the phase budget) address separate operational concerns.
+* **`EndpointInfo`**: Encapsulates endpoint identity alongside dedicated contracts for all HTTP zones: path, query, header, and body — plus the optional `risk`, `budget`, `attack`, `state_link` and `semantic_properties` slots. `semantic_properties` is a list of the kernel's `SemanticProperty`, carried from the producer and validated for field references by the orchestrator; no engine component consumes it yet. `risk` and `attack` are carried the same way — projected from the fused contract by the orchestrator, read by no engine component yet; what the attack phase reads is the per-value `HackerStrategyContract`.
+
+### Shared vocabulary from the kernel (`models/compiler/contracts/`)
+
+`EndpointRisk` (re-exported as `EndpointRiskContract`), the `AttackProfile` literal,
+`TransitionInvariant`, `ZoneLocation` and the `SemanticProperty` expression tree
+(`SemanticProperty`, `PropertyClass`, `PropertyExpression`, `FieldReference`,
+`LiteralExpression`, `BinaryOperation`, `LogicalCombination`, `Conditional`,
+`Aggregation`) are **not defined in this package**. They are imported from
+`specforge_contracts` — the shared kernel, a declared runtime dependency
+(`specforge-contracts>=0.2.0`) — and re-exported from `models.compiler.contracts`, so
+internal imports keep one surface and the objects the producer emits reach the engine
+untranslated. `StateProduction`, `StateConsumption` and `StateLinkContract` stay
+engine-owned in `state_link.py`: they describe how the fuzzer chains requests, which is
+execution, not producer vocabulary. `EndpointAttackContract` is engine-owned too,
+deliberately without the kernel's `field_hints`.
 
 ### Pipeline Input Containers
 * **`CompilerInput`**: Global `StrategyMode` paired with the target endpoint list.
 * **`EngineInput`**: Contains compiled endpoints along with global execution configurations.
+* **`CompilationOutcome`**: What `compile()` actually returns — `engine_input` (the
+  endpoints that compiled) plus `exclusions` (one `EndpointExclusion` per endpoint that
+  didn't). See *Compilation Pipeline* below.
+* **`EndpointExclusion`**: A rejected endpoint's identity (`method`, `path_url`) and the
+  compiler's `reason` for it, as a string — never an exception instance, so the DTO stays
+  serializable.
 
 ### Strategy Mode Profiles (`models/strategy_profile.py`)
 
@@ -78,32 +108,57 @@ branches on the mode:
 | `phase_split` | Which phases compile (its keys **are** the phase list) and how examples divide between them. |
 | `allowed_fields_by_type` | Which contract fields are legal per JSON Schema type. |
 | `contract_type` + `allow_contract_subclasses` | Which contract type the mode accepts. |
-| `questionnaire_rules` | Derived from the allowed fields — not a second copy. |
 
 `allow_contract_subclasses` makes the asymmetry between modes explicit: `DEFAULT` sets it
 `False` so a Hacker contract is rejected, `HACKER` sets it `True`. Register a mode with
 `register_profile(...)` and read it back with `profile_for(mode)`; an unregistered mode
 raises `PolicyError` listing the registered ones.
 
-### Lifecycle Modules
-* **`questionnaire.builder`**: Takes the mode's rules from its profile and emits an empty `QuestionnaireBundle`.
-* **`questionnaire.resolver`**: 
-  * Validates the completed response.
-  * Coerces optional risk and budget models.
-  * Verifies data types and allowed fields.
-  * Emits the final `CompilerInput`.
-* **`policy.py`**: Independently validates correctness and estimates the overall parameter space before capping and allocating the generation budget. The per-phase split is delegated to the shared `budget.allocate_examples` leaf: a `phase_split` is read as **relative proportions** (normalized by its own sum, so a split that does not add up to 1.0 still consumes the whole budget) and distributed by the **largest-remainder** method with ties broken by phase name — so the result is independent of key order and always sums to the endpoint budget.
-* **`budget.allocate_examples`**: The single pure unit both the questionnaire policy and the engine share, so the two layers split a budget identically. At execution the **generation plan is authoritative**: a phase the plan did not fund runs zero examples, so a narrow budget runs exactly the phases it funds; only a plan-less endpoint falls back to its budget split, where a phase the split cannot cover is an error rather than a silent minimum of one.
+### Policy layer (`policy/validators.py`)
+
+The input-validation layer of the compiler boundary. It validates the
+`CompilerInput`/`EndpointInfo` an external producer builds, before it reaches the
+compiler; every check raises `PolicyError`. The four endpoint-level validators are
+exported from the package root:
+
+| Validator | Checks |
+| :--- | :--- |
+| `validate_endpoint_contract_types(endpoint)` | Every parameter contract in every zone declares a `type`. |
+| `validate_endpoint_contract_allowed_fields(endpoint, *, strategy_mode)` | Every contract uses only the fields the mode's profile allows for its declared type (`profile_for(strategy_mode).allowed_fields_by_type`). |
+| `validate_endpoint_contract_range_consistency(endpoint)` | Declared bounds describe a non-empty range (`minimum`/`maximum` and their exclusive variants, `minLength`/`maxLength`, `minItems`/`maxItems`). |
+| `validate_property_field_references(semantic_property, *, known_fields)` | Every field a `SemanticProperty`'s expression references is in `known_fields`. The caller supplies the set — request parameters for an `input_constraint`, response body fields for a `response_invariant` — so the validator never decides which one applies. |
+
+`collect_field_references(expression)` is the helper the last one is built on; it walks
+the expression tree and returns every referenced field name. In production these
+validators run inside the orchestrator's fuzz adapter, right after it builds each
+`EndpointInfo` from the fused contract.
+
+### Budget
+* **`strategy_compiler.combination_limits`**: Estimates the overall parameter space of an endpoint before capping and allocating the generation budget. The per-phase split is delegated to the shared `budget.allocate_examples` leaf: a `phase_split` is read as **relative proportions** (normalized by its own sum, so a split that does not add up to 1.0 still consumes the whole budget) and distributed by the **largest-remainder** method with ties broken by phase name — so the result is independent of key order and always sums to the endpoint budget.
+* **`budget.allocate_examples`**: The single pure unit both the compiler and the engine share, so the two layers split a budget identically. At execution the **generation plan is authoritative**: a phase the plan did not fund runs zero examples, so a narrow budget runs exactly the phases it funds; only a plan-less endpoint falls back to its budget split, where a phase the split cannot cover is an error rather than a silent minimum of one.
 
 ---
 
 ## Strategy Compiler
 
 ### Compilation Pipeline
-The entry point `compile(CompilerInput) -> EngineInput` processes each HTTP zone independently:
-* **Path Parameters**: Always marked as required.
+The entry point `compile(CompilerInput) -> CompilationOutcome` compiles the batch endpoint
+by endpoint, and processes each endpoint's HTTP zones independently:
+* **Path Parameters**: Always marked as required. A generated value the request
+  injector would render as an unsendable segment (`""`, `"."`, `".."` — the three RFC
+  3986 normalization silently strips, re-routing the request) is filtered out of the
+  path-zone strategy, so the compiler never hands the engine an example it cannot
+  faithfully send.
 * **Phases**: Taken from `profile_for(strategy_mode).phases` — `DEFAULT` yields `valid`, `boundary`, `invalid`; `HACKER` adds `attack`. The compiler never branches on the mode itself.
 * **Output Hierarchy**: `CompiledRequestPart` objects are grouped into `CompiledEndpointStrategies`, which assemble into `CompiledExecutionEndpoint`.
+* **Partial compilation**: a rejection while compiling one endpoint —
+  `EndpointCompilationError`, raised internally for an unresolvable path template or a
+  contract with no registered phase — does not abort the batch. `compile()` catches it,
+  reifies it into an `EndpointExclusion` and moves on to the next endpoint.
+  `EndpointCompilationError` itself never crosses the public facade: it is an
+  implementation detail of this catch, not an exported exception. A batch that excludes
+  every endpoint still returns a `CompilationOutcome` with an empty `engine_input` —
+  deciding that there is nothing left to fuzz is the caller's call, not the compiler's.
 
 ### Dispatch Registry & Extensibility
 There is one compilation dispatch: the generation phase registry. `compile_contract` is its facade:
@@ -311,6 +366,14 @@ production is a config change rather than a file edit, and rotating a credential
 not invalidate history. A generated header that overrides a config one of the same name
 counts as generated: its value is test data.
 
+The same rule applies to a URL's `user:pass@` userinfo: `TracedRequest.url` is recorded
+with it stripped, and `omitted_url_userinfo` flags that it was present, so a request
+that carried no userinfo at all stays distinguishable from one that had it removed.
+`engine/trace/url_userinfo.py` (`split_userinfo` / `inject_userinfo`) is the one place
+that parses or rebuilds it, shared by the recorder and by rehydration, which re-injects
+it from `ExecutionConfig.base_url` and refuses — an `EngineError` — when the live
+`base_url` carries no userinfo or targets a different host than the one recorded.
+
 `canonical_json` serializes with sorted keys and compact separators; `content_hash` is a
 SHA-256 over that form **excluding `sent_at_ms`**, since send moments are pacing rather
 than content. Serialization deliberately uses Python's JSON encoder instead of
@@ -327,11 +390,23 @@ excluded — the same predicate the trace itself uses to decide what to record.
 The reasons split by what the operator should do about them. `deadline_exceeded` is a
 run meeting its own budget: widen it. `infrastructure_abort` is one endpoint that stopped
 answering while the run went on without it — endpoint-local, so the run is truncated,
-not lost. `target_down` and `state_link_abort` are a fault that stopped the run: the
+not lost. `generation_exhausted` is the same kind of endpoint-local cut, for a different
+cause: one or more of the endpoint's phases hit `Unsatisfiable` or a stalled
+`FailedHealthCheck` before producing a single candidate to send — the strategy itself
+could not generate, not the target refusing to answer. `target_down` and
+`state_link_abort` are a fault that stopped the run: the
 target itself is gone (a liveness probe confirmed it in stateless mode; every rule
 endpoint the stateful run reached had its circuit breaker open), or a state link could
 not be honored. Only `state_link_abort` carries a `detail` — the engine's own message
-naming the field or zone that could not be honored, which is the only actionable part.
+naming the field or zone that could not be honored, which is the only actionable part;
+`generation_exhausted` names its exhausted phases the same way.
+
+**A hard cut outranks an exhausted one.** Within one endpoint's exploration, an
+`infrastructure_abort`, `deadline_exceeded` or `target_down` recorded while a phase was
+still running claims the truncation slot outright — a phase that legitimately never got
+a single candidate loses to a cut that actually happened. `generation_exhausted` is only
+recorded when no hard cut fired and at least one phase was skipped for lack of a
+candidate.
 
 **Stateful limitation:** the state machine minimizes by re-running shorter sequences, and
 those re-runs go through the same collector. In stateful mode the trace therefore also
@@ -343,19 +418,21 @@ stateless path.
 * **Explore Phase**: Executes tests and records all failures without raising exceptions, allowing test generation to continue uninterrupted. If transport failures pile up to `MAX_INFRA_FAILURES` in a row, that endpoint aborts and the run moves on to the next one — a dead endpoint never stalls the whole run. The abort is recorded in the trace as a truncation, so a partial run is never mistaken for a complete one. Exploration returns an `ExplorationOutcome` (results, raw findings, and the truncation when there was one).
   * **Liveness probe**: after `MAX_CONSECUTIVE_SERVER_ERRORS` 5xx in a row on one endpoint, the fuzzer re-sends the last **safe** request it saw answered cleanly anywhere in the run — this endpoint's or another's — restricted to `SAFE_PROBE_METHODS = {GET, HEAD, OPTIONS}`, never a write, which would create a second resource outside the budget. Any HTTP answer, a 500 included, proves the process is up; only a transport failure declares it `TARGET_DOWN`, which cuts the run before shrinking. No safe baseline seen yet means no probe at all, and confirming one endpoint's liveness stops it from being probed again for the rest of that pass (`liveness_confirmed`) — one extra request per endpoint, at most.
   * **Identities**: with `ExecutionConfig.identities` declared, each phase's example budget is split evenly across them (`engine/core/identities.py::share_budget`; the remainder goes to the first identities, and one the budget cannot reach gets no share); with none declared, a single anonymous pass runs exactly as before. `RawFinding.identity` records which one produced a given finding, and shrinking re-executes under that same identity rather than re-drawing.
+  * **Examples planned**: exploration builds one pass per `(phase, identity)`, and the sum of every pass's share — regardless of whether the phase went on to be skipped by `generation_exhausted` — is `ExplorationOutcome.examples_planned`, exposed per endpoint as `EndpointStats.examples_planned` (`0` in modes that don't measure it, stateful and replay). The gap against `requests` is unspent budget the truncation record explains.
 * **Shrink Phase**: Raw findings are first **grouped by signature** — endpoint, phase, violated invariant, status code, the identity label the request was sent under, and the *shape* of the response body (keys and their types, digit runs masked; never the values) — by the pure `engine/core/finding_grouper.py`, so the same symptom found under two identities groups, and later reports, separately. One representative per group is then minimized with `hypothesis.find` by `engine/core/shrink_coordinator.py` (pure, with `shrink` injected): a flaky (`None`) or divergent (another status) first representative promotes a second member, never a third (`MAX_REPRESENTATIVES_PER_SIGNATURE = 2`). A systematic failure — every example of an endpoint answering the same 500, every request to an authenticated endpoint answering 401 — therefore costs one shrink search, not one per example.
   * The search accepts a candidate only when it reproduces the finding's own violation **and status**, so minimization cannot drift to a different symptom. The report is built from one more request; a report whose status still diverges is kept as evidence but stands only for itself.
-  * Findings that fail to reproduce during shrinking are discarded as flaky. Group members never attempted, because a representative of their signature already was, are counted in `RunStats.findings_collapsed`; findings never attempted at all, because the run was cut before shrinking started (`TARGET_DOWN`), are counted in `RunStats.findings_unverified` instead — the run never got the chance to try them, which is a different fact from trying and failing. The requests the phase put on the wire land in `RunStats.requests_shrink` — measured on `AsyncOrchestrator.wire_requests`, the engine's one transport counter, so the number is comparable with the target's access log. `findings_raw == findings_confirmed + findings_flaky + findings_collapsed + findings_unverified` holds by construction, and `findings_confirmed` counts representatives that reproduced.
+  * A single shrink attempt now distinguishes two outcomes the fuzzer used to collapse into one `None`: `ShrinkAttempt(report=None, attempted=False)` when `hypothesis.find` raised `Unsatisfiable` — no candidate was ever produced to try — versus `attempted=True` for a search that ran and either found nothing (`NoSuchExample`) or lost to `FlakyFailure`, both genuinely flaky. Findings that fail to reproduce during shrinking are discarded as flaky. Group members never attempted, because a representative of their signature already was, are counted in `RunStats.findings_collapsed`; findings never attempted at all — the run was cut before shrinking started (`TARGET_DOWN`), or the strategy itself could produce no candidate for the search (`attempted=False`) — are counted in `RunStats.findings_unverified` instead: the run never got the chance to try them, which is a different fact from trying and failing. The requests the phase put on the wire land in `RunStats.requests_shrink` — measured on `AsyncOrchestrator.wire_requests`, the engine's one transport counter, so the number is comparable with the target's access log. `findings_raw == findings_confirmed + findings_flaky + findings_collapsed + findings_unverified` holds by construction, and `findings_confirmed` counts representatives that reproduced.
   * `CrashReport.represented_findings` says how many raw findings a report stands for: itself, its unshrunk group mates and the duplicates deduplication absorbed. A group whose two representatives both diverged leaves its members counted as collapsed with no report claiming them. A stateful crash always represents 1: that mode minimizes as it goes and has no separate shrink phase.
   * Sequential execution avoids shared-state pollution, side effects, and rate-limit interference.
 
 ### Validation, Redaction & Deduplication
 
 * **Response oracles (`engine/core/oracles/`)**: Response validation is the module's fifth extension registry. An **oracle** is a registered unit — `name`, `order`, and a `check(context) -> OracleVerdict` — and `ResponseValidator` is now a thin facade that pre-resolves the applicable response contract into a `ResponseContext` once and then composes the registered oracles in `order`. A verdict carries `(violation, terminal)`: an oracle can pass, stop the pipeline, emit a violation, or emit-and-continue. The five built-ins reproduce the former `if`-chain exactly, in precedence order: **infra** (10, transport failures suppress all findings), **server-error** (20, any 5xx is `NOT_A_SERVER_ERROR` and stops — never softened by a declared range), **status-code** (30), **content-type** (40), **schema** (50). Because all five are terminal-on-violation, `check` still yields at most one violation today; the *emit-and-continue* verdict is the seat a future oracle (semantic property, latency SLA, access control) registers into — a new invariant is a row plus an additive `InvariantViolation` member, never a core edit. Transport failures are never contract violations.
+* **`multiple_of` is compared in exact rational arithmetic.** The `schema` oracle's numeric-bounds check converts both the response value and the declared `multiple_of` to `Fraction(str(value))` before testing divisibility, because `value % multiple_of` in binary floating point rejects genuine multiples (`0.3 % 0.1 != 0`). A non-finite float still fails the check outright, ahead of the conversion `Fraction` cannot perform on it.
 * **A response with no representation gets no content-type verdict.** `ResponseContext.has_body` (resolved once, in `build_context`) is `False` for a zero-byte or whitespace-only body — what gin, Express and Spring answer errors with — and `True` for every JSON value, `null` included, and any text beyond whitespace. `content-type` (40) skips outright when `has_body` is `False`. `schema` (50) tolerates an empty non-2xx the same way — an empty 404 or 401 is normal — but a 2xx that promised a body and sent none is still validated against it: `""` against an `object` schema is `RESPONSE_SCHEMA_CONFORMANCE`, against a `string` schema it is a valid empty string.
 * **Status-range contract resolution**: `resolve_response_contract` (models layer) matches a status against the declared responses by OpenAPI precedence — exact code, then range (`2XX`/`4XX`/`5XX`, case-insensitive), then `default`. The engine consumes a resolved `ResponseContract | None` and never learns OpenAPI's range grammar; a `201` declared only as `"2XX"` no longer produces a spurious status-conformance finding.
 * **Secret Redaction**: Sensitive headers (`Authorization`, `Cookie`, `X-Api-Key`) are scrubbed from **crash reports** before persistence. The execution trace uses a different mechanism — it *omits* config-sourced headers by origin, keeping their names and never their values, because a redacted trace could not be replayed. Do not merge the two: one is redaction against a fixed list, the other is omission by origin.
-* **Report Deduplication**: Two reports are considered identical if they share the same endpoint, method, phase, invariant, status, identity label, and canonical minimal payload. Only one instance is stored to prevent CLI/stat skew, while total defect counts are preserved in aggregate counters.
+* **Report Deduplication**: Two reports are considered identical if they share the same endpoint, method, invariant, status, identity label, and canonical minimal payload. Phase is deliberately not a term: it is the generator's intention, not a property of the defect, so the same defect surfacing in two phases is one report, kept in the phase it was first seen. Only one instance is stored to prevent CLI/stat skew, while total defect counts are preserved in aggregate counters.
 
 
 ### Stateful Fuzzing
@@ -363,12 +440,23 @@ stateless path.
 * **`StateLinkContract`**: Optional contract specifying:
   * `StateProduction`: A response value to capture.
   * `StateConsumption`: Target location to inject the saved value in subsequent calls.
-  * A transition invariant to validate between steps.
+  * A `TransitionInvariant` — the kernel's type, re-exported here — to validate between steps.
 * **Stateless Fallback**: Endpoints without `StateLinkContract` retain standard stateless behavior.
 * **Execution**: State links are passed via `CompiledExecutionEndpoint` and consumed exclusively by `StatefulFuzzer`. Stateful findings can output the complete multi-request sequence required to reproduce cross-endpoint bugs.
-* **Who fills the contract today**: a fixture/spec, not inference — the module is
-  agnostic about the producer. `semantic_inference` filling it via LLM is future
-  work, tracked separately.
+* **Who fills the contract today**: the orchestrator, not inference — its fuzz service
+  derives every production and consumption from the OpenAPI endpoint definitions
+  (`build_state_links`: native `links` first, then a POST/PUT-to-sibling id
+  convention that reads only the top-level properties of a `2xx` response schema,
+  so an enveloped response needs a native `links` entry) and its adapter attaches
+  them to each `EndpointInfo`. The engine is agnostic about the producer. A
+  producer's `EndpointContract.transitions` — the same `TransitionInvariant` type —
+  are merged in by the adapter: each transition's `bundle` is re-bound to the
+  deterministic `StateProduction` it names (an exact bundle name wins; otherwise the
+  leaf of a production's `response_field`, after the last dot, must match exactly
+  one) and the rewritten transitions are appended after any the deterministic
+  contract already carried. A transition that matches no capture, or more than one,
+  is rejected before the run rather than attached: bound to nothing, it would never
+  fire.
 
 #### Fine print on production/consumption
 
@@ -530,6 +618,24 @@ that actually reproduced the failure.
 
 ---
 
+## Characterization suite (`tests/characterization/`)
+
+A Golden Master net over the compiler and engine boundary, used to prove that a
+refactor of that boundary changes no observable output. It has two halves:
+
+* **Compiler goldens** (`test_compiler_golden.py`): a deterministic projection of
+  `compile_strategies` over representative inputs — default, hacker, stateful,
+  budget-with-deadline and an undeclared path parameter — recorded as JSON under
+  `golden/`. Everything is projected except the strategy objects themselves, which
+  reduce to their phase keys.
+* **Engine replay** (`test_engine_replay.py`): a trace recorded against the in-process
+  fixtures API (`fixtures/replay_trace.json`) is re-sent in replay mode and must reach
+  exact fidelity.
+
+Goldens and the recorded trace are never rewritten silently: they regenerate only when
+`SPECFORGE_UPDATE_GOLDENS=1` is set, and a red golden is either a real behavior change
+(fix production) or an intended one (regenerate and explain why in the commit).
+
 ## Operational Constants & System Invariants
 
 ### Configuration (`src/constants.py`)
@@ -541,7 +647,7 @@ Centralizes operational defaults including maximum example counts, phase splits 
 
 | Exception | Raised when |
 |---|---|
-| `PolicyError` | A contract, rule or field breaks a questionnaire constraint. |
+| `PolicyError` | A `CompilerInput` breaks a policy-layer constraint: a contract without a `type`, a field the mode's profile does not allow, an empty range, a semantic property referencing an unknown field, or an unregistered strategy mode. |
 | `StrategyCompilationError` | A contract has no registered compiler to translate it into a Hypothesis strategy. |
 | `EngineError` | An execution-time invariant of the engine is violated (e.g. a missing path param). |
 | `StatefulLinkError` | A state link can't be honored during stateful fuzzing. Subclass of `EngineError`; carries the offending `endpoint_id` and, once exploration had started, the exploration it interrupted (`partial_exploration`). |

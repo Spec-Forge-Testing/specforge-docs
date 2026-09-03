@@ -1,4 +1,4 @@
-# Storage Engine
+# Storage Engine — Data model
 
 `lib/storage` is the persistence layer for the Spec Forge pipeline. It turns the
 tool into an auditable, centralized, traceable platform.
@@ -205,12 +205,12 @@ connection" would be hidden, non-thread-safe mutable state.
       | `id` | `int` | Auto-incrementing primary key. |
       | `analysis_id` | `int \| None` | Set for analysis-level artifacts. |
       | `run_id` | `int \| None` | Set for run-level artifacts. |
-      | `kind` | `str` | Artifact type: `execution_trace` at the analysis level; `report_json`/`report_html` at the run level (see [Run report](../core/reports.md)). |
+      | `kind` | `str` | Artifact type: `execution_trace` at the analysis level; `report_json`/`report_html` at the run level (see [Run report](../../user-guide/reports.md)). |
       | `path` | `str` | Path on disk. |
-      | `sha256` | `str` | Hash of the artifact's content. |
-      | `size_bytes` | `int` | Size in bytes. |
+      | `sha256` | `str` | Hash of the artifact's **logical** (uncompressed) content — the digest never changes when the file is compressed. |
+      | `size_bytes` | `int` | Size on disk, in bytes — a compressed artifact records its compressed size. |
       | `critical` | `bool` | Whether losing it breaks reproducibility. `execution_trace` is critical; the report pair is not — both are derivable from the run's other persisted data. |
-      | `compressed` | `bool` | Whether it's stored compressed. |
+      | `compressed` | `bool` | Whether it's stored gzipped on disk. Set by the retention pass, never by the producer — `save_artifact` always writes plain bytes. |
 
 ## On-disk artifact persistence (`artifacts/`)
 
@@ -233,18 +233,28 @@ with engine.transaction() as uow:
 - **Exclusive level validated before touching disk**: passing both or neither of `analysis_id`/`run_id` raises `InvalidArtifactLevelError` without writing any file.
 - **Deduplication by hash**: if an artifact of the same level and `kind` with identical content (same SHA-256) already exists, the existing record is returned without rewriting the file or inserting a new row.
 - **Content-addressed on disk**: each file is written under a hash subdirectory (`.../<digest>/<filename>`), so a later save with different content under the same kind can never overwrite a previously recorded artifact's file.
-- **File first, row inside the transaction**: the file is written before the row is inserted. A rollback discards the row but may leave the file as an orphan — harmless, since the content-addressed path can never corrupt a valid artifact and the unreferenced file is dead weight a future retention sweep can reclaim.
+- **File first, row inside the transaction**: the file is written before the row is inserted. A rollback discards the row but may leave the file as an orphan — harmless, since the content-addressed path can never corrupt a valid artifact and the unreferenced file is dead weight `collect_orphans` reclaims.
 
-Reading back goes through `load_artifact(record)`, which verifies the bytes against the recorded SHA-256 **on every read** — this is what makes replaying a persisted recipe trustworthy: the bytes re-sent are provably the bytes recorded.
+Reading back goes through `load_artifact(record)`, which decodes the file first when the row is marked `compressed` and then verifies the **logical** bytes against the recorded SHA-256 **on every read** — this is what makes replaying a persisted recipe trustworthy: the bytes re-sent are provably the bytes recorded, compressed or not.
 
 ```python
 from storage import load_artifact
 
-content = load_artifact(record)  # bytes, verified against record.sha256
+content = load_artifact(record)  # logical bytes, verified against record.sha256
 ```
 
-- A file altered on disk raises `ArtifactIntegrityError`, carrying both the expected and the actual hash; a deleted file raises `ArtifactFileMissingError`. Neither case is ever returned silently.
+- A file altered on disk raises `ArtifactIntegrityError`, carrying both the expected and the actual hash; a deleted file raises `ArtifactFileMissingError`; a compressed file that is no longer valid gzip raises `ArtifactDecompressionError`. No case is ever returned silently.
 - It takes no `UnitOfWork`: content is immutable once written, so the read needs no transaction.
+
+### Retention: compress, reclaim, collect
+
+An artifact's life past `save_artifact` is owned by three operations in `storage/artifacts/retention.py`, each opening its own transaction (never call them inside one), all obeying one ordering invariant: **a file may outlive its row; a row never outlives its file.** A leftover file is an inert orphan the next sweep collects; a row pointing at a missing file is where a replay fails, and no crash point in any of the three can produce one.
+
+- **`compress_artifact(engine, record)`** stores the file gzipped without changing its address: the digest keeps addressing the logical bytes, the digest directory stays, only the filename gains `.gz`. The compressed file is written first, the row is repointed inside a transaction, and only then is the plain file removed — and only when no other row still names it. Artifacts below `MIN_COMPRESSIBLE_BYTES`, ones gzip would not shrink, and ones already compressed come back untouched.
+- **`reclaim_artifacts(engine, records)`** deletes a batch: every row drops in one transaction (each re-read first, so the outcome reports what the index held), and files are unlinked only after the commit, only when no live row still names them. A stale id aborts the whole batch with `ArtifactNotFoundError` and nothing unlinked.
+- **`collect_orphans(engine)`** sweeps the artifacts root for files no row names — what rollbacks, `ON DELETE CASCADE` and failed unlinks leave behind. It enumerates by whitelist (only `<analyses|runs>/<id>/<digest>/<file>`; anything else, symlinks included, is reported and never touched) and removes emptied digest directories. `scan_orphans(engine)` is its read-only half, for reporting without deleting.
+
+The policy that decides *which* artifacts to compress or reclaim lives in the CLI (`prune` — see [CLI Reference](../../user-guide/cli-reference.md)); the storage layer owns only the mechanics and their ordering guarantees.
 
 ## Testing
 
@@ -262,4 +272,4 @@ Both this module's suite and its consumers turn leaked connections into errors
 warning.
 
 The Docker test command is in
-[Development & Testing](../../getting-started/development.md#module-commands).
+[Contributing & Testing](../../developer-guide/contributing.md#exceptions).

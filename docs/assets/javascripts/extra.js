@@ -35,35 +35,47 @@ function sizeDivider(navList) {
   return divider;
 }
 
-// Material toggles the native "hidden" attribute on .md-top based on scroll
-// position (it's a fly-in button by default). We want it permanently pinned
-// under the TOC divider instead, so strip "hidden" the instant Material sets
-// it and keep watching for it to come back.
-function pinBackToTop(topButton) {
-  topButton.removeAttribute("hidden");
-  if (topButton._sfPinObserver) return; // already watching this node
-  const observer = new MutationObserver(() => {
-    if (topButton.hasAttribute("hidden")) topButton.removeAttribute("hidden");
-  });
-  observer.observe(topButton, { attributes: true, attributeFilter: ["hidden"] });
-  topButton._sfPinObserver = observer;
-}
-
 function setupSidebarDividers() {
   const primaryList = document.querySelector(".md-sidebar--primary .md-nav--primary > .md-nav__list");
   const tocList = document.querySelector(".md-sidebar--secondary .md-nav--secondary > .md-nav__list");
 
   if (primaryList) sizeDivider(primaryList);
-
-  if (tocList) {
-    const tocDivider = sizeDivider(tocList);
-    const topButton = document.querySelector(".md-top");
-    if (topButton) {
-      tocDivider.insertAdjacentElement("afterend", topButton);
-      pinBackToTop(topButton);
-    }
-  }
+  if (tocList) sizeDivider(tocList);
 }
 
-document$.subscribe(setupSidebarDividers);
+// Our own scroll-to-top FAB. Material's native `.md-top` is hidden in extra.css
+// because its JS keeps repositioning it (inline `top`, `transform`, `hidden` by
+// scroll direction); this button is fixed to the bottom-left corner, appears
+// once the page is scrolled past a small threshold, and never moves.
+const SCROLL_TOP_THRESHOLD = 200; // px
+
+function setupScrollTopButton() {
+  if (window._sfTopButton) return; // one button for the life of the page
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "sf-top";
+  button.setAttribute("aria-label", "Scroll back to top");
+  button.innerHTML =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">' +
+    '<path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>';
+  button.addEventListener("click", () => {
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    window.scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" });
+  });
+  document.body.appendChild(button);
+  window._sfTopButton = button;
+
+  const sync = () => {
+    const y = window.scrollY || document.documentElement.scrollTop || 0;
+    button.classList.toggle("sf-top--show", y > SCROLL_TOP_THRESHOLD);
+  };
+  window.addEventListener("scroll", sync, { passive: true });
+  sync();
+}
+
+document$.subscribe(() => {
+  setupSidebarDividers();
+  setupScrollTopButton();
+});
 window.addEventListener("resize", setupSidebarDividers);

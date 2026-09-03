@@ -1,4 +1,4 @@
-# Stateful fuzzing
+# Custom Schemathesis — Stateful fuzzing
 
 Stateful mode tests dependent endpoint sequences while keeping stateless fuzzing
 unchanged for endpoints that declare no state links.
@@ -16,6 +16,13 @@ unchanged for endpoints that declare no state links.
 
 The compiler carries this optional contract into `CompiledExecutionEndpoint`. The
 stateful fuzzer consumes it; the normal async fuzzer ignores it.
+
+Productions and consumptions are derived from the OpenAPI spec by the orchestrator
+(native `links` first, then a POST/PUT-to-sibling id convention that reads only the
+top-level properties of the `2xx` response schema — an enveloped response needs a
+native `links` entry). Invariants come from a producer's `transitions`, each re-bound
+to the deterministic capture its `bundle` names; the matching rule is in the
+[reference](reference.md#stateful-fuzzing).
 
 ## Execution model
 

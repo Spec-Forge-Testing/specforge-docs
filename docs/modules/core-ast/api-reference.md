@@ -124,7 +124,7 @@ optional, because a spec may not declare it.
 | `processed_functions` | `list[ProcessedFunction]` | Every function the trace visited |
 
 `locator.confidence` runs from 1.00 down to 0.35 depending on the strategy that
-hit — the table is in the [Implementation Reference](reference.md). Note that
+hit — the table is in the [Reference](reference.md). Note that
 `locator.filepath` may not be the file the locator originally chose: when the
 route declaration points at a neighbouring module, the controller is that one
 ([ADR-042](adr/api.md#adr-042)).

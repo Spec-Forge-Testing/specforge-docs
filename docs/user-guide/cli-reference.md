@@ -1,9 +1,23 @@
-# Spec Forge CLI (`specforge_cli`)
+# CLI Reference
 
-Interactive REPL orchestrator for the Spec Forge pipeline. Commands self-register
-through the `@command` decorator (`repl/registry.py`) and are dispatched by
-`repl/dispatcher.py`. Presentation is a small design system under `ui/`
-(tokens → theme → components); business logic lives in pure `services/`.
+The CLI is the interactive entry point to Spec Forge. It coordinates contract
+validation, static tracing, LLM-ready context extraction and API fuzzing.
+
+## Commands summary
+
+| Command | Category | Description |
+| :--- | :--- | :--- |
+| **`doctor`** | Diagnostics | Checks environment, pipeline dependencies, and LLM setup. |
+| **`doctor --fix`** | Diagnostics | Guided automated installation and dependency fixes. |
+| **`trace`** | Analysis | Static code tracing from an OpenAPI endpoint. |
+| **`ast-extract`** | Analysis | Inspects extracted code structures and LLM context. |
+| **`fuzz`** | Execution | Compiles strategies from schema and fuzzes a live API. |
+| **`replay`** | Execution | Re-sends an analysis's recorded trace and rules a verdict per defect. |
+| **`history`** | History | Browses persisted projects, analyses and runs, with filters. |
+| **`inspect`** | History | Shows one run in full (metrics, latency, crashes, artifacts), or one crash in full (payload, headers, response body). |
+| **`compare`** | History | Diffs two runs' defect sets — appeared, persisted, possibly resolved — marking a pair that is not directly comparable. |
+| **`!`** | System | Executes system shell commands directly from REPL. |
+| **`theme`** | Settings | Switches the CLI UI color theme. |
 
 ## Running
 
@@ -11,70 +25,10 @@ through the `@command` decorator (`repl/registry.py`) and are dispatched by
 specforge          # launch the interactive REPL
 ```
 
-Inside the REPL, type `help` to list commands or `help <command>` for details.
+Inside the REPL, type `help` to list commands or `help <command>` for details —
+any command invoked with `--help`/`-h` renders the same panel.
 
-## Architecture
-
-The CLI is layered so styling, commands and logic each have one home:
-
-- **`ui/`** — the design system. `tokens.py` names semantic styles and icons,
-  `theme.py` maps them to a switchable `rich.Theme`, and `components.py` builds
-  every panel, table and message from those tokens. No raw colors live outside the
-  theme, so re-skinning is a one-file change.
-- **`config/`** — typed, grouped definitions: `paths`, `commands` and the
-  `CommandCategory` enum.
-- **`services/`** — all business logic, free of any printing: pure helpers that
-  return DTOs (`workspace`, `tracing`, `contract`) and the larger self-contained
-  subsystems (`shell/` for the `!` escape, `diagnostics/` for `doctor`).
-- **`repl/`** — the session loop, dispatcher, registry, completer and thin command
-  handlers; feature renderers live in `repl/views/` (one module per feature),
-  composed from the `ui/` components.
-- **`cli/`** — the argv entrypoints: Typer subcommands run from the shell (e.g.
-  `specforge init`), distinct from the in-REPL `repl/commands/`. Both reuse the
-  same `services/`.
-
-The registry is the single source of truth for commands: the completer and help
-derive from it, so adding a command is one file — declare it with `@command`
-(name, category, aliases, argument flags) and it appears in dispatch, help and
-completion automatically.
-
-## Adding a new command
-
-Commands are self-registering, so a new one is small and local:
-
-1. **Name** — add the command string to `config/commands.py`
-   (e.g. `CMD_FOO = "foo"`), and a `CommandCategory` to `config/categories.py` if
-   none fits.
-2. **Handler** — create `repl/commands/foo.py` and decorate the handler:
-
-   ```python
-   from specforge_cli.config import CommandCategory, commands
-   from specforge_cli.repl.registry import command
-
-
-   @command(
-       name=commands.CMD_FOO,
-       description="One-line summary shown in `help`.",
-       category=CommandCategory.GENERAL,
-       aliases=("f",),                 # optional
-       arguments=("--flag", "-x"),     # optional, feeds autocompletion
-       examples=["foo --flag"],        # optional, shown in `help foo`
-   )
-   def cmd_foo(args: list[str]) -> None:
-       result = run_foo(args)          # logic in services/
-       print_foo(result)               # presentation in repl/views/ + ui/
-   ```
-
-3. **Logic & presentation** — keep computation in `services/` (pure, returns a DTO)
-   and rendering in a `repl/views/` module built on the `ui/` components. Handlers
-   stay thin: parse args, call the service, render the result.
-4. **Register the module** — add `foo` to the imports in
-   `repl/commands/__init__.py` so the decorator runs at startup.
-
-That's it: dispatch, fuzzy-match suggestions, `help`, `help foo` and tab-completion
-are all derived from the registry — no other file needs editing.
-
-## Current Commands
+## Commands
 
 ??? "`doctor` — environment & dependency diagnostics"
 
@@ -104,10 +58,6 @@ are all derived from the registry — no other file needs editing.
     - **warning** (⚠) — a not-yet-wired pipeline stage, the test runtime, or missing LLM
       configuration. These degrade a capability but don't block the CLI.
 
-    The diagnostic logic is pure and deterministic: `specforge_cli.services.diagnostics.run_diagnostics`
-    returns a `DiagnosticReport` DTO and never prints; the CLI renders it. The check
-    catalog and severities are declared as data in `services/diagnostics/requirements.py`.
-
 ??? "`doctor --fix` — guided installation"
 
     ```text
@@ -123,11 +73,6 @@ are all derived from the registry — no other file needs editing.
     to show the resulting state. Manual fixes (the `.env.local` file, `LLM_MODEL`,
     credentials) are listed but never auto-applied. Honors `SPECFORGE_SYSTEM_COMMANDS`:
     when system commands are disabled, the plan is shown but nothing is executed.
-
-    The planning is pure (`services/diagnostics/planner.py`: a `DiagnosticReport` →
-    `FixPlan`) and the execution is a thin orchestration over the injectable
-    `CommandExecutor` seam (`services/diagnostics/fixer.py`), so both are unit-tested
-    without installing anything.
 
     > Like the rest of the Rich UI, `doctor` emits status glyphs (✔ ⚠ ✖). On a
     > legacy Windows console these require a UTF-8 capable terminal; redirecting output
@@ -199,8 +144,9 @@ are all derived from the registry — no other file needs editing.
 
     ```text
     SpecForge ❯ fuzz -f openapi.yaml --base-url http://localhost:8000
-    SpecForge ❯ fuzz -f openapi.yaml --base-url http://localhost:8000 --stateful
+    SpecForge ❯ fuzz -f openapi.yaml --base-url http://localhost:8000 --mode stateful
     SpecForge ❯ fuzz -f openapi.yaml --base-url http://localhost:8000 --identities identities.toml
+    SpecForge ❯ fuzz -f openapi.yaml --base-url http://localhost:8000 --strategy hacker --contracts contracts/
     ```
 
     `fuzz` runs the execution engine end to end **without the LLM or source analysis**:
@@ -208,21 +154,33 @@ are all derived from the registry — no other file needs editing.
     fuzzes the live API at `--base-url`, groups the failures by symptom and shrinks one
     representative per symptom to its minimal reproducer. The schema constraints alone
     (`type`, `minimum`, `enum`, `pattern`, …) are enough to surface `5xx` crashes and
-    undeclared responses.
+    undeclared responses. Two flags widen that baseline: `--strategy` picks the
+    strategy family the engine compiles, and `--contracts` feeds it producer-written
+    contracts on top of the schema — both described below.
 
     The command prints:
 
     - **Run summary** — the exploration requests, the requests shrinking sent apart
       from them, and the finding funnel: raw → confirmed (one representative per
       symptom, still failing after shrinking) → collapsed (same symptom as a
-      confirmed one, never shrunk) → unverified (never attempted, because the run
-      was cut before shrinking started) → flaky → unique after de-duplication.
+      confirmed one, never shrunk) → unverified (never attempted — the run was cut
+      before shrinking started, or the strategy could not produce a candidate to
+      try) → flaky → unique after de-duplication.
       `raw == confirmed + flaky + collapsed + unverified` always holds. A stateful
       run has no separate shrink phase, so its report shows neither shrink requests
       nor collapsed or unverified findings.
-    - **Category breakdown** — requests grouped by outcome (success, client/server
-      error, timeout, availability).
-    - **Crashes** — one row per minimal reproducer: method, endpoint, phase, how many
+    - **Category breakdown** — requests grouped by outcome, labeled in plain
+      English: successful response, 4xx client error, 5xx server error, contract
+      violation, request timed out, target unreachable, and `unsendable request
+      (refused by the engine; never sent)` for values the engine refused to put
+      on the wire — counted as requests, but they never reached the target.
+    - **Crashes** — a summary line first, tallying the unique crashes by invariant
+      and status (`33 unique crashes: 2 × 5xx server error (500), 28 × wrong
+      Content-Type (401), …`), then one row per minimal reproducer, **most severe
+      first**: 5xx server errors lead, contract violations follow, and within an
+      invariant the crash representing more raw findings comes first — the same
+      order `report.json` sorts its defects, so the screen and the document never
+      disagree. Each row: method, endpoint, phase, how many
       prior steps set it up (a dash for a single request), the violated invariant,
       the status code, how many raw findings the crash stands for (`Represents`;
       stateless runs only), the identity it was found under (`Identity`; only shown
@@ -232,12 +190,16 @@ are all derived from the registry — no other file needs editing.
     A run the target's liveness probe found dead is cut **before** shrinking, so
     its findings were collected but never confirmed. The report never calls that a
     clean run: it shows the **Unverified** count instead of the usual "No crashes
-    found", with a warning explaining the run was cut short — the same distinction
-    `inspect --run <id>` shows later.
+    found" — the same distinction `inspect --run <id>` shows later.
 
     Narrow the run with `--endpoint <path>` and/or `--method <verb>`, and tune execution
     with `--timeout` / `--max-concurrency`. The target API must already be running;
     infrastructure failures (server down, timeout) are reported, never fatal.
+
+    `fuzz` accounts for every endpoint the spec declares, not only the ones that
+    ran — see *[Coverage and the run's signal](#coverage-and-the-runs-signal)*
+    below. A selection that compiles nothing at all never runs: it fails with a
+    **Nothing to Fuzz** panel naming every rejection, before a single request.
 
     `--identities <file>.toml` declares who the requests are sent as — a TOML list
     of labelled credential sets, any of them possibly anonymous (a label with no
@@ -263,14 +225,27 @@ are all derived from the registry — no other file needs editing.
     **Identity** column above. The label is persisted with the crash and the run's
     trace; the credentials never are (see below).
 
-    `--stateful` switches to [stateful fuzzing](../custom-schemathesis/stateful-fuzzing.md):
+    `--mode` selects how the engine explores the endpoints: `stateless` (the
+    default) fuzzes each operation alone; `stateful` chains requests into
+    sequences; `performance` sustains load and, with `--latency-sla-ms <ms>`,
+    enforces that threshold as a latency oracle; `resilience` sends a fixed battery
+    of malformed-transport requests and flags an endpoint that answers `5xx`, hangs
+    or crashes instead of degrading gracefully. `--latency-sla-ms` is refused with
+    any other mode.
+
+    `--mode stateful` switches to [stateful fuzzing](../modules/custom-schemathesis/stateful-fuzzing.md):
     requests are **chained into sequences** instead of each operation being fuzzed on
     its own, which surfaces order-dependent failures — a resource created, deleted,
     then read. `--endpoint`/`--method` still narrow the sequences to the matching
-    operations, and the run is saved like any other. Two limits: a stateful run is
-    markedly slower, and the data flow between requests — an id returned by one call
-    feeding the next — is not compiled from the spec yet, so sequences share no
-    values. A stateful finding is reported by the step that failed; the **Prior
+    operations, and the run is saved like any other. The data flow between
+    requests — an id returned by one call feeding the next — is derived from the
+    spec over the full declared endpoint list, not only the selected ones: native
+    OpenAPI `links` first, then a conservative convention that pairs a `POST`/`PUT`
+    on a collection with its immediate by-id sibling whenever a `2xx` body exposes
+    an id-like field. That convention reads only the **top-level** properties of the
+    response schema, so an enveloped response (`{"article": {"slug": ...}}`) needs a
+    native `links` entry to get a deterministic capture. A stateful run is markedly
+    slower than a stateless one. A stateful finding is reported by the step that failed; the **Prior
     steps** column says how many requests set it up, which is the cue to open
     `inspect --crash <id>` for the sequence. A transition the API answered with an
     unexpected status shows as `unexpected transition status`. The run is cut short
@@ -278,7 +253,95 @@ are all derived from the registry — no other file needs editing.
     the declared hand-off from one request's response into the next request — cannot
     be honored; the engine's diagnosis is reported with it.
 
-    Every run is **saved by default** through the [storage engine](../storage/index.md):
+    `--strategy {default,hacker}` selects which **strategy family** the engine
+    compiles, orthogonally to `--mode`: `default` (the default) is schema-only —
+    the `valid`, `boundary` and `invalid` phases; `hacker` adds the `attack` phase
+    and widens generation toward adversarial values. The two words are the
+    engine's own `StrategyMode` values, so a new mode needs no second list here.
+
+    `--contracts <dir>` supplies **producer-written contracts**. Every `*.json`
+    file directly under the directory is one kernel `EndpointContract` — `method`,
+    `path_url`, `parameters` and `body` as JSON Schema, plus the optional `risk`,
+    `attack`, `transitions` and `semantic_properties` sections (see
+    [Spec Forge Contracts](../modules/contracts/index.md)). Files are indexed by
+    the `method`/`path_url` they declare, so the file name is a label and nothing
+    more. For each selected endpoint that has a contract, it is fused over the
+    OpenAPI base with the Contract Engine's `fuse_contract` — the producer's
+    invariants win on conflict, the base fills the gaps — and the result replaces
+    the bare schema in the compile; an endpoint with no file stays schema-only.
+    A trimmed fixture:
+
+    ```json
+    {
+      "method": "post",
+      "path_url": "/articles",
+      "body": {
+        "type": "object",
+        "required": ["article"],
+        "properties": {
+          "article": {
+            "type": "object",
+            "required": ["title", "body"],
+            "properties": {
+              "title": {"type": "string", "minLength": 1, "maxLength": 200},
+              "body": {"type": "string", "minLength": 1}
+            }
+          }
+        }
+      },
+      "risk": {"risk_score": 65, "criticality": "medium", "write_operation": true},
+      "attack": {
+        "attack_profiles": ["injection", "auth_bypass"],
+        "focus_fields": ["title", "body"],
+        "aggressiveness": 6,
+        "field_hints": {
+          "body.article.title": {
+            "attack_profiles": ["xss", "sql_injection"],
+            "include_encoded_variants": true
+          }
+        }
+      },
+      "transitions": [
+        {
+          "bundle": "slug",
+          "follow_up_method": "get",
+          "follow_up_path": "/articles/{slug}",
+          "target_field": "slug",
+          "target_zone": "path",
+          "expected_statuses": [200],
+          "echoed_fields": ["title", "body"],
+          "trigger_statuses": [201]
+        }
+      ]
+    }
+    ```
+
+    What each section becomes in the run: the enriched `parameters`/`body` shape
+    the strategies. `risk` and `attack`'s endpoint-level fields ride along to the
+    engine as they are — nothing in the engine consumes them yet, so they do not
+    change a run today. Each `field_hints["zone.field"]` entry promotes the
+    addressed parameter or dotted body field to the engine's per-value hacker
+    contract with the hint's payload families and toggles, **under `--strategy
+    hacker` only** — `default` ignores the hints. Each `transitions` entry is
+    attached to the endpoint's stateful state link, bound to the deterministic
+    capture (from the spec's `links` or the sibling convention above) whose bundle
+    name or captured field matches its `bundle`. `semantic_properties` are
+    validated against the endpoint's declared fields and carried, unconsumed.
+
+    The producer is strict, and every problem stops the run **before a single
+    request**. A path that is not a directory, a malformed or invalid file (the
+    kernel rejects unknown keys), two files declaring the same endpoint, a contract
+    served for an endpoint other than the one it declares, or a fusion the Contract
+    Engine rejects all render a **Contract Producer Error** panel naming the file
+    or endpoint and the reason (error code `fuzz_contract_producer` under
+    `--json-output`). A hint on a zone or field the endpoint does not declare, and
+    a transition whose `bundle` matches no deterministic capture — or more than
+    one — are reported as an **Unsupported Schema Construct** instead, naming the
+    endpoint and the offending hint or bundle. The produced contracts are not
+    persisted with the analysis: the run's trace is recorded and replayable as
+    usual, but the enriched recipe itself is not stored.
+
+    Every run is **saved by default** through the [storage engine](../modules/storage/index.md):
     a project → analysis → run hierarchy with metrics, per-endpoint stats, crash
     reports and the execution trace as a critical artifact, written in one atomic
     transaction — a mid-write failure rolls the whole run back. `--no-save` opts out;
@@ -311,8 +374,10 @@ are all derived from the registry — no other file needs editing.
     schema is built around: with no flags it lists every **project** (with its
     analysis count); `--project <id>` lists that project's **analyses** — the
     replayable recipes, each with its label, strategy mode, whether it was stateful,
-    engine version and run count; `--analysis <id>` lists that analysis's **runs** in
-    ordinal order.
+    engine version, run count and an **Endpoints** column (`targeted/declared`, plus
+    `(+N excl)` when the compiler excluded any — see *[Coverage and the run's
+    signal](#coverage-and-the-runs-signal)*); `--analysis <id>` lists that
+    analysis's **runs** in ordinal order.
 
     The run listing is where the model pays off: an **original** run (`●`) is
     visually distinct from a **replay** (`↺`), and a run whose counters would
@@ -327,6 +392,10 @@ are all derived from the registry — no other file needs editing.
     `--analysis`. Identifiers are always the numeric ids the previous level shows —
     project names are not unique, ids are.
 
+    Filesystem paths in the tables (a project's repo path, an artifact's path)
+    are clipped from the left to their tail (`…package/src/main.py`), so a deep
+    path never wraps its row.
+
     Without the `storage` install the command warns and returns instead of failing.
 
 ??? "`inspect` — the full detail of one run, or of one crash"
@@ -336,14 +405,19 @@ are all derived from the registry — no other file needs editing.
     SpecForge ❯ inspect --crash 12
     ```
 
-    `--run <id>` renders one run in full, in five sections: a **header** with its
+    `--run <id>` renders one run in full: a **header** with its
     context (project, analysis, ordinal, origin, execution time, duration, status —
     plus, when the run was cut short, **why and where** — fidelity and the
-    comparability mark); the **metrics** funnel (requests, raw → confirmed → unique
-    → flaky → **Unverified** findings — never shrunk because the run was cut short)
-    with the per-phase and per-category breakdowns; **per-endpoint stats** including
+    comparability mark); its declared-endpoint **coverage** and **signal** (see
+    *[Coverage and the run's signal](#coverage-and-the-runs-signal)* — skipped for
+    a replay); the **metrics** funnel (requests, raw → confirmed → unique
+    → flaky → **Unverified** findings — never shrunk)
+    with the per-phase and per-category breakdowns (category tokens labeled in
+    plain English, as in the fuzz report); **per-endpoint stats** including
     the latency percentiles (p50/p95/max — a dash when the endpoint was never
-    timed); every recorded **crash** — with its id, the same plain-English invariant
+    timed); every recorded **crash** — under the same per-invariant summary line
+    and in the same severity-first order as the fuzz report, with its id, the
+    same plain-English invariant
     labels the fuzz report uses, the identity it was found under (**Identity**;
     shown when at least one crash recorded one), and the **minimal payload that
     reproduces it**, so a saved run shows no less than the report printed when the
@@ -380,6 +454,7 @@ are all derived from the registry — no other file needs editing.
     SpecForge ❯ replay --analysis 3 --no-save
     SpecForge ❯ replay --analysis 3 --no-preserve-timing
     SpecForge ❯ replay --analysis 3 --identities identities.toml
+    SpecForge ❯ replay --analysis 3 --base-url https://user:pass@staging.example.com
     ```
 
     Re-sends the exact requests recorded in an analysis's execution trace —
@@ -405,6 +480,14 @@ are all derived from the registry — no other file needs editing.
     observably changed, so a defect that stopped answering `500` is
     *inconclusive*, never resolved; the report states this explicitly.
 
+    The verdict table shows **one row per distinct verdict** with its count
+    (`×29`), in first-occurrence order: a defect recorded 29 times renders as
+    one `POST /users/login invalid 500 → 500 present ×29` row instead of 29
+    identical ones, and a mixed outcome (25 `present` + 4 `possibly resolved`
+    for the same defect) stays two rows, never averaged. The grouping is
+    presentation only — the saved document and `--json-output` keep one
+    verdict per request.
+
     The command refuses recipes it cannot replay whole, **before sending a
     single request**: an empty trace, a missing or tampered trace artifact
     (content is hash-verified on read), a trace recorded under an identity label
@@ -413,12 +496,19 @@ are all derived from the registry — no other file needs editing.
     label resolves, traces that still need a credential header value no declared
     identity carries; stored recipes keep header *names* only, never values.
     Header values set for the whole run (`config.headers`) cannot be re-supplied
-    yet — only an `--identities` file can.
+    yet — only an `--identities` file can. The same applies to a recorded URL's
+    `user:pass@` userinfo, which the recipe keeps the host of but never the
+    credential: a trace that needs it without one supplied is a **Missing URL
+    Credentials** refusal, and a `--base-url <url>` that targets a different host
+    than the one recorded is a **Target Mismatch** refusal — a replay cannot be
+    pointed at a different host.
 
     `--identities <file>.toml` re-supplies the identities the run was recorded
     under, from the same file shape `fuzz` reads. A missing label surfaces as a
     **Missing Identities** panel naming every label the trace needs, before
-    anything is sent.
+    anything is sent. `--base-url <url>` re-supplies the recorded target's
+    userinfo the same way — the recipe keeps its host but never a `user:pass@`
+    it carried.
 
     `--save` (default on) appends the replay to the same analysis as a new run
     with the next ordinal, so `history --analysis <id>` shows original and
@@ -432,13 +522,16 @@ are all derived from the registry — no other file needs editing.
     ```
 
     Pairs every defect from `--before <id>` and `--after <id>` by **symptom** —
-    method, path, phase, invariant, status code and identity — deliberately
-    never by its minimal payload: shrinking runs again each time against a
+    method, path, invariant, status code and identity, five of the six terms
+    the engine dedups a single run's crashes on, deliberately without the
+    sixth, the minimal payload: shrinking runs again each time against a
     target that may have changed between the two runs, so a defect that never
     actually left can still shrink to a different reproducer. `compare` shows
     the payload alongside each defect as its counterexample instead, and flags
     a pairing whose two reproducers differ ("same symptom, different
-    reproducer").
+    reproducer"). Phase is in neither key — the generator's intention, not a
+    property of the defect — but the **Phase** column still shows each crash's
+    own (the later side's, falling back to the earlier one).
 
     Each pairing gets one of four verdicts:
 
@@ -459,6 +552,49 @@ are all derived from the registry — no other file needs editing.
     `before → after` occurrence count instead of silently collapsing to a
     single representative. The two runs can belong to the same analysis or to
     two different ones.
+
+??? "`prune` — retain, compress and collect the artifact store"
+
+    ```text
+    SpecForge ❯ prune                                  # report the store; touch nothing
+    SpecForge ❯ prune --compress                       # gzip what shrinks; never asks
+    SpecForge ❯ prune --keep-last 2 --dry-run          # show the plan and stop
+    SpecForge ❯ prune --keep-last 2                    # delete old run reports, after asking
+    SpecForge ❯ prune --keep-last 2 --include-traces   # also old traces — the named consent
+    SpecForge ❯ prune --collect-orphans                # sweep files no artifact row names
+    ```
+
+    `prune` is the only command that deletes anything, and it never acts
+    without showing its plan first. Bare `prune` only reports the store:
+    total size, artifacts by kind and by level, and any orphan files.
+
+    Rules **protect**; what no rule protects is a candidate, and adding a
+    rule can only ever save more, never condemn more:
+
+    - `--keep-last <n>` protects the n most recent analyses of each project,
+      with everything they produced.
+    - `--older-than <YYYY-MM-DD>` protects every analysis created on or
+      after that UTC date. An analysis with no date is always protected.
+    - `--max-size-mb <n>` is a budget, not a rule: it deletes candidates
+      oldest-first only until the store fits, and reports the shortfall when
+      it cannot get there. It cannot be combined with `--compress` — the
+      budget is computed on current sizes and cannot know what compression
+      will save, so compress first, then prune with the budget.
+
+    The consent ladder: compressing is free (`--compress` gzips any artifact
+    it shrinks without changing its digest or its directory — a compressed
+    trace still replays, still verified). Deleting regenerable run reports
+    asks once, with the plan on screen; `--yes` skips the prompt. Deleting a
+    recorded trace needs `--include-traces` **and** the confirmation — `--yes`
+    alone never reaches one — and the prompt names every analysis that stops
+    being replayable. A terminal that cannot answer is a no: without a TTY
+    and without `--yes`, the plan is shown and nothing is applied. There is
+    no default policy — `prune` with no flags deletes nothing, ever.
+
+    History, metrics and crash reports are never touched — they live in the
+    database, not the artifact store — and `history --project` shows a
+    **Replayable** column derived from the trace's presence, so a consented
+    trace deletion is visible the moment it happens.
 
 ??? "`!` — run system commands"
 
@@ -484,10 +620,6 @@ are all derived from the registry — no other file needs editing.
     - **Disable in CI/CD.** Set `SPECFORGE_SYSTEM_COMMANDS=0` (or `false` / `no` /
       `off`) to turn the escape off in non-interactive environments.
 
-    The executor is decoupled from rendering behind a `CommandExecutor` seam: it
-    streams typed output events that the Rich CLI renders today and a future desktop
-    frontend can consume directly.
-
     > Scope: the primary target is Linux/Docker (Windows is best-effort). v1 runs a
     > single program without a shell (no pipes, redirection or built-ins like `dir`)
     > and is not interactive (no `vim` / `rebase -i`); a PTY-backed executor for full
@@ -501,14 +633,41 @@ are all derived from the registry — no other file needs editing.
     ```
 
     Switching the theme re-skins **everything** — console output, the banner and the
-    REPL prompt — because each is rendered through semantic tokens, not raw colours.
-    Bundled themes: `default`, `mono`, `nord`, `dracula`, `solarized`, `matrix`. They
-    are token→style maps in `ui/theme.py`; the active theme can also be chosen at
-    startup with `SPECFORGE_THEME=<name>`.
+    REPL prompt. Bundled themes: `default`, `mono`, `nord`, `dracula`, `solarized`,
+    `matrix`; the theme can also be chosen at startup with `SPECFORGE_THEME=<name>`.
+
+## Coverage and the run's signal
+
+`fuzz` accounts for every endpoint the spec declares, not only the ones that ran.
+Each falls into exactly one of three buckets: **targeted** (selected and
+compiled), **excluded** (selected, but the compiler rejected it, and says why),
+or **filtered** (never selected, by `--endpoint`/`--method`). The close line
+names the partition — `Fuzzed 87 of 88 declared endpoint(s) (1 excluded)` — with
+the excluded endpoints and their reasons listed under it, capped so a large
+corpus doesn't flood the close. A selection that compiles nothing at all never
+runs: it fails before a single request, as a **Nothing to Fuzz** panel naming
+every rejection.
+
+On top of the partition, a run earns a **signal**: `clean` unless one of three
+things degrades it — no request reached the target at all (every attempt was an
+availability, timeout or unsendable-request failure), a declared endpoint was
+excluded, or a targeted endpoint never received a request. `filtered` never
+degrades a run — narrowing the selection is the caller's own choice, not a gap.
+A degraded run never closes as a plain success and never claims "No crashes
+found"; an empty crash table says its evidence is degraded instead, and the
+close line and every excluded endpoint print as warnings.
+
+`inspect --run <id>` shows the same partition and signal for a saved run,
+between the header and the metrics — skipped for a replay, which never compiles
+and so has neither. `history --project <id>` shows the partition too, as an
+**Endpoints** column (`targeted/declared`, plus `(+N excl)` when any were
+excluded) on each analysis row. `--json-output` carries the same facts in
+`data.coverage` and `data.run.signal`/`data.run.signal_causes` — see
+*[Machine-readable output](#machine-readable-output-json-output)* below.
 
 ## Machine-readable output (`--json-output`)
 
-`fuzz`, `replay`, `inspect`, `history` and `compare` all accept
+`fuzz`, `replay`, `inspect`, `history`, `compare` and `prune` all accept
 `--json-output`, which replaces every panel with exactly one JSON object on
 stdout. Every human-readable message — panels, spinners, warnings — is
 written to stderr instead, so piping or redirecting a command's stdout
@@ -517,8 +676,8 @@ captures the document and nothing else.
 The envelope is the same shape for every command and every outcome:
 
 ```json
-{"schema_version": "1.0", "command": "fuzz", "status": "ok", "data": { ... }, "error": null, "warnings": []}
-{"schema_version": "1.0", "command": "fuzz", "status": "error", "data": null, "error": {"code": "...", "message": "..."}, "warnings": []}
+{"schema_version": "1.1", "command": "fuzz", "status": "ok", "data": { ... }, "error": null, "warnings": []}
+{"schema_version": "1.1", "command": "fuzz", "status": "error", "data": null, "error": {"code": "...", "message": "..."}, "warnings": []}
 ```
 
 `status` is `ok` or `error`, never both, and every key is present regardless
@@ -526,64 +685,30 @@ of outcome — set to `null` or an empty list when unused — so a consumer can
 always index into a known shape. `data` is the [run report](reports.md)
 document for `fuzz`/`replay`/`inspect --run`, one crash's own defect shape
 for `inspect --crash`, the listed rows for `history`, and the comparison
-document for `compare`. A run whose fuzzing or replay succeeded but whose
-save to storage failed still emits an `ok` envelope carrying the full
-document (`run.id` left `null`), with the failure riding along as a
-`warnings` entry rather than being lost.
+document for `compare`, and the prune plan or outcome for `prune` (every
+`prune` envelope carries an `applied` boolean; without `--yes` the plan is
+emitted with `applied: false` and nothing is touched). A `fuzz` document's
+`data.coverage` and `data.run.signal`/`data.run.signal_causes` carry the same
+declared-endpoint partition and signal the terminal close shows (see
+*[Coverage and the run's signal](#coverage-and-the-runs-signal)*); a replay's
+document carries neither. A run whose fuzzing
+or replay succeeded but whose save to storage failed still emits an `ok`
+envelope carrying the full document (`run.id` left `null`), with the failure
+riding along as a `warnings` entry rather than being lost. A degraded `fuzz`
+run's `ok` envelope carries that signal the same way, as a `warnings` entry
+(`degraded_signal`) naming the cause — alongside a save failure's, if there is
+one.
+
+One deliberate exception to "`error` means no `data`": a `prune` pass that
+fails **after** its destructive phase emits `status: error` with `data`
+still carrying `{"applied": true, "outcome": ...}`, so a consumer is never
+left unable to tell "nothing happened" from "N artifacts are gone".
 
 Full envelope shape, the `report.json`/`report.html` artifacts and the error
 code registry are documented in [Run report](reports.md).
 
-## Example workspace — `examples/ast_demo`
+## Example workspace
 
-`examples/ast_demo/` is a self-contained *Dummy Bank API* used to exercise the
-commands end to end and see each renderer against one consistent project. It pairs
-a handful of source handlers with the matching `openapi.yaml`:
-
-```text
-examples/ast_demo/
-├── openapi.yaml   # POST /transfer · GET /account/{account_id}
-├── handlers.py    # the FastAPI handlers (the trace targets)
-├── rules.py       # business validators called by the handlers
-├── models.py      # request/response DTOs
-└── data.py        # in-memory account fixtures
-```
-
-`transfer` carries the canonical Spec Forge bug: a non-positive `amount` escapes as
-an unhandled error and surfaces a `500` where the schema implies a clean `4xx` — a
-business invariant the OpenAPI alone never states.
-
-Run the demo from the repository root:
-
-```bash
-# 1. Validate the spec
-SpecForge ❯ contract-engine --validate -f core/examples/ast_demo/openapi.yaml
-
-# 2. List the endpoints and their engine readiness
-SpecForge ❯ contract-engine --analyze -f core/examples/ast_demo/openapi.yaml
-
-# 3. Trace the transfer handler against the example source
-SpecForge ❯ trace -c core/examples/ast_demo/openapi.yaml -p core/examples/ast_demo --operation-id transfer
-
-# 4. Inspect the extracted code and the LLM context for transfer
-SpecForge ❯ ast-extract -c core/examples/ast_demo/openapi.yaml -p core/examples/ast_demo --operation-id transfer --payload
-
-# 5. Fuzz the live API — start it first in another terminal:
-#    uvicorn handlers:app --app-dir core/examples/ast_demo --port 8000
-SpecForge ❯ fuzz -f core/examples/ast_demo/openapi.yaml --base-url http://localhost:8000
-```
-
-Step 3 locates `transfer` in `handlers.py` and follows its calls into `rules.py`
-and `data.py`, so the trace report lists the helper functions it walked across
-files. Step 4 prints the actual extracted source and the packaged LLM context for
-the same endpoint. Point `--project` at `core/examples/ast_demo` (not the whole
-repo) so the locator resolves a single, unambiguous handler. Step 5 serves those
-same handlers and fuzzes them: the schema-only run reaches the `500` (whenever
-Hypothesis happens to generate a valid `account_id`) and also flags the `422`s the
-spec never declares.
-
-## Tests
-
-Tests live under `tests/`, grouped into subpackages that mirror `src/`
-(`config/`, `ui/`, `services/`, `repl/`). Setup and test commands are in
-[Development & Testing](../../getting-started/development.md#module-commands).
+Want to see every command against one consistent project? See the
+[Example Walkthrough](example-walkthrough.md) — a self-contained Dummy Bank API
+that exercises `trace`, `ast-extract` and `fuzz` end to end.

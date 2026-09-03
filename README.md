@@ -1,8 +1,8 @@
-# docs-site
+# Spec Forge Docs
 
-Local MkDocs (Material theme) source for the Spec Forge documentation portal. This module is a
-staging ground: content here is meant to eventually move into a standalone `specforge-docs`
-repository once the site is ready to deploy to GitHub Pages.
+MkDocs (Material theme) source for the Spec Forge documentation site, published to
+`spec-forge-testing.github.io/specforge-docs`. The code it documents lives in the sibling
+`llm-pbt-agent` repository.
 
 ## Run locally
 
@@ -24,8 +24,9 @@ specforge-docs/
 ├── requirements.txt
 └── docs/
     ├── index.md
-    ├── getting-started/
-    ├── architecture/
-    ├── modules/
-    └── environment/
+    ├── user-guide/       # installing and running Spec Forge
+    ├── architecture/     # conceptual overview of the pipeline
+    ├── developer-guide/  # contributing and CLI internals
+    ├── modules/          # per-package reference, nested under Developer Guide in the nav
+    └── testing/          # tests-repos corpora, nested under Developer Guide in the nav
 ```

@@ -1,4 +1,4 @@
-# LLM Router (LiteLLM)
+# Semantic Inference — LLM router
 
 `ModelRouter` is the single choke point every inference call goes through. It
 wraps [LiteLLM](https://github.com/BerriAI/litellm) so the rest of the codebase
@@ -10,7 +10,7 @@ top so a flaky provider doesn't take the pipeline down with it.
 - **One call shape, any provider.** `litellm.completion(...)` is the only call
   site — OpenAI, Anthropic, Gemini, Groq and Mistral are configuration, not code.
 - **Adding a provider is a config change.** New models plug in via
-  [environment variables](../../environment/llm-providers.md), not new client code.
+  [environment variables](../../user-guide/llm-providers.md), not new client code.
 
 ## Resilience: retry vs. fallback
 
@@ -58,7 +58,7 @@ for schema-guided generation and self-correction:
 
 ## Read next
 
-- [Environment → LLM Providers](../../environment/llm-providers.md): the
+- [User Guide → LLM Providers](../../user-guide/llm-providers.md): the
   provider/variable table and credential setup.
-- [semantic_inference overview](index.md): where the router sits in the
+- [Semantic Inference overview](index.md): where the router sits in the
   inference pipeline, and the test tiers.

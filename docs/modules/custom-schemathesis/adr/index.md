@@ -78,3 +78,6 @@ tells you what it governs.
 | [ADR-041](engine.md#adr-041) | engine | A chaos transport is a Protocol resolved from a registry |
 | [ADR-042](foundations.md#adr-042) | package | Each stage owns its constants; the root holds only what two or more layers share |
 | [ADR-043](engine.md#adr-043) | engine | The shared endpoint loop is a higher-order function over a three-field spec |
+| [ADR-044](engine.md#adr-044) | engine | The public findings are a closed union of outcomes; the counters stay measurements |
+| [ADR-045](engine.md#adr-045) | engine | Run status is derived by the engine from the truncation reason |
+| [ADR-046](engine.md#adr-046) | engine | Replay readiness separates missing URL userinfo from a host mismatch, and checks every request's host |

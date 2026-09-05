@@ -45,6 +45,7 @@ from custom_schemathesis import (
     BaseStrategyContract, CompilerInput, EndpointSpec, RequestZones,
     ExecutionConfig, ExecutionMode, StrategyMode,
     StatelessOptions, ReplayOptions,
+    ConfirmedFinding,
     compile_strategies, run,
 )
 
@@ -68,9 +69,11 @@ result = run(
     options=StatelessOptions(),
 )
 
-for report in result.crash_reports:
-    print(report.method, report.endpoint, report.invariant_violated, report.minimal_payload)
-print(result.stats.total_requests, result.stats.findings_unique)
+for finding in result.findings:
+    if isinstance(finding, ConfirmedFinding):
+        report = finding.report
+        print(report.method, report.endpoint, report.invariant_violated, report.minimal_payload)
+print(result.status, result.stats.total_requests, result.stats.findings_unique)
 
 # 3. Reproduce that run: re-send its recorded trace verbatim.
 replay = run(
@@ -85,8 +88,10 @@ print(replay.fidelity.level, len(replay.fidelity.divergences))
 `compile_strategies` returns a `CompilationOutcome`: the `EngineInput` plus one
 `EndpointExclusion` per endpoint that could not be compiled — a rejected
 endpoint is reported, never silently dropped. `run` returns an
-`EngineRunResult`: the crash reports, the `RunStats`, the `ExecutionTrace` that
-reproduces the run, and a `ReplayFidelity` when the run was itself a replay.
+`EngineRunResult`: the `findings` (a closed union of confirmed, flaky and
+unverified outcomes), the terminal `status`, the `RunStats`, the
+`ExecutionTrace` that reproduces the run, and a `ReplayFidelity` when the run
+was itself a replay.
 
 ## The three stages
 
@@ -133,8 +138,9 @@ Reproduction is by **record and replay**, not by seed: a run records the
 ordered trace of the requests it actually sent, and `REPLAY` mode re-sends that
 trace byte for byte — nothing is generated anew, nothing is shrunk.
 `validate_replayable`
-reports whether a recorded trace has everything it needs (identities,
-credentials, a matching host) before you replay it.
+reports whether a recorded trace has everything it needs (its identities, its
+credential headers, the URL userinfo it omitted, and a host that matches the
+live target) before you replay it.
 
 ## The rule behind the design
 

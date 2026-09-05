@@ -130,7 +130,7 @@ sequenceDiagram
         RR->>Orch: execute(blueprint)
     end
     RR->>Fi: assess_fidelity(trace, results) → ReplayFidelity
-    RR-->>RR: EngineRunResult (crash_reports=[], trace, fidelity)
+    RR-->>RR: EngineRunResult (findings=(), status, trace, fidelity)
 ```
 
 `preserve_timing=True` selects the timed pacer, which waits until each

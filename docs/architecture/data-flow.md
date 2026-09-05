@@ -31,7 +31,7 @@ flowchart TD
     ADP --> CI["CompilerInput<br/>(EndpointSpec[])"]
 
     CI -->|"compile_strategies"| EI["EngineInput"]
-    EI -->|"run(mode, options)"| ERR["EngineRunResult<br/>(+ ExecutionTrace)"]
+    EI -->|"run(mode, options)"| ERR["EngineRunResult<br/>(findings · status · ExecutionTrace)"]
 
     ERR --> PERS["storage<br/>(project → analysis → run<br/>+ trace artifact)"]
     PERS -->|"replay mode"| RE["re-sent trace<br/>(recorded vs observed status)"]
@@ -47,7 +47,7 @@ flowchart TD
 | Base + invariants → unified | `contract_engine.fuse_contract` | `core/` fuzz adapter | [`UnifiedEndpointContract`](../modules/contract-engine/index.md) | `fuse_contract` (identity from the OpenAPI base, invariants merged in) |
 | Unified → engine input | `core/` fuzz adapter (`endpoints_to_compiler_input`) | `compile_strategies` | [`CompilerInput` / `EndpointSpec`](../modules/custom-schemathesis/strategy-compiler.md) | the engine's `policy` layer validates each `EndpointSpec` |
 | Compile → run | `custom_schemathesis.compile_strategies` | `custom_schemathesis.run` | [`EngineInput`](../modules/custom-schemathesis/engine-internals.md) | `compile_strategies` (translation only; never re-validates) |
-| Run → result | `custom_schemathesis.run` | `core/` persistence | [`EngineRunResult`](../modules/custom-schemathesis/index.md#the-public-facade) (carries the [`ExecutionTrace`](../modules/custom-schemathesis/index.md#reproducibility)) | the engine emits it; the run's abort policy watches target-failure categories |
+| Run → result | `custom_schemathesis.run` | `core/` persistence | [`EngineRunResult`](../modules/custom-schemathesis/index.md#the-public-facade) (the `findings` union, the terminal `status`, and the [`ExecutionTrace`](../modules/custom-schemathesis/index.md#reproducibility)) | the engine emits it; the run's abort policy watches target-failure categories |
 | Result → storage | `core/` persistence service | `storage` repositories | [`RunRecord` + trace artifact](../modules/storage/data-model.md#data-models-dtos) | one transaction per composed write (project → analysis → run) |
 | Storage → replay | `storage` (recorded trace) | `custom_schemathesis` replay mode | [`ExecutionTrace`](../modules/custom-schemathesis/index.md#reproducibility) | replay checks the trace is replayable before sending, then compares recorded vs observed status per request |
 

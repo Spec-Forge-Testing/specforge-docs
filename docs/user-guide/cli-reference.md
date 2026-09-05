@@ -1,7 +1,10 @@
 # CLI Reference
 
-The CLI is the interactive entry point to Spec Forge. It coordinates contract
-validation, static tracing, LLM-ready context extraction and API fuzzing.
+The CLI is the interactive entry point to Spec Forge. It coordinates workspace
+setup, contract validation, static tracing, LLM-ready context extraction and API
+fuzzing. Every command listed here is typed at the REPL prompt; the two that also
+run straight from your shell (`specforge`, `specforge init`) are called out under
+[Commands run from your shell](#commands-run-from-your-shell).
 
 ## Commands summary
 
@@ -9,14 +12,21 @@ validation, static tracing, LLM-ready context extraction and API fuzzing.
 | :--- | :--- | :--- |
 | **`doctor`** | Diagnostics | Checks environment, pipeline dependencies, and LLM setup. |
 | **`doctor --fix`** | Diagnostics | Guided automated installation and dependency fixes. |
+| **`init`** | Setup | Scaffolds the local workspace (`.specforge/` directory and a default `specforge.toml`). |
+| **`contract-engine`** | Contract | Validates or analyzes an OpenAPI spec, listing its endpoints and any deviations. |
 | **`trace`** | Analysis | Static code tracing from an OpenAPI endpoint. |
 | **`ast-extract`** | Analysis | Inspects extracted code structures and LLM context. |
-| **`fuzz`** | Execution | Compiles strategies from schema and fuzzes a live API. |
+| **`fuzz`** | Execution | Compiles test-case generators from the schema and fuzzes a live API. |
 | **`replay`** | Execution | Re-sends an analysis's recorded trace and rules a verdict per defect. |
 | **`history`** | History | Browses persisted projects, analyses and runs, with filters. |
 | **`inspect`** | History | Shows one run in full (metrics, latency, crashes, artifacts), or one crash in full (payload, headers, response body). |
 | **`compare`** | History | Diffs two runs' defect sets — appeared, persisted, possibly resolved — marking a pair that is not directly comparable. |
-| **`!`** | System | Executes system shell commands directly from REPL. |
+| **`prune`** | History | Reports, compresses and deletes stored artifacts under a retention policy you spell out. |
+| **`ls`** · **`cd`** | Navigation | List files / change the session's working directory. |
+| **`!`** | System | Runs a system shell command directly from the REPL. |
+| **`clear`** · **`cls`** | System | Clears the screen and redraws the banner. |
+| **`help`** | System | Lists commands, or shows one command's help panel. |
+| **`exit`** | System | Leaves the REPL. |
 | **`theme`** | Settings | Switches the CLI UI color theme. |
 
 ## Running
@@ -26,7 +36,13 @@ specforge          # launch the interactive REPL
 ```
 
 Inside the REPL, type `help` to list commands or `help <command>` for details —
-any command invoked with `--help`/`-h` renders the same panel.
+any command invoked with `--help`/`-h` renders the same panel. Type `exit` (or
+press `Ctrl-D`) to leave.
+
+Flags with a value take it as the next word (`--project 1`, `--base-url
+http://localhost:8000`); boolean flags take none. An unrecognized flag is ignored,
+so a mistyped one silently does nothing — check the spelling here if a run behaves
+unexpectedly.
 
 ## Commands
 
@@ -79,6 +95,53 @@ any command invoked with `--help`/`-h` renders the same panel.
     > to a non-UTF-8 pipe can raise an encoding error (a pre-existing, app-wide trait of
     > the Rich presentation layer, not specific to this command).
 
+??? "`init` — scaffold the local workspace"
+
+    ```text
+    SpecForge ❯ init
+    ```
+
+    `init` prepares the current directory to be a Spec Forge workspace. It creates
+    the hidden `.specforge/` data directory (where the storage database and saved
+    artifacts live) and writes a default `specforge.toml` you then point at your
+    OpenAPI spec. It takes no flags.
+
+    If a `specforge.toml` already exists, `init` asks before overwriting it and
+    keeps your file if you decline; the data directory is only created when it is
+    missing. It finishes by printing the next two steps: fill in the spec path, then
+    validate it with `contract-engine`.
+
+    This command also runs straight from your shell as `specforge init` — see
+    [Commands run from your shell](#commands-run-from-your-shell). Both forms do the
+    same thing.
+
+??? "`contract-engine` — validate or analyze an OpenAPI spec"
+
+    ```text
+    SpecForge ❯ contract-engine --validate -f openapi.yaml
+    SpecForge ❯ contract-engine --analyze --file petstore.json
+    ```
+
+    `contract-engine` reads an OpenAPI contract through the Contract Engine and tells
+    you whether Spec Forge can work with it. Pick exactly one mode:
+
+    - **`--validate`** — load the spec, report any **deviations** (parts the engine
+      had to correct or could not fully honor), and close with a one-line verdict.
+      A clean spec prints `Contract is valid! (OpenAPI 3.1.0)`; a spec with problems
+      prints a warning that names how many deviations were found and which dialect
+      (Swagger 2.0 / OpenAPI 3.x) it was read as.
+    - **`--analyze`** — everything `--validate` does, plus a summary of the contract
+      and a **table of every endpoint** the engine extracted (method, path and the
+      operation it maps to).
+
+    The spec file is given with `--file`/`-f`; you must supply one, plus exactly one
+    mode, or the command refuses with a usage hint.
+    If the Contract Engine library is not installed it says so
+    and points at `pip install -e lib/contract_engine` — see
+    [Installation](installation.md). This is the same validation the
+    [Example Walkthrough](example-walkthrough.md) runs first, before any tracing or
+    fuzzing.
+
 ??? "`trace` — static code tracing from an OpenAPI endpoint"
 
     ```text
@@ -113,6 +176,16 @@ any command invoked with `--help`/`-h` renders the same panel.
     SpecForge > trace -c openapi.yaml -p /path/to/project --path /users --method post
     ```
 
+    Flags:
+
+    | Flag | Meaning |
+    | :--- | :--- |
+    | `--contract`, `-c` | Path to the OpenAPI file. |
+    | `--project`, `-p` | Path to the source repository being tested. |
+    | `--operation-id` | The endpoint's OpenAPI `operationId`. |
+    | `--path` | The endpoint path, when there is no `operationId`. |
+    | `--method`, `-m` | The HTTP verb, paired with `--path`. |
+
 ??? "`ast-extract` — inspect the extracted code and the LLM context"
 
     ```text
@@ -140,7 +213,7 @@ any command invoked with `--help`/`-h` renders the same panel.
     show the primary controller and the selected fallback files, so there is always
     something to inspect.
 
-??? "`fuzz` — compile strategies from the schema and fuzz a live API"
+??? "`fuzz` — generate test cases from the schema and fuzz a live API"
 
     ```text
     SpecForge ❯ fuzz -f openapi.yaml --base-url http://localhost:8000
@@ -269,7 +342,7 @@ any command invoked with `--help`/`-h` renders the same panel.
     OpenAPI base with the Contract Engine's `fuse_contract` — the producer's
     invariants win on conflict, the base fills the gaps — and the result replaces
     the bare schema in the compile; an endpoint with no file stays schema-only.
-    A trimmed fixture:
+    A trimmed fixture (the enrichment sections abbreviated to their shape):
 
     ```json
     {
@@ -293,25 +366,11 @@ any command invoked with `--help`/`-h` renders the same panel.
       "attack": {
         "attack_profiles": ["injection", "auth_bypass"],
         "focus_fields": ["title", "body"],
-        "aggressiveness": 6,
-        "field_hints": {
-          "body.article.title": {
-            "attack_profiles": ["xss", "sql_injection"],
-            "include_encoded_variants": true
-          }
-        }
+        "field_hints": {"body.article.title": {"attack_profiles": ["xss", "sql_injection"]}}
       },
       "transitions": [
-        {
-          "bundle": "slug",
-          "follow_up_method": "get",
-          "follow_up_path": "/articles/{slug}",
-          "target_field": "slug",
-          "target_zone": "path",
-          "expected_statuses": [200],
-          "echoed_fields": ["title", "body"],
-          "trigger_statuses": [201]
-        }
+        {"bundle": "slug", "follow_up_method": "get", "follow_up_path": "/articles/{slug}",
+         "target_field": "slug", "target_zone": "path", "trigger_statuses": [201]}
       ]
     }
     ```
@@ -596,6 +655,32 @@ any command invoked with `--help`/`-h` renders the same panel.
     **Replayable** column derived from the trace's presence, so a consented
     trace deletion is visible the moment it happens.
 
+??? "Workspace navigation — `ls`, `cd`, `clear`, `help`, `exit`"
+
+    The REPL keeps a **current working directory** — the same one `!` commands run
+    in — so you can move around a repository without leaving the session. These
+    built-ins do that and a few other housekeeping tasks:
+
+    ```text
+    SpecForge ❯ cd lib/contract_engine   # move into a directory
+    SpecForge ❯ cd                       # print the current directory, move nowhere
+    SpecForge ❯ ls                       # list the current directory
+    SpecForge ❯ ls docs                  # list a specific directory
+    ```
+
+    | Command | What it does |
+    | :--- | :--- |
+    | `ls [path]` | Lists the entries in `path` (the current directory by default), directories first and marked. |
+    | `cd [path]` | Changes the working directory to `path`; with no argument, prints where you are. |
+    | `clear` (alias `cls`) | Clears the screen and redraws the banner. |
+    | `help [command]` | Lists every command, or shows one command's help panel. |
+    | `exit` | Ends the session cleanly (so does `Ctrl-D`). |
+
+    `cd` moves the whole process, so the working directory it sets is what `trace`,
+    `ast-extract` and every `!` command see afterwards; relative paths you pass to
+    other commands are resolved against it. A path that does not exist is reported as
+    an error and the session keeps going.
+
 ??? "`!` — run system commands"
 
     ```text
@@ -635,6 +720,20 @@ any command invoked with `--help`/`-h` renders the same panel.
     Switching the theme re-skins **everything** — console output, the banner and the
     REPL prompt. Bundled themes: `default`, `mono`, `nord`, `dracula`, `solarized`,
     `matrix`; the theme can also be chosen at startup with `SPECFORGE_THEME=<name>`.
+    An unknown name is refused, and the refusal lists the ones that exist.
+
+## Commands run from your shell
+
+Two commands run straight from your terminal, without entering the REPL:
+
+| Shell command | What it does |
+| :--- | :--- |
+| `specforge` | Launches the interactive REPL. Everything above is typed at its prompt. |
+| `specforge init` | Scaffolds the local workspace — identical to the REPL's `init` command. |
+
+Running `specforge init` before a session is the usual way to prepare a fresh
+directory; from then on you stay inside the REPL. Every other command in this
+reference is a REPL command and has no `specforge <command>` form.
 
 ## Coverage and the run's signal
 

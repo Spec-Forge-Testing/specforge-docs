@@ -17,7 +17,8 @@ from custom_schemathesis import (
     CompilerInput, EndpointSpec, RequestZones,
     BaseStrategyContract, HackerStrategyContract,
     ExecutionConfig, Identity, ExecutionMode, StrategyMode,
-    CompilationOutcome, EngineRunResult, CrashReport,
+    CompilationOutcome, EngineRunResult, RunStatus,
+    Finding, ConfirmedFinding, FlakyFinding, UnverifiedFinding, CrashReport,
 )
 ```
 
@@ -69,9 +70,12 @@ Field names of this family are stable: they are persisted as columns.
 | `CompilationOutcome` | Result: `engine_input` + `exclusions` |
 | `EndpointExclusion` | one rejected endpoint with its `reason` |
 | `EngineInput`, `CompiledExecutionEndpoint`, `CompiledEndpointStrategies` | the executable compile output |
-| `EngineRunResult` | `crash_reports` + `stats` + `trace` + optional `fidelity` |
+| `EngineRunResult` | `findings` + `status` + `stats` + `trace` + optional `fidelity` |
+| `Finding` | the discriminated union of `ConfirmedFinding`, `FlakyFinding`, `UnverifiedFinding` on `state` |
+| `ConfirmedFinding` | a settled reproducer: carries its `report` |
+| `FlakyFinding`, `UnverifiedFinding` | a settled group: its `signature` and how many raw `occurrences` it stands for |
 | `RunStats`, `EndpointStats`, `LatencyStats` | run, endpoint and latency counters |
-| `CrashReport`, `InvariantViolation` | one finding and the invariant it broke |
+| `CrashReport`, `InvariantViolation` | a confirmed finding's reproducer and the invariant it broke |
 | `ExecutionTrace`, `TracedRequest`, `TruncationRecord` | the replayable record |
 | `ResponseDivergence`, `ReplayFidelity` | the replay comparison |
 | `ReplayReadiness` | the outcome of `validate_replayable` |
@@ -90,6 +94,8 @@ Field names of this family are stable: they are persisted as columns.
 |---|---|
 | `ExecutionMode` | `STATELESS` / `STATEFUL` / `REPLAY` / `PERFORMANCE` / `RESILIENCE` |
 | `StrategyMode` | `DEFAULT` / `HACKER` (global on `CompilerInput`) |
+| `RunStatus` | a run's terminal outcome: `COMPLETED` / `TRUNCATED` / `ABORTED` |
+| `FindingState` | a finding's settled state: `CONFIRMED` / `FLAKY` / `UNVERIFIED` |
 | `ErrorCategory` | the outcome category of one request |
 | `TruncationReason` | why a run, or one endpoint, was cut short |
 | `FidelityLevel` | `EXACT` / `REDUCED` |

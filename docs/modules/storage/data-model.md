@@ -45,7 +45,7 @@ instead of silently reconnecting.
 ## Transactional boundary (Unit of Work)
 
 A composed write spans several tables — `project → analysis → analysis_endpoints →
-run → run_metrics → run_endpoint_stats → crash_reports → artifact`. Persisting a run
+run → run_metrics → run_endpoint_stats → findings → artifact`. Persisting a run
 is one such write, and it must be **all-or-nothing**: a failure halfway through cannot
 leave a partial or orphaned analysis behind. `StorageEngine` provides that boundary as
 a transaction-scoped **Unit of Work**.
@@ -143,10 +143,10 @@ connection" would be hidden, non-thread-safe mutable state.
       | `total_requests` | `int` | Total requests sent during the run. |
       | `findings_raw` | `int` | Violations found during exploration, before shrinking. |
       | `findings_confirmed` | `int` | Representatives that still reproduced after shrinking. |
-      | `findings_unique` | `int` | Distinct defects (`== len(crash_reports)`). |
+      | `findings_unique` | `int` | Distinct defects, equal to the count of confirmed rows in `findings` for this run. |
       | `findings_flaky` | `int` | Representatives that failed to reproduce. |
       | `findings_collapsed` | `int` | Findings never shrunk: a representative of their signature stood for them. Zero for modes without a shrink phase. |
-      | `findings_unverified` | `int` | Findings never attempted at all, because the run was cut before shrinking started (`TARGET_DOWN`). `findings_raw == findings_confirmed + findings_flaky + findings_collapsed + findings_unverified`. Zero for modes without a shrink phase. |
+      | `findings_unverified` | `int` | Findings never attempted: the run was cut before shrinking, or the strategy could not produce a candidate. `findings_raw == findings_confirmed + findings_flaky + findings_collapsed + findings_unverified`. Zero for modes without a shrink phase. |
       | `requests_shrink` | `int` | Requests the shrinking phase put on the wire; not part of `total_requests`. Zero for modes without a shrink phase. |
       | `by_phase` | `str \| None` | Request breakdown by phase, as JSON. |
       | `by_category` | `str \| None` | Request breakdown by error category, as JSON. |
@@ -160,7 +160,7 @@ connection" would be hidden, non-thread-safe mutable state.
       | `analysis_endpoint_id` | `int` | Foreign key to `AnalysisEndpointRecord.id`. |
       | `requests` | `int` | Requests sent to this endpoint during the run. |
       | `findings_raw` | `int` | Violations found for this endpoint, before shrinking. |
-      | `crash_count` | `int` | Materialized count of this endpoint's `crash_reports` rows (not a copy). |
+      | `crash_count` | `int` | Materialized count of this endpoint's confirmed rows in `findings` (not a copy). |
       | `latency` | `LatencyRecord` | The endpoint's latency distribution, nested from seven flat columns. |
 
 ??? "`LatencyRecord` - An endpoint's **latency distribution**, in milliseconds."
@@ -177,22 +177,36 @@ connection" would be hidden, non-thread-safe mutable state.
       | `min_ms` / `max_ms` / `mean_ms` | `float` | Extremes and mean, in milliseconds. |
       | `p50_ms` / `p95_ms` / `p99_ms` | `float` | Nearest-rank percentiles, in milliseconds. |
 
-??? "`CrashReportRecord` - A distinct **defect found** during a run."
+??? "`FindingRecord` - A single **finding** of a run, confirmed or not."
+
+      One row per finding of any `state`, written in the same transaction as its
+      run. Only a confirmed finding carries a reproducer: `status_code`,
+      `minimal_payload`, `sanitized_headers` and `response_body` are `NULL` for a
+      flaky or unverified one. The record's validator rejects a confirmed row
+      missing any of those four fields — a confirmed finding without its
+      reproducer is a contradiction in terms.
+
+      The reader surfaces — `history`, the run reports and `compare` — show
+      confirmed findings only; the flaky and unverified rows are kept for
+      reconciliation. `FindingsRepository.count_by_state(run_id)` tallies a run's
+      rows by state, so the persisted findings can be cross-checked against the
+      `run_metrics` counters.
 
       | Field | Type | Description |
       |---|---|---|
       | `id` | `int` | Auto-incrementing primary key. |
       | `run_id` | `int` | Foreign key to `RunRecord.id`. |
       | `analysis_endpoint_id` | `int \| None` | Foreign key to `AnalysisEndpointRecord.id`; `None` if the finding spans several endpoints (stateful). |
-      | `method` / `path` / `phase` | `str` | Identity of the request that triggered the defect, and its phase (valid/boundary/invalid/attack/stateful). |
+      | `method` / `path` / `phase` | `str` | Identity of the request that triggered the finding, and its phase (valid/boundary/invalid/attack/transition). |
       | `invariant_violated` | `str` | Which invariant was violated. |
-      | `status_code` | `int` | Status code of the failing response. |
-      | `minimal_payload` | `str` | Minimal reproducible payload, as JSON. |
-      | `sanitized_headers` | `str` | Headers as JSON, with secrets already redacted by the engine. |
-      | `response_body` | `str` | Body of the failing response. |
+      | `state` | `str` | The finding's lifecycle outcome: `confirmed` / `flaky` / `unverified`. The engine owns the vocabulary; the column is free text. |
+      | `status_code` | `int \| None` | Status code of the failing response; `NULL` with no reproducer. |
+      | `minimal_payload` | `str \| None` | Minimal reproducible payload, as JSON; `NULL` with no reproducer. |
+      | `sanitized_headers` | `str \| None` | Headers as JSON, with secrets already redacted by the engine; `NULL` with no reproducer. |
+      | `response_body` | `str \| None` | Body of the failing response; `NULL` with no reproducer. |
       | `stack_trace` | `str \| None` | Filled in later by the Auto-Fixer; the engine leaves it `None`. |
       | `transition_sequence` | `str \| None` | Request chain as JSON, stateful findings only. |
-      | `represented_findings` | `int` | Raw findings this report stands for: itself, its unshrunk group mates and the duplicates it absorbed. Always 1 for stateful findings. |
+      | `represented_findings` | `int` | Raw findings this row stands for: itself, its unshrunk group mates and the duplicates it absorbed. Always 1 for stateful findings. |
       | `identity_label` | `str \| None` | The identity the failing request was sent under; `None` when the run declared none. |
 
 ??? "`ArtifactRecord` - A **recipe-level artifact** or a **report-level one**"

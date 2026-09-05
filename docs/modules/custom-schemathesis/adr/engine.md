@@ -166,7 +166,7 @@ handling; it declares `options_type` and the registry does the rest.
 
 ## ADR-022 — Replay readiness is a value object the engine computes { #adr-022 }
 
-**Status:** accepted · `engine/trace/`, `models/engine/replay.py`
+**Status:** accepted · Superseded in part by [ADR-045](#adr-045), [ADR-046](#adr-046) · `engine/trace/`, `models/engine/replay.py`
 
 ### Context
 
@@ -549,3 +549,123 @@ from the `RunAggregate` it is handed.
 A runner that reuses the loop supplies three callables in one frozen object; the
 target-down cut ends the run and wins over any softer cut; and a runner whose
 shape does not fit writes its own loop and owes the spec nothing.
+
+---
+
+## ADR-044 — The public findings are a closed union of outcomes; the counters stay measurements { #adr-044 }
+
+**Status:** accepted · `models/engine/findings.py`, `engine/findings/assembler.py`, `models/engine/results.py`
+
+### Context
+
+A run's `RunStats` already reports, per counter, how many findings were
+confirmed, went flaky or were never verified. But the only findings a consumer
+could actually inspect were the confirmed ones: `EngineRunResult` carried the
+shrunk crash reports and nothing else. The flaky and the unverified outcomes
+existed as numbers with no object behind them, so a caller could tell *how many*
+findings did not reproduce but never *which signature* they belonged to.
+
+### Decision
+
+`EngineRunResult.findings` is a `tuple[Finding, ...]`, where `Finding` is a
+discriminated union on `state` (`FindingState`): a `ConfirmedFinding` wraps its
+`CrashReport`, while a `FlakyFinding` and an `UnverifiedFinding` each carry a
+`FindingSignature` and the raw `occurrences` they stand for — one object per
+signature, `occurrences` mirroring `CrashReport.represented_findings`. The six
+`RunStats.findings_*` counters are unchanged and remain the measurement of
+record; the union reifies them: the confirmed findings are the deduplicated
+reproducers (`findings_unique`), the summed flaky occurrences are
+`findings_flaky`, the summed unverified occurrences are `findings_unverified`.
+`findings_collapsed` stays a counter only.
+
+### Rejected
+
+Replacing the counters with a length over the filtered union — a run's headline
+numbers should be one cheap aggregate, not a re-count of a variable-length
+structure. Leaving flaky and unverified as counters alone — a consumer that
+wants to show what did not reproduce would have a number and nothing to point
+at. Reifying `findings_collapsed` too — a collapsed finding is a duplicate a
+confirmed reproducer already stands for, not a distinct symptom, so it has no
+object of its own.
+
+### Consequences
+
+Every settled finding is a first-class object a reader can inspect; the counters
+stay the measurement and the union reifies them, so the two can be reconciled;
+and `collapsed` has no object precisely because it names duplicates, not defects.
+
+---
+
+## ADR-045 — Run status is derived by the engine from the truncation reason { #adr-045 }
+
+**Status:** accepted · `models/engine/run_status.py`, `models/engine/results.py`
+
+### Context
+
+A run ends three ways: it ran to completion, a soft cut truncated it (a budget
+or deadline reached), or an abort stopped it because continuing was pointless
+(the target went down, a state link could not be honored). Which of the three a
+run landed in depends on the truncation reason — engine knowledge — yet the
+orchestrator that persists the run needs it as a plain value, and ADR-022 had
+left `EngineRunResult` with no status field at all.
+
+### Decision
+
+`RunStatus` is a `StrEnum` (`completed` / `truncated` / `aborted`) and
+`EngineRunResult.status` carries it. `run_status` maps the truncation reason:
+no truncation is `completed`, `TARGET_DOWN` and `STATE_LINK_ABORT` are
+`aborted`, every other reason is `truncated`. The engine derives it once, where
+the reason is known; the orchestrator persists it as recorded.
+
+### Rejected
+
+Leaving the consumer to classify the `TruncationRecord`. It would mirror the
+engine's own rule and drift from it — the same argument that made replay
+readiness engine-owned in ADR-022. A run's terminal outcome and a replay's
+pre-flight readiness are now distinct questions, each answered by its own value.
+
+### Consequences
+
+A run's terminal outcome is one enum on the result, produced where the
+truncation reason is known. The persisted vocabulary reserves an extra `failed`
+value for a run that raised before producing a result; the engine never emits
+it, because a run that raises has no `EngineRunResult` to carry a status.
+
+---
+
+## ADR-046 — Replay readiness separates missing URL userinfo from a host mismatch, and checks every request's host { #adr-046 }
+
+**Status:** accepted · `models/engine/replay.py`, `engine/trace/rehydrate.py`, `engine/trace/replay_readiness.py`
+
+### Context
+
+A recorded trace strips the `user:pass@` userinfo out of every URL, and a
+replay re-supplies it from the live config's `base_url`. Two different things
+can go wrong: the `base_url` carries no userinfo to re-supply, or it points at a
+different host than the trace recorded. ADR-022's readiness value folded both
+into one `host_mismatches` tuple that was only consulted where userinfo was
+needed, so a replay aimed at another host whose trace happened to keep its own
+userinfo slipped past the pre-flight check and was refused only mid-rehydration,
+as an exception rather than a readiness verdict.
+
+### Decision
+
+`ReplayReadiness` gains a fourth tuple. `missing_url_userinfo` lists recorded
+hosts whose omitted userinfo the live `base_url` cannot supply; `host_mismatches`
+lists recorded hosts that differ from the live host, checked for **every**
+request regardless of userinfo. `is_ready` is true only when all four tuples are
+empty, so a replay pointed at another host is refused before any request is
+sent. The CLI's `replay` maps each tuple to its own error message.
+
+### Rejected
+
+Keeping the single host check gated behind the userinfo path. It left the
+retargeting case to fail late, inside rehydration, as an `EngineError` the caller
+could only catch — not as the readiness verdict a caller wants in order to show
+what is wrong before it commits to a replay.
+
+### Consequences
+
+The two host-level failures a replay can hit are named separately and each maps
+to its own message; and a trace can never be replayed against a host it was not
+recorded for, because the host check is pre-flight and covers every request.

@@ -134,9 +134,9 @@ table of checkers — a missing type is a lookup miss, not a silent pass.
 
 ## The finding pipeline
 
-`engine/findings/` turns raw findings into deduplicated crash reports and the
-run's statistics. A finding's life runs signature → group → shrink → materialize
-→ dedupe → stats.
+`engine/findings/` turns raw findings into deduplicated crash reports, the
+public finding union and the run's statistics. A finding's life runs signature →
+group → shrink → materialize → dedupe → assemble → stats.
 
 - **Signature.** `signature_of` builds a `FindingSignature` from what the
   failure looks like from the outside: endpoint, phase, primary violation,
@@ -160,6 +160,12 @@ run's statistics. A finding's life runs signature → group → shrink → mater
   endpoint, invariant, status, identity and the canonical reproducer, phase
   deliberately excluded — and folds every duplicate's `represented_findings`
   into the one it kept.
+- **Assemble.** `assemble_findings` reifies the outcomes as the closed `Finding`
+  union `EngineRunResult.findings` carries: one `ConfirmedFinding` per
+  deduplicated report, then the shrinker's own `FlakyFinding`s and
+  `UnverifiedFinding`s — each an entry per signature carrying the raw
+  `occurrences` it stands for. The counters stay the measurement; the union
+  reifies them ([ADR-044](adr/engine.md#adr-044)).
 - **Stats.** Four builders, one per lifecycle — `build_stats` (stateless),
   `build_stateful_stats`, `build_unshrunk_stats` (performance, resilience) and
   `build_replay_stats` — all start from the shared `RequestBreakdown`:
@@ -209,7 +215,9 @@ resend the moment an abort streak needs adjudicating
 ([ADR-035](adr/engine.md#adr-035)). A run of consecutive 5xx on one endpoint is
 adjudicated the same way: past `MAX_CONSECUTIVE_SERVER_ERRORS`, the known-good
 request is resent off-budget; if it answers, the 500s are genuine findings, and
-if it does not, the run cuts `TARGET_DOWN`.
+if it does not, the run cuts `TARGET_DOWN`. A dead target can confirm nothing, so
+its raw findings are counted `unverified` — one `UnverifiedFinding` per
+signature — rather than spending requests rediscovering the target is down.
 
 **Shrinking** (`shrinking.py`) runs off the findings, never the results, so its
 requests stay out of the trace. It first re-sends the finding's own payload to
@@ -276,12 +284,17 @@ suppliable, and when the URL's userinfo was omitted the live `base_url` must
 supply it for a **matching host**. Each rule that fails raises, so a replay
 stops before sending a request it cannot fully reconstruct.
 
-`validate_replayable(trace, config)` runs those same three rules over a whole
-trace **without raising**, returning a `ReplayReadiness` value object with the
-`missing_identities`, `missing_credentials` and `host_mismatches` it found and an
-`is_ready` that is true only when all three are empty
-([ADR-022](adr/engine.md#adr-022)). A trace that cannot be replayed is an
-expected answer, not an error.
+`validate_replayable(trace, config)` runs those rules over a whole trace
+**without raising**, returning a `ReplayReadiness` value object with four
+tuples — `missing_identities`, `missing_credentials`, `missing_url_userinfo`
+(recorded hosts whose omitted userinfo the live `base_url` cannot supply) and
+`host_mismatches` (recorded hosts that differ from the live host) — and an
+`is_ready` that is true only when all four are empty
+([ADR-022](adr/engine.md#adr-022), [ADR-046](adr/engine.md#adr-046)). The host
+is checked for **every** request, not only where userinfo was omitted, so a
+replay pointed at another host is refused pre-flight even when the trace kept its
+own userinfo. A trace that cannot be replayed is an expected answer, not an
+error.
 
 `engine/replay/` compares and paces. `assess_fidelity` classifies a replay as
 `EXACT` or `REDUCED`: a request whose observed status differs from the recorded

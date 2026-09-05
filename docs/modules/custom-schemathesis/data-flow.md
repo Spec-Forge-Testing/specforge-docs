@@ -59,7 +59,8 @@ The types that cross a stage line, all validated with `extra="forbid"`:
 | `CompilationOutcome` | out | Result object: `EngineInput` plus a tuple of `EndpointExclusion` |
 | `EngineInput` | out → in | `CompiledExecutionEndpoint[]`; the engine consumes this alone |
 | `RunRequest` | in | one run's inputs: `engine_input` + `ExecutionConfig` + mode `options` |
-| `EngineRunResult` | out | crash reports, `RunStats`, `ExecutionTrace`, optional `ReplayFidelity` |
+| `EngineRunResult` | out | the `findings` union, terminal `status`, `RunStats`, `ExecutionTrace`, optional `ReplayFidelity` |
+| `Finding` (`ConfirmedFinding` / `FlakyFinding` / `UnverifiedFinding`) | out | discriminated union on `state`; a confirmed finding carries a `CrashReport`, the other two a `signature` and their `occurrences` |
 | `CrashReport`, `RunStats`, `EndpointStats`, `LatencyStats` | out | serialized to columns by `core/` — field names are stable |
 | `ExecutionTrace`, `TracedRequest`, `TruncationRecord` | out | the replayable record |
 | `ReplayReadiness` | out | outcome of the pre-replay readiness check |
@@ -70,7 +71,7 @@ graph LR
     co --> ei["EngineInput<br/>(CompiledExecutionEndpoint[])"]
     ei --> rr["RunRequest<br/>(+ ExecutionConfig + options)"]
     rr --> eng["engine run"]
-    eng --> res["EngineRunResult<br/>(CrashReport[] · RunStats · ExecutionTrace)"]
+    eng --> res["EngineRunResult<br/>(Finding[] · status · RunStats · ExecutionTrace)"]
     rr -.->|replay| rk["ReplayReadiness"]
 ```
 
@@ -243,9 +244,14 @@ so its field names are stable.
 ## Replay
 
 Before replaying, the readiness check returns a `ReplayReadiness` value object
-with three tuples — `missing_identities`, `missing_credentials`,
-`host_mismatches` — and an `is_ready` property that is true only when all
-three are empty ([ADR-022](adr/engine.md#adr-022)). After a replay,
+with four tuples — `missing_identities`, `missing_credentials`,
+`missing_url_userinfo` (recorded hosts whose omitted `user:pass@` the live
+`base_url` cannot supply) and `host_mismatches` (recorded hosts that differ from
+the live host, checked for every request) — and an `is_ready` property that is
+true only when all four are empty
+([ADR-022](adr/engine.md#adr-022), [ADR-046](adr/engine.md#adr-046)). A replay
+pointed at another host is therefore refused before any request is sent, even
+when the trace kept its own userinfo. After a replay,
 `ReplayFidelity` reports the run-level verdict: a `FidelityLevel` (`exact` /
 `reduced`) and the list of `ResponseDivergence`s (a request whose observed
 status differed from the recorded one; its `violated` flag says whether the
@@ -285,7 +291,7 @@ producer:
 |---|---|
 | `findings_raw` | violations observed during exploration, before shrinking |
 | `findings_confirmed` | shrink attempts that reproduced and became a crash report |
-| `findings_unique` | distinct defects after collapsing reports with the same minimal reproducer and identity (`== len(crash_reports)`, never above `findings_confirmed`) |
+| `findings_unique` | distinct defects after collapsing reports with the same minimal reproducer and identity (equal to the count of `ConfirmedFinding`s, never above `findings_confirmed`) |
 | `findings_flaky` | attempted during shrinking and did not reproduce |
 | `findings_collapsed` | not shrunk because a faithful representative of their signature stands for them |
 | `findings_unverified` | never attempted: the run was cut before shrinking, or no candidate could be produced |
@@ -301,6 +307,22 @@ The lifecycle mechanics — one producer per counter, the flaky count measured i
 the shrinker rather than derived by subtraction — are the engine's finding
 pipeline ([Engine internals](engine-internals.md#the-finding-pipeline),
 [ADR-018](adr/engine.md#adr-018)).
+
+`EngineRunResult.findings` reifies those counters as a closed union. `Finding`
+is discriminated on `state` (`FindingState`): a `ConfirmedFinding` wraps its
+`CrashReport`; a `FlakyFinding` and an `UnverifiedFinding` each carry a
+`FindingSignature` and the raw `occurrences` they stand for — one object per
+signature. The confirmed findings are the deduplicated reproducers
+(`findings_unique`), the summed flaky occurrences are `findings_flaky`, and the
+summed unverified occurrences are `findings_unverified`; `findings_collapsed`
+stays a counter only, since a collapsed finding is a duplicate a confirmed
+reproducer already stands for ([ADR-044](adr/engine.md#adr-044)).
+
+`EngineRunResult.status` is the run's terminal outcome as a `RunStatus`:
+`completed` when nothing truncated it, `aborted` when a `TARGET_DOWN` or
+`STATE_LINK_ABORT` cut it, `truncated` for every other cut. The engine derives
+it from the truncation reason; the orchestrator persists it as recorded
+([ADR-045](adr/engine.md#adr-045)).
 
 ## Failures, not `None`
 

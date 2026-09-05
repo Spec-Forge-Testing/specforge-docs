@@ -160,7 +160,7 @@ connection" would be hidden, non-thread-safe mutable state.
       | `analysis_endpoint_id` | `int` | Foreign key to `AnalysisEndpointRecord.id`. |
       | `requests` | `int` | Requests sent to this endpoint during the run. |
       | `findings_raw` | `int` | Violations found for this endpoint, before shrinking. |
-      | `crash_count` | `int` | Materialized count of this endpoint's confirmed rows in `findings` (not a copy). |
+      | `findings_confirmed` | `int` | Materialized count of this endpoint's confirmed rows in `findings` (not a copy). |
       | `latency` | `LatencyRecord` | The endpoint's latency distribution, nested from seven flat columns. |
 
 ??? "`LatencyRecord` - An endpoint's **latency distribution**, in milliseconds."

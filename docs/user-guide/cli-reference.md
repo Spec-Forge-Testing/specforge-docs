@@ -6,6 +6,9 @@ fuzzing. Every command listed here is typed at the REPL prompt; the two that als
 run straight from your shell (`specforge`, `specforge init`) are called out under
 [Commands run from your shell](#commands-run-from-your-shell).
 
+New to the vocabulary? [Core Concepts](concepts.md) explains the workflow in plain words and
+the [Glossary](glossary.md) defines every term used below in one sentence.
+
 ## Commands summary
 
 | Command | Category | Description |

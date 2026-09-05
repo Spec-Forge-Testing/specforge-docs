@@ -123,10 +123,20 @@ nav:
           - Custom Schemathesis:
               - Overview: modules/custom-schemathesis/index.md
               - Architecture: modules/custom-schemathesis/architecture.md
-              - Stateful fuzzing: modules/custom-schemathesis/stateful-fuzzing.md
-              - Replay: modules/custom-schemathesis/replay.md
-              - Strategy compiler internals: modules/custom-schemathesis/strategy-compiler-internals.md
-              - Reference: modules/custom-schemathesis/reference.md
+              - Data flow: modules/custom-schemathesis/data-flow.md
+              - Strategy compiler: modules/custom-schemathesis/strategy-compiler.md
+              - Engine internals: modules/custom-schemathesis/engine-internals.md
+              - Execution modes: modules/custom-schemathesis/execution-modes.md
+              - Extension guide: modules/custom-schemathesis/extension-guide.md
+              - API Reference: modules/custom-schemathesis/api-reference.md
+              - Decision records:
+                  - Overview: modules/custom-schemathesis/adr/index.md
+                  - Foundations: modules/custom-schemathesis/adr/foundations.md
+                  - Models: modules/custom-schemathesis/adr/models.md
+                  - Public API: modules/custom-schemathesis/adr/api.md
+                  - Strategy compiler: modules/custom-schemathesis/adr/compiler.md
+                  - Engine: modules/custom-schemathesis/adr/engine.md
+              - Testing: modules/custom-schemathesis/testing.md
       - Test Corpora:
           - Overview: testing/index.md
           - RealWorld corpus: testing/real-world.md

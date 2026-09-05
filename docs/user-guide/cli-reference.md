@@ -233,7 +233,7 @@ any command invoked with `--help`/`-h` renders the same panel.
     or crashes instead of degrading gracefully. `--latency-sla-ms` is refused with
     any other mode.
 
-    `--mode stateful` switches to [stateful fuzzing](../modules/custom-schemathesis/stateful-fuzzing.md):
+    `--mode stateful` switches to [stateful fuzzing](../modules/custom-schemathesis/execution-modes.md#stateful):
     requests are **chained into sequences** instead of each operation being fuzzed on
     its own, which surfaces order-dependent failures — a resource created, deleted,
     then read. `--endpoint`/`--method` still narrow the sequences to the matching

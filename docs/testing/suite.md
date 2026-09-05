@@ -245,8 +245,8 @@ template syntax, which was the prior hypothesis.
 
 `contract_engine/` has **27 of 74 red**, and everything downstream inherits
 that: `core_ast/` can't be read as a measurement of language support while
-the contract isn't arriving intact. This is the first item, tracked in the
-Contract Engine epic (AI-198…AI-202).
+the contract isn't arriving intact. This is the first item of the contract
+engine's own backlog.
 
 ### 2. Run `core_ast/`
 

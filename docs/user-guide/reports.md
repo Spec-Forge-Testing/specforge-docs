@@ -72,7 +72,7 @@ the closed status vocabulary.
 
 ## Machine output: `--json-output`
 
-`fuzz`, `replay`, `inspect`, `history` and `compare` all accept
+`fuzz`, `replay`, `inspect`, `history`, `compare` and `prune` all accept
 `--json-output` (see [CLI Reference](cli-reference.md)). It wraps the same building
 blocks - the run report document, a single defect, a listing, a comparison -
 in one envelope:

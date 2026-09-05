@@ -1,122 +1,193 @@
-# Custom Schemathesis — Architecture
+# Architecture
 
-The module has one-way layers. Each consumes the typed output of the previous one;
-the compiler does not revalidate its input and the engine does not reinterpret
-contracts or strategy modes.
+The engine is a one-directional pipeline of three stages over a shared set of
+DTOs and vocabulary enums. Every stage takes a typed input and emits a typed
+output; dependencies point one way only.
 
-| Layer | Input → output | Responsibility |
-|---|---|---|
-| `models` | Typed DTOs | Owns contracts, endpoint metadata, budgets and results. |
-| `policy` | `CompilerInput` → validated `CompilerInput` | Validates the `CompilerInput`/`EndpointInfo` an external producer builds against the strategy mode's profile. Builds nothing, compiles nothing. |
-| `strategy_compiler` | `CompilerInput` → `CompilationOutcome` | Compiles one strategy per HTTP zone and phase. |
-| `engine` | `EngineInput` → `EngineRunResult` | Sends requests, validates responses, groups findings by symptom, shrinks one representative per group and deduplicates the reports. |
+## Layers
 
-## The boundary
+| Layer | Package | Responsibility | Never does |
+|---|---|---|---|
+| **policy** | `policy/` | validate the compiler input at the boundary | HTTP, LLM calls |
+| **strategy_compiler** | `strategy_compiler/` | validated contracts → `SearchStrategy`s | HTTP, re-validation |
+| **engine** | `engine/` | execute, check, minimize, report | see a `StrategyMode` |
 
-The engine never touches the LLM's output. The producer — the LLM, or a fixture —
-emits the shared kernel's `EndpointContract`; the orchestrator's adapter translates it
-into a `CompilerInput`; the `policy` layer validates that input; `compile_strategies`
-compiles it and `run` executes it. There is no template the engine hands out and no
-round-trip it resolves: the only thing that enters is a `CompilerInput`, and `policy`
-is the only place that validates it. Its four validators are exported from the package
-root — `validate_endpoint_contract_types`, `validate_endpoint_contract_allowed_fields`,
-`validate_endpoint_contract_range_consistency` and
-`validate_property_field_references` — and all of them raise `PolicyError`.
+Three leaf packages sit under the stages and are shared without inverting the
+direction:
 
-The boundary vocabulary shared with the producer is not defined here. `TransitionInvariant`,
-`ZoneLocation` and the whole `SemanticProperty` expression tree are imported from
-`specforge_contracts` (a declared runtime dependency, `specforge-contracts>=0.2.0`) and
-re-exported from `models.compiler.contracts`, so the engine keeps a single import surface
-and the same objects travel from the producer to the engine untranslated. `EndpointRisk`
-— `EndpointRiskContract` is an alias of it — and the `AttackProfile` literal behind every
-`attack_profiles` field (`HackerAttackProfile` is the same alias) come from there too. The
-kernel sits at the leaf of the dependency graph, so importing it inverts nothing.
-`EndpointAttackContract` stays engine-owned and carries no `field_hints`: the kernel's
-per-field hints are the orchestrator's to promote onto the addressed field's
-`HackerStrategyContract`, and only under the hacker profile. `StateProduction`,
-`StateConsumption` and `StateLinkContract` remain engine-owned: they describe how the
-fuzzer chains requests, not what the producer asserts.
+- **`models/`** — the single owner of every domain DTO and vocabulary enum.
+- **`profiles/`** — the strategy-mode registry (`DEFAULT`, `HACKER`).
+- **`budget/`** — the single home of example-budget arithmetic.
 
-`EndpointInfo.semantic_properties` carries the producer's `SemanticProperty` list. The
-orchestrator copies it from the fused contract and validates every field reference
-(`input_constraint` properties against the endpoint's parameters and dotted body paths,
-`response_invariant` properties against the dotted paths of every declared response
-body). No engine component consumes the slot yet — the semantic oracle is a later phase.
-`EndpointInfo.risk` and `EndpointInfo.attack` ride along the same way, projected by the
-orchestrator from the fused contract and read by no engine component yet; what the attack
-phase actually reads is the per-value `HackerStrategyContract` a promoted hint produces.
+The leaf of the whole graph is [`specforge_contracts`](../contracts/index.md),
+the shared kernel: it owns the closed vocabularies `Zone`, `Criticality`,
+`Sensitivity`, `AttackProfile` and the semantic DTOs `EndpointRisk`,
+`EndpointAttack`, `TransitionInvariant`, `SemanticProperty`. The engine imports
+the kernel; the kernel never imports the engine.
 
-## Contracts and compilation
+## Module layout
 
-`BaseStrategyContract` is the standard, closed (`extra="forbid"`) contract.
-`HackerStrategyContract` adds offensive knobs but not concrete payloads. Immutable
-allowed-field tables enforce the permitted LLM output by JSON Schema type.
+```text
+src/custom_schemathesis/
+├── __init__.py            # Public facade, curated __all__
+├── main.py                # compile_strategies() and run(): thin delegators
+├── constants.py           # Engine-health numbers shared by two or more layers
+├── exceptions.py          # Domain exception taxonomy
+├── numeric.py             # is_multiple_of: exact arithmetic shared by compiler and oracles
+├── models/                # DTOs and enums (see below)
+├── profiles/              # Strategy-mode profiles: registry, builtin DEFAULT / HACKER
+├── budget/                # Example allocation, aggressiveness, risk weighting, shares
+├── policy/                # validate_endpoint_spec, field-reference checks
+├── strategy_compiler/     # Per-endpoint compile, zones, planning, fields/
+│   ├── compiler.py        # compile(): per-endpoint orchestration, exclusions
+│   ├── zone.py            # ZoneCompileContext, compile_zone, is_field_addressed
+│   ├── planning.py        # build_generation_plan, estimate_parameter_space
+│   ├── constants.py       # boundary tables, choice counts, attack-profile maps
+│   └── fields/            # Field → SearchStrategy
+│       ├── context.py     # GenerationContext, EMPTY_CONTEXT
+│       ├── schema_view.py # SchemaView: typed reader over a contract
+│       ├── registry.py    # phase registry: register_phase, resolve_phase, isolated
+│       ├── builtin.py     # the five built-in phase registrations
+│       ├── default/       # valid · boundary · invalid · constraints
+│       └── hacker/        # request · mutation · payloads · builders · tables
+└── engine/                # Execution
+    ├── payload.py         # ZonedPayload: the value object a strategy draws
+    ├── ordering.py        # order_by_risk: most-risky-first, before dispatch
+    ├── http/              # Async orchestrator, request injection, credentials, error classifier
+    ├── harness/           # The Hypothesis bridge: one event loop, settings, identity strategy
+    ├── oracles/           # Response oracles: registry, precedence, the seven builtins
+    ├── findings/          # Group, deduplicate, materialize, shrink, stats
+    ├── fuzzers/           # stateless/ and stateful/ procedures
+    ├── trace/             # Record, rehydrate, canonical JSON, URL userinfo
+    ├── replay/            # Fidelity assessment, pacing
+    └── runners/           # One runner per ExecutionMode, the shared loop, resilience/
+```
 
-Each offensive knob lives at the scope that can consume it: **per-value** knobs
-(`attack_profiles`, the `include_*` toggles) stay on the per-parameter
-`HackerStrategyContract`; **per-endpoint** knobs (`focus_fields`, `aggressiveness`,
-`mutation_depth`, ...) live on `EndpointAttackContract`; **per-request** knobs
-(`include_repeated_requests`) are execution-mode options (`StatelessOptions`). The
-compiler's signature is `compile_contract(contract, phase)` — one parameter in, one
-value generator out — so a knob describing the whole endpoint or the request cannot be
-honored from there; giving each its own home is what keeps every field consumable.
+The three root leaves — `constants.py`, `exceptions.py`, `numeric.py` — import
+nothing from the package, so any layer, `models/` included, can import them
+without a cycle. `constants.py` holds only the engine-health numbers two or
+more layers read (`DEFAULT_MAX_EXAMPLES`, `MAX_AGGRESSIVENESS`, the
+status-class thresholds, `SAFE_PROBE_METHODS`); every stage keeps its own
+`constants.py` for what only it uses. The two phase splits are not shared
+constants: they are the data with which `profiles/builtin.py` registers the
+`DEFAULT` and `HACKER` profiles
+([ADR-002](adr/foundations.md#adr-002)).
 
-Everything a strategy mode decides lives in a **`StrategyModeProfile`**: which phases
-compile, how examples split across them, which contract fields are legal, and which
-contract type the mode accepts. The default profile compiles `valid`, `boundary` and
-`invalid`; the hacker profile adds `attack`. The compiler asks the profile instead of
-branching on the mode, so a new mode is a `register_profile` call, not an edit.
+## The models package
 
-The compiler compiles path, query, header and body separately. All phase dispatch
-runs through the generation phase registry: `compile_contract(contract, phase)` resolves
-`(type(contract), phase)` by walking the contract's MRO, so a new contract type extends
-the compiler by registering its phases with `register_phase`, not by adding a compiler.
+`models/` owns every DTO and vocabulary enum. Nothing else in the package
+declares a domain type.
 
-`compile(CompilerInput) -> CompilationOutcome` compiles each endpoint independently: a
-rejection (an unresolvable path parameter, an uncompilable contract) does not abort the
-batch, it is caught and turned into an `EndpointExclusion` — the endpoint's identity plus
-why — while the rest of the batch keeps compiling. `CompilationOutcome` carries the
-endpoints that did compile (`engine_input`) alongside every exclusion, so the caller
-decides what an all-or-partial rejection means for the run.
+```text
+models/
+├── execution_mode.py · strategy_mode.py · phase.py · schema.py   # vocabulary enums (StrEnum)
+├── profile.py          # StrategyModeProfile: what one strategy mode decides
+├── contracts/          # the contract vocabulary: kernel re-exports + the engine's own contracts
+│   ├── dialect.py · normalization.py · response.py · state_link.py · endpoint_controls.py
+│   └── strategies/     # BaseStrategyContract, HackerStrategyContract
+├── compiler/           # compiler-side DTOs: CompilerInput, EndpointSpec, RequestZones, CompilationOutcome
+└── engine/             # engine-side DTOs: EngineInput, GenerationPlan, runtime, options, results, trace, replay
+```
 
-## Execution
+The enums sit at the package root because both the compiler and the engine key
+on them. `StrategyModeProfile` (a frozen dataclass) also sits at the root: it
+binds a `StrategyMode` to its phase split, allowed-field matrix and contract
+type, and belongs to neither stage. The registry that holds the profiles is in
+`profiles/`, so `models/` stays purely DTOs and enums.
 
-A run names its **execution mode**, and the entry point resolves the runner registered
-for it rather than choosing between hardcoded paths. A runner owns the whole procedure,
-including which fuzzer it drives and how it aggregates statistics — modes differ by more
-than their fuzzer, since the stateless one explores and then shrinks in two separate
-phases while the stateful one minimizes as it goes. Two modes ship today; adding one is
-a `register_runner` call.
+Dependencies inside `models/` are acyclic and point downward:
 
-That is the second of two independent extensibility axes. The runner registry answers
-*how a run executes*; the strategy profile answers *what gets generated*. They never
-consult each other — the engine cannot import `StrategyMode` at all.
+```mermaid
+graph TD
+    root["models/*.py<br/>(enums · StrategyModeProfile)"] --> contracts
+    compiler["models/compiler"] --> engine["models/engine"]
+    engine --> contracts["models/contracts"]
+    contracts --> kernel["specforge_contracts (kernel, leaf)"]
+    root --> kernel
+```
 
-The async engine shares an `httpx.AsyncClient`, limits concurrency and retries only
-transient infrastructure failures. The entry point owns that client's lifetime, so every
-mode inherits the same connection reuse and the same guaranteed close. Responses are
-checked for server errors, declared status/content types, response schemas and
-state-transition invariants; persisted headers are sanitized.
+`models/compiler` depends on `models/engine` because `CompilationOutcome`
+carries the `EngineInput` the engine consumes; `models/engine` depends on
+`models/contracts` because compiled endpoints keep the contract's risk, attack,
+response and state-link DTOs; `models/contracts` re-exports the kernel and adds
+the engine's own contracts. `GenerationPlan` lives in `models/engine/plan.py`
+because it is a field of `CompiledEndpointStrategies` — part of the shape of
+`EngineInput`, produced by the compiler and read by the engine
+([ADR-006](adr/models.md#adr-006), [ADR-011](adr/models.md#adr-011)).
 
-A run also records its **execution trace**: the ordered list of requests it actually
-sent, with concrete values and the status each one returned. That is how a run is
-reproduced — by re-sending the trace, never by regenerating the data — so the module
-has no seed and keeps Hypothesis's example database disabled. Credentials are omitted
-from the trace by origin rather than redacted, since a redacted trace could not be
-replayed.
+## Package map
 
-## Characterization net
+```mermaid
+graph TD
+    facade["__init__ · main (facade)"]
+    facade --> policy
+    facade --> compiler["strategy_compiler"]
+    facade --> engine
 
-`tests/characterization/` is a Golden Master suite over the compiler and engine
-boundary, there to prove that a refactor of that boundary changes no observable
-output. It records a deterministic projection of `compile_strategies` over
-representative inputs — everything except the strategy objects themselves, which
-reduce to their phase keys — and replays a recorded trace against the in-process
-fixtures API demanding exact fidelity. Golden files are never rewritten silently:
-they regenerate only under `SPECFORGE_UPDATE_GOLDENS=1`, and a golden going red is
-either a real behavior change or an intended one that the commit has to explain.
+    policy["policy · validate_endpoint_spec · references"]
+    compiler --> fields["strategy_compiler/fields"]
 
-For the full file map, algorithms, error categories and extension points, use the
-[complete reference](reference.md). The strategy compiler's internals — every
-builder function behind `default/` and `hacker/` — get their own page: see
-[Strategy compiler internals](strategy-compiler-internals.md).
+    engine["engine (run, ordering, payload)"]
+    engine --> runners["engine/runners (registry · loop)"]
+    runners --> fuzzers["engine/fuzzers (stateless / stateful)"]
+    runners --> findings["engine/findings"]
+    fuzzers --> http["engine/http"]
+    fuzzers --> harness["engine/harness"]
+    fuzzers --> oracles["engine/oracles"]
+    runners --> etrace["engine/trace · replay"]
+
+    profiles["profiles (registry)"]
+    budget["budget (arithmetic)"]
+    models["models (DTOs + enums)"]
+    contracts["models/contracts (shared boundary)"]
+    kernel["specforge_contracts (kernel, leaf)"]
+
+    policy --> models
+    policy --> profiles
+    compiler --> profiles
+    compiler --> budget
+    compiler --> models
+    engine --> models
+    engine --> budget
+    profiles --> models
+    budget --> models
+    models --> contracts
+    contracts --> kernel
+    models --> kernel
+```
+
+## Dependency rules
+
+- Upstream never imports downstream at runtime: `policy` → `strategy_compiler`
+  → `engine`.
+- Stages communicate through frozen DTOs, never shared mutable state. The one
+  sanctioned module-level state is a registry, populated at import and reset
+  through a public `isolated()` seam ([Extension guide](extension-guide.md)).
+- The engine consumes `EngineInput` alone and knows nothing about contracts or
+  `StrategyMode`.
+- Inside `strategy_compiler/fields/`, `hacker/` may import `default/`, never
+  the reverse.
+- Every vocabulary enum is `enum.StrEnum`, so an enum-keyed map serializes to
+  its wire strings ([ADR-004](adr/models.md#adr-004)).
+
+## `ExecutionResult` is the canonical record of a request
+
+Every request the engine sends produces one `ExecutionResult`. The stats
+builders in `engine/findings/` and the trace recorder in `engine/trace/` are
+projections of that stream — a read model each, never a second source of
+truth. That is why a counter has exactly one producer and why the trace and
+the stats of one run always agree ([ADR-017](adr/engine.md#adr-017)).
+
+## The rules the shape answers to
+
+| Rule | How the shape honours it |
+|---|---|
+| The three-stage boundary is strict | policy / strategy_compiler / engine, each testable alone |
+| Models have one owner and are closed by default | `models/` owns every DTO; `extra="forbid"` everywhere |
+| Extension by Protocol and registry, never by `if` or inheritance | five registries: runners, profiles, phases, oracles, transports |
+| Determinism where it matters | policy and compiler are pure; mutable state is run-scoped |
+| HTTP execution rules stay put | one event loop in a daemon thread; the orchestrator is required |
+| Honest signal | one producer per counter; flaky is measured, not subtracted |
+| User policy is separate from engine stability | `*Options` for user policy; `constants.py` for stability numbers |
+| Domain exceptions, no `print` | `CustomSchemathesisError` taxonomy; the engine raises, the CLI renders |
+| Dependencies point one way | the kernel is the leaf; the engine imports it, never the reverse |

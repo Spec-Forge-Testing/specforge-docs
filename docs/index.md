@@ -2,25 +2,39 @@
 
 ![Spec Forge CLI](assets/imgs/spec-forge.png)
 
-Spec Forge is a modular, AI-powered Property-Based Testing (PBT) orchestrator for API security and
-correctness testing. It combines static AST analysis, semantic inference, contract validation, and
-fuzzing to discover deep bugs in web applications.
+Spec Forge finds bugs in your API. You give it your API's OpenAPI description — and,
+optionally, its source code — and it generates a stream of requests against a running copy of
+the API, checking rules that must always hold: no unexpected server errors, responses that
+match the schema, no undeclared status codes, and the business rules it can read from your
+code. When a request breaks a rule, Spec Forge shrinks it to the smallest example that still
+fails and saves the result so you can reproduce it exactly.
 
-## Using Spec Forge
+```mermaid
+flowchart LR
+    A[your OpenAPI spec] --> C[read the contract]
+    B[your source code] --> D[read the code]
+    C --> E[infer business rules<br/>optional]
+    D --> E
+    C --> F[merge into one contract]
+    E --> F
+    F --> G[generate and send requests]
+    G --> H[findings, saved and replayable]
+```
 
-- [Installation & Quick Start](user-guide/installation.md) — prerequisites and the first run.
+## Start here
+
+### I want to test my API
+
+- [Installation & Quick Start](user-guide/installation.md) — prerequisites and your first run.
+- [Core Concepts](user-guide/concepts.md) — what Spec Forge does and the words it uses.
 - [CLI Reference](user-guide/cli-reference.md) — every command, its flags and its output.
-- [Example Walkthrough](user-guide/example-walkthrough.md) — the commands end to end against a sample API.
-- [Run Report](user-guide/reports.md) — the `report.json` / `--json-output` shape for CI.
-- [LLM Providers](user-guide/llm-providers.md) — model and credential configuration.
+- [Example Walkthrough](user-guide/example-walkthrough.md) — the commands end to end against a
+  sample API.
 
-## Understanding the design
+### I want to understand or extend the code
 
-- [Architecture Overview](architecture/overview.md) — the pipeline stages and how they fit together.
-
-## Working on Spec Forge
-
-- [Contributing & Testing](developer-guide/contributing.md) — local setup and how to run each module's suite.
-- [CLI Internals](developer-guide/cli-internals.md) — the orchestrator's layering and command registry.
-- [Modules](modules/contract-engine/index.md) — a per-package implementation deep dive.
-- [Test Corpora](testing/index.md) — the `tests-repos` corpora and the integration suite that runs Spec Forge against real APIs.
+- [Architecture Overview](architecture/overview.md) — the pipeline stages and how they fit
+  together.
+- [Data Flow](architecture/data-flow.md) — the typed objects that cross between modules.
+- [Developer Guide › Modules](modules/contract-engine/index.md) — a per-package implementation
+  deep dive.

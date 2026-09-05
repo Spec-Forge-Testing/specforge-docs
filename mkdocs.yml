@@ -87,7 +87,9 @@ nav:
       - Run Report: user-guide/reports.md
       - Example Walkthrough: user-guide/example-walkthrough.md
       - LLM Providers: user-guide/llm-providers.md
-  - Architecture: architecture/overview.md
+  - Architecture:
+      - Overview: architecture/overview.md
+      - Data Flow: architecture/data-flow.md
   - Developer Guide:
       - Contributing & Testing: developer-guide/contributing.md
       - CLI Internals: developer-guide/cli-internals.md

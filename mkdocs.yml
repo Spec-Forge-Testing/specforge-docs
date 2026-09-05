@@ -82,11 +82,15 @@ nav:
   - Overview: index.md
   - User Guide:
       - Installation & Quick Start: user-guide/installation.md
+      - Core Concepts: user-guide/concepts.md
       - Running with Docker: user-guide/docker.md
       - CLI Reference: user-guide/cli-reference.md
       - Run Report: user-guide/reports.md
       - Example Walkthrough: user-guide/example-walkthrough.md
+      - Troubleshooting: user-guide/troubleshooting.md
       - LLM Providers: user-guide/llm-providers.md
+      - Environment Variables: user-guide/environment.md
+      - Glossary: user-guide/glossary.md
   - Architecture:
       - Overview: architecture/overview.md
       - Data Flow: architecture/data-flow.md

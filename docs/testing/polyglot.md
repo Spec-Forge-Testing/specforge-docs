@@ -52,7 +52,7 @@ Only one candidate at a time, same port 8000 as `real-world/` and `emb/`.
 | Swift | — | — | **Closed without a candidate.** Three real Vapor apps were evaluated (Feather CMS, Penny, SteamPress); none is a standalone REST server with genuine OpenAPI generation, and none has a maintained official Docker image. **10/11 languages is the corpus' final result.** |
 
 Candidate research, license justification and discarded alternatives for
-each language: see AI-205 and AI-226 in Linear.
+each language live in the corpus repository's notes, next to the manifest.
 
 ## Rules of the stack
 

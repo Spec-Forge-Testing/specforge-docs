@@ -42,7 +42,8 @@ its metrics, endpoint stats and crashes stay queryable through `history` and
 
 `ReportDocument` is a frozen, `extra="forbid"` Pydantic model: a pure function
 of a run's persisted data, never a live object. It carries a `schema_version`
-("1.3" today), bumped when the shape changes in a way a reader cannot ignore.
+("1.4" today), bumped when the shape changes in a way a reader cannot ignore.
+1.4 is additive over 1.3: it added the top-level `producer_exclusions` list.
 1.3 is additive over 1.2: each `endpoints[]` entry gains `starved_identities`.
 1.2 was additive over 1.1: it added the top-level `unconfirmed_findings` list.
 1.1 was additive over 1.0: it added `run.signal`/`run.signal_causes`,
@@ -57,6 +58,7 @@ of a run's persisted data, never a live object. It carries a `schema_version`
 | `metrics` | The finding funnel and request counters, `null` when a run recorded none. |
 | `endpoints` | One entry per endpoint touched: requests, `examples_planned`, raw findings, crash count, its latency distribution, and `starved_identities` - the labels of any declared identities the endpoint's budget could not fund, empty unless the run split budget by identity and ran short of it. |
 | `coverage` | The declared-endpoint partition behind the run - `declared`/`targeted`/`excluded`/`filtered`/`exercised` counts plus `excluded_endpoints` (method, path, reason) - `null` for a replay, which never compiles. |
+| `producer_exclusions` | One entry (`method`, `path`, `reason`) per endpoint the inference contract producer soft-dropped to schema-only - see [`fuzz`'s contract producer](cli-reference.md). Empty when no producer ran, when the fixture producer ran (it aborts rather than drop), or when nothing was dropped. |
 | `defects` | One entry per crash, ordered most-severe-first (the same order the live crash tables render): identity, reproducer and what the run observed - the same shape `inspect --crash <id>` and `compare` project a crash through. |
 | `unconfirmed_findings` | One entry per finding the run saw but never confirmed as a crash - see below. Empty for a replay. |
 | `replay` | What only a replay knows - fidelity, divergences and a verdict per recorded defect - `null` for an original run. |

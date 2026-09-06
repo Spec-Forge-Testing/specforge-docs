@@ -223,6 +223,7 @@ unexpectedly.
     SpecForge ❯ fuzz -f openapi.yaml --base-url http://localhost:8000 --mode stateful
     SpecForge ❯ fuzz -f openapi.yaml --base-url http://localhost:8000 --identities identities.toml
     SpecForge ❯ fuzz -f openapi.yaml --base-url http://localhost:8000 --strategy hacker --contracts contracts/
+    SpecForge ❯ fuzz -f openapi.yaml --base-url http://localhost:8000 --producer inference --source-repo ../my-api
     ```
 
     `fuzz` runs the execution engine end to end **without the LLM or source analysis**:
@@ -230,9 +231,10 @@ unexpectedly.
     fuzzes the live API at `--base-url`, groups the failures by symptom and shrinks one
     representative per symptom to its minimal reproducer. The schema constraints alone
     (`type`, `minimum`, `enum`, `pattern`, …) are enough to surface `5xx` crashes and
-    undeclared responses. Two flags widen that baseline: `--strategy` picks the
-    strategy family the engine compiles, and `--contracts` feeds it producer-written
-    contracts on top of the schema — both described below.
+    undeclared responses. Two levers widen that baseline: `--strategy` picks the
+    strategy family the engine compiles, and a **contract producer** (`--producer`)
+    enriches each endpoint with a contract fused on top of the schema — both
+    described below.
 
     The command prints:
 
@@ -352,16 +354,25 @@ unexpectedly.
     and widens generation toward adversarial values. The two words are the
     engine's own `StrategyMode` values, so a new mode needs no second list here.
 
-    `--contracts <dir>` supplies **producer-written contracts**. Every `*.json`
+    A **contract producer** supplies each selected endpoint's enriched
+    `EndpointContract`, fused over its OpenAPI base with the Contract Engine's
+    `fuse_contract` — the contract's invariants win on conflict, the base fills the
+    gaps — and the result replaces the bare schema in the compile. `--producer
+    {fixture,inference}` picks which producer supplies those contracts; omitting it
+    (and `--contracts`) leaves every endpoint schema-only. An endpoint the chosen
+    producer returns nothing for also stays schema-only. The two producers differ
+    in where the contract comes from and in what happens when one cannot be
+    produced.
+
+    **`--producer fixture`** reads contracts an author already wrote to disk, from
+    `--contracts <dir>`. It is the default whenever `--contracts` is given, so
+    `--contracts contracts/` alone selects it. Every `*.json`
     file directly under the directory is one kernel `EndpointContract` — `method`,
     `path_url`, `parameters` and `body` as JSON Schema, plus the optional `risk`,
     `attack`, `transitions` and `semantic_properties` sections (see
     [Spec Forge Contracts](../modules/contracts/index.md)). Files are indexed by
     the `method`/`path_url` they declare, so the file name is a label and nothing
-    more. For each selected endpoint that has a contract, it is fused over the
-    OpenAPI base with the Contract Engine's `fuse_contract` — the producer's
-    invariants win on conflict, the base fills the gaps — and the result replaces
-    the bare schema in the compile; an endpoint with no file stays schema-only.
+    more. `--producer fixture` requires `--contracts`.
     A trimmed fixture (the enrichment sections abbreviated to their shape):
 
     ```json
@@ -407,19 +418,52 @@ unexpectedly.
     name or captured field matches its `bundle`. `semantic_properties` are
     validated against the endpoint's declared fields and carried, unconsumed.
 
-    The producer is strict, and every problem stops the run **before a single
-    request**. A path that is not a directory, a malformed or invalid file (the
-    kernel rejects unknown keys), two files declaring the same endpoint, a contract
-    served for an endpoint other than the one it declares, or a fusion the Contract
-    Engine rejects all render a **Contract Producer Error** panel naming the file
-    or endpoint and the reason (error code `fuzz_contract_producer` under
-    `--json-output`). A hint on a zone or field the endpoint does not declare, a
-    `focus_fields` entry that names no declared field under `--strategy hacker`,
-    and a transition whose `bundle` matches no deterministic capture — or more
-    than one — are reported as an **Unsupported Schema Construct** instead, naming
-    the endpoint and the offending entry. The produced contracts are not
-    persisted with the analysis: the run's trace is recorded and replayable as
-    usual, but the enriched recipe itself is not stored.
+    **`--producer inference`** infers a contract per endpoint from source instead
+    of reading it from disk. For each selected endpoint it traces the endpoint's
+    handler in `--source-repo <path>` (the repository root to analyze) with
+    [Core AST](../modules/core-ast/index.md), then asks an inference engine for the
+    endpoint's contract; the result is fused exactly like a fixture. `--producer
+    inference` requires `--source-repo` and conflicts with `--contracts` — a run
+    has one contract source, not two. The inference engine is an injected
+    dependency behind a narrow seam, so the producer is exercised in tests against
+    a substituted engine; running it against a live LLM is a matter of installing
+    and configuring that backend.
+
+    The inference backend is optional. It needs both Core AST (to trace the
+    handler) and the inference engine to be importable; when either is absent,
+    `--producer inference` refuses up front with an **Inference Engine Unavailable**
+    panel naming the concrete import error, so an install that carries neither
+    degrades cleanly instead of failing mid-run.
+
+    The two producers differ in how a per-endpoint production failure is handled.
+    The **fixture producer aborts the whole run**, before a single request: a path
+    that is not a directory, a malformed or invalid file (the kernel rejects
+    unknown keys), two files declaring the same endpoint, a contract served for an
+    endpoint other than the one it declares, or a fusion the Contract Engine
+    rejects all render a **Contract Producer Error** panel naming the file or
+    endpoint and the reason (error code `fuzz_contract_producer` under
+    `--json-output`) — a fixture the author wrote and got wrong is a mistake to
+    fix, not to skip. The **inference producer soft-drops** instead: an endpoint
+    whose handler cannot be traced, whose contract the engine cannot infer, or
+    whose fusion is rejected is left **schema-only** and the run continues,
+    recorded as a **producer exclusion** carrying the endpoint and the reason.
+
+    Producer exclusions are surfaced everywhere the run is: under *Endpoints
+    excluded by the contract producer* in the fuzz summary, in `inspect --run <id>`
+    for the saved run, and in the run-report document (schema 1.4) as
+    `producer_exclusions` (see [Run report](reports.md)). They are persisted per
+    run, so a schema-only endpoint is never silently dropped — the run always says
+    which endpoints it could not enrich, and why.
+
+    Independently of the producer's own policy, a contract that fuses but does not
+    compile stops the run with an **Unsupported Schema Construct** panel: a hint on
+    a zone or field the endpoint does not declare, a `focus_fields` entry that names
+    no declared field under `--strategy hacker`, and a transition whose `bundle`
+    matches no deterministic capture — or more than one — each name the endpoint and
+    the offending entry.
+
+    The produced contracts are not persisted with the analysis: the run's trace is
+    recorded and replayable as usual, but the enriched recipe itself is not stored.
 
     Every run is **saved by default** through the [storage engine](../modules/storage/index.md):
     a project → analysis → run hierarchy with metrics, per-endpoint stats, crash

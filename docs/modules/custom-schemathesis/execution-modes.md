@@ -103,10 +103,11 @@ sequenceDiagram
 ```
 
 A stateful run that reaches `max_distinct_bugs` stops; each found defect is
-suppressed before the next pass. A flaky pass outcome is discarded, so
-`findings_flaky` is always `0` for a stateful run
-([ADR-019](adr/engine.md#adr-019)). When a state link cannot be honored the run
-raises `StatefulLinkError` carrying the partial exploration.
+suppressed before the next pass. A flaky pass outcome becomes a flaky finding,
+counted in `findings_flaky` by occurrence and folded away when a confirmed report
+already covers its signature ([ADR-047](adr/engine.md#adr-047)). When a state
+link cannot be honored the run raises `StatefulLinkError` carrying the partial
+exploration.
 
 ## Replay
 

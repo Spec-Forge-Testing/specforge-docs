@@ -119,11 +119,19 @@ flowchart TD
 | **Confirmed** | Findings that still failed after shrinking — one per distinct symptom. |
 | **Collapsed** | Findings with the same symptom as a confirmed one, so not shrunk again. |
 | **Unverified** | Findings the run collected but never got to shrink (it was cut short first). |
-| **Flaky** | Findings that could not be reproduced on a second try, so dropped. |
+| **Flaky** | Findings that could not be reproduced on a second try. |
 | **Unique crashes** | Distinct bugs left after removing duplicates — the number that matters. |
 
 The bottom line of any run is its **unique crashes**: the count of genuinely distinct
-defects, after everything else has been de-duplicated away.
+defects, after everything else has been de-duplicated away. A **crash** is a
+confirmed finding — one the run reproduced.
+
+Findings that never reach that bar are still reported, as **unconfirmed
+findings**: the flaky ones (seen but not reproduced) and the unverified ones
+(collected before the run could check them). The `fuzz` report and
+`inspect --run` list them in a table of their own, after the crashes, so a run
+tells you what it saw as well as what it proved. They carry no reproducer, only
+the finding's signature and how often it was seen.
 
 ## The five ways to run
 

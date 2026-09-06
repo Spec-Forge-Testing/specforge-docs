@@ -186,10 +186,11 @@ connection" would be hidden, non-thread-safe mutable state.
       missing any of those four fields — a confirmed finding without its
       reproducer is a contradiction in terms.
 
-      The reader surfaces — `history`, the run reports and `compare` — show
-      confirmed findings only; the flaky and unverified rows are kept for
-      reconciliation. `FindingsRepository.count_by_state(run_id)` tallies a run's
-      rows by state, so the persisted findings can be cross-checked against the
+      `history` and `compare` read confirmed findings only. The run reports and
+      `inspect` also surface the flaky and unverified rows, as unconfirmed
+      findings — the signature and how often it was seen, with no reproducer to
+      show. `FindingsRepository.count_by_state(run_id)` tallies a run's rows by
+      state, so the persisted findings can be cross-checked against the
       `run_metrics` counters.
 
       | Field | Type | Description |

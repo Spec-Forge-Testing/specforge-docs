@@ -42,8 +42,9 @@ its metrics, endpoint stats and crashes stay queryable through `history` and
 
 `ReportDocument` is a frozen, `extra="forbid"` Pydantic model: a pure function
 of a run's persisted data, never a live object. It carries a `schema_version`
-("1.1" today), bumped when the shape changes in a way a reader cannot ignore.
-1.1 is additive over 1.0: it adds `run.signal`/`run.signal_causes`,
+("1.2" today), bumped when the shape changes in a way a reader cannot ignore.
+1.2 is additive over 1.1: it adds the top-level `unconfirmed_findings` list.
+1.1 was additive over 1.0: it added `run.signal`/`run.signal_causes`,
 `coverage`, and `endpoints[].examples_planned`.
 
 | Field | Description |
@@ -56,7 +57,45 @@ of a run's persisted data, never a live object. It carries a `schema_version`
 | `endpoints` | One entry per endpoint touched: requests, `examples_planned`, raw findings, crash count and its latency distribution. |
 | `coverage` | The declared-endpoint partition behind the run - `declared`/`targeted`/`excluded`/`filtered`/`exercised` counts plus `excluded_endpoints` (method, path, reason) - `null` for a replay, which never compiles. |
 | `defects` | One entry per crash, ordered most-severe-first (the same order the live crash tables render): identity, reproducer and what the run observed - the same shape `inspect --crash <id>` and `compare` project a crash through. |
+| `unconfirmed_findings` | One entry per finding the run saw but never confirmed as a crash - see below. Empty for a replay. |
 | `replay` | What only a replay knows - fidelity, divergences and a verdict per recorded defect - `null` for an original run. |
+
+### Unconfirmed findings
+
+A **crash** (an entry in `defects`) is a finding the run reproduced. Not every
+finding gets that far: some are seen but never reproduce, and some are collected
+right before the run is cut short and never checked. `unconfirmed_findings`
+carries those, so the document reports what a run saw as well as what it proved.
+Each entry has no reproducer - there is no minimal payload, no headers, no
+response body to show - only the finding's signature and how often it was seen:
+
+| Field | Description |
+| --- | --- |
+| `method` / `path` / `phase` | Where the finding was seen and in which phase. |
+| `invariant_violated` | Which invariant the finding broke. |
+| `status_code` | The failing response's status, or `null` when none was recorded. `0` means the request got no response at all (a transport failure). |
+| `identity_label` | The identity the request was sent under, or `null` when the run declared none. |
+| `state` | `"flaky"` or `"unverified"` (see below). |
+| `occurrences` | How many times the finding was seen. |
+
+The list is ordered by severity first (the same order as `defects`), then by
+`occurrences`. The two **states** answer *why* a finding never became a crash:
+
+| State | Meaning |
+| --- | --- |
+| `flaky` | Seen, but it did not reproduce when the engine tried to confirm it. Both stateless and stateful runs report these, and `metrics.findings_flaky` counts every such event. |
+| `unverified` | Collected but never checked, because the run stopped before it could be confirmed. |
+
+A flaky finding whose signature matches a confirmed crash is folded into that
+crash and shown once, as a defect - never twice. `compare` stays
+confirmed-only: it diffs the `defects` of two runs and never reads
+`unconfirmed_findings`, so an unconfirmed finding never shows up as a
+regression or a fix.
+
+The HTML report gains a matching **Unconfirmed findings** section, listing the
+same entries with a one-line explanation of each state: a flaky finding reads
+*"seen N time(s) but could not be reproduced"*, an unverified one *"never
+checked because the run stopped"*.
 
 `run.signal` is `"clean"` or `"degraded"`, `null` for a replay (coverage is a
 compilation-time fact a replay never produces, so trustworthiness there is
@@ -74,8 +113,10 @@ the closed status vocabulary.
 
 `fuzz`, `replay`, `inspect`, `history`, `compare` and `prune` all accept
 `--json-output` (see [CLI Reference](cli-reference.md)). It wraps the same building
-blocks - the run report document, a single defect, a listing, a comparison -
-in one envelope:
+blocks - the run report document, a single defect or unconfirmed finding, a
+listing, a comparison - in one envelope. `inspect --crash <id>` projects the
+finding through its own shape: a confirmed id yields the defect above, a flaky
+or unverified id yields the `unconfirmed_findings` entry shape instead:
 
 | Field | Description |
 | --- | --- |

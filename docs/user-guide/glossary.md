@@ -14,9 +14,11 @@ name, that name follows in `code font`.
 | **Phase** | Which kind of input a request carries: `valid`, `boundary`, `invalid` or `attack`. |
 | **Invariant / rule** | A statement about the API that must always be true; a request that breaks it is a finding (`invariant`, the oracle). |
 | **Finding** | A single request (or sequence) that broke a rule. |
-| **Crash** | A confirmed, distinct defect left after shrinking and de-duplication. |
+| **Crash** | A confirmed finding: a distinct defect the run reproduced, left after shrinking and de-duplication. |
 | **Shrinking / minimal reproducer** | Repeatedly simplifying a failing input to the smallest one that still fails. |
-| **Flaky** | A finding that could not be reproduced on a second try, so it is dropped. |
+| **Flaky** | A finding that could not be reproduced on a second try. Reported as an unconfirmed finding, not a crash. |
+| **Unverified** | A finding collected but never checked, because the run stopped first. Reported as an unconfirmed finding. |
+| **Unconfirmed finding** | A finding the run saw but never confirmed as a crash — flaky or unverified. Carries the signature but no reproducer. |
 | **Unique crashes** | The count of genuinely distinct defects a run found — its bottom line. |
 | **Identity** | A named set of request headers (credentials) requests can be sent under, declared in a TOML file. |
 | **Execution mode** | How the fuzzer explores the API: `stateless`, `stateful`, `performance` or `resilience` (`--mode`). |

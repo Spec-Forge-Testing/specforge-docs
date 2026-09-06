@@ -260,7 +260,10 @@ field name, or a zone-qualified `zone.name`:
 
 - **Focus.** When an endpoint declares `focus_fields`, a parameter the list
   does not address is compiled in the `valid` phase instead of `attack`. The
-  attack effort concentrates on the named fields.
+  attack effort concentrates on the named fields. A `focus_fields` entry that
+  addresses no declared field would silently move every field out of the attack
+  phase, so the policy boundary rejects it as a `PolicyError` under an attack
+  profile — a producer typo fails loudly instead of disabling the attack.
 - **Sensitivity.** A parameter the `sensitive_fields` list addresses has
   `INFORMATION_DISCLOSURE` and `AUTH_BYPASS` added to its context profiles, so
   its attack payloads bias toward disclosure and auth-bypass pools.

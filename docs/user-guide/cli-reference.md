@@ -376,7 +376,7 @@ unexpectedly.
       "risk": {"risk_score": 65, "criticality": "medium", "write_operation": true},
       "attack": {
         "attack_profiles": ["injection", "auth_bypass"],
-        "focus_fields": ["title", "body"],
+        "focus_fields": ["body.article"],
         "field_hints": {"body.article.title": {"attack_profiles": ["xss", "sql_injection"]}}
       },
       "transitions": [
@@ -404,10 +404,11 @@ unexpectedly.
     served for an endpoint other than the one it declares, or a fusion the Contract
     Engine rejects all render a **Contract Producer Error** panel naming the file
     or endpoint and the reason (error code `fuzz_contract_producer` under
-    `--json-output`). A hint on a zone or field the endpoint does not declare, and
-    a transition whose `bundle` matches no deterministic capture — or more than
-    one — are reported as an **Unsupported Schema Construct** instead, naming the
-    endpoint and the offending hint or bundle. The produced contracts are not
+    `--json-output`). A hint on a zone or field the endpoint does not declare, a
+    `focus_fields` entry that names no declared field under `--strategy hacker`,
+    and a transition whose `bundle` matches no deterministic capture — or more
+    than one — are reported as an **Unsupported Schema Construct** instead, naming
+    the endpoint and the offending entry. The produced contracts are not
     persisted with the analysis: the run's trace is recorded and replayable as
     usual, but the enriched recipe itself is not stored.
 

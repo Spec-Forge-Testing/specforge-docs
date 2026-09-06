@@ -22,7 +22,7 @@ the [Glossary](glossary.md) defines every term used below in one sentence.
 | **`fuzz`** | Execution | Compiles test-case generators from the schema and fuzzes a live API. |
 | **`replay`** | Execution | Re-sends an analysis's recorded trace and rules a verdict per defect. |
 | **`history`** | History | Browses persisted projects, analyses and runs, with filters. |
-| **`inspect`** | History | Shows one run in full (metrics, latency, crashes, artifacts), or one crash in full (payload, headers, response body). |
+| **`inspect`** | History | Shows one run in full (metrics, latency, crashes, unconfirmed findings, artifacts), or one finding in full — a confirmed crash's payload, headers and response body, or an unconfirmed finding's state and signature. |
 | **`compare`** | History | Diffs two runs' defect sets — appeared, persisted, possibly resolved — marking a pair that is not directly comparable. |
 | **`prune`** | History | Reports, compresses and deletes stored artifacts under a retention policy you spell out. |
 | **`ls`** · **`cd`** | Navigation | List files / change the session's working directory. |
@@ -262,6 +262,14 @@ unexpectedly.
       stateless runs only), the identity it was found under (`Identity`; only shown
       when at least one crash in the run recorded one) and the smallest failing
       payload.
+    - **Unconfirmed findings** — a table after the crashes, listing every finding
+      the run saw but never confirmed as a crash: its method, endpoint, phase,
+      invariant, status (a dash when none was recorded), the identity it was found
+      under (when any), its **State** (`flaky` or `unverified`) and how many times
+      it was **Seen**. A flaky finding was seen but did not reproduce; an
+      unverified one was collected before the run could check it. The section is
+      absent when a run confirmed everything it saw. These are the same findings
+      `report.json` carries in `unconfirmed_findings` (see [Run report](reports.md)).
 
     A run the target's liveness probe found dead is cut **before** shrinking, so
     its findings were collected but never confirmed. The report never calls that a
@@ -483,17 +491,25 @@ unexpectedly.
     labels the fuzz report uses, the identity it was found under (**Identity**;
     shown when at least one crash recorded one), and the **minimal payload that
     reproduces it**, so a saved run shows no less than the report printed when the
-    fuzzing finished; and the run's **artifacts** — the execution trace plus the
+    fuzzing finished; every **unconfirmed finding** — a table after the crashes,
+    with each finding's stored **ID**, method, path, phase, invariant, status,
+    identity (when any), **State** (`flaky` or `unverified`) and how many times it
+    was **Seen**; and the run's **artifacts** — the execution trace plus the
     `report.json`/`report.html` pair every save now leaves (see
     [Run report](reports.md)).
 
-    `--crash <id>` answers *what actually failed*, taking the id from the crash
-    table above. It shows the request's **minimal payload** broken down by zone,
-    its **sanitized headers**, the **identity it was found under**, and the
-    **body the API responded with** — which is usually where the error message
-    lives. When the crash carries them, it also shows the **stack trace** and the
-    **transition sequence**: the chain of requests that produced a stateful
-    finding. The two flags are mutually exclusive.
+    `--crash <id>` answers *what actually failed*, taking the id from either the
+    crash table or the unconfirmed-findings table above — it accepts any finding
+    id. For a **confirmed** crash it shows the request's **minimal payload** broken
+    down by zone, its **sanitized headers**, the **identity it was found under**,
+    and the **body the API responded with** — which is usually where the error
+    message lives; when the crash carries them, it also shows the **stack trace**
+    and the **transition sequence**: the chain of requests that produced a stateful
+    finding. For a **flaky or unverified** finding there is no reproducer to show,
+    so it renders a short detail instead — the state, how many times it was seen,
+    the endpoint, the invariant, the status (or *not recorded*) and the identity —
+    with no payload, headers or body. An id that matches no finding still errors as
+    before. The two flags are mutually exclusive.
 
     Payload values keep the spelling they travelled the wire with (`null` and
     `true`, not Python's `None` and `True`), so anything copied out of the CLI is
@@ -778,15 +794,16 @@ captures the document and nothing else.
 The envelope is the same shape for every command and every outcome:
 
 ```json
-{"schema_version": "1.1", "command": "fuzz", "status": "ok", "data": { ... }, "error": null, "warnings": []}
-{"schema_version": "1.1", "command": "fuzz", "status": "error", "data": null, "error": {"code": "...", "message": "..."}, "warnings": []}
+{"schema_version": "1.2", "command": "fuzz", "status": "ok", "data": { ... }, "error": null, "warnings": []}
+{"schema_version": "1.2", "command": "fuzz", "status": "error", "data": null, "error": {"code": "...", "message": "..."}, "warnings": []}
 ```
 
 `status` is `ok` or `error`, never both, and every key is present regardless
 of outcome — set to `null` or an empty list when unused — so a consumer can
 always index into a known shape. `data` is the [run report](reports.md)
-document for `fuzz`/`replay`/`inspect --run`, one crash's own defect shape
-for `inspect --crash`, the listed rows for `history`, and the comparison
+document for `fuzz`/`replay`/`inspect --run`, one finding's own shape for
+`inspect --crash` — a defect for a confirmed id, an `unconfirmed_findings`
+entry for a flaky or unverified one — the listed rows for `history`, and the comparison
 document for `compare`, and the prune plan or outcome for `prune` (every
 `prune` envelope carries an `applied` boolean; without `--yes` the plan is
 emitted with `applied: false` and nothing is touched). A `fuzz` document's

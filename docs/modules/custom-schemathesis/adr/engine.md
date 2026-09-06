@@ -74,7 +74,7 @@ by construction.
 
 ## ADR-019 — Stateful runs discard flaky findings { #adr-019 }
 
-**Status:** accepted · `engine/fuzzers/stateful/outcome.py`
+**Status:** accepted · Superseded by [ADR-047](#adr-047) · `engine/fuzzers/stateful/outcome.py`
 
 ### Context
 
@@ -669,3 +669,42 @@ what is wrong before it commits to a replay.
 The two host-level failures a replay can hit are named separately and each maps
 to its own message; and a trace can never be replayed against a host it was not
 recorded for, because the host check is pre-flight and covers every request.
+
+---
+
+## ADR-047 — Stateful runs report flaky findings as an occurrence count { #adr-047 }
+
+**Status:** accepted · Supersedes [ADR-019](#adr-019) · `engine/fuzzers/stateful/flaky.py`, `engine/findings/stats.py`, `engine/findings/assembler.py`
+
+### Context
+
+ADR-019 discarded a stateful pass that failed and then did not reproduce, so
+`findings_flaky` was always `0` for a stateful run. Once the reader surfaces
+unconfirmed findings — flaky and unverified — that silence became a real gap: a
+stateful step that misbehaved intermittently left no trace at all, while a
+stateless one of the same shape was counted and shown. A flaky signal is
+evidence worth reporting, even without a minimal sequence to reproduce.
+
+### Decision
+
+A flaky stateful pass becomes a `FlakyFinding`. The recovered violation is turned
+into a `FindingSignature` (endpoint, phase, invariant, status, identity, body),
+and identical signatures are accumulated with an occurrence count; a flaky event
+that recovered no violation to sign is still tallied. `build_stateful_stats` sums
+both into `findings_flaky`, and `reconcile_flaky_with_confirmed` folds away any
+flaky finding whose signature a confirmed report already stands for, so a symptom
+the run also confirmed is shown once, as a defect. `findings_unverified` stays
+`0`: a stateful run confirms or minimizes every step as it goes.
+
+### Rejected
+
+Materializing a flaky pass into a full report. It carries no minimal sequence and
+no reproducer, so it cannot be shown as a crash; the signature and its occurrence
+count are all the run can honestly describe.
+
+### Consequences
+
+`findings_flaky` is a real measurement for a stateful run, and its flaky findings
+reach the report document's `unconfirmed_findings` and the `inspect` views like
+any other. A signature's `status_code` of `0` records a step that got no response
+at all, a transport failure.

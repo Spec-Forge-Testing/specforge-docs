@@ -254,8 +254,12 @@ isolates the single `try`/`except` ([ADR-038](adr/engine.md#adr-038)):
   `max_distinct_bugs` distinct defects are reported or the machine draws dry.
 - `LinkBroken` raises `StatefulLinkError` carrying the partial exploration.
 - `Flaky` — a shrink replay that stopped reproducing with no link error inside
-  it — is **dropped on purpose**, so `findings_flaky` is `0` for every stateful
-  run ([ADR-019](adr/engine.md#adr-019)).
+  it — becomes a `FlakyFinding`: the recovered violation is turned into a
+  `FindingSignature` and its occurrences are accumulated, or, when no violation
+  could be recovered, the event is still tallied. `build_stateful_stats` sums
+  both into `findings_flaky`, and `reconcile_flaky_with_confirmed` folds away any
+  flaky finding a confirmed report already stands for
+  ([ADR-047](adr/engine.md#adr-047)).
 
 A per-endpoint `EndpointCircuitBreaker` takes an endpoint that stops answering
 out of the machine for the rest of the run — there is no half-open state — so a

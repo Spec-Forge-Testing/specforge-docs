@@ -318,6 +318,17 @@ summed unverified occurrences are `findings_unverified`; `findings_collapsed`
 stays a counter only, since a collapsed finding is a duplicate a confirmed
 reproducer already stands for ([ADR-044](adr/engine.md#adr-044)).
 
+A stateful run has no separate shrinking phase, so it reaches its flaky findings
+differently: a sequence step whose violation does not reproduce when the
+supervisor replays it becomes a `FlakyFinding`, keyed by the same
+`FindingSignature` and counting its `occurrences`. `build_stateful_stats` sums
+those into `findings_flaky` (plus the flaky events that recovered no violation to
+sign), and `reconcile_flaky_with_confirmed` drops any flaky finding whose
+signature already has a confirmed report, so a symptom the run also confirmed is
+shown once, as a defect. `findings_unverified` stays 0 for a stateful run, which
+confirms or minimizes every step as it goes. A signature's `status_code` of `0`
+records a step that got no response at all (a transport failure).
+
 `EngineRunResult.status` is the run's terminal outcome as a `RunStatus`:
 `completed` when nothing truncated it, `aborted` when a `TARGET_DOWN` or
 `STATE_LINK_ABORT` cut it, `truncated` for every other cut. The engine derives

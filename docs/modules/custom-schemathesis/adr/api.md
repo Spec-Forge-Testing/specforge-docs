@@ -107,3 +107,11 @@ raise need no handler objects and no verdict to pass along.
 
 Two validation entry points on the facade. A test that violates two checks at
 once pins which one is reported.
+
+The decision — one ordered chain behind `validate_endpoint_spec`, first
+`PolicyError` wins, the per-property check kept separate — is unchanged as the
+chain grows. Two more checks have since joined it, in order after range
+consistency: phase-split validation (a budget may only name phases the mode's
+profile allocates), then focus-fields validation (under an attack profile, a
+`focus_fields` entry must address a field the endpoint declares). New checks
+append to the chain; they do not change its shape.

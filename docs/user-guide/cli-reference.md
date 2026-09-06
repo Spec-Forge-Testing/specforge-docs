@@ -270,6 +270,13 @@ unexpectedly.
       unverified one was collected before the run could check it. The section is
       absent when a run confirmed everything it saw. These are the same findings
       `report.json` carries in `unconfirmed_findings` (see [Run report](reports.md)).
+    - **Identities the budget could not reach** — a table, endpoint → labels,
+      listing any declared identities whose share of an endpoint's example budget
+      rounded to zero, so they were never exercised there. The section appears only
+      when some identity went unfunded, and only in the modes that split budget by
+      identity (`stateless`, `performance`) — with the default budgets it never
+      fires. These are the same labels `report.json` carries per endpoint in
+      `starved_identities` (see [Run report](reports.md)).
 
     A run the target's liveness probe found dead is cut **before** shrinking, so
     its findings were collected but never confirmed. The report never calls that a
@@ -302,7 +309,9 @@ unexpectedly.
     Labels must be unique — they key findings, crash reports and replays. Each
     endpoint phase's example budget is split evenly across the declared identities
     (the remainder to the first ones, and one the budget cannot reach gets no
-    share), and a finding is shrunk under the identity that found it, never
+    share — it is reported under *Identities the budget could not reach* rather
+    than dropped in silence), and a finding is shrunk under the identity that
+    found it, never
     re-drawn. A stateful sequence draws one identity when it starts and keeps it
     for every step, since a sequence is a session. The same symptom found under two
     identities is two findings, never one — so the crash tables gain the
@@ -495,7 +504,10 @@ unexpectedly.
     fuzzing finished; every **unconfirmed finding** — a table after the crashes,
     with each finding's stored **ID**, method, path, phase, invariant, status,
     identity (when any), **State** (`flaky` or `unverified`) and how many times it
-    was **Seen**; and the run's **artifacts** — the execution trace plus the
+    was **Seen**; an **Identities the budget could not reach** table (endpoint →
+    labels) when the run left any declared identity unfunded — the same
+    `starved_identities` the fuzz report shows; and the run's **artifacts** — the
+    execution trace plus the
     `report.json`/`report.html` pair every save now leaves (see
     [Run report](reports.md)).
 
@@ -795,8 +807,8 @@ captures the document and nothing else.
 The envelope is the same shape for every command and every outcome:
 
 ```json
-{"schema_version": "1.2", "command": "fuzz", "status": "ok", "data": { ... }, "error": null, "warnings": []}
-{"schema_version": "1.2", "command": "fuzz", "status": "error", "data": null, "error": {"code": "...", "message": "..."}, "warnings": []}
+{"schema_version": "1.3", "command": "fuzz", "status": "ok", "data": { ... }, "error": null, "warnings": []}
+{"schema_version": "1.3", "command": "fuzz", "status": "error", "data": null, "error": {"code": "...", "message": "..."}, "warnings": []}
 ```
 
 `status` is `ok` or `error`, never both, and every key is present regardless

@@ -128,7 +128,12 @@ contract that breaks them:
 - **Mistyped bounds** (`mode="after"`): a string `minimum` / `maximum` is
   legal only as an ISO `date` / `date-time` range on a string contract;
   anything else raises, so a stray string bound never reaches strategy
-  compilation.
+  compilation. The policy layer then checks the range itself: the two bounds
+  are parsed and compared chronologically (a lexicographic compare would be
+  wrong for date-time values carrying different offsets), so an inverted range
+  (`minimum` later than `maximum`), an unparseable bound, or a naive/aware
+  mismatch is rejected with a `PolicyError` rather than surfacing as a raw
+  generation error.
 
 The allowed-field matrix `ALLOWED_FIELDS_BY_TYPE` lists, per `SchemaType`, the
 `SchemaKeyword`s the policy layer accepts. `ALLOWED_FIELDS_BY_TYPE_HACKER`
@@ -301,7 +306,13 @@ producer:
 `examples_planned`, `findings_raw`, `crash_reports`) plus a `LatencyStats`
 whose fields all default to zero, so `LatencyStats()` is a valid "no samples"
 value — an endpoint can carry a confirmed crash report with no surviving
-requests to time.
+requests to time. It also carries `starved_identities`: the labels of declared
+identities whose share of the endpoint's budget rounded to zero, so they got no
+requests. It is empty unless the endpoint declares more identities than its
+per-phase budget can fund, and only modes that split budget by identity
+(`stateless`, `performance`) ever populate it — the others leave it empty. This
+turns an identity that would otherwise be dropped in silence into a reported
+signal.
 
 The lifecycle mechanics — one producer per counter, the flaky count measured in
 the shrinker rather than derived by subtraction — are the engine's finding

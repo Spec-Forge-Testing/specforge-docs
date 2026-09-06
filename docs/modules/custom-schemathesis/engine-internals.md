@@ -116,21 +116,65 @@ OracleVerdict` — and precedence is a named `IntEnum` value, never a magic gap
 | `STATUS_CODE` (30) | `status_code` | a status no response contract declared |
 | `CONTENT_TYPE` (40) | `content_type` | a body whose `Content-Type` misses the declared one |
 | `SCHEMA` (50) | `schema` | a body that fails the declared schema |
+| `SEMANTIC` (55) | `semantic_property` | a 2xx that breaks a declared business rule (non-terminal) |
 | `LATENCY` (60) | `latency_sla` | a clean 2xx/3xx slower than the run's SLA |
 
 `evaluate` runs them in `(order, name)` order, accumulating each `OracleVerdict`'s
 violation and stopping at the first `terminal` one. `check_response(result,
 endpoint, latency_sla_ms=, is_chaos=)` builds the `ResponseContext` — resolving
 the endpoint's response contract for the status by exact code → status class →
-`default`, once, for the whole pipeline — and evaluates it;
+`default`, once, for the whole pipeline, and carrying the endpoint's
+`semantic_properties` onto the context — and evaluates it;
 `evaluate_contract_free(result)` evaluates against no contract, which is what a
-replay and a transition probe use.
+replay and a transition probe use. `build_context(result, responses, *,
+latency_sla_ms=, is_chaos=, semantic_properties=())` is the single builder: every
+optional beyond the response body and its contracts is keyword-only, so a caller
+supplies only the data its run has.
 
-All seven built-ins are registered explicitly by `register_builtin_oracles`,
+All eight built-ins are registered explicitly by `register_builtin_oracles`,
 never as a side effect of importing a runner, so the registered set is one
 readable function. `validate_value(value, contract)` structurally checks a
 response body against a strategy-contract shape through a `SchemaType`-keyed
 table of checkers — a missing type is a lookup miss, not a silent pass.
+
+### How a semantic property is evaluated
+
+The `semantic_property` oracle judges producer-declared business rules, and only
+these — it is **dormant** on an endpoint that declares none, and silent outside a
+2xx (a rule speaks about what a successful call promised, not about a rejection).
+Each rule carries a closed expression tree of six node kinds (the kernel's
+`SemanticProperty`); the oracle picks the value the rule is judged against by the
+rule's `PropertyClass`:
+
+| Property class | Judged against |
+|---|---|
+| `RESPONSE_INVARIANT` | the response body |
+| `INPUT_CONSTRAINT` | the flattened request the server accepted — body keys, query and headers in one namespace |
+
+Path parameters are **not** reachable to an `INPUT_CONSTRAINT`: the blueprint
+carries them only inside the request URL, never as a named field, so a rule that
+references one resolves to no value. This is a current limitation of the input
+scope, not a rejection — the property is simply never decided.
+
+`evaluator.py` walks the tree with a `functools.singledispatch` over the six node
+kinds — never `eval`, so nothing the LLM authored is executed. A field reference
+is a dotted lookup that is **transparent through arrays**: `items.price` over a
+list of objects yields the list of prices. Evaluation is total: a lookup that
+misses, a type-invalid operation (arithmetic on a bool, a division by zero, a
+comparison of unlike types) or an aggregation over a non-list yields the
+`UNDETERMINED` sentinel rather than raising. Boolean combinations use **strong
+Kleene (K3) three-valued logic** — `and`/`or`/`not` over `TRUE`/`FALSE`/`UNKNOWN`
+— so an undetermined operand collapses a combination to undetermined only when it
+actually decides the outcome (`false and unknown` is still `false`).
+
+A rule is a **violation only when its root expression evaluates to exactly
+`False`**. A root that evaluates to `UNDETERMINED` — or to any non-boolean value —
+is never a finding: an undecidable rule stays silent rather than accusing the API.
+The oracle's verdict is **non-terminal**, so a semantic violation is recorded and
+the pipeline continues to the latency oracle. A rule such as "the created article
+keeps a non-empty slug" is the field reference `article.slug` compared `!=` to the
+literal `""`; a 2xx whose body has an empty slug makes that root `False`, and the
+oracle emits `InvariantViolation.SEMANTIC_PROPERTY`.
 
 ## The finding pipeline
 

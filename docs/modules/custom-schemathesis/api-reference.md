@@ -116,7 +116,7 @@ kernel's from `specforge_contracts`.
 
 | Name | One line |
 |---|---|
-| `validate_endpoint_spec(spec, *, strategy_mode)` | the ordered per-endpoint checks — types, allowed fields, ranges, phase split, and focus fields — the first `PolicyError` wins ([ADR-015](adr/api.md#adr-015)) |
+| `validate_endpoint_spec(spec, *, strategy_mode)` | the ordered per-endpoint checks — types, allowed fields, ranges, phase split, and focus fields — the first `PolicyError` wins ([ADR-015](adr/api.md#adr-015)). The range check covers numeric bounds and ISO `date` / `date-time` string bounds, which are parsed and compared chronologically so an inverted or incomparable date range is rejected |
 | `validate_property_field_references(semantic_property, *, known_fields)` | raises `PolicyError` when a `SemanticProperty`'s expression references a field outside `known_fields` |
 
 ## Domain exceptions

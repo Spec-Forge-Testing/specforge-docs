@@ -42,8 +42,9 @@ its metrics, endpoint stats and crashes stay queryable through `history` and
 
 `ReportDocument` is a frozen, `extra="forbid"` Pydantic model: a pure function
 of a run's persisted data, never a live object. It carries a `schema_version`
-("1.2" today), bumped when the shape changes in a way a reader cannot ignore.
-1.2 is additive over 1.1: it adds the top-level `unconfirmed_findings` list.
+("1.3" today), bumped when the shape changes in a way a reader cannot ignore.
+1.3 is additive over 1.2: each `endpoints[]` entry gains `starved_identities`.
+1.2 was additive over 1.1: it added the top-level `unconfirmed_findings` list.
 1.1 was additive over 1.0: it added `run.signal`/`run.signal_causes`,
 `coverage`, and `endpoints[].examples_planned`.
 
@@ -54,7 +55,7 @@ of a run's persisted data, never a live object. It carries a `schema_version`
 | `analysis` | The recipe the run executed: id, label, strategy mode, whether it was stateful, and the repo hash it was generated against. |
 | `run` | The run's own identity and outcome: id, ordinal, origin (original/replay), `executed_at`, duration, `status`, `fidelity`, its comparability mark, `signal`/`signal_causes` (see below), and - when the run was cut short - `truncation` (`reason` plus `endpoint_id`), otherwise `null`. |
 | `metrics` | The finding funnel and request counters, `null` when a run recorded none. |
-| `endpoints` | One entry per endpoint touched: requests, `examples_planned`, raw findings, crash count and its latency distribution. |
+| `endpoints` | One entry per endpoint touched: requests, `examples_planned`, raw findings, crash count, its latency distribution, and `starved_identities` - the labels of any declared identities the endpoint's budget could not fund, empty unless the run split budget by identity and ran short of it. |
 | `coverage` | The declared-endpoint partition behind the run - `declared`/`targeted`/`excluded`/`filtered`/`exercised` counts plus `excluded_endpoints` (method, path, reason) - `null` for a replay, which never compiles. |
 | `defects` | One entry per crash, ordered most-severe-first (the same order the live crash tables render): identity, reproducer and what the run observed - the same shape `inspect --crash <id>` and `compare` project a crash through. |
 | `unconfirmed_findings` | One entry per finding the run saw but never confirmed as a crash - see below. Empty for a replay. |

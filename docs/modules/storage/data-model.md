@@ -162,6 +162,7 @@ connection" would be hidden, non-thread-safe mutable state.
       | `findings_raw` | `int` | Violations found for this endpoint, before shrinking. |
       | `findings_confirmed` | `int` | Materialized count of this endpoint's confirmed rows in `findings` (not a copy). |
       | `latency` | `LatencyRecord` | The endpoint's latency distribution, nested from seven flat columns. |
+      | `starved_identities` | `str \| None` | The identity labels this endpoint's budget could not fund, as a JSON list; `NULL` when every declared identity was funded. Only modes that split budget by identity ever populate it. |
 
 ??? "`LatencyRecord` - An endpoint's **latency distribution**, in milliseconds."
 

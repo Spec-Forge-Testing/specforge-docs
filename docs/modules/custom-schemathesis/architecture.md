@@ -55,7 +55,7 @@ src/custom_schemathesis/
     ├── ordering.py        # order_by_risk: most-risky-first, before dispatch
     ├── http/              # Async orchestrator, request injection, credentials, error classifier
     ├── harness/           # The Hypothesis bridge: one event loop, settings, identity strategy
-    ├── oracles/           # Response oracles: registry, precedence, the seven builtins
+    ├── oracles/           # Response oracles: registry, precedence, the eight builtins
     ├── findings/          # Group, deduplicate, materialize, shrink, stats
     ├── fuzzers/           # stateless/ and stateful/ procedures
     ├── trace/             # Record, rehydrate, canonical JSON, URL userinfo

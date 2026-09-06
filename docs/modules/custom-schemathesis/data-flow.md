@@ -30,7 +30,7 @@ The engine-side outcome vocabularies follow the same rule:
 | Enum | Members (`.value`) |
 |---|---|
 | `ErrorCategory` | `success` · `client_error` · `server_error` · `contract_violation` · `timeout` · `availability` · `unsendable_request` |
-| `InvariantViolation` | `not_a_server_error` · `status_code_conformance` · `response_schema_conformance` · `content_type_conformance` · `state_transition` · `latency_sla` · `resilience_degradation` |
+| `InvariantViolation` | `not_a_server_error` · `status_code_conformance` · `response_schema_conformance` · `content_type_conformance` · `state_transition` · `latency_sla` · `resilience_degradation` · `semantic_property` |
 | `TruncationReason` | `infrastructure_abort` · `deadline_exceeded` · `target_down` · `state_link_abort` · `generation_exhausted` |
 | `FidelityLevel` | `exact` · `reduced` |
 
@@ -83,6 +83,13 @@ zones, `content_types`, and the optional endpoint-level controls — `risk`,
 `budget`, `attack`, `responses` (keyed by status-code string), `state_link`
 and `semantic_properties`. The controls are independently optional and stay
 flat on the spec ([ADR-009](adr/models.md#adr-009)).
+
+The engine reads `semantic_properties`: the compiler copies them from the
+`EndpointSpec` onto the `CompiledExecutionEndpoint`, `check_response` carries
+them onto the `ResponseContext`, and the `semantic_property` oracle evaluates
+each declared business rule against the 2xx request/response pair
+([Engine internals](engine-internals.md#how-a-semantic-property-is-evaluated),
+[ADR-048](adr/engine.md#adr-048)).
 
 The four zones are a `RequestZones` value object: a frozen pydantic model with
 one field per `Zone` (`path`, `query`, `header`, `body`), each a `ParamMap`

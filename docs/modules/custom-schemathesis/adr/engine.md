@@ -708,3 +708,62 @@ count are all the run can honestly describe.
 reach the report document's `unconfirmed_findings` and the `inspect` views like
 any other. A signature's `status_code` of `0` records a step that got no response
 at all, a transport failure.
+
+---
+
+## ADR-048 — Semantic properties are checked by an always-on oracle, not an execution mode { #adr-048 }
+
+**Status:** accepted · `engine/oracles/semantic/`, `engine/oracles/builtin.py`, `engine/oracles/context.py`, `models/engine/crash_report.py`
+
+### Context
+
+The producer can declare business rules for an endpoint — "the created article
+keeps a non-empty slug", "the total is the subtotal minus the discount" — as a
+`SemanticProperty`, a closed expression tree the kernel already carries all the
+way to the compiled endpoint. Nothing judged them: they were validated for field
+references and transported, then dropped. Checking them needs the response, so it
+belongs in the oracle pipeline that already reads every response; the open
+question was whether a new execution mode should own it, and how to evaluate an
+LLM-authored expression without executing what the LLM wrote.
+
+### Decision
+
+The check is an ordinary registered oracle, `semantic_property`, at precedence
+`SEMANTIC` (55) — between response schema (50) and latency (60). It follows the
+family's dormant-until-its-datum shape: it registers unconditionally and returns
+`CONTINUE` when the endpoint declares no rules, and it only speaks on a 2xx, since
+a rule describes what a successful call promised. The expression is evaluated by a
+`functools.singledispatch` over the kernel's six node kinds — never `eval` — so
+nothing the LLM authored is executed. Evaluation is total: a missing field, a
+type-invalid operation or an aggregation over a non-list yields an `UNDETERMINED`
+sentinel, and boolean combinations use strong Kleene (K3) three-valued logic.
+`UNDETERMINED` is a value the pipeline carries, **never** a finding — an
+undecidable rule stays silent. A rule is a violation only when its root
+expression evaluates to exactly `False`; a non-boolean root decides nothing. The
+verdict is **non-terminal**, so a broken rule is recorded and later oracles still
+run. A `RESPONSE_INVARIANT` is judged against the response body; an
+`INPUT_CONSTRAINT` against the flattened request the server accepted — body keys,
+query and headers in one namespace.
+
+### Rejected
+
+A dedicated execution mode for semantic checking. It would duplicate the request
+loop every mode already runs and force the user to choose between fuzzing and
+rule-checking, when the rules are just one more thing to observe about a response
+the run already has. An interpreter over free-text or generated predicates was
+also rejected: the closed six-node tree is enough to state the rules the producer
+authors, and it can be evaluated without ever running foreign code.
+
+### Consequences
+
+A new `InvariantViolation.SEMANTIC_PROPERTY` member joins the vocabulary, and the
+finding it raises carries only the invariant, not the rule's id or description —
+the same shape every other oracle's finding has. Because the oracle is
+non-terminal at precedence 55, a semantic violation and a latency violation can
+both be recorded for one response. Path parameters are not reachable to an
+`INPUT_CONSTRAINT`: the blueprint carries them only inside the request URL, so a
+rule over a path parameter resolves to no value and stays undecided — a current
+limitation of the input scope. The oracle only observes: it never steers
+generation toward inputs that would break an `input_constraint`, and it cannot
+express a rule that relates a request field to a response field, because the
+kernel has no namespace spanning both.

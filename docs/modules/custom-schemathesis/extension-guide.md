@@ -158,9 +158,17 @@ class ResponseOracle(Protocol):
 gap. Oracles run as a Chain of Responsibility: the first terminal verdict
 short-circuits, non-terminal ones continue. All built-ins are registered
 explicitly in `engine/oracles/builtin.py` — never as a side effect of importing
-a runner. The seven built-ins are, in precedence order: infrastructure,
-resilience, server error, status code, content type, response schema, latency
-([ADR-036](adr/engine.md#adr-036)).
+a runner. The eight built-ins are, in precedence order: infrastructure,
+resilience, server error, status code, content type, response schema, semantic
+property, latency ([ADR-036](adr/engine.md#adr-036),
+[ADR-048](adr/engine.md#adr-048)).
+
+An oracle can be **dormant until it has its datum**: it registers unconditionally
+but returns `CONTINUE` until the endpoint carries the input it judges. The
+semantic-property oracle is the clearest example — with no business rule declared
+for the endpoint it stands down and costs nothing, and it only ever speaks on a
+2xx (its family lives under `engine/oracles/semantic/`). Registration is the
+extension point; the datum on the context decides whether the check runs.
 
 ## Add a chaos transport
 

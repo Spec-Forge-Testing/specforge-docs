@@ -416,7 +416,9 @@ unexpectedly.
     attached to the endpoint's stateful state link, bound to the deterministic
     capture (from the spec's `links` or the sibling convention above) whose bundle
     name or captured field matches its `bundle`. `semantic_properties` are
-    validated against the endpoint's declared fields and carried, unconsumed.
+    validated against the endpoint's declared fields and carried through to the
+    engine, where a business rule broken by a 2xx response is reported as a
+    finding.
 
     **`--producer inference`** infers a contract per endpoint from source instead
     of reading it from disk. For each selected endpoint it traces the endpoint's

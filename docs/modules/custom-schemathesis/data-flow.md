@@ -61,7 +61,7 @@ The types that cross a stage line, all validated with `extra="forbid"`:
 | `RunRequest` | in | one run's inputs: `engine_input` + `ExecutionConfig` + mode `options` |
 | `EngineRunResult` | out | the `findings` union, terminal `status`, `RunStats`, `ExecutionTrace`, optional `ReplayFidelity` |
 | `Finding` (`ConfirmedFinding` / `FlakyFinding` / `UnverifiedFinding`) | out | discriminated union on `state`; a confirmed finding carries a `CrashReport`, the other two a `signature` and their `occurrences` |
-| `CrashReport`, `RunStats`, `EndpointStats`, `LatencyStats` | out | serialized to columns by `core/` — field names are stable |
+| `CrashReport`, `ViolatedRule`, `RunStats`, `EndpointStats`, `LatencyStats` | out | serialized to columns by `core/` — field names are stable; `ViolatedRule` is the optional named rule a `CrashReport` carries |
 | `ExecutionTrace`, `TracedRequest`, `TruncationRecord` | out | the replayable record |
 | `ReplayReadiness` | out | outcome of the pre-replay readiness check |
 
@@ -284,11 +284,15 @@ an optional `detail`.
 ## Results, findings and their counters
 
 Inside the engine, an exploration pass produces `RawFinding`s (a finding needs
-at least one `InvariantViolation`; `primary_violation` is the first the oracles
-reported). Findings are grouped by `FindingSignature` (endpoint, phase,
-invariant, status, identity label, body fingerprint) into `FindingGroup`s, then
-shrunk into `CrashReport`s. A `CrashReport` carries the `minimal_payload` keyed
-by zone, the `invariant_violated`, `sanitized_headers`, the `identity_label`,
+at least one `ObservedViolation`; `primary_violation` is the first the oracles
+reported). An `ObservedViolation` is what one oracle saw: the `InvariantViolation`
+it broke and, when the oracle names one, the `ViolatedRule` — a producer-declared
+business rule reduced to its `id` and `description`. Findings are grouped by
+`FindingSignature` (endpoint, phase, invariant, status, identity label, rule id,
+body fingerprint) into `FindingGroup`s, then shrunk into `CrashReport`s. A
+`CrashReport` carries the `minimal_payload` keyed by zone, the
+`invariant_violated`, an optional `rule` (the `ViolatedRule` the response broke,
+with a `rule_id` shortcut to its id), `sanitized_headers`, the `identity_label`,
 the `status_code` and `response_body`, an optional `stack_trace`, the
 `transition_sequence` for stateful findings, and `represented_findings` — how
 many raw findings it stands for, adjusted through `standing_for`.

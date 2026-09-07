@@ -210,6 +210,8 @@ connection" would be hidden, non-thread-safe mutable state.
       | `transition_sequence` | `str \| None` | Request chain as JSON, stateful findings only. |
       | `represented_findings` | `int` | Raw findings this row stands for: itself, its unshrunk group mates and the duplicates it absorbed. Always 1 for stateful findings. |
       | `identity_label` | `str \| None` | The identity the failing request was sent under; `None` when the run declared none. |
+      | `rule_id` | `str \| None` | The producer-declared business rule the finding broke, when an oracle named one; `None` for every other invariant. |
+      | `rule_description` | `str \| None` | Human-readable text for `rule_id`; `None` unless the finding is a confirmed crash that named a rule (a flaky/unverified finding stores the id only). |
 
 ??? "`ArtifactRecord` - A **recipe-level artifact** or a **report-level one**"
 

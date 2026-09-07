@@ -767,3 +767,69 @@ limitation of the input scope. The oracle only observes: it never steers
 generation toward inputs that would break an `input_constraint`, and it cannot
 express a rule that relates a request field to a response field, because the
 kernel has no namespace spanning both.
+
+## ADR-049 — A finding names the rule it broke through a generic, stable channel { #adr-049 }
+
+**Status:** accepted · Amends [ADR-048](#adr-048) · `models/engine/crash_report.py`, `models/engine/results.py`, `engine/oracles/registry.py`, `engine/oracles/semantic/oracle.py`, `models/engine/findings.py`, `engine/fuzzers/stateless/shrinking.py`
+
+### Context
+
+The semantic oracle ([ADR-048](#adr-048)) reports a business rule broken by a 2xx
+as `InvariantViolation.SEMANTIC_PROPERTY`. That invariant is shared by every rule
+an endpoint declares, so a finding raised under it was ambiguous the moment an
+endpoint declared more than one rule: "the created article keeps a non-empty slug"
+and "the total is the subtotal minus the discount" broke the *same* invariant, and
+nothing downstream — the signature that decides whether two findings are the same
+symptom, the crash report, storage, the report, the views — could tell them apart
+or say which rule the API actually broke. A reader saw `semantic_property` and had
+to guess. The rule that was violated is known at the oracle, exactly where the
+verdict is decided; the question was how to carry it to the surface without
+special-casing the semantic oracle into every layer it passes through.
+
+### Decision
+
+A `ViolatedRule` value object — a frozen `id` plus `description` — is the channel,
+threaded through the pipeline every oracle already uses. An `OracleVerdict` gains
+an optional `rule`; `evaluate` folds it into an `ObservedViolation` (invariant
+paired with rule); a `RawFinding` carries the observed violations; the
+`FindingSignature` gains a `rule_id`; the `CrashReport` gains a `rule` (with a
+`rule_id` shortcut); and the id flows on into the `findings` table
+(`rule_id`/`rule_description`), the report document and the views. The semantic
+oracle is the first and only current emitter — every other oracle leaves the rule
+`None`, and the channel is inert for them.
+
+Two rules keep the channel honest. **Only the id is identity:** `rule_id` is part
+of the finding signature, so two different rules broken on one endpoint are two
+distinct findings, but the human-readable `description` is *carried, never
+compared* — reworded prose never splits or merges a finding. **Reproduction is by
+identity:** the shrinker's `_still_violates` accepts a minimized payload only when
+it breaks the same invariant *and* the same rule id, so a minimal reproducer can
+never end up named for a rule it does not actually break.
+
+### Rejected
+
+- **A semantic-only field on the crash report.** Bolting a `semantic_property_id`
+  directly onto `CrashReport` would name the concept after one oracle and force
+  every other layer to special-case it, when the shape ("the rule this response
+  broke") is generic and belongs on the shared verdict → violation → signature →
+  report path any oracle can populate later.
+- **One `InvariantViolation` member per rule.** Minting an enum member per declared
+  rule would make an open, per-API set masquerade as a closed vocabulary, break the
+  invariant severity ordering, and make the signature depend on an enum that changes
+  with every spec. The invariant stays the closed category (`semantic_property`);
+  the rule id is the open detail carried beside it.
+- **A free-text detail string.** A single human-readable sentence would read well
+  but could not be compared, queried or ordered, and would tempt callers to parse
+  identity back out of prose. Splitting id from description keeps a stable key for
+  identity and free text for the human.
+
+### Consequences
+
+A confirmed semantic defect now names its rule end to end: the crash report and
+`report.json`'s `defects` carry `rule_id` and `rule_description`, the HTML report
+shows a **Business rule** row per defect and a **Rule** column in the unconfirmed
+table, and the REPL labels the finding `business rule violated · <rule id>`. A
+flaky or unverified finding carries only the `rule_id` — there is no reproducer,
+so no description is stored for it. The report document's `schema_version` moves to
+**1.5**. Every non-semantic oracle emits no rule for now; the channel is ready when
+another oracle has a rule to name.

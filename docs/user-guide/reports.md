@@ -42,7 +42,10 @@ its metrics, endpoint stats and crashes stay queryable through `history` and
 
 `ReportDocument` is a frozen, `extra="forbid"` Pydantic model: a pure function
 of a run's persisted data, never a live object. It carries a `schema_version`
-("1.4" today), bumped when the shape changes in a way a reader cannot ignore.
+("1.5" today), bumped when the shape changes in a way a reader cannot ignore.
+1.5 is additive over 1.4: each `defects[]` entry gains `rule_id` and
+`rule_description`, and each `unconfirmed_findings[]` entry gains `rule_id` — the
+producer-declared business rule the finding broke, when an oracle named one.
 1.4 is additive over 1.3: it added the top-level `producer_exclusions` list.
 1.3 is additive over 1.2: each `endpoints[]` entry gains `starved_identities`.
 1.2 was additive over 1.1: it added the top-level `unconfirmed_findings` list.
@@ -59,7 +62,7 @@ of a run's persisted data, never a live object. It carries a `schema_version`
 | `endpoints` | One entry per endpoint touched: requests, `examples_planned`, raw findings, crash count, its latency distribution, and `starved_identities` - the labels of any declared identities the endpoint's budget could not fund, empty unless the run split budget by identity and ran short of it. |
 | `coverage` | The declared-endpoint partition behind the run - `declared`/`targeted`/`excluded`/`filtered`/`exercised` counts plus `excluded_endpoints` (method, path, reason) - `null` for a replay, which never compiles. |
 | `producer_exclusions` | One entry (`method`, `path`, `reason`) per endpoint the inference contract producer soft-dropped to schema-only - see [`fuzz`'s contract producer](cli-reference.md). Empty when no producer ran, when the fixture producer ran (it aborts rather than drop), or when nothing was dropped. |
-| `defects` | One entry per crash, ordered most-severe-first (the same order the live crash tables render): identity, reproducer and what the run observed - the same shape `inspect --crash <id>` and `compare` project a crash through. |
+| `defects` | One entry per crash, ordered most-severe-first (the same order the live crash tables render): identity, reproducer and what the run observed - the same shape `inspect --crash <id>` and `compare` project a crash through. A crash the semantic oracle raised carries `rule_id` and `rule_description`, the producer-declared business rule it broke; both are `null` for every other invariant. |
 | `unconfirmed_findings` | One entry per finding the run saw but never confirmed as a crash - see below. Empty for a replay. |
 | `replay` | What only a replay knows - fidelity, divergences and a verdict per recorded defect - `null` for an original run. |
 
@@ -76,6 +79,7 @@ response body to show - only the finding's signature and how often it was seen:
 | --- | --- |
 | `method` / `path` / `phase` | Where the finding was seen and in which phase. |
 | `invariant_violated` | Which invariant the finding broke. |
+| `rule_id` | The producer-declared business rule the finding broke, when an oracle named one; `null` otherwise. There is no `rule_description` here - an unconfirmed finding has no reproducer to carry it. |
 | `status_code` | The failing response's status, or `null` when none was recorded. `0` means the request got no response at all (a transport failure). |
 | `identity_label` | The identity the request was sent under, or `null` when the run declared none. |
 | `state` | `"flaky"` or `"unverified"` (see below). |
@@ -98,7 +102,10 @@ regression or a fix.
 The HTML report gains a matching **Unconfirmed findings** section, listing the
 same entries with a one-line explanation of each state: a flaky finding reads
 *"seen N time(s) but could not be reproduced"*, an unverified one *"never
-checked because the run stopped"*.
+checked because the run stopped"*. That table carries a **Rule** column, showing
+the rule id a semantic finding broke (a dash for every other invariant), and each
+confirmed defect gains a **Business rule** row reading `<id> — <description>` when
+the semantic oracle named one.
 
 `run.signal` is `"clean"` or `"degraded"`, `null` for a replay (coverage is a
 compilation-time fact a replay never produces, so trustworthiness there is

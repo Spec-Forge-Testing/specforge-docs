@@ -259,14 +259,17 @@ unexpectedly.
       invariant the crash representing more raw findings comes first — the same
       order `report.json` sorts its defects, so the screen and the document never
       disagree. Each row: method, endpoint, phase, how many
-      prior steps set it up (a dash for a single request), the violated invariant,
+      prior steps set it up (a dash for a single request), the violated invariant
+      (a semantic finding reads `business rule violated · <rule id>`, naming the
+      producer-declared rule it broke),
       the status code, how many raw findings the crash stands for (`Represents`;
       stateless runs only), the identity it was found under (`Identity`; only shown
       when at least one crash in the run recorded one) and the smallest failing
       payload.
     - **Unconfirmed findings** — a table after the crashes, listing every finding
       the run saw but never confirmed as a crash: its method, endpoint, phase,
-      invariant, status (a dash when none was recorded), the identity it was found
+      invariant (a semantic finding again reading `business rule violated · <rule
+      id>`), status (a dash when none was recorded), the identity it was found
       under (when any), its **State** (`flaky` or `unverified`) and how many times
       it was **Seen**. A flaky finding was seen but did not reproduce; an
       unverified one was collected before the run could check it. The section is
@@ -452,7 +455,7 @@ unexpectedly.
 
     Producer exclusions are surfaced everywhere the run is: under *Endpoints
     excluded by the contract producer* in the fuzz summary, in `inspect --run <id>`
-    for the saved run, and in the run-report document (schema 1.4) as
+    for the saved run, and in the run-report document (schema 1.5) as
     `producer_exclusions` (see [Run report](reports.md)). They are persisted per
     run, so a schema-only endpoint is never silently dropped — the run always says
     which endpoints it could not enrich, and why.
@@ -564,7 +567,9 @@ unexpectedly.
     and the **body the API responded with** — which is usually where the error
     message lives; when the crash carries them, it also shows the **stack trace**
     and the **transition sequence**: the chain of requests that produced a stateful
-    finding. For a **flaky or unverified** finding there is no reproducer to show,
+    finding. A crash the semantic oracle raised also shows a **Business rule** row
+    reading `<id> — <description>`, the producer-declared rule the 2xx response
+    broke. For a **flaky or unverified** finding there is no reproducer to show,
     so it renders a short detail instead — the state, how many times it was seen,
     the endpoint, the invariant, the status (or *not recorded*) and the identity —
     with no payload, headers or body. An id that matches no finding still errors as

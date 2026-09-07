@@ -68,7 +68,7 @@ frozen value object with five fields:
 | Profile | Contract type | Phase split | Subclasses |
 |---|---|---|---|
 | `DEFAULT` | `BaseStrategyContract` | `valid` 0.60 · `boundary` 0.25 · `invalid` 0.15 | exact type only |
-| `HACKER` | `HackerStrategyContract` | `valid` 0.60 · `boundary` 0.25 · `invalid` 0.10 · `attack` 0.05 | accepted |
+| `HACKER` | `HackerStrategyContract` | `valid` 0.50 · `boundary` 0.25 · `invalid` 0.10 · `attack` 0.05 · `mutation` 0.10 | accepted |
 
 Adding a profile is one registration call — see the
 [Extension guide](extension-guide.md#add-a-profile).
@@ -118,11 +118,11 @@ directly (`anyOf`, `oneOf`, `allOf`, `$ref`).
 ## The phase registry
 
 A **phase** (`Phase`: `valid` / `boundary` / `invalid` / `attack` /
-`transition`) is a family of values a field can generate. Phases form a
-registry keyed by `(contract_type, Phase)`. `resolve_phase` walks the
+`transition` / `mutation`) is a family of values a field can generate. Phases
+form a registry keyed by `(contract_type, Phase)`. `resolve_phase` walks the
 contract's MRO, so a `HackerStrategyContract` — a subclass of
-`BaseStrategyContract` — picks up the base phases plus `attack` without a
-branch ([ADR-010](adr/models.md#adr-010)).
+`BaseStrategyContract` — picks up the base phases plus `attack` and `mutation`
+without a branch ([ADR-010](adr/models.md#adr-010)).
 
 A `GenerationPhase` binds `name: Phase`, `contract_type` and a `build`
 callable. Its `__post_init__` rejects a non-callable `build` with a `TypeError`
@@ -145,9 +145,12 @@ never as a side effect of importing a builder module
 | `invalid` | base | `build_invalid_strategy` |
 | `attack` | base | `build_valid_strategy` |
 | `attack` | hacker | `build_hacker_attack` |
+| `mutation` | base | `build_valid_strategy` |
+| `mutation` | hacker | `build_hacker_mutation` |
 
-`attack` on the base contract falls back to valid values: a non-hacker contract
-in a hacker-mode compile still generates in-spec values for that phase.
+`attack` and `mutation` on the base contract fall back to valid values: a
+non-hacker contract in a hacker-mode compile still generates in-spec values for
+those phases.
 
 Adding a phase is registering a `GenerationPhase` — see the
 [Extension guide](extension-guide.md#add-a-phase).
@@ -251,6 +254,52 @@ aggressiveness, and a valid value otherwise — a `flatmap`, because `st.one_of`
 would dedupe the two branches by identity and could not weight them.
 
 `hacker/` may import `default/`; never the reverse.
+
+### The mutation side
+
+`build_hacker_mutation` is the `mutation` builder for a `HackerStrategyContract`.
+Where the attack phase samples from fixed hostile pools, mutation starts from a
+value the endpoint would accept and breaks it in exactly one place. It draws a
+**non-null valid seed** (`build_non_null_valid_strategy` — the valid strategy
+with `None` filtered out, whatever the field's nullability) and applies **one
+operator sampled per draw** from the field's operator table:
+`st.builds(seed, st.sampled_from(operators))`. Because the seed is drawn per
+example, Hypothesis can shrink the mutated value like any other generated input.
+
+The operator table is keyed by the field's `SchemaType`. Each operator is a
+frozen `(name, gate, apply)` value object: a pure `(value, depth) -> value`
+transform, enabled only when its gate toggle is set (a `None` gate is always
+on). A field whose type has no operators — a null type, or a typeless field —
+gets its plain valid strategy instead.
+
+| Type | Operator | Gate | Effect |
+|---|---|---|---|
+| `string` | `truncate` | — | replace with the empty string |
+| `string` | `extend` | `include_large_values` | append a 4096-character filler run |
+| `string` | `reencode` | `include_encoded_variants` | percent-encode every character |
+| `string` | `nullify` | `include_nulls` | replace with `null` |
+| `integer` · `number` | `increment` | — | add 1 |
+| `integer` · `number` | `decrement` | — | subtract 1 |
+| `integer` · `number` | `overflow` | `include_large_values` | replace with 2⁶³ |
+| `integer` · `number` | `nullify` | `include_nulls` | replace with `null` |
+| `boolean` | `flip` | — | negate the value |
+| `boolean` | `nullify` | `include_nulls` | replace with `null` |
+| `array` | `empty` | — | replace with `[]` |
+| `array` | `duplicate` | — | concatenate the array with itself |
+| `array` | `grow` | `include_large_values` | append ten `null` elements |
+| `array` | `nest` | `include_nested_objects` | wrap the array in another array |
+| `array` | `nullify` | `include_nulls` | replace with `null` |
+| `object` | `drop_key` | — | remove the first key (drops a required field) |
+| `object` | `extra_key` | `include_extra_fields` | add an unexpected key |
+| `object` | `null_value` | `include_nulls` | null the first key's value |
+| `object` | `pollute` | `include_nested_objects` | layer prototype-pollution and overflow keys (`mutate_object`) |
+
+The gates are the same `AttackToggles` flags the attack phase reads, so one set
+of contract knobs governs both hacker phases. `mutation_depth` (from
+`GenerationContext`, carrying the kernel's `EndpointAttack.mutation_depth`, or
+`DEFAULT_MUTATION_DEPTH` when unset) reaches only the structural operators — the
+object `pollute` operator recurses through `mutate_object` to that depth. It
+never changes the phase's budget: depth is intensity, not allocation.
 
 ## Attack focus and sensitive fields
 

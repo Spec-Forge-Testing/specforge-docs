@@ -85,3 +85,4 @@ tells you what it governs.
 | [ADR-048](engine.md#adr-048) | engine | Semantic properties are checked by an always-on oracle, not an execution mode |
 | [ADR-049](engine.md#adr-049) | engine | A finding names the rule it broke through a generic, stable channel |
 | [ADR-050](engine.md#adr-050) | engine | Access control is declared by the producer and checked by a dormant oracle woken by the auth runner |
+| [ADR-051](compiler.md#adr-051) | strategy_compiler | Mutation is a generation phase over hacker contracts, seeded from the valid strategy, with engine-owned operators |

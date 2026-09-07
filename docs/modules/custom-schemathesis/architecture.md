@@ -47,9 +47,9 @@ src/custom_schemathesis/
 │       ├── context.py     # GenerationContext, EMPTY_CONTEXT
 │       ├── schema_view.py # SchemaView: typed reader over a contract
 │       ├── registry.py    # phase registry: register_phase, resolve_phase, isolated
-│       ├── builtin.py     # the five built-in phase registrations
+│       ├── builtin.py     # the seven built-in phase registrations
 │       ├── default/       # valid · boundary · invalid · constraints
-│       └── hacker/        # request · mutation · payloads · builders · tables
+│       └── hacker/        # request · mutation · mutation_operators · payloads · builders · tables
 └── engine/                # Execution
     ├── payload.py         # ZonedPayload: the value object a strategy draws
     ├── ordering.py        # order_by_risk: most-risky-first, before dispatch

@@ -321,3 +321,52 @@ would stop being a faithful carrier of the contract.
 
 The engine receives the whole attack contract; the goldens record it as it is;
 a new kernel attack field reaches the engine without a change to the compiler.
+
+---
+
+## ADR-051 — Mutation is a generation phase over hacker contracts, seeded from the valid strategy, with engine-owned operators { #adr-051 }
+
+**Status:** accepted · `models/phase.py`, `strategy_compiler/fields/hacker/mutation_operators.py`, `strategy_compiler/fields/hacker/builders.py`, `strategy_compiler/fields/builtin.py`, `profiles/builtin.py`
+
+### Context
+
+Mutation used to exist only as a single `mutate_object({})` payload inside the
+attack phase — one hostile object shape among the sampled pools. A real mutation
+family is different in kind: it starts from a value the endpoint would accept and
+breaks it in exactly one place, so the interesting inputs are the near-misses of
+a valid request, not fixed hostile constants. That family needed a home, a seed
+and a budget, none of which the attack pools provide.
+
+### Decision
+
+Mutation is a `Phase.MUTATION` registered in the phase registry by contract type,
+not a new `StrategyMode`. On a hacker contract the builder draws a **non-null
+valid seed** and applies **one operator per draw**, sampled from a table keyed by
+the field's `SchemaType`; the seed is drawn per example so Hypothesis can shrink
+the mutated variant. The operators and their table are owned by the engine and
+gated by the existing `AttackToggles`; intensity comes from `mutation_depth`,
+which reaches only the structural operators. The share is taken from `valid` in
+the hacker split (`valid` 0.50), so `boundary`, `invalid` and `attack` keep their
+budget. On the base contract the phase falls back to the valid strategy, exactly
+as `attack` does, so a plain field inside a hacker-mode compile still compiles.
+
+### Rejected
+
+- **A `StrategyMode.MUTATION`.** The mode is a closed, persisted vocabulary, and
+  mutation intensifies the hacker mode rather than being orthogonal to it — a new
+  mode would fork the whole profile for what is one more phase.
+- **Producer-declared seeds and operators.** No kernel field is needed: the
+  producer already carries intensity through `mutation_depth`, and the operator
+  catalogue is an engine concern, not part of the boundary contract.
+- **A whole-payload mutation at zone level.** The compiler is per-field; "drop a
+  required field" is simply an operator of the parent object field, so no
+  payload-level pass is warranted.
+- **Hacker-only registration.** A base-contract field met inside a hacker compile
+  would then fail to compile when the mutation phase ran — hence the base
+  fallback.
+
+### Consequences
+
+Hacker compiles gain a fifth phase for every field; `RunStats.by_phase` reports
+`mutation` separately; nullable seeds are filtered so an operator always receives
+a typed value; storage's phase description lists `mutation`.

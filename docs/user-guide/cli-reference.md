@@ -359,8 +359,8 @@ unexpectedly.
 
     `--strategy {default,hacker}` selects which **strategy family** the engine
     compiles, orthogonally to `--mode`: `default` (the default) is schema-only —
-    the `valid`, `boundary` and `invalid` phases; `hacker` adds the `attack` phase
-    and widens generation toward adversarial values. The two words are the
+    the `valid`, `boundary` and `invalid` phases; `hacker` adds the `attack` and
+    `mutation` phases and widens generation toward adversarial values. The two words are the
     engine's own `StrategyMode` values, so a new mode needs no second list here.
 
     A **contract producer** supplies each selected endpoint's enriched

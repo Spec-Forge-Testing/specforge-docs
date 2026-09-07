@@ -87,8 +87,10 @@ flowchart TD
 ```
 
 - A **project** is the API or repository you are testing.
-- An **analysis** is a *replayable recipe*: the contracts Spec Forge resolved plus the
-  ordered **trace** — the exact list of requests a run sent — needed to reproduce it.
+- An **analysis** is a *replayable recipe*: the contracts Spec Forge resolved, the
+  execution mode it ran, any contracts a producer enriched (with the producer's
+  provenance), plus the ordered **trace** — the exact list of requests a run sent —
+  needed to reproduce it.
 - A **run** is one execution of that recipe. The first run generates and records the trace; a
   **replay** re-sends that recorded trace verbatim.
 - **Artifacts** are the files a run leaves on disk: its reports and the trace file.

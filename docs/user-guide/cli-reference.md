@@ -244,9 +244,9 @@ unexpectedly.
       confirmed one, never shrunk) → unverified (never attempted — the run was cut
       before shrinking started, or the strategy could not produce a candidate to
       try) → flaky → unique after de-duplication.
-      `raw == confirmed + flaky + collapsed + unverified` always holds. A stateful
-      run has no separate shrink phase, so its report shows neither shrink requests
-      nor collapsed or unverified findings.
+      `raw == confirmed + flaky + collapsed + unverified` always holds. Only a
+      stateless run has a separate shrink phase; a stateful, performance, resilience
+      or auth run shows neither shrink requests nor collapsed or unverified findings.
     - **Category breakdown** — requests grouped by outcome, labeled in plain
       English: successful response, 4xx client error, 5xx server error, contract
       violation, request timed out, target unreachable, and `unsendable request
@@ -346,9 +346,19 @@ unexpectedly.
     spec over the full declared endpoint list, not only the selected ones: native
     OpenAPI `links` first, then a conservative convention that pairs a `POST`/`PUT`
     on a collection with its immediate by-id sibling whenever a `2xx` body exposes
-    an id-like field. That convention reads only the **top-level** properties of the
-    response schema, so an enveloped response (`{"article": {"slug": ...}}`) needs a
-    native `links` entry to get a deterministic capture. A stateful run is markedly
+    an id-like field. That convention reads the **top-level** properties of the
+    response schema first; when it finds nothing there and the body wraps everything
+    under a **single object property** (`{"article": {"slug": ...}}`), it descends
+    one level into that envelope and captures the dotted field (`article.slug`), so
+    the common enveloped shape gets a deterministic capture without a native `links`
+    entry. Precedence is fixed: OpenAPI `links`, then a top-level field, then a
+    wrapped one. Among the id-like candidates the sibling's own path parameter is
+    tried first — it names exactly what the sibling consumes, so a body exposing
+    both `id` and `slug` next to `GET /articles/{slug}` captures `slug`, never the
+    `id` — followed by `id` and the resource-qualified spellings; the singular of
+    the collection segment (`articles` → `article`) joins them (`article_id`,
+    `articleId`). The by-id sibling is
+    still required in every case, so no false transition is ever invented. A stateful run is markedly
     slower than a stateless one. A stateful finding is reported by the step that failed; the **Prior
     steps** column says how many requests set it up, which is the cue to open
     `inspect --crash <id>` for the sequence. A transition the API answered with an
@@ -492,9 +502,15 @@ unexpectedly.
     trace keeps the label each request was sent under, and a replay re-supplies the
     values from `--identities <file>.toml`. The run also records its outcome `status`
     (`completed`/`truncated`/`aborted`), the replay `fidelity` when it is one, and the
-    engine version as provenance. The analysis records whether the run was stateful
-    and, when it was, the effective budget it ran with (`stateful_config`: examples,
-    steps per sequence and distinct bugs per sequence).
+    engine version as provenance. The analysis records its **execution mode** — how
+    the trace was generated (`stateless`, `stateful`, `performance`, `resilience` or
+    `auth`) — and, for a stateful run, the effective budget it ran with
+    (`stateful_config`: examples, steps per sequence and distinct bugs per sequence).
+    When a contract producer enriched any endpoint (`--contracts <dir>`), the
+    analysis also stores each **produced contract** and the producer's provenance
+    (whether it came from a fixture directory or from inference), so the recipe is
+    the whole of what was tested, not just the resolved spec. `history --analysis`
+    lists them.
 
 ??? "`history` — browse persisted projects, analyses and runs"
 
@@ -508,11 +524,20 @@ unexpectedly.
     Navigates everything the fuzzer has persisted, in the three levels the storage
     schema is built around: with no flags it lists every **project** (with its
     analysis count); `--project <id>` lists that project's **analyses** — the
-    replayable recipes, each with its label, strategy mode, whether it was stateful,
+    replayable recipes, each with its label, strategy mode (the **Mode** column) and
+    **execution mode** (how its trace was generated: `stateless`, `stateful`,
+    `performance`, `resilience` or `auth` — a separate axis from the strategy),
     engine version, run count and an **Endpoints** column (`targeted/declared`, plus
     `(+N excl)` when the compiler excluded any — see *[Coverage and the run's
     signal](#coverage-and-the-runs-signal)*); `--analysis <id>` lists that
     analysis's **runs** in ordinal order.
+
+    When the analysis enriched any endpoint with a produced contract, `--analysis
+    <id>` first prints a **Produced contracts** table — one row per enriched
+    endpoint (method, path, and which enrichment sections it carries among `risk`,
+    `attack`, `access`, `transitions`, `semantic_properties`) — ahead of the run
+    list. A schema-only analysis prints no such table. Under `--json-output` the
+    same rows travel in the envelope under `produced_contracts`, beside the runs.
 
     The run listing is where the model pays off: an **original** run (`●`) is
     visually distinct from a **replay** (`↺`), and a run whose counters would
@@ -546,7 +571,10 @@ unexpectedly.
     comparability mark); its declared-endpoint **coverage** and **signal** (see
     *[Coverage and the run's signal](#coverage-and-the-runs-signal)* — skipped for
     a replay); the **metrics** funnel (requests, raw → confirmed → unique
-    → flaky → **Unverified** findings — never shrunk)
+    → flaky → **Unverified** findings — never shrunk) — its shrink-phase counters
+    (collapsed, unverified, shrink requests) appear only for an **original stateless**
+    run, the only kind with a shrink phase; a stateful, performance, resilience, auth
+    or replay run omits them rather than showing a misleading zero —
     with the per-phase and per-category breakdowns (category tokens labeled in
     plain English, as in the fuzz report); **per-endpoint stats** including
     the latency percentiles (p50/p95/max — a dash when the endpoint was never
@@ -689,9 +717,10 @@ unexpectedly.
       comparison.
     - **inconclusive** — found only in `--before`, but a caveat taints
       `--after` or the pair itself: a different engine version, a different
-      spec revision, or either run being `truncated`, `aborted` or of
-      **reduced fidelity** — the same not-comparable signal `history` and
-      `inspect` already show.
+      spec revision, the two analyses generated in **different execution modes**
+      (they explore the API differently, so a defect absent under one is not a fix),
+      or either run being `truncated`, `aborted` or of **reduced fidelity** — the
+      same not-comparable signal `history` and `inspect` already show.
 
     A fresh appearance is never downgraded by a caveat — it is reported as
     **new** regardless — and the diff is never blocked by a caveat either: it

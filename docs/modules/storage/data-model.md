@@ -45,7 +45,8 @@ instead of silently reconnecting.
 ## Transactional boundary (Unit of Work)
 
 A composed write spans several tables — `project → analysis → analysis_endpoints →
-run → run_metrics → run_endpoint_stats → findings → artifact`. Persisting a run
+analysis_endpoint_contracts → run → run_metrics → run_endpoint_stats → findings →
+artifact`. Persisting a run
 is one such write, and it must be **all-or-nothing**: a failure halfway through cannot
 leave a partial or orphaned analysis behind. `StorageEngine` provides that boundary as
 a transaction-scoped **Unit of Work**.
@@ -89,7 +90,7 @@ connection" would be hidden, non-thread-safe mutable state.
       | `name` | `str` | Human-readable project name. |
       | `repo_path` | `str` | Repository path on disk. |
 
-??? "`AnalysisRecord` - **The replayable recipe**: resolved contracts, strategy mode, and execution config."
+??? "`AnalysisRecord` - **The replayable recipe**: resolved contracts, strategy and execution mode, and the producer provenance."
 
       | Field | Type | Description |
       |---|---|---|
@@ -99,10 +100,31 @@ connection" would be hidden, non-thread-safe mutable state.
       | `label` | `str \| None` | Optional human-readable label. |
       | `generated_against_repo_hash` | `str` | Hash of the repo the trace was generated against. |
       | `strategy_mode` | `str` | Hypothesis strategy mode used to generate it. |
-      | `stateful` | `bool` | Whether the analysis runs stateful chains. |
+      | `execution_mode` | `str` | How the trace was generated, from the closed vocabulary of five values listed below. |
       | `stateful_config` | `str \| None` | Stateful config, serialized as JSON. |
       | `execution_config` | `str` | Execution config as JSON (headers already sanitized). |
       | `engine_version` | `str \| None` | Engine version that produced the analysis (provenance only). |
+      | `contracts_hash` | `str \| None` | SHA-256 over the produced endpoint contracts' hashes, ordered by method and path; `NULL` for a schema-only analysis (no endpoint was enriched). |
+      | `producer` | `str \| None` | JSON provenance of the contract producer (`{"kind": "fixture", "directory": …}` or `{"kind": "inference", "directory": null}`); `NULL` when no producer ran. |
+
+      #### Execution modes
+
+      `execution_mode` records how the analysis's trace was **generated**, and is
+      one of five values. `replay` is never one of them: a replay is a run of an
+      existing analysis, not a way to generate a new one.
+
+      | Value | Meaning |
+      |---|---|
+      | `stateless` | Each endpoint fuzzed independently, then failures shrunk to a minimal reproducer. The only mode with a shrink phase. |
+      | `stateful` | Requests chained into sequences; a violating sequence is minimized inline. |
+      | `performance` | Endpoints fuzzed under scaled load with the latency-SLA oracle; findings materialized without shrinking. |
+      | `resilience` | A fixed chaos battery per endpoint; findings materialized without shrinking. |
+      | `auth` | The declared identities crossed against each endpoint's access policy; findings materialized without shrinking. |
+
+      Only `stateless` explores and then shrinks, so the shrink-phase counters on
+      `RunMetricsRecord` (`findings_collapsed`, `findings_unverified`,
+      `requests_shrink`) are meaningful only for an original stateless run and are
+      zero for every other mode.
 
 ??? "`AnalysisEndpointRecord` - A **filterable summary** of which endpoints an analysis targets."
 
@@ -112,6 +134,27 @@ connection" would be hidden, non-thread-safe mutable state.
       | `analysis_id` | `int` | Foreign key to `AnalysisRecord.id`. |
       | `method` | `str` | HTTP method (e.g. `GET`, `POST`). |
       | `path` | `str` | URL (e.g. `/api/v1/users`). |
+
+??? "`analysis_endpoint_contracts` - The **produced contract** for one enriched endpoint."
+
+      One row per endpoint the analysis enriched with a produced contract — the
+      canonical JSON of the fused `EndpointContract`, its content hash and the
+      kernel version that shaped it. It hangs off the endpoint (`ON DELETE
+      CASCADE`, `UNIQUE` per endpoint), not the run, because the enriched contract
+      is part of the recipe. A schema-only endpoint gets no row. The heavy payload
+      lives here rather than on `AnalysisEndpointRecord`, which stays a filterable
+      summary. The table is write-only provenance except for one read: the
+      repository's `list_by_analysis` joins it with the endpoint catalogue and
+      returns `ProducedContractRecord(method, path, contract_json)`, the shape
+      `history --analysis` renders.
+
+      | Field | Type | Description |
+      |---|---|---|
+      | `id` | `int` | Auto-incrementing primary key. |
+      | `analysis_endpoint_id` | `int` | Foreign key to `AnalysisEndpointRecord.id` (unique). |
+      | `contract_json` | `str` | Canonical JSON of the fused `EndpointContract`. |
+      | `contract_sha256` | `str` | SHA-256 of `contract_json`. |
+      | `kernel_version` | `str \| None` | Version of the `specforge-contracts` kernel that shaped the contract; `NULL` when it could not be resolved. |
 
 ??? "`RunRecord` - A **run**: one concrete execution of an analysis."
 

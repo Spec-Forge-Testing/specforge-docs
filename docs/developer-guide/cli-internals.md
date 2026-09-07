@@ -74,8 +74,11 @@ producer is asked for derives from the chosen strategy
 "security"`); the producer never selects the mode itself. The runner checks
 the produced contract's identity against the endpoint before fusing, since
 fusion stamps the endpoint's own identity onto its result. An LLM-backed
-producer is a follow-up, and produced contracts are not persisted with the
-analysis.
+producer is a follow-up. The contracts a producer enriches are **retained on the
+fuzz outcome** and persisted with the analysis (its own
+`analysis_endpoint_contracts` table, plus a `contracts_hash` and the producer's
+provenance on the analysis row), so the recipe holds the whole of what was tested;
+`history --analysis` reads them back.
 
 The adapter's fused path (`_contract_to_info`) projects the kernel sections onto
 the engine's own types: `risk` as is; `attack`'s five endpoint-level fields into

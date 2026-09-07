@@ -912,3 +912,85 @@ shrinking** — a cross-identity read is already its own minimal reproducer. The
 scope is deliberately narrow: with a single declared identity the cross is
 owner-versus-anonymous only, and role escalation (admin, BFLA) is not yet
 expressible — it waits until the `access` vocabulary grows a notion of role.
+
+---
+
+## ADR-052 — The analysis records its execution mode and its produced contracts { #adr-052 }
+
+**Status:** accepted · Extends [ADR-050](#adr-050) · `lib/storage/schema.sql`, `storage/models.py`, `storage/repositories/`, `core` persistence · history services
+
+### Context
+
+An analysis is meant to be the full replayable recipe of a run, but two facts
+about how a run was produced were not part of it. The first is the **execution
+mode**. Storage kept a single `stateful` boolean, which could not distinguish a
+`performance`, `resilience` or `auth` run from an ordinary stateless one; those
+modes had to be guessed from the findings, and a run that found nothing was
+indistinguishable from a stateless one. The boolean also drove the wrong display
+decision: shrink-phase counters are meaningful only for a mode that shrinks, yet
+`not stateful` reported them for performance, resilience and auth, which never
+shrink — a column of zeros that read as real data.
+
+The second is the **produced contracts**. When a producer enriches endpoints
+(risk, attack, access, transitions, semantic properties) the fused contracts are
+what the run actually tested, but they lived only in memory for the length of the
+run. The persisted analysis kept the resolved spec and not the enrichment, so the
+recipe was incomplete: two analyses of the same spec enriched differently were
+indistinguishable, and there was no way to see which endpoints ran enriched.
+
+### Decision
+
+The analysis records both, as properties of the recipe.
+
+- **Execution mode.** `analyses.stateful` is replaced by `analyses.execution_mode
+  TEXT NOT NULL`, one of the five generation modes (`stateless`, `stateful`,
+  `performance`, `resilience`, `auth`). `replay` is never stored here — a replay
+  is a run of an existing analysis, not a way to generate one — so it is a
+  reserved member of the vocabulary, like the reserved `failed` run status. A
+  closed `ExecutionMode` vocabulary, mirrored from the engine's own and reconciled
+  by a test, is persisted as text; whether a mode has a shrink phase is a derived
+  read-model (`has_shrink_phase`, true for `stateless` alone), so the shrink
+  counters and `compare`'s mode caveat read the mode rather than a second stored
+  flag.
+- **Produced contracts.** A child table `analysis_endpoint_contracts` holds one
+  row per enriched endpoint — the canonical JSON of the fused `EndpointContract`,
+  its content hash, and the kernel version that shaped it — hanging off the
+  endpoint with a cascade and a uniqueness constraint. On the analysis row,
+  `contracts_hash` fingerprints the produced set (SHA-256 over the per-endpoint
+  hashes ordered by method and path, `NULL` for a schema-only analysis) and
+  `producer` records the producer's provenance as JSON (a fixture directory, or an
+  inference producer). All of it is written in the same transaction as the rest of
+  the analysis.
+
+### Rejected
+
+- **Mode on the run instead of the analysis.** A run cannot execute in a mode
+  different from its analysis — an original run generates the analysis in that
+  mode, and its only other run is a replay of the recorded trace — so a per-run
+  column would duplicate the analysis's mode on every original and read `replay`
+  on every replay. It is a derivable, redundant fact; the mode belongs to the
+  recipe.
+- **Keeping the `stateful` boolean beside the mode.** Persisting `stateful ==
+  (execution_mode == 'stateful')` stores the same truth twice and forces a
+  dishonest default on the new column. One source of truth, derive the rest.
+- **A contract JSON column on `analysis_endpoints`.** That table is a filterable
+  summary of every declared endpoint, not the tested payload; a heavy JSON column
+  there would be populated only for the enriched few and would contradict the
+  table's purpose. The payload lives in its own child table.
+- **Deriving the producer from the stored contracts.** A fused `EndpointContract`
+  no longer carries where it came from — a fixture directory or an inference
+  model cannot be recovered from it — so provenance is recorded explicitly rather
+  than reconstructed.
+
+### Consequences
+
+The recipe is complete again: `history --project` shows each analysis's execution
+mode beside its strategy mode, `history --analysis` lists the produced contracts
+and the enrichment sections each carries (and carries the same rows under
+`produced_contracts` in `--json-output`), and `compare` warns when two runs'
+analyses were generated in different modes rather than reporting a mode-driven
+absence as a fix. Shrink-phase counters surface only for an original stateless
+run. The report document's `schema_version` moves to **1.6**: `analysis.stateful`
+becomes `analysis.execution_mode`. Because the database shape changed, a database
+built from an earlier schema is rejected by the schema fingerprint and must be
+recreated — local databases are disposable.

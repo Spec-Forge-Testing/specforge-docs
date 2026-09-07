@@ -29,8 +29,10 @@ flowchart TD
     A ==>|1:N| R
 ```
 
-An **analysis** is the reproducible recipe (resolved contracts and execution settings);
-a **run** is one execution of that recipe. Repositories encapsulate parameterized SQL,
+An **analysis** is the reproducible recipe (resolved contracts and execution settings,
+its execution mode, and — in its own `analysis_endpoint_contracts` table — the contracts
+a producer enriched, with the producer's provenance); a **run** is one execution of that
+recipe. Repositories encapsulate parameterized SQL,
 Pydantic DTOs validate data at the boundary, and domain exceptions prevent SQLite
 driver errors from leaking to callers. A composed multi-table write (persisting a run)
 runs as one all-or-nothing transaction through a **Unit of Work** — see the

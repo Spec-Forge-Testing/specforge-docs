@@ -119,8 +119,14 @@ OracleVerdict` — and precedence is a named `IntEnum` value, never a magic gap
 | `SEMANTIC` (55) | `semantic_property` | a 2xx that breaks a declared business rule (non-terminal) |
 | `LATENCY` (60) | `latency_sla` | a clean 2xx/3xx slower than the run's SLA |
 
-`evaluate` runs them in `(order, name)` order, accumulating each `OracleVerdict`'s
-violation and stopping at the first `terminal` one. `check_response(result,
+An `OracleVerdict` carries the `violation` an oracle decided, whether it is
+`terminal`, and an optional `rule: ViolatedRule | None` — the producer-declared
+rule the response broke, when the oracle names one (only `semantic_property` does
+today; the rest leave it `None`). `evaluate` runs the oracles in `(order, name)`
+order, turning each non-empty verdict into an `ObservedViolation` (its invariant
+paired with its rule), accumulating them and stopping at the first `terminal` one;
+it returns a `list[ObservedViolation]`, as do `check_response` and
+`evaluate_contract_free`. `check_response(result,
 endpoint, latency_sla_ms=, is_chaos=)` builds the `ResponseContext` — resolving
 the endpoint's response contract for the status by exact code → status class →
 `default`, once, for the whole pipeline, and carrying the endpoint's
@@ -176,6 +182,13 @@ keeps a non-empty slug" is the field reference `article.slug` compared `!=` to t
 literal `""`; a 2xx whose body has an empty slug makes that root `False`, and the
 oracle emits `InvariantViolation.SEMANTIC_PROPERTY`.
 
+The verdict also **names the rule it broke**: it carries a `ViolatedRule` built
+from the property's `id` and `description`, so the finding it produces points at
+one specific business rule rather than at the anonymous `semantic_property`
+invariant shared by every rule on the endpoint. The id rides all the way to the
+crash report, the finding signature, storage and the report; the description
+rides alongside it but is never compared ([ADR-049](adr/engine.md#adr-049)).
+
 ## The finding pipeline
 
 `engine/findings/` turns raw findings into deduplicated crash reports, the
@@ -184,10 +197,13 @@ group → shrink → materialize → dedupe → assemble → stats.
 
 - **Signature.** `signature_of` builds a `FindingSignature` from what the
   failure looks like from the outside: endpoint, phase, primary violation,
-  status code, identity label, and a *fingerprint of the body's shape* — never
-  its values (an object becomes its keys mapped to JSON type names; free text
-  is lowercased with digit runs masked). `group_findings` collapses findings
-  that share a signature, in first-seen order.
+  status code, identity label, the `rule_id` of the rule the finding broke (when
+  the oracle named one, `None` otherwise), and a *fingerprint of the body's
+  shape* — never its values (an object becomes its keys mapped to JSON type
+  names; free text is lowercased with digit runs masked). The rule id is part of
+  identity, so two different business rules broken on one endpoint are two
+  findings; the rule's *description* never enters the signature. `group_findings`
+  collapses findings that share a signature, in first-seen order.
 - **Shrink.** `shrink_groups` attempts at most two representatives per signature
   (`MAX_REPRESENTATIVES_PER_SIGNATURE`). The first faithful reproducer stands
   for the group's untouched members (counted `collapsed`); a member that was
@@ -265,10 +281,15 @@ signature — rather than spending requests rediscovering the target is down.
 
 **Shrinking** (`shrinking.py`) runs off the findings, never the results, so its
 requests stay out of the trace. It first re-sends the finding's own payload to
-confirm it still reproduces (status *and* violation), then `find`s the smallest
-payload that still does, then re-executes that minimal payload to package it; a
-minimal payload that does not reproduce on re-execution is flaky and yields no
-report.
+confirm it still reproduces, then `find`s the smallest payload that still does,
+then re-executes that minimal payload to package it; a minimal payload that does
+not reproduce on re-execution is flaky and yields no report. Reproduction is
+judged **by the finding's identity**: `_still_violates` accepts a re-executed
+response only when it breaks the same invariant *and* the same rule id as the
+original finding (and the search additionally holds the status fixed). That rule
+clause is why a minimal reproducer never names a rule it does not break — a
+smaller payload that trips a *different* business rule is not the same finding and
+is not accepted as its shrink.
 
 ## Stateful sequencing
 

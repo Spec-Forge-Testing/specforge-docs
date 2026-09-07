@@ -83,3 +83,4 @@ tells you what it governs.
 | [ADR-046](engine.md#adr-046) | engine | Replay readiness separates missing URL userinfo from a host mismatch, and checks every request's host |
 | [ADR-047](engine.md#adr-047) | engine | Stateful runs report flaky findings as an occurrence count |
 | [ADR-048](engine.md#adr-048) | engine | Semantic properties are checked by an always-on oracle, not an execution mode |
+| [ADR-049](engine.md#adr-049) | engine | A finding names the rule it broke through a generic, stable channel |

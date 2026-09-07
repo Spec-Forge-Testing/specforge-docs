@@ -18,7 +18,8 @@ from custom_schemathesis import (
     BaseStrategyContract, HackerStrategyContract,
     ExecutionConfig, Identity, ExecutionMode, StrategyMode,
     CompilationOutcome, EngineRunResult, RunStatus,
-    Finding, ConfirmedFinding, FlakyFinding, UnverifiedFinding, CrashReport,
+    Finding, ConfirmedFinding, FlakyFinding, UnverifiedFinding,
+    CrashReport, ViolatedRule,
 )
 ```
 
@@ -76,6 +77,7 @@ Field names of this family are stable: they are persisted as columns.
 | `FlakyFinding`, `UnverifiedFinding` | a settled group: its `signature` and how many raw `occurrences` it stands for |
 | `RunStats`, `EndpointStats`, `LatencyStats` | run, endpoint and latency counters |
 | `CrashReport`, `InvariantViolation` | a confirmed finding's reproducer and the invariant it broke |
+| `ViolatedRule` | the producer-declared business rule a `CrashReport` broke (`id` + `description`), or `None` when no oracle named one |
 | `ExecutionTrace`, `TracedRequest`, `TruncationRecord` | the replayable record |
 | `ResponseDivergence`, `ReplayFidelity` | the replay comparison |
 | `ReplayReadiness` | the outcome of `validate_replayable` |

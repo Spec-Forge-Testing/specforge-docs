@@ -86,3 +86,4 @@ tells you what it governs.
 | [ADR-049](engine.md#adr-049) | engine | A finding names the rule it broke through a generic, stable channel |
 | [ADR-050](engine.md#adr-050) | engine | Access control is declared by the producer and checked by a dormant oracle woken by the auth runner |
 | [ADR-051](compiler.md#adr-051) | strategy_compiler | Mutation is a generation phase over hacker contracts, seeded from the valid strategy, with engine-owned operators |
+| [ADR-052](engine.md#adr-052) | storage · cli | The analysis records its execution mode and its produced contracts |

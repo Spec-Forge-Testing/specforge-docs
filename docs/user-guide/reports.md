@@ -42,7 +42,10 @@ its metrics, endpoint stats and crashes stay queryable through `history` and
 
 `ReportDocument` is a frozen, `extra="forbid"` Pydantic model: a pure function
 of a run's persisted data, never a live object. It carries a `schema_version`
-("1.5" today), bumped when the shape changes in a way a reader cannot ignore.
+("1.6" today), bumped when the shape changes in a way a reader cannot ignore.
+1.6 changes `analysis`: the old `stateful` boolean is replaced by
+`execution_mode`, the string naming how the trace was generated (`stateless`,
+`stateful`, `performance`, `resilience` or `auth`).
 1.5 is additive over 1.4: each `defects[]` entry gains `rule_id` and
 `rule_description`, and each `unconfirmed_findings[]` entry gains `rule_id` — the
 producer-declared business rule the finding broke, when an oracle named one.
@@ -56,7 +59,7 @@ producer-declared business rule the finding broke, when an oracle named one.
 | --- | --- |
 | `tool` | Which tool produced the document (`name`), and the engine version that ran the analyzed API. |
 | `project` | The analyzed project's name. |
-| `analysis` | The recipe the run executed: id, label, strategy mode, whether it was stateful, and the repo hash it was generated against. |
+| `analysis` | The recipe the run executed: id, label, strategy mode, `execution_mode` (how its trace was generated), and the repo hash it was generated against. |
 | `run` | The run's own identity and outcome: id, ordinal, origin (original/replay), `executed_at`, duration, `status`, `fidelity`, its comparability mark, `signal`/`signal_causes` (see below), and - when the run was cut short - `truncation` (`reason` plus `endpoint_id`), otherwise `null`. |
 | `metrics` | The finding funnel and request counters, `null` when a run recorded none. |
 | `endpoints` | One entry per endpoint touched: requests, `examples_planned`, raw findings, crash count, its latency distribution, and `starved_identities` - the labels of any declared identities the endpoint's budget could not fund, empty unless the run split budget by identity and ran short of it. |

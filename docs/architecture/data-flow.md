@@ -52,7 +52,8 @@ flowchart TD
 | Storage → replay | `storage` (recorded trace) | `custom_schemathesis` replay mode | [`ExecutionTrace`](../modules/custom-schemathesis/index.md#reproducibility) | replay checks the trace is replayable before sending, then compares recorded vs observed status per request |
 
 The hierarchy `storage` writes is **project → analysis → run**: an *analysis* is the replayable
-recipe (its resolved contracts plus the recorded trace), and a *run* is one execution of it. Replay
+recipe (its resolved contracts, its execution mode, the contracts a producer enriched with the
+producer's provenance, and the recorded trace), and a *run* is one execution of it. Replay
 reads an analysis back and re-sends its trace verbatim.
 
 ## What never crosses a seam

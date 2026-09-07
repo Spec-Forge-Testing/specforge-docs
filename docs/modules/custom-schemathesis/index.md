@@ -60,7 +60,7 @@ outcome = compile_strategies(CompilerInput(endpoints=[spec], strategy_mode=Strat
 for excluded in outcome.exclusions:
     print(excluded.method, excluded.path_url, excluded.reason)
 
-# 2. Run against the live API in one of the five modes, tuned by that mode's options.
+# 2. Run against the live API in one of the six modes, tuned by that mode's options.
 config = ExecutionConfig(base_url="http://localhost:8000")
 result = run(
     outcome.engine_input,
@@ -118,7 +118,7 @@ trace helpers. The full list is in the [API reference](api-reference.md).
 `run` takes a strict `ExecutionMode` — the mode selects a runner object from a
 registry, never a branch.
 
-## The five execution modes
+## The six execution modes
 
 | Mode | What it does |
 |---|---|
@@ -127,6 +127,7 @@ registry, never a branch.
 | `REPLAY` | re-send a recorded trace verbatim and report how faithfully the API behaved |
 | `PERFORMANCE` | fuzz under a scaled load with a latency-SLA oracle active |
 | `RESILIENCE` | send chaos-shaped requests (oversized, slow, malformed) and watch for degradation |
+| `AUTH` | cross the declared identities against each endpoint's access policy; flag a 2xx a caller should not have obtained |
 
 Each mode's sequence and the options it accepts are in
 [Execution modes](execution-modes.md).

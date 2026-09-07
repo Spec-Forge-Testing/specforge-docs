@@ -27,9 +27,9 @@ and the contract can never drift between them. The execution engine keeps its
 own request-shape models — the orchestrator projects the contract onto them —
 but takes its shared vocabulary from here: `EndpointRisk` (the engine's
 `EndpointRiskContract` is this very class), the `AttackProfile` literal,
-`TransitionInvariant`, `ZoneLocation` and the `SemanticProperty` expression tree
-are imported by `custom_schemathesis`, not copied, so the objects a producer
-emits reach the engine untranslated. The engine's endpoint-level
+`TransitionInvariant`, `ZoneLocation`, `EndpointAccess` and the
+`SemanticProperty` expression tree are imported by `custom_schemathesis`, not
+copied, so the objects a producer emits reach the engine untranslated. The engine's endpoint-level
 `EndpointAttackContract` stays its own and has no `field_hints`: the
 orchestrator projects the five endpoint-level fields of `attack` onto it and
 promotes each `FieldAttack` hint onto the addressed field's per-value contract.
@@ -50,6 +50,7 @@ from specforge_contracts import (
     EndpointContract, EndpointParameters, SchemaProperty,
     EndpointRisk, EndpointAttack, FieldAttack, AttackProfile,
     TransitionInvariant, ZoneLocation, SemanticProperty, PropertyClass,
+    EndpointAccess, AccessPolicy,
 )
 ```
 
@@ -68,6 +69,7 @@ kinds of content, each with its own wire dialect:
 | `attack` | `EndpointAttack` | Which payload families to run, where to focus, how hard, and per-field hints in `field_hints` keyed by `zone.field` (`FieldAttack`) | snake_case, no alias |
 | `transitions` | `TransitionInvariant` | What a follow-up request must observe after this endpoint succeeds: expected statuses, echoed fields, trigger statuses | snake_case, no alias |
 | `semantic_properties` | `SemanticProperty` | Business rules as a closed expression tree of six node kinds discriminated by `kind` | snake_case, no alias |
+| `access` | `EndpointAccess` | Who may call the endpoint (`policy`: `public` / `authenticated` / `owner_only`) and, for `owner_only`, the `owner_bundle` naming the state-link bundle the endpoint consumes whose producing identity is the owner | snake_case, no alias |
 
 The rule behind the two dialects: a word that exists in JSON Schema is spelled
 the way JSON Schema spells it; a word that is Spec Forge's own is snake_case and
@@ -75,9 +77,14 @@ has no alias, so `riskScore` is a hallucination, not an alternative spelling.
 Per-field attack hints live in `attack.field_hints`, never inside a
 `SchemaProperty`, which keeps the schema fragments pure JSON Schema.
 
-The four Spec Forge sections are **optional**: a producer that knows nothing
+The five Spec Forge sections are **optional**: a producer that knows nothing
 beyond the schema still emits a valid contract, and an unset section is absent
 from the wire.
+
+`EndpointAccess` carries one internal invariant: `owner_bundle` is required
+exactly when `policy` is `owner_only`, and rejected for any other policy — a
+`public` or `authenticated` endpoint owns nothing to name. `AccessPolicy` is a
+closed `StrEnum` (`public`, `authenticated`, `owner_only`).
 
 ## Design invariants
 
@@ -98,7 +105,7 @@ from the wire.
 The package supports Python 3.10+. Consumers add it to their test path
 (`pythonpath = ["src", "../contracts/src"]`) and install it in their runtime image.
 `custom_schemathesis` goes one step further and declares it as a runtime dependency
-(`specforge-contracts>=0.2.0`), so its CI job and its `fixtures-api` Docker image
+(`specforge-contracts>=0.3.0`), so its CI job and its `fixtures-api` Docker image
 install `lib/contracts` first — which is why that image is built from the
 repository root. Installation, test and lint commands are centralized in
 [Contributing & Testing](../../developer-guide/contributing.md).

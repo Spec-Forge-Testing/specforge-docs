@@ -18,7 +18,7 @@ engine owns the ones that are its own.
 | `Criticality` | kernel | `low` · `medium` · `high` · `critical` (declaration order is the rank) |
 | `Sensitivity` | kernel | `public` · `internal` · `pii` · `financial` · `auth` |
 | `AttackProfile` | kernel | `injection` · `ssrf_filesystem` · `auth_bypass` · `input_validation` · `deserialization` · `information_disclosure` · `resource_abuse` · `business_logic` · `headers_cookie` · `parser_compatibility` · `path_traversal` · `xss` · `sql_injection` |
-| `ExecutionMode` | `models/execution_mode.py` | `stateless` · `stateful` · `replay` · `performance` · `resilience` |
+| `ExecutionMode` | `models/execution_mode.py` | `stateless` · `stateful` · `replay` · `performance` · `resilience` · `auth` |
 | `StrategyMode` | `models/strategy_mode.py` | `Default` · `Hacker` (capitalized: the wire spelling the LLM emits) |
 | `Phase` | `models/phase.py` | `valid` · `boundary` · `invalid` · `attack` · `transition` |
 | `SchemaType` | `models/schema.py` | `string` · `integer` · `number` · `boolean` · `array` · `object` · `null` |
@@ -30,7 +30,7 @@ The engine-side outcome vocabularies follow the same rule:
 | Enum | Members (`.value`) |
 |---|---|
 | `ErrorCategory` | `success` · `client_error` · `server_error` · `contract_violation` · `timeout` · `availability` · `unsendable_request` |
-| `InvariantViolation` | `not_a_server_error` · `status_code_conformance` · `response_schema_conformance` · `content_type_conformance` · `state_transition` · `latency_sla` · `resilience_degradation` · `semantic_property` |
+| `InvariantViolation` | `not_a_server_error` · `status_code_conformance` · `response_schema_conformance` · `content_type_conformance` · `state_transition` · `latency_sla` · `resilience_degradation` · `semantic_property` · `access_control` |
 | `TruncationReason` | `infrastructure_abort` · `deadline_exceeded` · `target_down` · `state_link_abort` · `generation_exhausted` |
 | `FidelityLevel` | `exact` · `reduced` |
 
@@ -54,7 +54,7 @@ The types that cross a stage line, all validated with `extra="forbid"`:
 | `EndpointSpec` | in | one endpoint; its four request zones are a `RequestZones` value object |
 | `BaseStrategyContract` / `HackerStrategyContract` | in | per-value generation knobs (hacker is a pydantic subclass, dispatched by type) |
 | `ResponseContract`, `StateLinkContract` (+ `StateProduction` / `StateConsumption`) | in | expected responses, stateful links |
-| `EndpointRisk`, `EndpointAttack` | in | kernel semantic DTOs, re-exported through `models/contracts`, never duplicated |
+| `EndpointRisk`, `EndpointAttack`, `EndpointAccess` | in | kernel semantic DTOs, re-exported through `models/contracts`, never duplicated |
 | `EndpointBudgetContract` | in | adaptive example budget; engine-only, no kernel twin |
 | `CompilationOutcome` | out | Result object: `EngineInput` plus a tuple of `EndpointExclusion` |
 | `EngineInput` | out → in | `CompiledExecutionEndpoint[]`; the engine consumes this alone |
@@ -80,9 +80,9 @@ graph LR
 `EndpointSpec` is endpoint identity (`method`, `path_url`, optional `base_url`)
 plus everything needed to shape and judge its requests: the four request
 zones, `content_types`, and the optional endpoint-level controls — `risk`,
-`budget`, `attack`, `responses` (keyed by status-code string), `state_link`
-and `semantic_properties`. The controls are independently optional and stay
-flat on the spec ([ADR-009](adr/models.md#adr-009)).
+`budget`, `attack`, `responses` (keyed by status-code string), `state_link`,
+`semantic_properties` and `access`. The controls are independently optional and
+stay flat on the spec ([ADR-009](adr/models.md#adr-009)).
 
 The engine reads `semantic_properties`: the compiler copies them from the
 `EndpointSpec` onto the `CompiledExecutionEndpoint`, `check_response` carries
@@ -90,6 +90,12 @@ them onto the `ResponseContext`, and the `semantic_property` oracle evaluates
 each declared business rule against the 2xx request/response pair
 ([Engine internals](engine-internals.md#how-a-semantic-property-is-evaluated),
 [ADR-048](adr/engine.md#adr-048)).
+
+`access` rides the same way — compiled onto the `CompiledExecutionEndpoint` — but
+only the `auth` runner reads it: it uses the policy to decide which identities to
+cross an endpoint with, and the `access_control` oracle judges the crossings. An
+ordinary run carries `access` and never acts on it
+([Execution modes](execution-modes.md#auth), [ADR-050](adr/engine.md#adr-050)).
 
 The four zones are a `RequestZones` value object: a frozen pydantic model with
 one field per `Zone` (`path`, `query`, `header`, `body`), each a `ParamMap`
@@ -192,7 +198,8 @@ identity with its `CompiledEndpointStrategies` (one `CompiledRequestPart` per
 non-empty zone — `path_parameters`, `query_parameters`, `header_parameters`,
 `body` — each holding the per-`Phase` `SearchStrategy`s, plus the
 `generation_plan` and `content_types`) and the contract DTOs the engine still
-needs (`risk`, `attack`, `budget`, `responses`, `state_link`). Its
+needs (`risk`, `attack`, `budget`, `responses`, `state_link`,
+`semantic_properties`, `access`). Its
 `endpoint_id` is `format_endpoint_id(method, path_url)` —
 `"{METHOD}:{path_url}"`, method uppercased — the stable key that groups every
 result, stat and trace row. `CompiledRequestPart` raises

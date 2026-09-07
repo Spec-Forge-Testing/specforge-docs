@@ -59,6 +59,7 @@ invariant, `StatefulLinkError` when a state link cannot be honored.
 | `ResponseContract` | expected `content_type` and `body_schema` for a status |
 | `EndpointRisk` | kernel semantic DTO: criticality, sensitivity, risk score |
 | `EndpointAttack` | kernel semantic DTO: attack profiles, focus and sensitive fields, hints |
+| `EndpointAccess` | kernel semantic DTO: the access `policy` and, for `owner_only`, the `owner_bundle` it consumes |
 | `EndpointBudgetContract` | adaptive example budget; engine-only |
 | `StateLinkContract`, `StateProduction`, `StateConsumption`, `TransitionInvariant` | stateful links |
 
@@ -94,7 +95,7 @@ Field names of this family are stable: they are persisted as columns.
 
 | Name | One line |
 |---|---|
-| `ExecutionMode` | `STATELESS` / `STATEFUL` / `REPLAY` / `PERFORMANCE` / `RESILIENCE` |
+| `ExecutionMode` | `STATELESS` / `STATEFUL` / `REPLAY` / `PERFORMANCE` / `RESILIENCE` / `AUTH` |
 | `StrategyMode` | `DEFAULT` / `HACKER` (global on `CompilerInput`) |
 | `RunStatus` | a run's terminal outcome: `COMPLETED` / `TRUNCATED` / `ABORTED` |
 | `FindingState` | a finding's settled state: `CONFIRMED` / `FLAKY` / `UNVERIFIED` |
@@ -118,7 +119,7 @@ kernel's from `specforge_contracts`.
 
 | Name | One line |
 |---|---|
-| `validate_endpoint_spec(spec, *, strategy_mode)` | the ordered per-endpoint checks — types, allowed fields, ranges, phase split, and focus fields — the first `PolicyError` wins ([ADR-015](adr/api.md#adr-015)). The range check covers numeric bounds and ISO `date` / `date-time` string bounds, which are parsed and compared chronologically so an inverted or incomparable date range is rejected |
+| `validate_endpoint_spec(spec, *, strategy_mode)` | the ordered per-endpoint checks — types, allowed fields, ranges, phase split, focus fields, and the owner bundle — the first `PolicyError` wins ([ADR-015](adr/api.md#adr-015)). The range check covers numeric bounds and ISO `date` / `date-time` string bounds, which are parsed and compared chronologically so an inverted or incomparable date range is rejected. The owner-bundle check requires an `owner_only` endpoint's `owner_bundle` to be among the bundles it consumes, naming the consumed bundles otherwise |
 | `validate_property_field_references(semantic_property, *, known_fields)` | raises `PolicyError` when a `SemanticProperty`'s expression references a field outside `known_fields` |
 
 ## Domain exceptions
@@ -128,8 +129,9 @@ kernel's from `specforge_contracts`.
 | `PolicyError` | boundary validation failed |
 | `StrategyCompilationError` | a contract cannot become a strategy |
 | `EngineError` | an execution invariant was violated |
+| `AccessLinkError` | the auth runner cannot honor an `owner_only` endpoint's producer link — its bundle has no producer in the run, or provisioning the owner resource broke the producer's own contract (`endpoint_id`, `bundle`) |
 
-All three descend from `CustomSchemathesisError`, never from `ValueError`
+All descend from `CustomSchemathesisError`, never from `ValueError`
 ([ADR-001](adr/foundations.md#adr-001)). The full taxonomy, including
 `EndpointCompilationError` and `StatefulLinkError`, is importable from
 `custom_schemathesis.exceptions`.

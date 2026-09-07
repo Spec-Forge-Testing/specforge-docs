@@ -88,7 +88,8 @@ so the engine's default applies); and each `transitions` entry is re-bound to
 the deterministic `StateProduction` whose bundle name, or `response_field` leaf,
 matches its `bundle` — exact name first — and appended to the deterministic
 `StateLinkContract`. `semantic_properties` are validated for field references
-and carried through.
+and carried through. `access` rides along onto the endpoint spec unchanged,
+where the policy boundary and the auth runner read it.
 
 Failures are typed and stop the run before any request: a hint on an undeclared
 zone or field, or a transition with no match or an ambiguous one, is an

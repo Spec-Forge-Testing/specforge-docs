@@ -3,16 +3,16 @@
 `run(engine_input, config, mode, options=None)` selects a runner object from a
 registry by `ExecutionMode` — never a branch, never a boolean
 ([ADR-013](adr/api.md#adr-013)). Each runner satisfies the `ExecutionRunner`
-Protocol (`mode`, `options_type`, `run`). There are five built-in runners,
+Protocol (`mode`, `options_type`, `run`). There are six built-in runners,
 registered explicitly by `register_builtin_runners`.
 
 Stateless and performance share one loop template (`explore_endpoints`, a
 higher-order function taking an `EndpointLoopSpec` value object that bundles the
 three steps that vary — `fuzz_one`, `resolve` and `build_stats`
 ([ADR-043](adr/engine.md#adr-043))). Stateful (a supervisor that builds a fresh
-state machine for every pass), replay (trace-driven) and resilience (a fixed
-chaos battery per endpoint) each have a genuinely different shape and write
-their own loop.
+state machine for every pass), replay (trace-driven), resilience (a fixed
+chaos battery per endpoint) and auth (a per-endpoint provision-and-cross) each
+have a genuinely different shape and write their own loop.
 
 Before any runner starts, endpoints are ordered by risk (`order_by_risk`, on
 `risk_score` then `Criticality` rank, most-risky-first and stable), so the most
@@ -29,6 +29,7 @@ run keeps its original order.
 | `REPLAY` | `ReplayOptions` | `trace`, `preserve_timing` |
 | `PERFORMANCE` | `PerformanceOptions` | `latency_sla_ms`, `load_factor` |
 | `RESILIENCE` | none | the built-in `LEVEL_1_ATTACKS` table |
+| `AUTH` | none | the declared `identities` and each endpoint's `access` policy |
 
 What each field means is in [Data flow](data-flow.md#per-mode-options).
 `ExecutionConfig` and `Identity` are global runtime (base URL, credentials,
@@ -191,3 +192,63 @@ blueprint. The `ResilienceOracle` is the sole judge of a chaos response — a 5x
 is a degradation, anything else degraded gracefully — because `check_response`
 runs with `is_chaos=True`, which the ordinary server-error oracle stands down
 for.
+
+## Auth
+
+Cross the declared identities against each endpoint's access policy and watch
+for a 2xx a caller should not have obtained — the BOLA/IDOR and broken-
+authentication class. The runner reads the `access` section the producer
+declared; an endpoint with no `access`, or a `public` one, is never sent.
+
+The run **fails fast before any request** on two conditions: no identity is
+declared (`EngineError`), or an `owner_only` endpoint names a bundle no endpoint
+in the run produces (`AccessLinkError`). The owner is always the first declared
+identity (`config.identities[0]`).
+
+```mermaid
+sequenceDiagram
+    participant AR as AuthRunner
+    participant Pl as planning
+    participant Orch as AsyncOrchestrator
+    participant Cap as state_link.capture
+    participant Or as check_response (access_control)
+    participant Fnd as findings
+
+    AR->>Pl: require_identities · index_producers · require_producers
+    loop per endpoint (planner_for its access)
+        alt owner_only
+            AR->>Orch: provision the owner resource (first identity)
+            AR->>Cap: capture(response, production) → owner value | AccessLinkError
+            AR->>Pl: write the value into the consuming zone/field
+            AR->>Orch: re-send under every other identity, and anonymously
+        else authenticated
+            AR->>Orch: one anonymous probe (config headers stripped)
+        end
+        AR->>Or: check each crossing (access_expectation)
+        Or-->>AR: 2xx for an excluded caller → violation
+    end
+    AR->>Fnd: group → materialize (no shrink) → dedupe → build_unshrunk_stats
+```
+
+Each endpoint is crossed with **one deterministic valid request** — the simplest
+example of the VALID strategy, drawn once and reused. What the runner does with
+it depends on the policy:
+
+| Policy | What the runner sends |
+|---|---|
+| `authenticated` | one anonymous probe, with the config credential headers stripped so it is truly anonymous |
+| `owner_only` | provision the owner's resource under the **first** declared identity, capture the bundle value from the response, write it into the endpoint's consuming zone/field, then re-send under every **other** identity and once anonymously |
+
+A crossing is a finding when the `access_control` oracle sees a success for a
+caller the policy excludes: another identity or an anonymous request on an
+`owner_only` resource, or an anonymous request on an `authenticated` endpoint.
+The finding names the caller (`identity_label`) and the policy it broke as the
+rule. With a single declared identity the cross is owner-versus-anonymous only;
+roles (admin, cross-tenant) are out of scope until the vocabulary grows.
+
+Provisioning is where an `owner_only` run can abort: if producing the owner
+resource returns a status that captures nothing, or a 2xx whose declared field
+is null, the producer broke its own contract and the runner raises
+`AccessLinkError` naming the endpoint and the bundle rather than crossing a
+resource it never established. Findings are **materialized without shrinking** —
+a cross-identity read is already its own minimal reproducer.

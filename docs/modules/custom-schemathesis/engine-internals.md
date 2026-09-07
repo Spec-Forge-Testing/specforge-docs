@@ -113,6 +113,7 @@ OracleVerdict` — and precedence is a named `IntEnum` value, never a magic gap
 | `INFRA` (10) | `infra` | an infrastructure failure — suppresses everything below it |
 | `RESILIENCE` (15) | `resilience_degradation` | a 5xx under a chaos request |
 | `SERVER_ERROR` (20) | `server_error` | any 5xx |
+| `ACCESS_CONTROL` (25) | `access_control` | a 2xx a caller should not have obtained, judged against the auth runner's expectation (non-terminal) |
 | `STATUS_CODE` (30) | `status_code` | a status no response contract declared |
 | `CONTENT_TYPE` (40) | `content_type` | a body whose `Content-Type` misses the declared one |
 | `SCHEMA` (50) | `schema` | a body that fails the declared schema |
@@ -121,8 +122,9 @@ OracleVerdict` — and precedence is a named `IntEnum` value, never a magic gap
 
 An `OracleVerdict` carries the `violation` an oracle decided, whether it is
 `terminal`, and an optional `rule: ViolatedRule | None` — the producer-declared
-rule the response broke, when the oracle names one (only `semantic_property` does
-today; the rest leave it `None`). `evaluate` runs the oracles in `(order, name)`
+rule the response broke, when the oracle names one (`semantic_property` and
+`access_control` do, the latter naming the enforced policy as the rule id; the
+rest leave it `None`). `evaluate` runs the oracles in `(order, name)`
 order, turning each non-empty verdict into an `ObservedViolation` (its invariant
 paired with its rule), accumulating them and stopping at the first `terminal` one;
 it returns a `list[ObservedViolation]`, as do `check_response` and
@@ -133,11 +135,13 @@ the endpoint's response contract for the status by exact code → status class �
 `semantic_properties` onto the context — and evaluates it;
 `evaluate_contract_free(result)` evaluates against no contract, which is what a
 replay and a transition probe use. `build_context(result, responses, *,
-latency_sla_ms=, is_chaos=, semantic_properties=())` is the single builder: every
-optional beyond the response body and its contracts is keyword-only, so a caller
-supplies only the data its run has.
+latency_sla_ms=, is_chaos=, semantic_properties=(), access_expectation=None)` is
+the single builder: every optional beyond the response body and its contracts is
+keyword-only, so a caller supplies only the data its run has — the auth runner is
+the only one that passes an `access_expectation`, and outside an auth run it is
+`None`, so the `access_control` oracle stands down.
 
-All eight built-ins are registered explicitly by `register_builtin_oracles`,
+All nine built-ins are registered explicitly by `register_builtin_oracles`,
 never as a side effect of importing a runner, so the registered set is one
 readable function. `validate_value(value, contract)` structurally checks a
 response body against a strategy-contract shape through a `SchemaType`-keyed
@@ -188,6 +192,27 @@ one specific business rule rather than at the anonymous `semantic_property`
 invariant shared by every rule on the endpoint. The id rides all the way to the
 crash report, the finding signature, storage and the report; the description
 rides alongside it but is never compared ([ADR-049](adr/engine.md#adr-049)).
+
+### How access control is evaluated
+
+The `access_control` oracle judges whether a caller obtained a 2xx it should not
+have. It is **dormant** unless the auth runner passes an `AccessExpectation`
+through `check_response(..., access_expectation=)` — it never reads
+`endpoint.access` itself, so an ordinary run, which supplies no expectation,
+never fires it. On an expectation, it fires when the response is a success and
+the caller is one the policy excludes: for `owner_only`, an identity that is not
+the owner (`identity_label != owner_label`) or an anonymous request; for
+`authenticated`, an anonymous request. The caller is read from
+`result.request.identity_label`, and an absent label is the anonymous case.
+
+The verdict is `InvariantViolation.ACCESS_CONTROL`, **non-terminal**, and names
+the enforced policy as its `ViolatedRule` id (`owner_only` or `authenticated`)
+with a description spelling out the crossing — "identity 'alice' read a resource
+owned by 'bob'", or "an anonymous request succeeded on an endpoint requiring
+authentication". It sits at precedence 25, before every body-conformance oracle,
+because it never reads the body: a bypass that also returns a schema-invalid body
+must not be masked by a terminal schema violation raised lower in the chain
+([ADR-050](adr/engine.md#adr-050)).
 
 ## The finding pipeline
 
@@ -301,8 +326,12 @@ one `Bundle` per referenced name, one `@rule` per endpoint, and an optional
 
 A rule's state link drives the chaining: it **produces** a captured
 response value into a bundle, **consumes** bundled values into later requests'
-zones (optionally `invalidates`-ing the bundle so a deleted resource is not
-operated on again), and declares **transition invariants** — a follow-up probe
+zones. The capture primitive itself — `capture`, which pulls a production's
+dotted `response_field` out of a response body once its status matches, and
+`matches_declared_statuses` — lives in `engine/state_link/`, the shared home for
+state-link mechanics used by both the stateful machine and the auth runner.
+A state link also optionally `invalidates` the bundle so a deleted resource is not
+operated on again, and declares **transition invariants** — a follow-up probe
 whose observed status must fall in an expected set, and whose body must reflect
 the request's `echoed_fields`. A response that breaks its endpoint's own
 invariant, or a transition probe that breaks its own, raises a

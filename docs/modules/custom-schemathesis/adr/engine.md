@@ -833,3 +833,82 @@ flaky or unverified finding carries only the `rule_id` — there is no reproduce
 so no description is stored for it. The report document's `schema_version` moves to
 **1.5**. Every non-semantic oracle emits no rule for now; the channel is ready when
 another oracle has a rule to name.
+
+---
+
+## ADR-050 — Access control is declared by the producer and checked by a dormant oracle woken by the auth runner { #adr-050 }
+
+**Status:** accepted · Extends [ADR-049](#adr-049) · `specforge_contracts/access.py`, `models/engine/access.py`, `engine/oracles/access_control.py`, `engine/oracles/precedence.py`, `engine/runners/auth/`, `models/execution_mode.py`
+
+### Context
+
+Broken object-level authorization (BOLA/IDOR) and broken authentication are the
+highest-impact API defects, and no amount of single-caller fuzzing finds them: to
+know that a read *should* have been refused, the engine has to know **who owns the
+resource** and send the same request as someone else. Two facts are missing from a
+per-request view. The first is ownership — which identity a resource belongs to,
+and against which endpoints that ownership is enforced. The second is a second
+caller — the run has to establish a resource under one identity and then read it
+under another. The engine already carries state-link bundles (a value produced by
+one call and consumed by another) and a set of declared identities; the question
+was where ownership is stated, and how the check avoids firing on the many
+legitimate reads a run makes.
+
+### Decision
+
+Ownership is **declared by the producer**, as a fifth kernel section, `access`:
+an `AccessPolicy` (`public` / `authenticated` / `owner_only`) and, for
+`owner_only`, an `owner_bundle` naming the state-link bundle the endpoint consumes
+whose producing identity is the owner. The policy boundary rejects an `owner_only`
+endpoint whose `owner_bundle` it does not actually consume, so the link is
+guaranteed before a run starts.
+
+The check is an ordinary registered oracle, `access_control`, at precedence 25 —
+between server error (20) and status code (30). It is **dormant**: it reads no
+`endpoint.access` and returns `CONTINUE` unless a caller passes an
+`AccessExpectation` through `check_response`, so an ordinary run never fires it.
+Only the new `auth` runner supplies that expectation, and it does the work a
+bypass check needs: it provisions the owner's resource itself under the first
+declared identity, captures the bundle value, writes it into the consuming zone,
+and re-sends under every other identity and anonymously. A 2xx for a caller the
+policy excludes is the finding, carrying the caller's `identity_label` and the
+policy as its `ViolatedRule` id through the generic rule channel ADR-049 already
+built — the access oracle is its second emitter. The runner **fails fast** when it
+cannot honor a link: a run without declared identities is an `EngineError`, and an
+`owner_only` bundle with no producer in the run is an `AccessLinkError`, both
+raised before the first request rather than running a meaningless pass.
+
+The access oracle sits **before** the body-conformance oracles (content type,
+schema) deliberately: it never reads the body, and those are terminal, so placing
+it later would let a bypass that also returns a malformed body be masked by the
+schema violation raised first. A bypass is the more severe fact and must win the
+verdict.
+
+### Rejected
+
+- **Deriving ownership from transitions.** Inferring who owns what from the
+  state-link graph would flag legitimate public reads — a resource a `POST`
+  produced is not thereby private — and cannot express `authenticated`, which owns
+  no bundle at all. Ownership is a producer statement, not a graph inference.
+- **A `mode ==` branch in the stateless runner.** Cross-identity probing is a
+  different shape (provision, then cross), not a knob on stateless fuzzing;
+  bolting it on with a conditional would reintroduce the branch the runner registry
+  exists to avoid ([ADR-013](api.md#adr-013)).
+- **Judging on the endpoint's `access` section alone.** An always-on oracle that
+  read `endpoint.access` would fire on every ordinary run's successful call, which
+  says nothing about authorization because that caller *is* allowed. The finding is
+  only meaningful against a crossing the runner set up, so the runner's expectation,
+  not the section, is what wakes the oracle.
+- **Skipping silently when the producer is missing.** An `owner_only` endpoint with
+  no producer for its bundle cannot be crossed; treating that as "nothing to test"
+  would report a green auth run that checked nothing. It aborts loudly instead.
+
+### Consequences
+
+The kernel moves to **0.3.0** and the engine pins `specforge-contracts>=0.3.0`.
+There are now nine built-in oracles (the ninth at precedence 25) and six built-in
+runners. `auth` runs take no options and materialize findings **without
+shrinking** — a cross-identity read is already its own minimal reproducer. The
+scope is deliberately narrow: with a single declared identity the cross is
+owner-versus-anonymous only, and role escalation (admin, BFLA) is not yet
+expressible — it waits until the `access` vocabulary grows a notion of role.

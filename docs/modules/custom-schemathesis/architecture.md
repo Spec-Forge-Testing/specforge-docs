@@ -55,12 +55,13 @@ src/custom_schemathesis/
     ├── ordering.py        # order_by_risk: most-risky-first, before dispatch
     ├── http/              # Async orchestrator, request injection, credentials, error classifier
     ├── harness/           # The Hypothesis bridge: one event loop, settings, identity strategy
-    ├── oracles/           # Response oracles: registry, precedence, the eight builtins
+    ├── oracles/           # Response oracles: registry, precedence, the nine builtins
     ├── findings/          # Group, deduplicate, materialize, shrink, stats
     ├── fuzzers/           # stateless/ and stateful/ procedures
+    ├── state_link/        # Shared bundle capture and status matching (stateful + auth)
     ├── trace/             # Record, rehydrate, canonical JSON, URL userinfo
     ├── replay/            # Fidelity assessment, pacing
-    └── runners/           # One runner per ExecutionMode, the shared loop, resilience/
+    └── runners/           # One runner per ExecutionMode, the shared loop, resilience/, auth/
 ```
 
 The three root leaves — `constants.py`, `exceptions.py`, `numeric.py` — import

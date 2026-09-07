@@ -328,8 +328,14 @@ unexpectedly.
     sequences; `performance` sustains load and, with `--latency-sla-ms <ms>`,
     enforces that threshold as a latency oracle; `resilience` sends a fixed battery
     of malformed-transport requests and flags an endpoint that answers `5xx`, hangs
-    or crashes instead of degrading gracefully. `--latency-sla-ms` is refused with
-    any other mode.
+    or crashes instead of degrading gracefully; `auth` crosses the declared
+    identities against each endpoint's access policy and flags a `2xx` a caller
+    should not have obtained (a cross-identity or anonymous read of an owner's
+    resource, or an anonymous success on an authenticated endpoint). `auth` needs
+    `--identities` (the owner is the first one declared) and a contract producer —
+    `--contracts <dir>` — whose contracts declare an `access` policy; an endpoint
+    with no `access`, or a `public` one, is never sent. `--latency-sla-ms` is
+    refused with any other mode than `performance`.
 
     `--mode stateful` switches to [stateful fuzzing](../modules/custom-schemathesis/execution-modes.md#stateful):
     requests are **chained into sequences** instead of each operation being fuzzed on

@@ -11,7 +11,7 @@ deep bugs (e.g. `500`s on invalid input instead of proper `4xx`s).
 3. **Infer (LLM)** — extract unstated invariants (bounds, enums, cross-field logic).
 4. **Fuse** — merge OpenAPI structure with LLM invariants into one unified contract.
 5. **Fuzz** — compile the contract into Hypothesis strategies and run async HTTP tests in one
-   of five execution modes (stateless, stateful, performance, resilience, replay), recording
+   of six execution modes (stateless, stateful, performance, resilience, replay, auth), recording
    every request/response as an execution trace.
 6. **Persist** — log runs/endpoints/results to SQLite, keeping the trace as the
    artifact that makes a run replayable.
@@ -58,7 +58,7 @@ lib/
 ├── contract_engine/        # OpenAPI ingestion + adaptation + fusion
 ├── core_ast/                # tree-sitter static analysis
 ├── semantic_inference/      # LLM router + inference
-├── custom_schemathesis/     # policy + strategy compiler + engine (five execution modes)
+├── custom_schemathesis/     # policy + strategy compiler + engine (six execution modes)
 └── storage/                 # SQLite persistence
 docker-compose.yml           # monorepo orchestration (root entry point)
 ```
@@ -68,11 +68,11 @@ docker-compose.yml           # monorepo orchestration (root entry point)
 | Module | Responsibility |
 | :--- | :--- |
 | `core/` | Interactive CLI/REPL (Typer, Rich, prompt_toolkit): navigation + command orchestration. |
-| `lib/contracts/` | Shared kernel (`specforge_contracts`): the canonical `EndpointContract` and the risk, attack, transition and semantic-property vocabulary every stage imports. |
+| `lib/contracts/` | Shared kernel (`specforge_contracts`): the canonical `EndpointContract` and the risk, attack, transition, semantic-property and access vocabulary every stage imports. |
 | `lib/contract_engine/` | Validates OpenAPI 3.x (`prance`), translates Swagger 2.0 into it, flattens endpoints, fuses base schemas with LLM invariants. |
 | `lib/core_ast/` | Deterministic, stateless AST analysis (`tree-sitter`); locates routes/handlers/deps via `patterns.toml`. |
 | `lib/semantic_inference/` | Provider-agnostic LLM interface (`LiteLLM`): retries, fallbacks, invariant inference. |
-| `lib/custom_schemathesis/` | Compiles contracts to Hypothesis strategies; runs the five execution modes over async HTTP (`httpx`): stateless, stateful, performance, resilience, replay. |
+| `lib/custom_schemathesis/` | Compiles contracts to Hypothesis strategies; runs the six execution modes over async HTTP (`httpx`): stateless, stateful, performance, resilience, replay, auth. |
 | `lib/storage/` | SQLite layer (Repository pattern, Pydantic DTOs) + on-disk artifact persistence with hash dedup. |
 
 ## Design principles

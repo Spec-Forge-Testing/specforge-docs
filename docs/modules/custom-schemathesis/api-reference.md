@@ -191,9 +191,12 @@ key:
 | Name | One line |
 |---|---|
 | `build_hacker_attack(contract, *, context)` | the attack-phase strategy for a hacker contract |
+| `build_hacker_mutation(contract, *, context)` | the mutation-phase strategy: a non-null valid seed with one sampled operator applied |
 | `build_attack_payloads(value_type, request)` | the sampled-from strategy over one field's attack payloads |
+| `mutation_operators(value_type, toggles)` | the gate-enabled mutation operators for a schema type |
 | `AttackRequest` | everything a base-payload builder or toggle family needs for a field |
 | `AttackToggles` | the eight payload-variant flags, pinned to the contract by a guard test |
+| `MutationOperator` | a frozen `(name, gate, apply)` mutation transform |
 | `mutate_object(obj, depth)` | layered object mutation for prototype-pollution and overflow probing |
 
 ## Suffix conventions

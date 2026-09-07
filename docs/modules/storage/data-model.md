@@ -199,7 +199,7 @@ connection" would be hidden, non-thread-safe mutable state.
       | `id` | `int` | Auto-incrementing primary key. |
       | `run_id` | `int` | Foreign key to `RunRecord.id`. |
       | `analysis_endpoint_id` | `int \| None` | Foreign key to `AnalysisEndpointRecord.id`; `None` if the finding spans several endpoints (stateful). |
-      | `method` / `path` / `phase` | `str` | Identity of the request that triggered the finding, and its phase (valid/boundary/invalid/attack/transition). |
+      | `method` / `path` / `phase` | `str` | Identity of the request that triggered the finding, and its phase (valid/boundary/invalid/attack/mutation/transition). |
       | `invariant_violated` | `str` | Which invariant was violated. |
       | `state` | `str` | The finding's lifecycle outcome: `confirmed` / `flaky` / `unverified`. The engine owns the vocabulary; the column is free text. |
       | `status_code` | `int \| None` | Status code of the failing response; `NULL` with no reproducer. |

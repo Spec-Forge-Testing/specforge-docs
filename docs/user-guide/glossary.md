@@ -11,7 +11,7 @@ name, that name follows in `code font`.
 | **Operation** | One HTTP method on an endpoint, such as `POST /articles`; the unit Spec Forge fuzzes. |
 | **Property-based testing** | Generating many inputs from a description and checking a rule that must always hold, instead of writing examples by hand. |
 | **Generator** | The thing that produces test inputs matching a schema (`strategy`, a Hypothesis strategy). |
-| **Phase** | Which kind of input a request carries: `valid`, `boundary`, `invalid` or `attack`. |
+| **Phase** | Which kind of input a request carries: `valid`, `boundary`, `invalid`, `attack` or `mutation`. |
 | **Invariant / rule** | A statement about the API that must always be true; a request that breaks it is a finding (`invariant`, the oracle). |
 | **Finding** | A single request (or sequence) that broke a rule. |
 | **Crash** | A confirmed finding: a distinct defect the run reproduced, left after shrinking and de-duplication. |

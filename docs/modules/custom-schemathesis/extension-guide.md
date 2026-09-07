@@ -97,6 +97,33 @@ step; the `StrEnum` keeps every enum-keyed map serializing correctly. The
 a `context` keyword — a builder that ignores the endpoint's knobs stays
 one-argument. A non-callable `build` is rejected at registration.
 
+The built-in `mutation` phase is the worked example. It is meaningful only for a
+hacker contract — it seeds from a valid value and applies one hostile operator —
+but it must still compile for a plain field inside a hacker-mode compile. So it
+is registered twice: the real builder on the hacker contract, and a valid-value
+fallback on the base contract, exactly as `attack` is:
+
+```python
+from custom_schemathesis.models.contracts import BaseStrategyContract, HackerStrategyContract
+from custom_schemathesis.models.phase import Phase
+from custom_schemathesis.strategy_compiler.fields import GenerationPhase, register_phase
+from custom_schemathesis.strategy_compiler.fields.default import build_valid_strategy
+from custom_schemathesis.strategy_compiler.fields.hacker import build_hacker_mutation
+
+register_phase(
+    GenerationPhase(name=Phase.MUTATION, contract_type=BaseStrategyContract, build=build_valid_strategy)
+)
+register_phase(
+    GenerationPhase(name=Phase.MUTATION, contract_type=HackerStrategyContract, build=build_hacker_mutation)
+)
+```
+
+Register the base fallback whenever the new phase carries the risk of meeting a
+base-contract field: without it, that field would fail to compile the moment the
+phase runs. The share the phase draws from the budget is a row of the mode's
+`phase_split` ([Add a profile](#add-a-profile)); it does not come from
+registration.
+
 ## Add a string format
 
 A string `format` is served by the constraint tables in

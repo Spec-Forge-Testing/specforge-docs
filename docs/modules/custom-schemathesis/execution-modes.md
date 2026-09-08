@@ -28,7 +28,7 @@ run keeps its original order.
 | `STATEFUL` | `StatefulOptions` | `max_examples`, `step_count`, `max_distinct_bugs` |
 | `REPLAY` | `ReplayOptions` | `trace`, `preserve_timing` |
 | `PERFORMANCE` | `PerformanceOptions` | `latency_sla_ms`, `load_factor` |
-| `RESILIENCE` | none | the built-in `LEVEL_1_ATTACKS` table |
+| `RESILIENCE` | none | the built-in chaos battery |
 | `AUTH` | none | the declared `identities` and each endpoint's `access` policy |
 
 What each field means is in [Data flow](data-flow.md#per-mode-options).
@@ -161,10 +161,10 @@ sequenceDiagram
 
 ## Resilience
 
-Send chaos-shaped requests (oversized, slow-partial, deeply nested, wrong
-content type) through a `ChaosTransport` and watch for degradation: a
-deliberately broken request that returns a 5xx instead of a clean rejection is
-a `RESILIENCE_DEGRADATION` finding.
+Send deliberately broken requests against each endpoint and watch for
+degradation: a chaos request that returns a 5xx, or one the peer accepts and
+then crashes mid-response, instead of degrading gracefully, is a
+`RESILIENCE_DEGRADATION` finding.
 
 ```mermaid
 sequenceDiagram
@@ -175,23 +175,45 @@ sequenceDiagram
 
     loop per endpoint
         RN->>RN: build the base blueprint (deterministic payload)
-        loop per attack in LEVEL_1_ATTACKS
+        loop per registered chaos attack
             RN->>T: resolve_transport(attack.transport)
-            RN->>Orch: send_chaos(blueprint, content, headers)
+            RN->>Orch: httpx send_chaos, or raw dispatch_raw
             RN->>Or: check (chaos-marked) → degradation?
         end
     end
     RN->>RN: group → materialize → dedupe → build_unshrunk_stats
 ```
 
-The chaos battery is fixed data (`LEVEL_1_ATTACKS`): a slow, partial body; an
-oversized body; a deeply nested JSON body; and a body whose declared
-content type contradicts its bytes. Each attack names the transport key that
-delivers it (`resolve_transport`) and a builder that shapes it from the base
-blueprint. The `ResilienceOracle` is the sole judge of a chaos response — a 5xx
-is a degradation, anything else degraded gracefully — because `check_response`
+The chaos battery is fixed data, registered from three groups that all fire on
+every endpoint:
+
+- **httpx-borne anomalies** — a slow, partial body; an oversized body; a deeply
+  nested JSON body; and a body whose declared content type contradicts its
+  bytes. These ride the httpx transport, which the run's one orchestrator client
+  can express.
+- **Framing-level anomalies** — malformed chunked encoding, a lied
+  `Content-Length`, duplicate `Host` and `Content-Type` lines, an oversized
+  header, a connection cut off mid-request, and a key duplicated in both the
+  query string and the JSON body. httpx corrects these by design, so they travel
+  over a raw socket instead (see below).
+- **Repeated requests** — the same request sent several times in a row, probing
+  for a rate limit or a duplicate-submission fault.
+
+Each attack names the transport key that delivers it (`resolve_transport`) and a
+builder that shapes it from the base blueprint; the runner never branches on the
+attack. A `ChaosTransport` has two built-in implementations chosen by that key —
+`httpx`, which routes through the orchestrator's client, and `raw`, which writes
+the request byte for byte on a bare socket. Both share the orchestrator's one
+concurrency slot, so the raw path takes a slot through `dispatch_raw` exactly as
+the httpx path does through `send_chaos`.
+
+The `ResilienceOracle` is the sole judge of a chaos response — a 5xx **or** a
+connection the peer accepted and dropped mid-response is a degradation; a
+timeout or any 4xx (429 included) degraded gracefully — because `check_response`
 runs with `is_chaos=True`, which the ordinary server-error oracle stands down
-for.
+for. The connection-cut-off attack half-closes the socket and reads the server's
+actual reaction, so the verdict is the server's, not an artefact of the client
+closing.
 
 ## Auth
 

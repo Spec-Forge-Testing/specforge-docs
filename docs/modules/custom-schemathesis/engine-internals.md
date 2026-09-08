@@ -24,6 +24,12 @@ attempt with no retry; `probe_liveness()` sends a single retry-free `HEAD` to
 attempts that reached the wire — each retry counts, a refused request does not —
 so a runner can price a phase by difference.
 
+`dispatch_raw(send)` is the seam for a wire attempt that does not go through
+httpx at all: it takes the same concurrency slot and stamp as any other request,
+runs the caller's `send` inside it, and counts the attempt if it was sent — but
+opens no httpx client. The raw-socket chaos transport uses it to lay a request
+on a bare socket while still passing through the run's one concurrency cap.
+
 **Retries cover only transient infrastructure faults.** A response with status
 `429`, `502` or `503`, or an `httpx.ConnectTimeout`, is retried up to
 `max_retries` times; the backoff is exponential (`2**attempt * backoff_base`)
@@ -37,6 +43,16 @@ turns a status into `SERVER_ERROR` / `CLIENT_ERROR` / `None` (a clean 2xx/3xx);
 `classify_exception` walks `type(exc).__mro__` against a small table so a
 transport exception resolves to the nearest matching category — a subclass need
 not be listed to be classified.
+
+`CONNECTION_DROPPED` sits apart from the infrastructure categories on purpose. A
+peer that refuses the connection or never answers is `AVAILABILITY` or
+`TIMEOUT` — evidence about the target's health, recorded in stats but never a
+finding. A peer that *accepted* the connection and then dropped it before a
+complete response has crashed mid-response, so `CONNECTION_DROPPED` is deliberately
+outside `INFRA_CATEGORIES`: it reaches the resilience oracle and counts as a
+degradation, on the same footing as a 5xx. The raw-socket chaos transport is
+what produces it — it distinguishes a failure before the socket connected
+(`AVAILABILITY`) from one after (`CONNECTION_DROPPED`).
 
 ### From payload to request: `ContextInjector`
 

@@ -213,10 +213,19 @@ class ChaosTransport(Protocol):
 Register a factory under a new key with `register_transport(key, factory)` in
 `engine/runners/resilience/transport.py`.
 `resolve_transport(attack.transport, orchestrator)` picks it, raising
-`EngineError` for an unknown key; a new attack in `LEVEL_1_ATTACKS` references
-its transport by that key, and nothing that dispatches an attack branches on the
-attack itself. The built-in `httpx` transport routes chaos through the run's one
-orchestrator client.
+`EngineError` for an unknown key, and nothing that dispatches an attack branches
+on the attack itself. Two transports are built in: `httpx`, which routes chaos
+through the run's one orchestrator client, and `raw`, a raw-socket transport
+that writes the request byte for byte over `asyncio.open_connection` for
+framing-level anomalies httpx corrects by design. Both take a slot from the
+orchestrator's single concurrency semaphore.
+
+An attack is a `ChaosAttack` — a `ChaosAttackName`, the transport key it rides,
+and a `build(blueprint)` that yields the emissions it puts on the wire — added
+to the battery with `register_attack(attack)`. Adding an attack is one data row,
+not a branch: it names an existing transport key (or a new one you registered)
+and the runner resolves the transport for it. The `ChaosAttackName` vocabulary is
+the closed set of attacks across both the httpx and raw-socket tables.
 
 ## The `isolated()` seam in tests
 

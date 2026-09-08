@@ -29,7 +29,7 @@ The engine-side outcome vocabularies follow the same rule:
 
 | Enum | Members (`.value`) |
 |---|---|
-| `ErrorCategory` | `success` · `client_error` · `server_error` · `contract_violation` · `timeout` · `availability` · `unsendable_request` |
+| `ErrorCategory` | `success` · `client_error` · `server_error` · `contract_violation` · `timeout` · `availability` · `unsendable_request` · `connection_dropped` |
 | `InvariantViolation` | `not_a_server_error` · `status_code_conformance` · `response_schema_conformance` · `content_type_conformance` · `state_transition` · `latency_sla` · `resilience_degradation` · `semantic_property` · `access_control` |
 | `TruncationReason` | `infrastructure_abort` · `deadline_exceeded` · `target_down` · `state_link_abort` · `generation_exhausted` |
 | `FidelityLevel` | `exact` · `reduced` |

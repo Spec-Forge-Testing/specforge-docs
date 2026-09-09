@@ -327,8 +327,12 @@ unexpectedly.
     default) fuzzes each operation alone; `stateful` chains requests into
     sequences; `performance` sustains load and, with `--latency-sla-ms <ms>`,
     enforces that threshold as a latency oracle; `resilience` sends a fixed battery
-    of malformed-transport requests and flags an endpoint that answers `5xx`, hangs
-    or crashes instead of degrading gracefully; `auth` crosses the declared
+    of deliberately broken requests — including HTTP/1.1 framing anomalies laid on a
+    raw socket that a normal HTTP client cannot emit (malformed chunking, a lied
+    `Content-Length`, duplicate or oversized headers, a connection cut off
+    mid-request) and repeated-request sequences — and flags an endpoint that answers
+    `5xx`, or accepts the connection and drops it mid-response, instead of degrading
+    gracefully (a timeout or a `4xx` counts as graceful); `auth` crosses the declared
     identities against each endpoint's access policy and flags a `2xx` a caller
     should not have obtained (a cross-identity or anonymous read of an owner's
     resource, or an anonymous success on an authenticated endpoint). `auth` needs

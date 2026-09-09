@@ -912,3 +912,72 @@ shrinking** — a cross-identity read is already its own minimal reproducer. The
 scope is deliberately narrow: with a single declared identity the cross is
 owner-versus-anonymous only, and role escalation (admin, BFLA) is not yet
 expressible — it waits until the `access` vocabulary grows a notion of role.
+
+---
+
+## ADR-052 — Raw-socket chaos transport for framing-level resilience attacks { #adr-052 }
+
+**Status:** accepted · Extends [ADR-041](#adr-041) · `engine/runners/resilience/raw_socket.py`, `engine/runners/resilience/raw_message.py`, `engine/runners/resilience/raw_attacks.py`, `engine/http/orchestrator.py`, `models/engine/execution.py`, `engine/oracles/resilience.py`
+
+### Context
+
+The resilience battery began as anomalies httpx can put on the wire — an
+oversized body, a slow partial body, a deeply nested body, a mismatched content
+type. The most revealing attacks against an HTTP server, though, are malformed
+at the protocol framing itself: a chunk that declares far more bytes than
+follow, a `Content-Length` that lies, duplicate `Host` or `Content-Type` lines,
+a header past any sane limit, a request cut off mid-flight. httpx is built to
+make those impossible — it deduplicates headers, recomputes `Content-Length`,
+validates chunking — so a well-behaved client can never emit them. The battery
+needed a second delivery path that writes exactly the bytes it is given, without
+correcting anything, while still respecting the run's single concurrency cap and
+its timeout budget.
+
+### Decision
+
+A second `ChaosTransport`, keyed `raw`, delivers a `RawHttpRequest` — request
+line, ordered header lines, body, and an optional truncation offset — byte for
+byte over `asyncio.open_connection`, choosing TLS from the URL scheme. It is
+selected by the same Strategy seam ADR-041 built: a framing attack names the
+`raw` key and the runner resolves the transport for it, never branching on the
+attack. The transport takes its slot through the orchestrator's new
+`dispatch_raw` method, which occupies the same concurrency semaphore, stamps the
+attempt and counts it on the wire as any httpx request would, but opens no httpx
+client — so the raw path is one more attempt through the single concurrency
+bottleneck, not a parallel one.
+
+A connection the peer accepts and then drops before a complete response is a new
+`ErrorCategory`, `connection_dropped`, held deliberately outside the
+infrastructure categories so it reaches the resilience oracle and counts as a
+degradation on the same footing as a 5xx — a crash mid-response is a crash. A
+timeout or a 4xx (429 included) stays graceful. The connection-cut-off attack
+half-closes its socket and reads whatever the server sends back, so the verdict
+is the server's reaction, not an artefact of the client having closed; on a TLS
+transport, which cannot half-close, it falls back to a full close.
+
+### Rejected
+
+- **Forcing framing anomalies through httpx.** Every escape hatch (a custom
+  transport, hand-built request bytes) still runs through httpx's framing
+  normalization, so the anomalies simply never reach the wire. The point is to
+  bypass the correction, which only a bare socket does.
+- **A dedicated socket pool with its own concurrency control.** A second pool
+  would let raw attacks run beyond the configured cap and skew the wire count and
+  in-flight stamp. Sharing the orchestrator's one semaphore keeps a single,
+  honest concurrency bottleneck for the whole run.
+- **Treating a mid-response drop as an infrastructure failure.** Folding
+  `connection_dropped` into `availability` would bury it in the stats and keep it
+  from the oracle, so a server that crashes under a malformed frame would report
+  as merely unreachable. A dropped connection after the peer accepted it is
+  evidence about the endpoint, not the network.
+
+### Consequences
+
+The resilience battery is now three registered groups — httpx-borne anomalies,
+raw-socket framing anomalies, and repeated-request sequences — all firing on
+every endpoint, and adding an attack in any of them is still one data row against
+an existing transport key. `ErrorCategory` gains `connection_dropped`, and the
+resilience oracle degrades on it as well as on a 5xx. The raw transport speaks
+only `http` and `https`; any other scheme yields an unsendable result before a
+socket is opened. No new flag or mode appears — the mode is still
+`--mode resilience`.

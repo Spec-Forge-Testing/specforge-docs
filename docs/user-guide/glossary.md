@@ -20,8 +20,8 @@ name, that name follows in `code font`.
 | **Unverified** | A finding collected but never checked, because the run stopped first. Reported as an unconfirmed finding. |
 | **Unconfirmed finding** | A finding the run saw but never confirmed as a crash — flaky or unverified. Carries the signature but no reproducer. |
 | **Unique crashes** | The count of genuinely distinct defects a run found — its bottom line. |
-| **Identity** | A named set of request headers (credentials) requests can be sent under, declared in a TOML file. |
-| **Execution mode** | How the fuzzer explores the API: `stateless`, `stateful`, `performance` or `resilience` (`--mode`). |
+| **Identity** | A named set of request headers (credentials) requests can be sent under, optionally with the role it acts under, declared in a TOML file. |
+| **Execution mode** | How the fuzzer explores the API: `stateless`, `stateful`, `performance`, `resilience` or `auth` (`--mode`). |
 | **Stateless** | Fuzzing each operation on its own, one request at a time. |
 | **Stateful** | Chaining requests into sequences to find order-dependent bugs. |
 | **Performance / latency SLA** | A mode that sustains load and fails endpoints slower than a threshold you set (`--latency-sla-ms`). |

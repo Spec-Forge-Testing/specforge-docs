@@ -59,7 +59,7 @@ invariant, `StatefulLinkError` when a state link cannot be honored.
 | `ResponseContract` | expected `content_type` and `body_schema` for a status |
 | `EndpointRisk` | kernel semantic DTO: criticality, sensitivity, risk score |
 | `EndpointAttack` | kernel semantic DTO: attack profiles, focus and sensitive fields, hints |
-| `EndpointAccess` | kernel semantic DTO: the access `policy` and, for `owner_only`, the `owner_bundle` it consumes |
+| `EndpointAccess` | kernel semantic DTO: the access `policy`; for `owner_only`, the `owner_bundle` it consumes; for `role_only`, the `required_role` a caller must hold |
 | `EndpointBudgetContract` | adaptive example budget; engine-only |
 | `StateLinkContract`, `StateProduction`, `StateConsumption`, `TransitionInvariant` | stateful links |
 
@@ -88,7 +88,7 @@ Field names of this family are stable: they are persisted as columns.
 | Name | One line |
 |---|---|
 | `ExecutionConfig` | global runtime: `base_url` (required), timeouts, concurrency, headers, identities |
-| `Identity` | one caller identity: a `label` and its credential `headers` |
+| `Identity` | one caller identity: a `label`, its credential `headers`, and an optional `role` (never empty) that only a `role_only` endpoint reads; `None` never satisfies a required role |
 | `StatelessOptions`, `StatefulOptions`, `PerformanceOptions`, `ReplayOptions` | passed to `run(options=...)` per mode |
 
 ## Enums (only those a consumer touches)
@@ -119,7 +119,7 @@ kernel's from `specforge_contracts`.
 
 | Name | One line |
 |---|---|
-| `validate_endpoint_spec(spec, *, strategy_mode)` | the ordered per-endpoint checks — types, allowed fields, ranges, phase split, focus fields, and the owner bundle — the first `PolicyError` wins ([ADR-015](adr/api.md#adr-015)). The range check covers numeric bounds and ISO `date` / `date-time` string bounds, which are parsed and compared chronologically so an inverted or incomparable date range is rejected. The owner-bundle check requires an `owner_only` endpoint's `owner_bundle` to be among the bundles it consumes, naming the consumed bundles otherwise |
+| `validate_endpoint_spec(spec, *, strategy_mode)` | the ordered per-endpoint checks — types, allowed fields, ranges, phase split, focus fields, and the owner bundle — the first `PolicyError` wins ([ADR-015](adr/api.md#adr-015)). The range check covers numeric bounds and ISO `date` / `date-time` string bounds, which are parsed and compared chronologically so an inverted or incomparable date range is rejected. The owner-bundle check requires an `owner_only` endpoint's `owner_bundle` to be among the bundles it consumes, naming the consumed bundles otherwise. A `role_only` endpoint has no check here: a role cannot be judged against the compiled endpoint, so its coherence lives in the kernel and its holder check in the auth runner's precondition |
 | `validate_property_field_references(semantic_property, *, known_fields)` | raises `PolicyError` when a `SemanticProperty`'s expression references a field outside `known_fields` |
 
 ## Domain exceptions
@@ -130,6 +130,7 @@ kernel's from `specforge_contracts`.
 | `StrategyCompilationError` | a contract cannot become a strategy |
 | `EngineError` | an execution invariant was violated |
 | `AccessLinkError` | the auth runner cannot honor an `owner_only` endpoint's producer link — its bundle has no producer in the run, or provisioning the owner resource broke the producer's own contract (`endpoint_id`, `bundle`) |
+| `AccessRoleError` | the auth runner cannot cross a `role_only` endpoint: no declared identity holds its required role; raised before the first request, its message naming the roles the run did declare (`endpoint_id`, `required_role`) |
 
 All descend from `CustomSchemathesisError`, never from `ValueError`
 ([ADR-001](adr/foundations.md#adr-001)). The full taxonomy, including

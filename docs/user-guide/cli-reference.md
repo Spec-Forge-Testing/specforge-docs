@@ -299,7 +299,7 @@ unexpectedly.
 
     `--identities <file>.toml` declares who the requests are sent as — a TOML list
     of labelled credential sets, any of them possibly anonymous (a label with no
-    headers):
+    headers). An identity may also declare the `role` it acts under:
 
     ```toml
     [[identities]]
@@ -307,9 +307,16 @@ unexpectedly.
 
     [[identities]]
     label = "alice"
+    role = "account-owner"
     [identities.headers]
     Authorization = "Bearer alice-token"
     ```
+
+    Write `role` before `[identities.headers]`: any key after that line belongs to
+    the headers table, so a `role` placed there would be sent as a header instead.
+    A role is an exact, case-sensitive string, it cannot be empty, and an identity
+    that declares none never satisfies an endpoint that requires a role. Only
+    `--mode auth` reads it.
 
     Labels must be unique — they key findings, crash reports and replays. Each
     endpoint phase's example budget is split evenly across the declared identities
@@ -335,11 +342,15 @@ unexpectedly.
     gracefully (a timeout or a `4xx` counts as graceful); `auth` crosses the declared
     identities against each endpoint's access policy and flags a `2xx` a caller
     should not have obtained (a cross-identity or anonymous read of an owner's
-    resource, or an anonymous success on an authenticated endpoint). `auth` needs
-    `--identities` (the owner is the first one declared) and a contract producer —
-    `--contracts <dir>` — whose contracts declare an `access` policy; an endpoint
-    with no `access`, or a `public` one, is never sent. `--latency-sla-ms` is
-    refused with any other mode than `performance`.
+    resource, a success without the required role on a role-restricted endpoint,
+    or an anonymous success on an authenticated endpoint). `auth` needs
+    `--identities` and a contract producer — `--contracts <dir>` — whose contracts
+    declare an `access` policy; an endpoint with no `access`, or a `public` one, is
+    never sent. On an `owner_only` endpoint the owner is the first identity
+    declared. A `role_only` endpoint is sent under every identity that does not
+    declare its required role, and once anonymously; it needs at least one
+    identity declaring exactly that role, or the run stops before its first
+    request. `--latency-sla-ms` is refused with any other mode than `performance`.
 
     `--mode stateful` switches to [stateful fuzzing](../modules/custom-schemathesis/execution-modes.md#stateful):
     requests are **chained into sequences** instead of each operation being fuzzed on

@@ -95,7 +95,8 @@ each declared business rule against the 2xx request/response pair
 only the `auth` runner reads it: it uses the policy to decide which identities to
 cross an endpoint with, and the `access_control` oracle judges the crossings. An
 ordinary run carries `access` and never acts on it
-([Execution modes](execution-modes.md#auth), [ADR-050](adr/engine.md#adr-050)).
+([Execution modes](execution-modes.md#auth), [ADR-050](adr/engine.md#adr-050),
+[ADR-053](adr/engine.md#adr-053)).
 
 The four zones are a `RequestZones` value object: a frozen pydantic model with
 one field per `Zone` (`path`, `query`, `header`, `body`), each a `ParamMap`
@@ -224,10 +225,13 @@ batch size), `max_retries`, `headers`, `backoff_base`, and `identities`. A
 `mode="after"` validator rejects duplicate identity labels, because a label
 keys findings, reports and replays.
 
-`Identity` is a `label` plus credential `headers`. It comes from the user's
-execution config, never from the contract producer, so it carries no contract
-fields. `headers={}` models an anonymous identity — no credentials at all,
-still worth a label so a 2xx from it is as accountable as any other.
+`Identity` is a `label` plus credential `headers` and an optional `role`. It
+comes from the user's execution config, never from the contract producer, so it
+carries no contract fields. `headers={}` models an anonymous identity — no
+credentials at all, still worth a label so a 2xx from it is as accountable as any
+other. `role` names the role the identity acts under; an empty string is rejected,
+and an identity that declares no role never satisfies a `role_only` endpoint's
+`required_role`.
 
 `RequestBlueprint` is the immutable request built from a compiled endpoint and
 a payload: method, URL, headers, query, JSON body, `phase`, `endpoint_id`,

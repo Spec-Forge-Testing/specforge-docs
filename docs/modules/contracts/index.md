@@ -69,7 +69,7 @@ kinds of content, each with its own wire dialect:
 | `attack` | `EndpointAttack` | Which payload families to run, where to focus, how hard, and per-field hints in `field_hints` keyed by `zone.field` (`FieldAttack`) | snake_case, no alias |
 | `transitions` | `TransitionInvariant` | What a follow-up request must observe after this endpoint succeeds: expected statuses, echoed fields, trigger statuses | snake_case, no alias |
 | `semantic_properties` | `SemanticProperty` | Business rules as a closed expression tree of six node kinds discriminated by `kind` | snake_case, no alias |
-| `access` | `EndpointAccess` | Who may call the endpoint (`policy`: `public` / `authenticated` / `owner_only`) and, for `owner_only`, the `owner_bundle` naming the state-link bundle the endpoint consumes whose producing identity is the owner | snake_case, no alias |
+| `access` | `EndpointAccess` | Who may call the endpoint (`policy`: `public` / `authenticated` / `owner_only` / `role_only`); for `owner_only`, the `owner_bundle` naming the state-link bundle the endpoint consumes whose producing identity is the owner; for `role_only`, the `required_role` a caller must hold | snake_case, no alias |
 
 The rule behind the two dialects: a word that exists in JSON Schema is spelled
 the way JSON Schema spells it; a word that is Spec Forge's own is snake_case and
@@ -81,10 +81,13 @@ The five Spec Forge sections are **optional**: a producer that knows nothing
 beyond the schema still emits a valid contract, and an unset section is absent
 from the wire.
 
-`EndpointAccess` carries one internal invariant: `owner_bundle` is required
-exactly when `policy` is `owner_only`, and rejected for any other policy — a
-`public` or `authenticated` endpoint owns nothing to name. `AccessPolicy` is a
-closed `StrEnum` (`public`, `authenticated`, `owner_only`).
+`EndpointAccess` carries one internal invariant per qualifier, and the two are
+symmetric: `owner_bundle` is required exactly when `policy` is `owner_only`, and
+`required_role` exactly when `policy` is `role_only`; each is rejected under any
+other policy, so an endpoint never names a bundle or a role its policy does not
+use. `AccessPolicy` is a closed `StrEnum` (`public`, `authenticated`,
+`owner_only`, `role_only`). A role is an exact, case-sensitive string: there is
+no hierarchy, so `admin` is not satisfied by `Admin` or by a broader role.
 
 ## Design invariants
 
@@ -105,7 +108,7 @@ closed `StrEnum` (`public`, `authenticated`, `owner_only`).
 The package supports Python 3.10+. Consumers add it to their test path
 (`pythonpath = ["src", "../contracts/src"]`) and install it in their runtime image.
 `custom_schemathesis` goes one step further and declares it as a runtime dependency
-(`specforge-contracts>=0.3.0`), so its CI job and its `fixtures-api` Docker image
+(`specforge-contracts>=0.4.0`), so its CI job and its `fixtures-api` Docker image
 install `lib/contracts` first — which is why that image is built from the
 repository root. Installation, test and lint commands are centralized in
 [Contributing & Testing](../../developer-guide/contributing.md).

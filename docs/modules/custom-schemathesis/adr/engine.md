@@ -981,3 +981,108 @@ resilience oracle degrades on it as well as on a 5xx. The raw transport speaks
 only `http` and `https`; any other scheme yields an unsendable result before a
 socket is opened. No new flag or mode appears — the mode is still
 `--mode resilience`.
+
+---
+
+## ADR-053 — Role-restricted access is a fourth kernel policy, crossed against the roles the user's identities declare { #adr-053 }
+
+**Status:** accepted · Extends [ADR-050](#adr-050) · `specforge_contracts/access.py`, `models/engine/execution.py`, `models/engine/access.py`, `engine/runners/auth/`, `engine/oracles/access_control.py`, `exceptions.py`
+
+### Context
+
+ADR-050 made two access defects detectable: a caller reading a resource another
+identity owns, and an anonymous request reaching an endpoint that requires
+authentication. It left out the third high-impact class, broken function-level
+authorization (BFLA): an administrative function that any authenticated user can
+call, when only callers holding a role should. There is no owner resource to
+establish here, so the owner-then-cross shape does not apply. Two facts are
+missing instead. The first is which role the endpoint requires, and that is a
+statement about the API, so it belongs in the contract. The second is which role
+each caller holds. Only the user knows that, in the same way only the user knows
+the credentials.
+
+### Decision
+
+The kernel's `AccessPolicy` gains a fourth member, `role_only`, and
+`EndpointAccess` a second qualifier, `required_role`. Its coherence mirrors
+`owner_bundle`: required exactly when the policy is `role_only`, rejected under
+any other. A role is an exact, case-sensitive string with no hierarchy.
+
+The caller's side is `Identity.role`, an optional non-empty string read from the
+user's `--identities` file, never from a contract. An identity that declares no
+role never satisfies a required role, so it is crossed like any other non-holder.
+
+A `role_only` endpoint gets its own planner, registered in the auth runner's
+per-policy table beside the other three. It provisions nothing: no state-link is
+needed, because the function is not anyone's resource. It sends one
+deterministic valid request under every declared identity whose role is not the
+required one, plus one anonymous request. Holders are never sent. If every
+identity holds the role, only the anonymous request goes out, which is still a
+valid check. The table has a row for every `AccessPolicy` member and is indexed
+directly, so a policy without a planner fails loudly rather than being skipped.
+
+Before the first request, the runner checks that some declared identity holds
+each `role_only` endpoint's required role. If none does, the run fails with
+`AccessRoleError`, carrying `endpoint_id` and `required_role`, and its message
+lists the roles the run did declare. The error is a sibling of `AccessLinkError`,
+and the engine façade exports both, because both are configuration the user
+fixes: add the producer, or declare the role.
+
+The `access_control` oracle judges `role_only` without conditions. It never sees
+roles, which live on the run's config, and the planner only crosses callers who
+lack the role, so any 2xx on that expectation is a violation. The rule id is
+`role_only`. The description names the caller, or an anonymous request, and the
+required role, but never the caller's own role; the `identity_label` already
+points back into the user's file.
+
+Validation happens in two layers, not three. The kernel enforces coherence and
+the runner precondition enforces that a holder exists. `policy/` gets no
+`role_only` rule, because the compiled endpoint has no role vocabulary to check a
+role against.
+
+### Rejected
+
+- **Running without a holder.** Unlike a missing producer, a missing holder
+  does not make the crossing impossible to build; it makes the crossing wrong.
+  Roles compare exactly, so an identities file that spells the role `Admin`
+  against a `required_role` of `admin` would put the real administrator among
+  the crossed callers. Its legitimate 2xx would then be reported as a bypass of
+  an endpoint that is correctly guarded. A typed error is fixed with one line,
+  but a false finding, once reported, cannot be taken back. Relaxing the check
+  later only means removing it.
+- **Treating an identity without a role as a wildcard.** An incomplete identities
+  file would then quietly produce zero findings, and a green run would have
+  checked nothing.
+- **A `role_only` rule in `policy/`.** The compiled `EndpointSpec` has no role
+  vocabulary, and roles exist only in runtime configuration, so there is nothing
+  to check the required role against at compile time.
+- **Provisioning a resource first.** A role-restricted function has no owner.
+  Copying the `owner_only` shape without its reason would add a request that
+  proves nothing.
+- **Widening `AccessLinkError` with an optional role.** The result is a bag of
+  optional attributes whose invariants nobody enforces, under a name that no
+  longer describes the failure. A missing role is not a broken state-link, so it
+  gets its own exception.
+- **One access model per policy (a discriminated union).** This would make an
+  illegal qualifier unrepresentable without a validator. But the wire JSON stays
+  identical while every consumer's Python surface changes. The option comes back
+  the day one policy needs two qualifiers.
+- **Putting the caller's role, or the set of holders, in the expectation.** Either
+  gives the oracle more to say, but it breaks the one-qualifier-per-policy shape
+  that both coherence checks share. The decision about who is entitled already
+  lives in the planner, the one component that sees the roles.
+
+### Consequences
+
+The kernel moves to **0.4.0** and the engine now requires it (`specforge-contracts>=0.4.0`), since it reads `role_only` and `required_role`; the change to the contract wire is additive. The auth runner now has one
+planner per policy, and its package is split by question: `plan.py` holds what a
+plan is and the request builders, `planners.py` who builds it for each policy,
+`preconditions.py` what must hold before the first request, and `runner.py` the
+only module that sends. A `role_only` endpoint costs one request per non-holder
+plus one anonymous request. Two identities without the role that both succeed
+produce two findings, since `identity_label` is part of the finding signature.
+
+The scope stays narrow on purpose. Each identity holds one role, compared by
+equality. Role hierarchies are not modelled, because a hierarchy is specific to
+each API and cannot be inferred. A caller with several roles is declared as
+several identities, and cross-tenant isolation is still not expressible.

@@ -159,6 +159,7 @@ label = "anonymous"
 
 [[identities]]
 label = "alice"
+role = "account-owner"
 [identities.headers]
 Authorization = "Bearer alice-token"
 ```
@@ -166,3 +167,9 @@ Authorization = "Bearer alice-token"
 Pass the file with `fuzz --identities identities.toml`. Requests are built and sent under each
 identity you declare, so the fuzzer exercises the API as different users. Credentials live
 only in this file — never in the OpenAPI spec, never invented by the LLM.
+
+The optional `role` says which role the identity acts under, and it too comes only from this
+file. `--mode auth` uses it to check endpoints restricted to a role: it sends the request as
+every identity that lacks the role and flags any that succeeds. Keep `role` above
+`[identities.headers]`, and spell it exactly as the endpoint requires it — roles are
+case-sensitive and have no hierarchy.

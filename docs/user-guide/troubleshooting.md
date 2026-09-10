@@ -65,6 +65,23 @@ spec, and the whole run stops there.
 **Fix.** Fix the schema, or narrow the run to the endpoints you can test with `--endpoint` and
 `--method` so the offending one is left out.
 
+## `--mode auth` stops: no identity holds the required role
+
+**Symptom.** An auth run stops before sending anything, with an *Execution Engine Error* panel
+reading *"&lt;endpoint&gt;: role_only access needs an identity declaring role 'admin', but this
+run declares [...]"*.
+
+**Cause.** A contract restricts that endpoint to a role, and none of the identities in the
+`--identities` file declares exactly that role. Roles are compared as exact, case-sensitive
+strings: `Admin` does not satisfy `admin`, and an identity with no `role` satisfies nothing.
+Running anyway would send the endpoint's legitimate callers as intruders and report a correctly
+guarded endpoint as broken, so the run refuses instead.
+
+**Fix.** Add an identity whose `role` is the required one, spelled exactly as the error quotes
+it, with that user's credentials — or correct the spelling of an existing one. Write `role`
+above `[identities.headers]`; below it, the key becomes a header. The list at the end of the
+message shows the roles the file did declare.
+
 ## `replay` refuses: credentials or target missing
 
 **Symptom.** `replay` refuses over missing identities or a base-URL problem.

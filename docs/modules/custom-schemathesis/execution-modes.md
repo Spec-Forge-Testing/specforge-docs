@@ -218,31 +218,45 @@ closing.
 ## Auth
 
 Cross the declared identities against each endpoint's access policy and watch
-for a 2xx a caller should not have obtained — the BOLA/IDOR and broken-
-authentication class. The runner reads the `access` section the producer
-declared; an endpoint with no `access`, or a `public` one, is never sent.
+for a 2xx a caller should not have obtained — the BOLA/IDOR, broken-function-level
+(BFLA) and broken-authentication classes. The runner reads the `access` section
+the producer declared; an endpoint with no `access`, or a `public` one, is never
+sent.
 
-The run **fails fast before any request** on two conditions: no identity is
-declared (`EngineError`), or an `owner_only` endpoint names a bundle no endpoint
-in the run produces (`AccessLinkError`). The owner is always the first declared
-identity (`config.identities[0]`).
+The run **fails fast before any request** on three conditions, checked in this
+order: no identity is declared (`EngineError`); a `role_only` endpoint requires a
+role no declared identity holds (`AccessRoleError`, naming the endpoint, the
+required role and the roles the run did declare); or an `owner_only` endpoint
+names a bundle no endpoint in the run produces (`AccessLinkError`). For an
+`owner_only` endpoint the owner is always the first declared identity
+(`config.identities[0]`); a `role_only` endpoint privileges every identity whose
+`role` equals its `required_role`, wherever it sits in the list.
+
+The package `engine/runners/auth/` is split by the question each module answers:
+`plan.py` holds what a plan is (`Crossing`, `Provisioning`, `PlanContext`) and the
+request builders; `planners.py` holds one planner per policy behind
+`planner_for`; `preconditions.py` holds the checks that must pass before the first
+request; and `runner.py` is the only module that sends.
 
 ```mermaid
 sequenceDiagram
     participant AR as AuthRunner
-    participant Pl as planning
+    participant Pre as preconditions
+    participant Pl as planners
     participant Orch as AsyncOrchestrator
     participant Cap as state_link.capture
     participant Or as check_response (access_control)
     participant Fnd as findings
 
-    AR->>Pl: require_identities · index_producers · require_producers
+    AR->>Pre: require_identities · require_roles · index_producers · require_producers
     loop per endpoint (planner_for its access)
         alt owner_only
             AR->>Orch: provision the owner resource (first identity)
             AR->>Cap: capture(response, production) → owner value | AccessLinkError
             AR->>Pl: write the value into the consuming zone/field
             AR->>Orch: re-send under every other identity, and anonymously
+        else role_only
+            AR->>Orch: send under every identity lacking the role, and anonymously
         else authenticated
             AR->>Orch: one anonymous probe (config headers stripped)
         end
@@ -260,13 +274,23 @@ it depends on the policy:
 |---|---|
 | `authenticated` | one anonymous probe, with the config credential headers stripped so it is truly anonymous |
 | `owner_only` | provision the owner's resource under the **first** declared identity, capture the bundle value from the response, write it into the endpoint's consuming zone/field, then re-send under every **other** identity and once anonymously |
+| `role_only` | provision nothing; send under every declared identity whose `role` is **not** the `required_role` (an identity with no role included) and once anonymously. Holders of the role are never sent; when every identity holds it, only the anonymous request goes out |
 
 A crossing is a finding when the `access_control` oracle sees a success for a
 caller the policy excludes: another identity or an anonymous request on an
-`owner_only` resource, or an anonymous request on an `authenticated` endpoint.
-The finding names the caller (`identity_label`) and the policy it broke as the
-rule. With a single declared identity the cross is owner-versus-anonymous only;
-roles (admin, cross-tenant) are out of scope until the vocabulary grows.
+`owner_only` resource, an identity without the required role or an anonymous
+request on a `role_only` endpoint, or an anonymous request on an `authenticated`
+endpoint. The finding names the caller (`identity_label`) and the policy it broke
+as the rule. With a single declared identity the `owner_only` cross is
+owner-versus-anonymous only. Roles compare as exact strings — no hierarchy, no
+case folding — and cross-tenant isolation is not expressible.
+
+The `role_only` precondition exists because the comparison is exact: an identity
+file that spells the role `Admin` against a `required_role` of `admin` declares no
+holder, so without the check the runner would cross the real administrator and
+report its legitimate 2xx as a bypass of a correctly guarded endpoint. Declaring
+an identity with exactly the required role fixes the run
+([ADR-053](adr/engine.md#adr-053)).
 
 Provisioning is where an `owner_only` run can abort: if producing the owner
 resource returns a status that captures nothing, or a 2xx whose declared field

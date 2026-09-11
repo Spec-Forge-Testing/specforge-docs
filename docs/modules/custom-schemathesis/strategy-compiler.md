@@ -118,8 +118,9 @@ directly (`anyOf`, `oneOf`, `allOf`, `$ref`).
 ## The phase registry
 
 A **phase** (`Phase`: `valid` / `boundary` / `invalid` / `attack` /
-`transition` / `mutation`) is a family of values a field can generate. Phases
-form a registry keyed by `(contract_type, Phase)`. `resolve_phase` walks the
+`transition` / `mutation` / `semantic`) is a family of values a field can
+generate. Phases form a registry keyed by `(contract_type, Phase)`.
+`resolve_phase` walks the
 contract's MRO, so a `HackerStrategyContract` — a subclass of
 `BaseStrategyContract` — picks up the base phases plus `attack` and `mutation`
 without a branch ([ADR-010](adr/models.md#adr-010)).
@@ -147,13 +148,59 @@ never as a side effect of importing a builder module
 | `attack` | hacker | `build_hacker_attack` |
 | `mutation` | base | `build_valid_strategy` |
 | `mutation` | hacker | `build_hacker_mutation` |
+| `semantic` | base | `build_valid_strategy` |
 
-`attack` and `mutation` on the base contract fall back to valid values: a
-non-hacker contract in a hacker-mode compile still generates in-spec values for
-those phases.
+`attack`, `mutation` and `semantic` on the base contract fall back to valid
+values: a field draws in-spec values for those phases. `semantic` needs no
+hacker builder at all — its work is not per-field. It compiles a valid value
+for each parameter, and the engine refines the whole assembled payload once per
+endpoint (see [Engine internals](engine-internals.md#how-a-semantic-property-is-evaluated)).
 
 Adding a phase is registering a `GenerationPhase` — see the
 [Extension guide](extension-guide.md#add-a-phase).
+
+## Conditional phases: the semantic phase
+
+A phase carried in a profile's `phase_split` compiles for **every** endpoint the
+mode runs. Some phases only mean something for an endpoint that carries a
+particular datum, and adding them to every split would spend budget where there
+is nothing to test and pad every endpoint's report with a phase that could not
+find anything. The **conditional phase** is the answer: a phase compiled and
+funded only for the endpoints it applies to.
+
+`semantic` is the built-in one. It applies to an endpoint that declares at least
+one `input_constraint` semantic property — a producer-authored business rule
+about the request the API accepts, such as `end > start` or `quantity <= limit`.
+An endpoint that declares none is compiled exactly as before: no `semantic`
+phase, no change to its split, its output byte-for-byte what it was.
+
+`CONDITIONAL_PHASES` (`strategy_compiler/conditional_phases.py`) is a data table,
+one row per conditional phase, each a `ConditionalPhase(applies, share)`:
+
+| Phase | Applies when | Share |
+|---|---|---|
+| `semantic` | `input_constraints(endpoint.semantic_properties)` is non-empty | `SEMANTIC_SHARE` = 0.10 |
+
+Two pure functions read that table, and the compiler wires both so an endpoint
+is never funded for a phase it does not compile, or the reverse:
+
+- `effective_phases(endpoint, base_phases)` appends every applicable phase to the
+  profile's phases, so the applicable endpoint compiles a `semantic` strategy per
+  zone.
+- `effective_split(endpoint, base_split)` reserves each applicable phase's share
+  out of the resolved split. It builds on `reserve_share` (`budget/reservation.py`):
+  the base split is normalized, rescaled by `(1 - share)`, and the phase added at
+  exactly its share. Reservation runs over whatever split was resolved first — the
+  profile's static split, a custom `phase_split` (even one summing below 1, or one
+  without a `valid` row), or the aggressiveness-derived hacker split — so the
+  semantic phase always lands at 10% of the endpoint's budget and the other phases
+  keep their proportions among the remaining 90%. As with any phase, a very small
+  budget can round its share to zero.
+
+The predicate itself, `input_constraints(properties)`, lives in the neutral leaf
+`custom_schemathesis/semantic_properties.py`, imported by both the compiler (which
+decides the phase exists) and the engine (which decides how it draws), so the two
+sides cannot disagree on which properties constrain an input.
 
 ## Dispatch is a table, not a cascade
 

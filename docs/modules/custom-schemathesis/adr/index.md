@@ -88,3 +88,4 @@ tells you what it governs.
 | [ADR-051](compiler.md#adr-051) | strategy_compiler | Mutation is a generation phase over hacker contracts, seeded from the valid strategy, with engine-owned operators |
 | [ADR-052](engine.md#adr-052) | engine | Raw-socket chaos transport for framing-level resilience attacks |
 | [ADR-053](engine.md#adr-053) | engine | Role-restricted access is a fourth kernel policy, crossed against the roles the user's identities declare |
+| [ADR-054](engine.md#adr-054) | engine | The semantic phase steers generation toward a declared input constraint |

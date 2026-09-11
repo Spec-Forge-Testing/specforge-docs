@@ -150,8 +150,10 @@ tests exercise, documented for that reason
 | Name | One line |
 |---|---|
 | `compile(compiler_input) -> CompilationOutcome` | the whole compile; the facade re-exports it as `compile_strategies` |
-| `build_generation_plan(endpoint, strategy_mode) -> GenerationPlan` | the per-endpoint example budget: totals, phase split, combination limits |
+| `build_generation_plan(endpoint, strategy_mode) -> GenerationPlan` | the per-endpoint example budget: totals, phase split (with any conditional phase reserved), combination limits |
 | `estimate_parameter_space(parameters) -> int` | the estimated combination count for a parameter map, capped at 10⁹ |
+| `effective_phases(endpoint, base_phases) -> tuple[Phase, ...]` | the profile's phases plus every conditional phase the endpoint earns |
+| `effective_split(endpoint, base_split) -> Mapping[Phase, float]` | a phase split with each earned conditional phase's share reserved; unchanged when none applies |
 | `compile_zone(zone, params, ctx) -> CompiledRequestPart` | one zone's per-phase strategies plus its documentation schema |
 | `build_zone_schema(params, *, force_required) -> dict` | the zone's parameters as a JSON Schema object |
 | `is_field_addressed(zone, name, entries) -> bool` | whether a field is named by an attack addressing list, bare or zone-qualified |

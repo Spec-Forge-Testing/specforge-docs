@@ -177,6 +177,24 @@ rule's `PropertyClass`:
 | `RESPONSE_INVARIANT` | the response body |
 | `INPUT_CONSTRAINT` | the flattened request the server accepted — body keys, query and headers in one namespace |
 
+The flattened request is one shared function, `flatten_input_scope(body, query,
+headers)` (`engine/oracles/semantic/scope.py`), used by both the oracle and the
+generator so the two can never disagree on what a rule sees. It overlays the
+three zones in `ZONE_OVERRIDE_ORDER` — body, then query, then headers — so a name
+declared in more than one zone resolves to the **last** listed, and it stringifies
+every header value, because a header is a string on the wire. A companion,
+`resolve_declared_field` (`declared.py`), resolves a declared field to its zone by
+that same precedence, so generation and evaluation agree on where a referenced
+field lives.
+
+Before a rule is evaluated, a value that contradicts its field's declared type is
+dropped from that scope. A rule speaks about well-typed inputs; leaving a
+wrong-typed value in the semantic scope would let a 2xx to a malformed request be
+read as a business-rule violation. An undeclared name is
+kept, since no declared type contradicts it — so a header declared numeric is never
+compared as a number, while a name the contract never mentions still reaches the
+rule.
+
 Path parameters are **not** reachable to an `INPUT_CONSTRAINT`: the blueprint
 carries them only inside the request URL, never as a named field, so a rule that
 references one resolves to no value. This is a current limitation of the input
@@ -208,6 +226,57 @@ one specific business rule rather than at the anonymous `semantic_property`
 invariant shared by every rule on the endpoint. The id rides all the way to the
 crash report, the finding signature, storage and the report; the description
 rides alongside it but is never compared ([ADR-049](adr/engine.md#adr-049)).
+
+### How the semantic phase steers generation
+
+Observing a broken `input_constraint` only helps if a request actually breaks it.
+Left to chance, an in-spec draw violates a rule like `end > start` only as often
+as the schema happens to; a rule excluding one value from a million-wide range is
+never hit at all. The **semantic phase** ([Conditional phases](strategy-compiler.md#conditional-phases-the-semantic-phase))
+aims generation at the rule, so the violation stops depending on luck.
+
+The phase compiles a valid strategy per field, and the engine refines the
+assembled payload once per endpoint. `refine_for_phase(strategy, endpoint, phase)`
+(`engine/fuzzers/phases.py`) looks the phase up in a one-row table
+(`Phase.SEMANTIC → build_semantic_payloads`) and returns the strategy untouched for
+any other phase; `plan_passes` calls it as it builds each pass. `build_semantic_payloads`
+(`engine/fuzzers/semantic/`) mixes, for each declared input constraint, a
+**violating** arm and a **conforming** arm, and always one unfiltered **valid** arm:
+
+- A field compared against a **numeric literal** is built directly: the bounds
+  implied by the comparison are rewritten and intersected with the field's own
+  declared bounds, integer bounds rounded to the correct integer, and the value
+  spliced into an otherwise valid draw. An empty region — a comparison the declared
+  schema already rules out — yields nothing, so the phase never sends a
+  schema-invalid value to fake a violation. This constructor covers body and query
+  fields.
+- **Two fields sharing a declared schema** are built by rearranging the drawn
+  values: swapped for an order comparison, copied for equality or inequality. It is
+  type-agnostic — numbers, strings and dates compare the way the evaluator already
+  compares them.
+- **Everything else** — aggregations, conditionals, logical combinations,
+  arithmetic inside a comparison, dotted paths, `multipleOf`, boolean literals, a
+  header built for a numeric comparison — falls back to **filtering** valid draws by
+  the rule: the violating arm keeps draws the evaluator scores `False`, the
+  conforming arm those it scores `True`.
+
+The unfiltered valid arm is the safety net. A rule no arm can decide — one over a
+path parameter, say — filters both directed arms empty, but the valid arm always
+has candidates, so the phase never exhausts and never truncates the run. Such a
+rule silently degrades to plain valid draws: the phase could not construct a
+violation, so it sends valid inputs, exactly as the oracle stays undecided on the
+same rule. When a semantic finding is shrunk, the shrinker minimizes it over the
+phase's base valid strategy, like any other phase.
+
+The verdict rules are unchanged: a violation is still only a 2xx whose flattened
+request scores the rule `False`, `UNDETERMINED` is still never a finding, and a
+correctly rejected 4xx stays silent. A finding's signature carries its phase, but
+reports are deduplicated after shrinking with the phase left out, so a violation the
+plain valid phase also reaches is reported under whichever phase found it first.
+
+With a rule plain valid generation breaks about a tenth of the time, the semantic
+phase drives roughly a third to two-fifths of its requests to break it; with a rule
+valid generation almost never breaks, only the phase reaches it at all.
 
 ### How access control is evaluated
 
@@ -300,8 +369,10 @@ The counters and their single producers are laid out in
 `plan_passes` builds one `Pass` per `(phase, identity)`: the phase's example
 budget (authoritative from the `GenerationPlan`, or the budget split for a
 plan-less endpoint) split across the declared identities by `share_budget`. Each
-pass carries its merged per-zone strategy; an endpoint with no zone at all falls
-back to a single empty `valid` pass.
+pass carries its merged per-zone strategy, after `refine_for_phase` has had its
+say — an identity for every phase but `semantic`, whose whole-payload strategy it
+rewrites into directed draws (above). An endpoint with no zone at all falls back
+to a single empty `valid` pass.
 
 The driver `explore_pass` runs a Hypothesis `@given` over the pass's strategy,
 but the callback **never raises on a finding** — it only accumulates drawn

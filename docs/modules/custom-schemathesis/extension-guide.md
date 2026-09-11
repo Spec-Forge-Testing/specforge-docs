@@ -124,6 +124,51 @@ phase runs. The share the phase draws from the budget is a row of the mode's
 `phase_split` ([Add a profile](#add-a-profile)); it does not come from
 registration.
 
+## Make a phase conditional
+
+A phase in a profile's `phase_split` compiles for every endpoint that mode runs.
+A phase that only means something for an endpoint carrying a particular datum is a
+**conditional phase** instead: compiled and funded only where it applies, so no
+endpoint spends budget on a phase that could find nothing
+([Strategy compiler](strategy-compiler.md#conditional-phases-the-semantic-phase)).
+The built-in one is `semantic`, applicable to an endpoint that declares an
+`input_constraint`.
+
+The extension point is one data row in `CONDITIONAL_PHASES`
+(`strategy_compiler/conditional_phases.py`), a `Phase` mapped to a
+`ConditionalPhase(applies, share)`. The built-in row maps `Phase.SEMANTIC` to a
+predicate that looks for an `input_constraint` among the endpoint's semantic
+properties, with `SEMANTIC_SHARE` as its share:
+
+```python
+ConditionalPhase(applies=<predicate over EndpointSpec>, share=<fraction of the budget>)
+```
+
+`applies` is a predicate over the `EndpointSpec`; `share` is the exact fraction of
+the endpoint's budget the phase reserves. `effective_phases` and `effective_split`
+read the table so the same endpoints that compile the phase are the ones that fund
+it. Register the phase itself first, as above — the conditional row decides *which
+endpoints* draw it, not *how* a field compiles for it.
+
+## Add a phase refiner
+
+A phase's per-field strategies are merged into one whole-payload strategy in the
+engine, and a phase can then rewrite that assembled draw before it goes on the
+wire. The seam is `refine_for_phase` in `engine/fuzzers/phases.py`, backed by a
+module-private table that maps a `Phase` to a refiner
+`(strategy, endpoint) -> strategy`; its one built-in row maps `Phase.SEMANTIC` to
+`build_semantic_payloads`. Adding a refiner is a change to that table inside the
+engine, not a plug-in registration.
+
+`refine_for_phase(strategy, endpoint, phase)` looks the phase up and applies its
+refiner, or returns the strategy unchanged for a phase with no row. It is the seam
+the `semantic` phase uses to turn valid per-field draws into inputs that break, or
+hold, a declared rule — a phase whose intent is a property of the whole payload,
+not of any one field, lives here rather than in a per-field builder. A refiner
+receives the `CompiledExecutionEndpoint`, so it can read the endpoint's declared
+schemas and semantic properties; it must stay within the engine (`engine/fuzzers`
+and `engine/oracles`), never reaching back into `strategy_compiler`.
+
 ## Add a string format
 
 A string `format` is served by the constraint tables in

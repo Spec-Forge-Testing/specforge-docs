@@ -78,7 +78,7 @@ Field names of this family are stable: they are persisted as columns.
 | `FlakyFinding`, `UnverifiedFinding` | a settled group: its `signature` and how many raw `occurrences` it stands for |
 | `RunStats`, `EndpointStats`, `LatencyStats` | run, endpoint and latency counters |
 | `CrashReport`, `InvariantViolation` | a confirmed finding's reproducer and the invariant it broke |
-| `ViolatedRule` | the producer-declared business rule a `CrashReport` broke (`id` + `description`), or `None` when no oracle named one |
+| `ViolatedRule` | the rule a `CrashReport` broke (`id` + `description`) — declared by the contract for a `semantic_property` / `access_control` finding, or intrinsic to the invariant for every other one |
 | `ExecutionTrace`, `TracedRequest`, `TruncationRecord` | the replayable record |
 | `ResponseDivergence`, `ReplayFidelity` | the replay comparison |
 | `ReplayReadiness` | the outcome of `validate_replayable` |
@@ -150,10 +150,10 @@ tests exercise, documented for that reason
 | Name | One line |
 |---|---|
 | `compile(compiler_input) -> CompilationOutcome` | the whole compile; the facade re-exports it as `compile_strategies` |
-| `build_generation_plan(endpoint, strategy_mode) -> GenerationPlan` | the per-endpoint example budget: totals, phase split (with any conditional phase reserved), combination limits |
+| `build_generation_plan(endpoint, strategy_mode) -> GenerationPlan` | the per-endpoint example budget: totals, phase split (with any applicable phase extension's share reserved), combination limits |
 | `estimate_parameter_space(parameters) -> int` | the estimated combination count for a parameter map, capped at 10⁹ |
-| `effective_phases(endpoint, base_phases) -> tuple[Phase, ...]` | the profile's phases plus every conditional phase the endpoint earns |
-| `effective_split(endpoint, base_split) -> Mapping[Phase, float]` | a phase split with each earned conditional phase's share reserved; unchanged when none applies |
+| `effective_phases(endpoint, base_phases) -> tuple[Phase, ...]` (`effective_phases.py`) | the profile's phases plus every phase extension the endpoint activates |
+| `effective_split(endpoint, base_split) -> Mapping[Phase, float]` (`effective_phases.py`) | a phase split with each activated extension's share reserved; unchanged when none applies |
 | `compile_zone(zone, params, ctx) -> CompiledRequestPart` | one zone's per-phase strategies plus its documentation schema |
 | `build_zone_schema(params, *, force_required) -> dict` | the zone's parameters as a JSON Schema object |
 | `is_field_addressed(zone, name, entries) -> bool` | whether a field is named by an attack addressing list, bare or zone-qualified |
@@ -201,6 +201,21 @@ key:
 | `AttackToggles` | the eight payload-variant flags, pinned to the contract by a guard test |
 | `MutationOperator` | a frozen `(name, gate, apply)` mutation transform |
 | `mutate_object(obj, depth)` | layered object mutation for prototype-pollution and overflow probing |
+
+### `phase_extensions`
+
+The package-root registry of phase extensions — an extra generation phase that
+activates, funds itself and refines its payloads only on the endpoints it applies
+to ([Extension guide](extension-guide.md#add-a-phase-extension)).
+
+| Name | One line |
+|---|---|
+| `PhaseExtension` | a frozen `(phase, applies, share, refiner)`; a non-callable `applies`/`refiner` raises `TypeError`, a `share` outside `(0, 1)` raises `ValueError` |
+| `register_phase_extension(extension)` | register an extension under its own phase, replacing any previous one |
+| `registered_phase_extensions()` | the extensions currently registered, in registration order |
+| `phase_extension_for(phase)` | the extension registered for a phase, or `None` when it is not an extension phase |
+| `isolated()` | a context manager giving the block its own extension registry, restored on exit |
+| `register_builtin_phase_extensions()` | the composition root (`phase_extension_builtins.py`) that registers the built-in `semantic` extension; the package `__init__` calls it once |
 
 ## Suffix conventions
 

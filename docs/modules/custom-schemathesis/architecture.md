@@ -34,6 +34,9 @@ src/custom_schemathesis/
 ├── constants.py           # Engine-health numbers shared by two or more layers
 ├── exceptions.py          # Domain exception taxonomy
 ├── numeric.py             # is_multiple_of: exact arithmetic shared by compiler and oracles
+├── semantic_properties.py # has_input_constraint: the neutral leaf both layers read
+├── phase_extensions.py    # PhaseExtension value object + its registry (isolated, register, lookup)
+├── phase_extension_builtins.py  # composition root: registers the builtin SEMANTIC extension
 ├── models/                # DTOs and enums (see below)
 ├── profiles/              # Strategy-mode profiles: registry, builtin DEFAULT / HACKER
 ├── budget/                # Example allocation, aggressiveness, risk weighting, shares
@@ -42,6 +45,7 @@ src/custom_schemathesis/
 │   ├── compiler.py        # compile(): per-endpoint orchestration, exclusions
 │   ├── zone.py            # ZoneCompileContext, compile_zone, is_field_addressed
 │   ├── planning.py        # build_generation_plan, estimate_parameter_space
+│   ├── effective_phases.py # effective_phases / effective_split: read the extension registry
 │   ├── constants.py       # boundary tables, choice counts, attack-profile maps
 │   └── fields/            # Field → SearchStrategy
 │       ├── context.py     # GenerationContext, EMPTY_CONTEXT
@@ -55,7 +59,7 @@ src/custom_schemathesis/
     ├── ordering.py        # order_by_risk: most-risky-first, before dispatch
     ├── http/              # Async orchestrator, request injection, credentials, error classifier
     ├── harness/           # The Hypothesis bridge: one event loop, settings, identity strategy
-    ├── oracles/           # Response oracles: registry, precedence, the nine builtins
+    ├── oracles/           # Response oracles: verdict leaf, intrinsic rules, registry, precedence, the nine builtins
     ├── findings/          # Group, deduplicate, materialize, shrink, stats
     ├── fuzzers/           # stateless/ and stateful/ procedures
     ├── state_link/        # Shared bundle capture and status matching (stateful + auth)

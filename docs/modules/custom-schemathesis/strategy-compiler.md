@@ -159,48 +159,51 @@ endpoint (see [Engine internals](engine-internals.md#how-a-semantic-property-is-
 Adding a phase is registering a `GenerationPhase` — see the
 [Extension guide](extension-guide.md#add-a-phase).
 
-## Conditional phases: the semantic phase
+## The semantic phase
 
 A phase carried in a profile's `phase_split` compiles for **every** endpoint the
 mode runs. Some phases only mean something for an endpoint that carries a
 particular datum, and adding them to every split would spend budget where there
 is nothing to test and pad every endpoint's report with a phase that could not
-find anything. The **conditional phase** is the answer: a phase compiled and
+find anything. A **phase extension** is the answer: a phase compiled and
 funded only for the endpoints it applies to.
 
 `semantic` is the built-in one. It applies to an endpoint that declares at least
-one `input_constraint` semantic property — a producer-authored business rule
-about the request the API accepts, such as `end > start` or `quantity <= limit`.
+one `input_constraint` semantic property — a business rule declared for the
+request the API accepts, such as `end > start` or `quantity <= limit`.
 An endpoint that declares none is compiled exactly as before: no `semantic`
 phase, no change to its split, its output byte-for-byte what it was.
 
-`CONDITIONAL_PHASES` (`strategy_compiler/conditional_phases.py`) is a data table,
-one row per conditional phase, each a `ConditionalPhase(applies, share)`:
+A phase extension is a `PhaseExtension` value object — an activation predicate, a
+budget share and a payload refiner declared together — held in a registry at the
+package root and populated once from a composition root
+([Extension guide](extension-guide.md#add-a-phase-extension)). The built-in one
+maps `Phase.SEMANTIC` to a predicate that looks for an `input_constraint` among the
+endpoint's semantic properties, with `SEMANTIC_SHARE` (0.10) as its share.
 
-| Phase | Applies when | Share |
-|---|---|---|
-| `semantic` | `input_constraints(endpoint.semantic_properties)` is non-empty | `SEMANTIC_SHARE` = 0.10 |
+Two pure functions in `strategy_compiler/effective_phases.py` read that registry,
+and the compiler wires both so an endpoint is never funded for a phase it does not
+compile, or the reverse:
 
-Two pure functions read that table, and the compiler wires both so an endpoint
-is never funded for a phase it does not compile, or the reverse:
+- `effective_phases(endpoint, base_phases)` appends every applicable extension's
+  phase to the profile's phases, so the applicable endpoint compiles a `semantic`
+  strategy per zone.
+- `effective_split(endpoint, base_split)` reserves each applicable extension's
+  share out of the resolved split. It builds on `reserve_share`
+  (`budget/reservation.py`): the base split is normalized, rescaled by
+  `(1 - share)`, and the phase added at exactly its share. Reservation runs over
+  whatever split was resolved first — the profile's static split, a custom
+  `phase_split` (even one summing below 1, or one without a `valid` row), or the
+  aggressiveness-derived hacker split — so the semantic phase always lands at 10%
+  of the endpoint's budget and the other phases keep their proportions among the
+  remaining 90%. As with any phase, a very small budget can round its share to
+  zero.
 
-- `effective_phases(endpoint, base_phases)` appends every applicable phase to the
-  profile's phases, so the applicable endpoint compiles a `semantic` strategy per
-  zone.
-- `effective_split(endpoint, base_split)` reserves each applicable phase's share
-  out of the resolved split. It builds on `reserve_share` (`budget/reservation.py`):
-  the base split is normalized, rescaled by `(1 - share)`, and the phase added at
-  exactly its share. Reservation runs over whatever split was resolved first — the
-  profile's static split, a custom `phase_split` (even one summing below 1, or one
-  without a `valid` row), or the aggressiveness-derived hacker split — so the
-  semantic phase always lands at 10% of the endpoint's budget and the other phases
-  keep their proportions among the remaining 90%. As with any phase, a very small
-  budget can round its share to zero.
-
-The predicate itself, `input_constraints(properties)`, lives in the neutral leaf
-`custom_schemathesis/semantic_properties.py`, imported by both the compiler (which
-decides the phase exists) and the engine (which decides how it draws), so the two
-sides cannot disagree on which properties constrain an input.
+The predicate itself, `has_input_constraint(endpoint)`, lives in the neutral leaf
+`custom_schemathesis/semantic_properties.py`, imported by the composition root that
+registers the extension, so the compiler (which decides the phase exists) and the
+engine (which decides how it draws) cannot disagree on which properties constrain
+an input.
 
 ## Dispatch is a table, not a cascade
 

@@ -1172,3 +1172,102 @@ rule. Directedness is bounded by what an honest generator can build: where the
 declared schemas already imply the constraint, no arm can produce a violation
 without sending a schema-invalid request, so the phase produces none and stays with
 valid draws.
+
+---
+
+## ADR-055 — A phase extension is one registered value object, and every finding names its rule { #adr-055 }
+
+**Status:** accepted · Extends [ADR-054](#adr-054), completes [ADR-049](#adr-049) · `phase_extensions.py`, `phase_extension_builtins.py`, `__init__.py`, `strategy_compiler/effective_phases.py`, `engine/fuzzers/phases.py`, `engine/oracles/verdict.py`, `engine/oracles/rules.py`, `models/engine/crash_report.py`, `engine/oracles/builtin.py`, `engine/oracles/latency.py`, `engine/oracles/resilience.py`, `engine/fuzzers/stateful/transitions.py`
+
+### Context
+
+Two facts about the engine's edges had drifted apart from the shape they deserved.
+
+The **semantic phase** ([ADR-054](#adr-054)) is one concept — a phase that turns on
+for the endpoints that carry an input constraint, reserves a slice of their budget,
+and refines their payloads — but it was declared in private places that never
+import each other: a table in the compiler holding its predicate
+and share, and a separate refiner table in the engine holding its whole-payload
+rewrite. Adding a second such phase, or reading how the semantic one is wired, meant
+finding and keeping two tables in two layers consistent by hand, with nothing forcing
+them to agree. (The prior shape is described in [ADR-054](#adr-054); this record
+replaces it.)
+
+The **rule channel** ([ADR-049](#adr-049)) let a finding name the rule it broke, but
+only the semantic and access-control oracles ever named one; every other invariant
+left the rule `None`. A reader who opened a 5xx, an undeclared-status or a latency
+defect saw an invariant value and no statement of the requirement it broke, and every
+renderer showed whatever rule arrived as a business rule, because only contract-declared
+rules had ever arrived.
+
+### Decision
+
+**A phase extension is one value object in one registry.** `PhaseExtension` is a
+frozen `(phase, applies, share, refiner)`: the phase it adds, the predicate over the
+`EndpointSpec` that activates it, the fraction of the budget it reserves, and the
+payload refiner it applies. A package-root registry holds them, and both readers —
+the compiler's `effective_phases` / `effective_split` and the engine's
+`refine_for_phase` — read the same registry, so the endpoints that compile the phase
+are exactly the ones that fund it and the one that refines it. Because a phase
+extension spans two layers, it is registered from a **composition root**
+(`phase_extension_builtins.py`) that the package `__init__` calls once; the built-in
+`semantic` extension is its only current entry. A `PhaseExtension` validates itself
+at construction — a non-callable `applies` or `refiner` raises `TypeError`, a `share`
+outside `(0, 1)` raises `ValueError` — so a half-declared extension fails loudly
+rather than skewing a budget silently.
+
+**Every finding names a rule, declared or intrinsic.** A `semantic_property` or
+`access_control` finding names the rule the contract *declared* for it. Every other
+invariant now carries an *intrinsic* `ViolatedRule` whose id is the invariant's own
+value and whose description is the one-sentence requirement the invariant enforces on
+its own — a response is never a 5xx, carries a declared status code, matches the
+declared schema and Content-Type, answers within the latency SLA, degrades cleanly
+under chaos, honours a produced resource's state transition. Which invariants are
+contract-declared is a single `frozenset`, `DECLARED_RULE_INVARIANTS`; every other
+invariant is intrinsic **by exclusion**. Nothing about the origin is persisted: the
+renderer and the report reconstruct declared-versus-intrinsic from the invariant
+alone, showing a declared rule as a **Business rule** row (`<id> — <description>`,
+with the id appended to the finding's label) and an intrinsic rule as a plain
+**Rule** row spelling out the requirement, its id dropped because it would only
+repeat the invariant.
+
+### Rejected
+
+- **Documenting the two tables.** Leaving the compiler's predicate/share table and
+  the engine's refiner table as they were, with a note that they must be kept in
+  step, is the shortcut a known problem does not deserve: two sources of truth for
+  one concept, and no mechanism binding them.
+- **Building the declaration in either layer.** Putting the whole `PhaseExtension` in
+  the compiler would drag the engine's refiner up into `strategy_compiler`; putting
+  it in the engine would drag the compiler's predicate and budget share down into
+  `engine/`. Either inverts a dependency. A neutral registry populated from a
+  composition root keeps both layers reading, neither owning.
+- **Registering from a subpackage `__init__`.** Wiring the built-in extension as an
+  import side effect of a subpackage would make the registered set depend on which
+  modules a run happened to import — the same trap explicit oracle registration
+  ([ADR-036](#adr-036)) exists to avoid. A single composition root the package
+  `__init__` calls once keeps the set one readable function.
+- **String-equality suppression in the renderer.** Keeping intrinsic rules but having
+  each renderer hide a rule whose id happens to equal its invariant's value would tie
+  every renderer to a naming convention of the engine, silently, with nothing checking
+  it. Naming the contract-declared invariants in one `frozenset`, mirrored by the
+  report layer and gated against the engine's, makes the distinction explicit.
+- **A persisted origin column.** Storing a per-finding "declared or intrinsic" flag
+  would persist something already implied by the invariant, and could contradict it
+  after a reword. The `frozenset` is the single source of truth; the origin is derived,
+  never stored.
+
+### Consequences
+
+The semantic phase is now one declaration, and a second endpoint-conditional phase is
+one more `PhaseExtension` registered from the composition root — no new table in
+either layer. `refine_for_phase` reads the registry and applies the extension's
+refiner, returning the assembled strategy unchanged for a phase with no extension.
+
+Every finding — not just a semantic one — arrives with a `rule_id` and, on a
+confirmed crash, a `rule_description`; the report document's `schema_version` moves to
+**1.7** (the JSON fields are unchanged, but they are now populated on every finding).
+Dedup and shrink outcomes are unaffected: an intrinsic id is constant per invariant, so
+it adds nothing to a finding's identity, and the two status-code branches were already
+separated by the status code the signature carries. This completes ADR-049's channel:
+the rule is no longer inert for any oracle.

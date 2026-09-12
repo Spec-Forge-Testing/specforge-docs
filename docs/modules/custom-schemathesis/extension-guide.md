@@ -1,6 +1,6 @@
 # Extension guide
 
-The engine extends by registration, never by editing its core. There are five
+The engine extends by registration, never by editing its core. There are six
 extension axes, each a registry populated at import time, each with a public
 `isolated()` seam so tests never patch a private dictionary.
 
@@ -9,6 +9,7 @@ extension axes, each a registry populated at import time, each with a public
 | **Runner** (how a run executes) | an `ExecutionRunner` + `register_runner(...)` | `engine/runners/registry.py` | `isolated()` + `registered_modes()` |
 | **Profile** (what gets generated) | a `StrategyMode` member + `register_profile(StrategyModeProfile(...))` | `profiles/registry.py` | `isolated()` + `registered_strategy_modes()` |
 | **Phase** (a generation phase) | a `GenerationPhase(name=Phase.X, ...)` + `register_phase(...)` | `strategy_compiler/fields/registry.py` | `isolated()` + `registered_phases()` |
+| **Phase extension** (an extra phase that activates on a datum) | a `PhaseExtension(phase, applies, share, refiner)` + `register_phase_extension(...)` | `phase_extensions.py` | `isolated()` + `registered_phase_extensions()` |
 | **Oracle** (a response check) | a class satisfying `ResponseOracle` + `register_oracle(...)` | `engine/oracles/registry.py` | `isolated()` + `registered_oracle_names()` |
 | **Chaos transport** | a factory under a new key in the transport table | `engine/runners/resilience/transport.py` | `isolated()` |
 
@@ -124,50 +125,68 @@ phase runs. The share the phase draws from the budget is a row of the mode's
 `phase_split` ([Add a profile](#add-a-profile)); it does not come from
 registration.
 
-## Make a phase conditional
+## Add a phase extension
 
 A phase in a profile's `phase_split` compiles for every endpoint that mode runs.
 A phase that only means something for an endpoint carrying a particular datum is a
-**conditional phase** instead: compiled and funded only where it applies, so no
-endpoint spends budget on a phase that could find nothing
-([Strategy compiler](strategy-compiler.md#conditional-phases-the-semantic-phase)).
-The built-in one is `semantic`, applicable to an endpoint that declares an
-`input_constraint`.
+**phase extension** instead: it activates, funds itself and refines its payloads
+only where the endpoint satisfies its predicate, so no endpoint spends budget on a
+phase that could find nothing
+([Strategy compiler](strategy-compiler.md#the-semantic-phase)). The built-in one is
+`semantic`, applicable to an endpoint that declares an `input_constraint`.
 
-The extension point is one data row in `CONDITIONAL_PHASES`
-(`strategy_compiler/conditional_phases.py`), a `Phase` mapped to a
-`ConditionalPhase(applies, share)`. The built-in row maps `Phase.SEMANTIC` to a
-predicate that looks for an `input_constraint` among the endpoint's semantic
-properties, with `SEMANTIC_SHARE` as its share:
+A `PhaseExtension` is a frozen value object that declares, in one place, the three
+things a phase extension decides:
+
+| Field | What it decides |
+|---|---|
+| `phase` | the `Phase` this extension adds |
+| `applies` | a predicate over the `EndpointSpec` — the endpoints that activate the phase |
+| `share` | the fraction of the endpoint's budget the phase reserves (strictly between 0 and 1) |
+| `refiner` | a `(strategy, endpoint) -> strategy` callable that rewrites the assembled per-field draw before it goes on the wire |
+
+Because a phase extension spans two layers — the compiler decides *which endpoints*
+draw the phase and *how much* budget it gets, and the engine *refines* its
+payloads — it is wired from a composition root, `phase_extension_builtins.py`,
+which the package `__init__` calls once. The built-in registration mirrors this:
 
 ```python
-ConditionalPhase(applies=<predicate over EndpointSpec>, share=<fraction of the budget>)
+from custom_schemathesis.engine.fuzzers.semantic import build_semantic_payloads
+from custom_schemathesis.models.phase import Phase
+from custom_schemathesis.phase_extensions import PhaseExtension, register_phase_extension
+from custom_schemathesis.semantic_properties import has_input_constraint
+from custom_schemathesis.strategy_compiler.constants import SEMANTIC_SHARE
+
+
+def register_builtin_phase_extensions() -> None:
+    register_phase_extension(
+        PhaseExtension(
+            phase=Phase.SEMANTIC,
+            applies=has_input_constraint,
+            share=SEMANTIC_SHARE,
+            refiner=build_semantic_payloads,
+        )
+    )
 ```
 
-`applies` is a predicate over the `EndpointSpec`; `share` is the exact fraction of
-the endpoint's budget the phase reserves. `effective_phases` and `effective_split`
-read the table so the same endpoints that compile the phase are the ones that fund
-it. Register the phase itself first, as above — the conditional row decides *which
-endpoints* draw it, not *how* a field compiles for it.
+The compiler's `effective_phases` and `effective_split`
+(`strategy_compiler/effective_phases.py`) read the registry so the endpoints that
+compile the phase are exactly the ones that fund it; the engine's `refine_for_phase`
+(`engine/fuzzers/phases.py`) reads it too, applying the extension's `refiner` to a
+phase that has one and returning the assembled strategy unchanged for any other
+phase. This is the seam the `semantic` phase uses to turn valid per-field draws into
+inputs that break, or hold, a declared rule — a phase whose intent is a property of
+the whole payload, not of any one field, lives here rather than in a per-field
+builder. The refiner receives the `CompiledExecutionEndpoint`, so it can read the
+endpoint's declared schemas and semantic properties.
 
-## Add a phase refiner
-
-A phase's per-field strategies are merged into one whole-payload strategy in the
-engine, and a phase can then rewrite that assembled draw before it goes on the
-wire. The seam is `refine_for_phase` in `engine/fuzzers/phases.py`, backed by a
-module-private table that maps a `Phase` to a refiner
-`(strategy, endpoint) -> strategy`; its one built-in row maps `Phase.SEMANTIC` to
-`build_semantic_payloads`. Adding a refiner is a change to that table inside the
-engine, not a plug-in registration.
-
-`refine_for_phase(strategy, endpoint, phase)` looks the phase up and applies its
-refiner, or returns the strategy unchanged for a phase with no row. It is the seam
-the `semantic` phase uses to turn valid per-field draws into inputs that break, or
-hold, a declared rule — a phase whose intent is a property of the whole payload,
-not of any one field, lives here rather than in a per-field builder. A refiner
-receives the `CompiledExecutionEndpoint`, so it can read the endpoint's declared
-schemas and semantic properties; it must stay within the engine (`engine/fuzzers`
-and `engine/oracles`), never reaching back into `strategy_compiler`.
+A `PhaseExtension` validates itself at construction: a non-callable `applies` or
+`refiner` raises `TypeError`, and a `share` outside `(0, 1)` raises `ValueError`,
+so a half-declared extension fails loudly the moment it is built rather than
+silently skewing a budget. Register the phase's per-field builders first
+([Add a phase](#add-a-phase)) — the extension decides *which endpoints* draw the
+phase and *how* the whole payload is refined, not *how* a single field compiles for
+it.
 
 ## Add a string format
 

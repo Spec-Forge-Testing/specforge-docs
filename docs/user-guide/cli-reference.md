@@ -260,15 +260,18 @@ unexpectedly.
       order `report.json` sorts its defects, so the screen and the document never
       disagree. Each row: method, endpoint, phase, how many
       prior steps set it up (a dash for a single request), the violated invariant
-      (a semantic finding reads `business rule violated · <rule id>`, naming the
-      producer-declared rule it broke),
+      (a business-rule or access-control finding appends the declared rule's id
+      to its label — a semantic finding reads `business rule violated · <rule
+      id>` — while every other invariant shows just its label, since the rule id
+      there would only repeat it),
       the status code, how many raw findings the crash stands for (`Represents`;
       stateless runs only), the identity it was found under (`Identity`; only shown
       when at least one crash in the run recorded one) and the smallest failing
       payload.
     - **Unconfirmed findings** — a table after the crashes, listing every finding
       the run saw but never confirmed as a crash: its method, endpoint, phase,
-      invariant (a semantic finding again reading `business rule violated · <rule
+      invariant (a business-rule or access-control finding again appending the
+      declared rule's id to its label, e.g. `business rule violated · <rule
       id>`), status (a dash when none was recorded), the identity it was found
       under (when any), its **State** (`flaky` or `unverified`) and how many times
       it was **Seen**. A flaky finding was seen but did not reproduce; an
@@ -588,9 +591,11 @@ unexpectedly.
     and the **body the API responded with** — which is usually where the error
     message lives; when the crash carries them, it also shows the **stack trace**
     and the **transition sequence**: the chain of requests that produced a stateful
-    finding. A crash the semantic oracle raised also shows a **Business rule** row
-    reading `<id> — <description>`, the producer-declared rule the 2xx response
-    broke. For a **flaky or unverified** finding there is no reproducer to show,
+    finding. Every crash also names the rule it broke: a business-rule or
+    access-control crash shows a **Business rule** row reading `<id> —
+    <description>`, the rule the contract declared; every other crash shows a
+    **Rule** row spelling out the requirement the invariant enforces on its own.
+    For a **flaky or unverified** finding there is no reproducer to show,
     so it renders a short detail instead — the state, how many times it was seen,
     the endpoint, the invariant, the status (or *not recorded*) and the identity —
     with no payload, headers or body. An id that matches no finding still errors as

@@ -136,11 +136,24 @@ OracleVerdict` — and precedence is a named `IntEnum` value, never a magic gap
 | `SEMANTIC` (55) | `semantic_property` | a 2xx that breaks a declared business rule (non-terminal) |
 | `LATENCY` (60) | `latency_sla` | a clean 2xx/3xx slower than the run's SLA |
 
-An `OracleVerdict` carries the `violation` an oracle decided, whether it is
-`terminal`, and an optional `rule: ViolatedRule | None` — the producer-declared
-rule the response broke, when the oracle names one (`semantic_property` and
-`access_control` do, the latter naming the enforced policy as the rule id; the
-rest leave it `None`). `evaluate` runs the oracles in `(order, name)`
+The `OracleVerdict` shape lives in its own leaf module, `engine/oracles/verdict.py`
+(with the shared `CONTINUE` verdict), so the verdict depends on nothing else in the
+oracles package and the package stays free of import cycles. A verdict carries the
+`violation` an oracle decided, whether it is `terminal`, and an optional `rule: ViolatedRule | None`
+naming the rule the response broke (a verdict that decides no violation —
+`CONTINUE`, or an infrastructure suppression — carries no rule). **Every finding
+names its rule.** For a
+`semantic_property` or `access_control` finding the rule is *declared* by the
+contract — the business rule's own id and text, or the enforced access policy. For
+every other invariant the rule is *intrinsic*: `intrinsic_verdict(invariant)`
+(built on `engine/oracles/rules.py`) attaches a `ViolatedRule` whose id is the
+invariant's value and whose description is the one-sentence requirement the
+invariant enforces on its own — that a response is never a 5xx, carries a declared
+status code, matches the declared schema and `Content-Type`, answers within the
+latency SLA, degrades cleanly under chaos, or honours a produced resource's state
+transition. Which invariants are contract-declared is the single `frozenset`
+`DECLARED_RULE_INVARIANTS`; every other invariant is intrinsic by exclusion, with no
+per-finding flag to persist. `evaluate` runs the oracles in `(order, name)`
 order, turning each non-empty verdict into an `ObservedViolation` (its invariant
 paired with its rule), accumulating them and stopping at the first `terminal` one;
 it returns a `list[ObservedViolation]`, as do `check_response` and
@@ -165,8 +178,9 @@ table of checkers — a missing type is a lookup miss, not a silent pass.
 
 ### How a semantic property is evaluated
 
-The `semantic_property` oracle judges producer-declared business rules, and only
-these — it is **dormant** on an endpoint that declares none, and silent outside a
+The `semantic_property` oracle judges the business rules the contract declares for
+the endpoint, and only these — it is **dormant** on an endpoint that declares none,
+and silent outside a
 2xx (a rule speaks about what a successful call promised, not about a rejection).
 Each rule carries a closed expression tree of six node kinds (the kernel's
 `SemanticProperty`); the oracle picks the value the rule is judged against by the
@@ -232,14 +246,16 @@ rides alongside it but is never compared ([ADR-049](adr/engine.md#adr-049)).
 Observing a broken `input_constraint` only helps if a request actually breaks it.
 Left to chance, an in-spec draw violates a rule like `end > start` only as often
 as the schema happens to; a rule excluding one value from a million-wide range is
-never hit at all. The **semantic phase** ([Conditional phases](strategy-compiler.md#conditional-phases-the-semantic-phase))
+never hit at all. The **semantic phase** ([the semantic phase](strategy-compiler.md#the-semantic-phase))
 aims generation at the rule, so the violation stops depending on luck.
 
 The phase compiles a valid strategy per field, and the engine refines the
 assembled payload once per endpoint. `refine_for_phase(strategy, endpoint, phase)`
-(`engine/fuzzers/phases.py`) looks the phase up in a one-row table
-(`Phase.SEMANTIC → build_semantic_payloads`) and returns the strategy untouched for
-any other phase; `plan_passes` calls it as it builds each pass. `build_semantic_payloads`
+(`engine/fuzzers/phases.py`) looks the phase up in the phase-extension registry via
+`phase_extension_for(phase)` and applies the extension's `refiner` — for the
+`semantic` extension, `build_semantic_payloads` — returning the strategy untouched
+for any phase with no extension; `plan_passes` calls it as it builds each pass.
+`build_semantic_payloads`
 (`engine/fuzzers/semantic/`) mixes, for each declared input constraint, a
 **violating** arm and a **conforming** arm, and always one unfiltered **valid** arm:
 
@@ -322,12 +338,14 @@ group → shrink → materialize → dedupe → assemble → stats.
 
 - **Signature.** `signature_of` builds a `FindingSignature` from what the
   failure looks like from the outside: endpoint, phase, primary violation,
-  status code, identity label, the `rule_id` of the rule the finding broke (when
-  the oracle named one, `None` otherwise), and a *fingerprint of the body's
-  shape* — never its values (an object becomes its keys mapped to JSON type
-  names; free text is lowercased with digit runs masked). The rule id is part of
-  identity, so two different business rules broken on one endpoint are two
-  findings; the rule's *description* never enters the signature. `group_findings`
+  status code, identity label, the `rule_id` of the rule the finding broke, and a
+  *fingerprint of the body's shape* — never its values (an object becomes its keys
+  mapped to JSON type names; free text is lowercased with digit runs masked). Every
+  finding now names a rule, so the id is always present; for an intrinsic invariant
+  it is constant (the invariant's own value), so it adds nothing new to identity,
+  and for a `semantic_property` or `access_control` finding it is the declared
+  rule's id, so two different business rules broken on one endpoint are two
+  findings. The rule's *description* never enters the signature. `group_findings`
   collapses findings that share a signature, in first-seen order.
 - **Shrink.** `shrink_groups` attempts at most two representatives per signature
   (`MAX_REPRESENTATIVES_PER_SIGNATURE`). The first faithful reproducer stands

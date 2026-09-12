@@ -61,7 +61,7 @@ The types that cross a stage line, all validated with `extra="forbid"`:
 | `RunRequest` | in | one run's inputs: `engine_input` + `ExecutionConfig` + mode `options` |
 | `EngineRunResult` | out | the `findings` union, terminal `status`, `RunStats`, `ExecutionTrace`, optional `ReplayFidelity` |
 | `Finding` (`ConfirmedFinding` / `FlakyFinding` / `UnverifiedFinding`) | out | discriminated union on `state`; a confirmed finding carries a `CrashReport`, the other two a `signature` and their `occurrences` |
-| `CrashReport`, `ViolatedRule`, `RunStats`, `EndpointStats`, `LatencyStats` | out | serialized to columns by `core/` — field names are stable; `ViolatedRule` is the optional named rule a `CrashReport` carries |
+| `CrashReport`, `ViolatedRule`, `RunStats`, `EndpointStats`, `LatencyStats` | out | serialized to columns by `core/` — field names are stable; `ViolatedRule` is the rule a `CrashReport` broke, declared by the contract or intrinsic to its invariant |
 | `ExecutionTrace`, `TracedRequest`, `TruncationRecord` | out | the replayable record |
 | `ReplayReadiness` | out | outcome of the pre-replay readiness check |
 
@@ -297,8 +297,9 @@ an optional `detail`.
 Inside the engine, an exploration pass produces `RawFinding`s (a finding needs
 at least one `ObservedViolation`; `primary_violation` is the first the oracles
 reported). An `ObservedViolation` is what one oracle saw: the `InvariantViolation`
-it broke and, when the oracle names one, the `ViolatedRule` — a producer-declared
-business rule reduced to its `id` and `description`. Findings are grouped by
+it broke and the `ViolatedRule` naming the rule — the business rule the contract
+declared, or the requirement the invariant enforces on its own — reduced to its
+`id` and `description`. Findings are grouped by
 `FindingSignature` (endpoint, phase, invariant, status, identity label, rule id,
 body fingerprint) into `FindingGroup`s, then shrunk into `CrashReport`s. A
 `CrashReport` carries the `minimal_payload` keyed by zone, the

@@ -140,7 +140,7 @@ connection" would be hidden, non-thread-safe mutable state.
       | Field | Type | Description |
       |---|---|---|
       | `run_id` | `int` | Foreign key (and primary key) to `RunRecord.id`. |
-      | `total_requests` | `int` | Total requests sent during the run. |
+      | `total_requests` | `int` | Requests built during the run — whether sent or refused before sending; shrink re-sends are counted in `requests_shrink` instead. |
       | `findings_raw` | `int` | Violations found during exploration, before shrinking. |
       | `findings_confirmed` | `int` | Representatives that still reproduced after shrinking. |
       | `findings_unique` | `int` | Distinct defects, equal to the count of confirmed rows in `findings` for this run. |
@@ -210,7 +210,7 @@ connection" would be hidden, non-thread-safe mutable state.
       | `transition_sequence` | `str \| None` | Request chain as JSON, stateful findings only. |
       | `represented_findings` | `int` | Raw findings this row stands for: itself, its unshrunk group mates and the duplicates it absorbed. Always 1 for stateful findings. |
       | `identity_label` | `str \| None` | The identity the failing request was sent under; `None` when the run declared none. |
-      | `rule_id` | `str \| None` | The producer-declared business rule the finding broke, when an oracle named one; `None` for every other invariant. |
+      | `rule_id` | `str \| None` | The rule the finding broke: the business rule the contract declared for a `semantic_property` / `access_control` finding, or the invariant's own intrinsic rule for every other one. `None` only for a finding with no named rule. |
       | `rule_description` | `str \| None` | Human-readable text for `rule_id`; `None` unless the finding is a confirmed crash that named a rule (a flaky/unverified finding stores the id only). |
 
 ??? "`ArtifactRecord` - A **recipe-level artifact** or a **report-level one**"

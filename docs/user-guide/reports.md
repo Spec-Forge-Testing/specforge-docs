@@ -42,10 +42,18 @@ its metrics, endpoint stats and crashes stay queryable through `history` and
 
 `ReportDocument` is a frozen, `extra="forbid"` Pydantic model: a pure function
 of a run's persisted data, never a live object. It carries a `schema_version`
-("1.5" today), bumped when the shape changes in a way a reader cannot ignore.
+("1.7" today), bumped when the shape changes in a way a reader cannot ignore.
+1.7 keeps the JSON shape of 1.6 but changes what a reader sees: `rule_id` (and
+`rule_description` on a defect) now arrives on **every** finding, not just a
+business-rule one — for a business-rule or access-control finding it is the rule
+the contract declared, for every other invariant it is the rule that invariant
+enforces on its own.
+1.6 is additive over 1.5: `analysis` records the run's execution mode
+(stateless / stateful / performance / resilience / auth) in place of a bare
+stateful flag.
 1.5 is additive over 1.4: each `defects[]` entry gains `rule_id` and
 `rule_description`, and each `unconfirmed_findings[]` entry gains `rule_id` — the
-producer-declared business rule the finding broke, when an oracle named one.
+rule the finding broke, when an oracle named one.
 1.4 is additive over 1.3: it added the top-level `producer_exclusions` list.
 1.3 is additive over 1.2: each `endpoints[]` entry gains `starved_identities`.
 1.2 was additive over 1.1: it added the top-level `unconfirmed_findings` list.
@@ -62,7 +70,7 @@ producer-declared business rule the finding broke, when an oracle named one.
 | `endpoints` | One entry per endpoint touched: requests, `examples_planned`, raw findings, crash count, its latency distribution, and `starved_identities` - the labels of any declared identities the endpoint's budget could not fund, empty unless the run split budget by identity and ran short of it. |
 | `coverage` | The declared-endpoint partition behind the run - `declared`/`targeted`/`excluded`/`filtered`/`exercised` counts plus `excluded_endpoints` (method, path, reason) - `null` for a replay, which never compiles. |
 | `producer_exclusions` | One entry (`method`, `path`, `reason`) per endpoint the inference contract producer soft-dropped to schema-only - see [`fuzz`'s contract producer](cli-reference.md). Empty when no producer ran, when the fixture producer ran (it aborts rather than drop), or when nothing was dropped. |
-| `defects` | One entry per crash, ordered most-severe-first (the same order the live crash tables render): identity, reproducer and what the run observed - the same shape `inspect --crash <id>` and `compare` project a crash through. A crash the semantic oracle raised carries `rule_id` and `rule_description`, the producer-declared business rule it broke; both are `null` for every other invariant. |
+| `defects` | One entry per crash, ordered most-severe-first (the same order the live crash tables render): identity, reproducer and what the run observed - the same shape `inspect --crash <id>` and `compare` project a crash through. Every crash carries `rule_id` and `rule_description`: the business rule the contract declared for a business-rule or access-control finding, or the rule the invariant enforces on its own for every other one. |
 | `unconfirmed_findings` | One entry per finding the run saw but never confirmed as a crash - see below. Empty for a replay. |
 | `replay` | What only a replay knows - fidelity, divergences and a verdict per recorded defect - `null` for an original run. |
 
@@ -79,7 +87,7 @@ response body to show - only the finding's signature and how often it was seen:
 | --- | --- |
 | `method` / `path` / `phase` | Where the finding was seen and in which phase. |
 | `invariant_violated` | Which invariant the finding broke. |
-| `rule_id` | The producer-declared business rule the finding broke, when an oracle named one; `null` otherwise. There is no `rule_description` here - an unconfirmed finding has no reproducer to carry it. |
+| `rule_id` | The rule the finding broke: the business rule the contract declared, or the rule intrinsic to the invariant. There is no `rule_description` here - an unconfirmed finding has no reproducer to carry it. |
 | `status_code` | The failing response's status, or `null` when none was recorded. `0` means the request got no response at all (a transport failure). |
 | `identity_label` | The identity the request was sent under, or `null` when the run declared none. |
 | `state` | `"flaky"` or `"unverified"` (see below). |
@@ -103,9 +111,15 @@ The HTML report gains a matching **Unconfirmed findings** section, listing the
 same entries with a one-line explanation of each state: a flaky finding reads
 *"seen N time(s) but could not be reproduced"*, an unverified one *"never
 checked because the run stopped"*. That table carries a **Rule** column, showing
-the rule id a semantic finding broke (a dash for every other invariant), and each
-confirmed defect gains a **Business rule** row reading `<id> — <description>` when
-the semantic oracle named one.
+the rule id only for a finding whose rule the contract declared (a business-rule
+or access-control finding) and a placeholder for every intrinsic invariant, whose
+rule id merely repeats the invariant.
+
+Each confirmed defect names its rule too, but the row it shows depends on where
+the rule came from. A defect whose rule the contract declared gains a **Business
+rule** row reading `<id> — <description>`. A defect on an intrinsic invariant
+gains a plain **Rule** row showing that invariant's requirement in one sentence —
+the id there is dropped, since it would only repeat the invariant name.
 
 `run.signal` is `"clean"` or `"degraded"`, `null` for a replay (coverage is a
 compilation-time fact a replay never produces, so trustworthiness there is

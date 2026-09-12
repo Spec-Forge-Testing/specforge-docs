@@ -89,3 +89,4 @@ tells you what it governs.
 | [ADR-052](engine.md#adr-052) | engine | Raw-socket chaos transport for framing-level resilience attacks |
 | [ADR-053](engine.md#adr-053) | engine | Role-restricted access is a fourth kernel policy, crossed against the roles the user's identities declare |
 | [ADR-054](engine.md#adr-054) | engine | The semantic phase steers generation toward a declared input constraint |
+| [ADR-055](engine.md#adr-055) | engine | A phase extension is one registered value object, and every finding names its rule |

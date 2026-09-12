@@ -1086,3 +1086,89 @@ The scope stays narrow on purpose. Each identity holds one role, compared by
 equality. Role hierarchies are not modelled, because a hierarchy is specific to
 each API and cannot be inferred. A caller with several roles is declared as
 several identities, and cross-tenant isolation is still not expressible.
+
+## ADR-054 — The semantic phase steers generation toward a declared input constraint { #adr-054 }
+
+**Status:** accepted · Supersedes the "never steers generation" clause of [ADR-048](#adr-048) · `models/phase.py`, `strategy_compiler/conditional_phases.py`, `strategy_compiler/fields/builtin.py`, `budget/reservation.py`, `engine/fuzzers/phases.py`, `engine/fuzzers/semantic/`, `engine/oracles/semantic/scope.py`, `engine/oracles/semantic/declared.py`
+
+### Context
+
+The semantic oracle ([ADR-048](#adr-048)) reports a 2xx that breaks a
+producer-declared `input_constraint` — a rule such as `end > start` or
+`quantity <= limit`. But it only judges the requests generation happens to
+produce, and in-spec generation breaks such a rule only as often as the schema
+does: measurably about as often as chance for a wide, low-density body, and never
+for a rule that excludes a single value from a million-wide range. A defect the
+oracle can recognize but generation never provokes is not tested. The rule is
+known at compile time, on the endpoint; the question was where to make generation
+aim at it without disturbing the endpoints that carry no such rule and without
+ever sending a schema-invalid request to fake a violation.
+
+### Decision
+
+A new generation phase, `semantic`, that directs generation at the constraint,
+mixed with valid draws that hold it and an unfiltered valid draw that guarantees
+candidates.
+
+It is **conditional**, not a static split row. `CONDITIONAL_PHASES` maps
+`Phase.SEMANTIC` to a predicate — the endpoint declares at least one
+`input_constraint` — and a share, `SEMANTIC_SHARE` = 0.10. `effective_phases`
+compiles the phase only for an applicable endpoint, and `effective_split` reserves
+its 10% out of whatever split was already resolved (`reserve_share` normalizes the
+rest and rescales it by `(1 - share)`), so it works for a profile split, a custom `phase_split`, or
+the aggressiveness-derived hacker split alike. An endpoint with no such rule is
+compiled exactly as before. At the field level the phase is a valid strategy; the
+whole-payload direction lives in the engine, applied once per endpoint through
+`refine_for_phase`, because a cross-field relation is a property of the assembled
+request, not of any one field.
+
+`build_semantic_payloads` builds, per constraint, a violating arm and a conforming
+arm, plus one unfiltered valid arm. A field against a numeric literal, and two
+fields sharing a schema, are **constructed** directly — bounds rewritten from the
+comparison and intersected with the declared bounds, or the drawn values
+rearranged — so the directed draw is cheap and never leaves the field's declared
+schema. Every other shape **filters** valid draws by the rule. The valid arm means
+a rule no arm can decide never empties the phase, so the run never truncates on it;
+such a rule simply degrades to valid draws, the same silence the oracle already
+keeps on an undecidable rule.
+
+Generation and evaluation share one scope. `flatten_input_scope` and
+`resolve_declared_field` are the single functions both the oracle and the phase
+read, so the two cannot disagree on what a rule sees or where a field lives; a value
+that contradicts its declared type is dropped from that scope, so a 2xx to a
+wrong-typed input is not reported as a business-rule violation: the rule does not
+speak about that input. The oracle's verdict is otherwise unchanged.
+
+### Rejected
+
+- **A dedicated execution mode.** Same reason ADR-048 gave for the check itself:
+  it would duplicate the request loop and force the user to choose between fuzzing
+  and rule-directed generation, when directed draws are just one more phase of the
+  run the endpoint already has.
+- **Filter-only generation.** Keeping only the filter arms is the simplest design
+  and was measured: on a wide, low-density body it sends violating requests barely
+  above chance, so the phase would not meet its own purpose. A known problem gets
+  the mechanism that solves it, not a documented limitation.
+- **Bounded rejection sampling.** Drawing the valid body many times per example to
+  fish out a violation trips Hypothesis's health checks on wide bodies and can
+  exhaust the phase, tipping a clean run to `TRUNCATED`. Constructing the field is
+  both safe and directed at a cost independent of body width.
+- **A per-endpoint static split row for every endpoint.** Adding `semantic` to
+  every profile's split is simpler in the compiler but spends budget on endpoints
+  that declare no rule and pads every endpoint's report with a phase that tested
+  nothing — a report implying rules were checked where none exist. The conditional
+  phase confines both the cost and the claim to the endpoints that carry a rule.
+
+### Consequences
+
+The `Phase` vocabulary gains `semantic`, and `FindingRecord.phase` lists it.
+A finding's signature carries its phase, but reports are deduplicated after
+shrinking with the phase left out, so a violation the plain valid phase also
+reaches is reported under whichever phase found it first. An endpoint that declares no input constraint is
+untouched: no phase, no split change, byte-identical output. This supersedes
+ADR-048's consequence that the oracle "never steers generation" — the observation
+still lives in the oracle, but a conditional phase now aims generation at the same
+rule. Directedness is bounded by what an honest generator can build: where the
+declared schemas already imply the constraint, no arm can produce a violation
+without sending a schema-invalid request, so the phase produces none and stays with
+valid draws.

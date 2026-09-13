@@ -395,9 +395,12 @@ through `check_response(..., access_expectation=)` — it never reads
 never fires it. On an expectation, it fires when the response is a success and
 the caller is one the policy excludes: for `owner_only`, an identity that is not
 the owner (`identity_label != owner_label`) or an anonymous request; for
-`authenticated`, an anonymous request; for `role_only`, any caller at all. The
-caller is read from `result.request.identity_label`, and an absent label is the
-anonymous case.
+`authenticated`, an anonymous request **or** an identity whose label is in the
+expectation's `invalid_labels` (a declared-invalid credential the target should
+have rejected); for `role_only`, any caller at all. The caller is read from
+`result.request.identity_label`, and an absent label is the anonymous case.
+`invalid_labels` is only accepted on an `authenticated` expectation; the model
+rejects it under any other policy.
 
 The `role_only` rule is unconditional because the oracle cannot see roles: they
 live on the run's `ExecutionConfig`, not on the response context. The planner is
@@ -412,10 +415,11 @@ the enforced policy as its `ViolatedRule` id (`owner_only`, `role_only` or
 `authenticated`) with a description spelling out the crossing — "identity 'alice'
 read a resource owned by 'bob'", "identity 'alice' succeeded without the required
 role 'admin'", "an anonymous request succeeded on an endpoint requiring role
-'admin'", or "an anonymous request succeeded on an endpoint requiring
-authentication". A `role_only` description names the caller and the required
-role, never the caller's own role: the `identity_label` already points back into
-the user's identities file.
+'admin'", "an anonymous request succeeded on an endpoint requiring
+authentication", or "identity 'alice' succeeded with an invalid credential". A
+`role_only` description names the caller and the required role, never the caller's
+own role: the `identity_label` already points back into the user's identities
+file.
 
 The oracle sits at precedence 25, before every body-conformance oracle,
 because it never reads the body: a bypass that also returns a schema-invalid body

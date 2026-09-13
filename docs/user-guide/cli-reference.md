@@ -323,6 +323,12 @@ unexpectedly.
     role = "account-owner"
     [identities.headers]
     Authorization = "Bearer alice-token"
+
+    [[identities]]
+    label = "expired"
+    credential = "invalid"
+    [identities.headers]
+    Authorization = "Bearer expired-token"
     ```
 
     Write `role` before `[identities.headers]`: any key after that line belongs to
@@ -330,6 +336,16 @@ unexpectedly.
     A role is an exact, case-sensitive string, it cannot be empty, and an identity
     that declares none never satisfies an endpoint that requires a role. Only
     `--mode auth` reads it.
+
+    An entry may set `credential = "invalid"` (the default is `"valid"`) to carry a
+    token the target **must reject** — expired, revoked or garbage. Only `--mode
+    auth` sends requests under an invalid identity: on an `authenticated` endpoint
+    it is crossed alongside the anonymous probe, and a `2xx` under it is an
+    access-control finding naming that identity (two invalid identities that both
+    succeed are two findings). Everywhere else — owner selection, role holders, the
+    stateless and performance example budget, stateful session rotation — only the
+    valid identities take part, and a run whose identities are all invalid stops
+    before its first request. The credential headers are redacted like any other.
 
     Labels must be unique — they key findings, crash reports and replays. Each
     endpoint phase's example budget is split evenly across the declared identities
@@ -356,14 +372,16 @@ unexpectedly.
     identities against each endpoint's access policy and flags a `2xx` a caller
     should not have obtained (a cross-identity or anonymous read of an owner's
     resource, a success without the required role on a role-restricted endpoint,
-    or an anonymous success on an authenticated endpoint). `auth` needs
+    an anonymous success on an authenticated endpoint, or a success under an
+    invalid credential on an authenticated endpoint). `auth` needs
     `--identities` and a contract producer — `--contracts <dir>` — whose contracts
     declare an `access` policy; an endpoint with no `access`, or a `public` one, is
-    never sent. On an `owner_only` endpoint the owner is the first identity
-    declared. A `role_only` endpoint is sent under every identity that does not
-    declare its required role, and once anonymously; it needs at least one
-    identity declaring exactly that role, or the run stops before its first
-    request. `--latency-sla-ms` is refused with any other mode than `performance`.
+    never sent, and the run needs at least one **valid** identity. On an
+    `owner_only` endpoint the owner is the first valid identity declared. A
+    `role_only` endpoint is sent under every identity that does not declare its
+    required role, and once anonymously; it needs at least one identity declaring
+    exactly that role, or the run stops before its first request.
+    `--latency-sla-ms` is refused with any other mode than `performance`.
 
     `--mode stateful` switches to [stateful fuzzing](../modules/custom-schemathesis/execution-modes.md#stateful):
     requests are **chained into sequences** instead of each operation being fuzzed on

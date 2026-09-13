@@ -224,13 +224,22 @@ the producer declared; an endpoint with no `access`, or a `public` one, is never
 sent.
 
 The run **fails fast before any request** on three conditions, checked in this
-order: no identity is declared (`EngineError`); a `role_only` endpoint requires a
-role no declared identity holds (`AccessRoleError`, naming the endpoint, the
-required role and the roles the run did declare); or an `owner_only` endpoint
-names a bundle no endpoint in the run produces (`AccessLinkError`). For an
-`owner_only` endpoint the owner is always the first declared identity
-(`config.identities[0]`); a `role_only` endpoint privileges every identity whose
-`role` equals its `required_role`, wherever it sits in the list.
+order: no **valid** identity is declared (`AccessIdentityError`); a `role_only`
+endpoint requires a role no valid identity holds (`AccessRoleError`, naming the
+endpoint, the required role and the roles the run did declare); or an `owner_only`
+endpoint names a bundle no endpoint in the run produces (`AccessLinkError`). For
+an `owner_only` endpoint the owner is always the first valid identity
+(`config.valid_identities[0]`); a `role_only` endpoint privileges every valid
+identity whose `role` equals its `required_role`, wherever it sits in the list.
+
+An identity declared with `credential = "invalid"` (see
+[the CLI reference](../../user-guide/cli-reference.md#commands)) carries a token
+the target must reject — expired, revoked or garbage. Only the auth mode sends
+requests under it, and only under the `authenticated` policy is it treated as a
+distinct probe. Everywhere else — owner selection, role holders, the
+stateless/performance budget split, stateful identity rotation — only the valid
+identities take part, read from `config.valid_identities`. A run with only invalid
+identities has no valid pool and stops with `AccessIdentityError`.
 
 The package `engine/runners/auth/` is split by the question each module answers:
 `plan.py` holds what a plan is (`Crossing`, `Provisioning`, `PlanContext`) and the
@@ -258,7 +267,7 @@ sequenceDiagram
         else role_only
             AR->>Orch: send under every identity lacking the role, and anonymously
         else authenticated
-            AR->>Orch: one anonymous probe (config headers stripped)
+            AR->>Orch: one anonymous probe (config headers stripped), and one under each invalid credential
         end
         AR->>Or: check each crossing (access_expectation)
         Or-->>AR: 2xx for an excluded caller → violation
@@ -272,18 +281,21 @@ it depends on the policy:
 
 | Policy | What the runner sends |
 |---|---|
-| `authenticated` | one anonymous probe, with the config credential headers stripped so it is truly anonymous |
-| `owner_only` | provision the owner's resource under the **first** declared identity, capture the bundle value from the response, write it into the endpoint's consuming zone/field, then re-send under every **other** identity and once anonymously |
-| `role_only` | provision nothing; send under every declared identity whose `role` is **not** the `required_role` (an identity with no role included) and once anonymously. Holders of the role are never sent; when every identity holds it, only the anonymous request goes out |
+| `authenticated` | one anonymous probe, with the config credential headers stripped so it is truly anonymous, plus one probe under **each** invalid identity's credential |
+| `owner_only` | provision the owner's resource under the **first** valid identity, capture the bundle value from the response, write it into the endpoint's consuming zone/field, then re-send under every **other** valid identity and once anonymously. Invalid identities cross as ordinary non-privileged callers |
+| `role_only` | provision nothing; send under every valid identity whose `role` is **not** the `required_role` (an identity with no role included) and once anonymously. Holders of the role are never sent; when every identity holds it, only the anonymous request goes out. Invalid identities cross as ordinary role-less callers |
 
 A crossing is a finding when the `access_control` oracle sees a success for a
 caller the policy excludes: another identity or an anonymous request on an
 `owner_only` resource, an identity without the required role or an anonymous
-request on a `role_only` endpoint, or an anonymous request on an `authenticated`
-endpoint. The finding names the caller (`identity_label`) and the policy it broke
-as the rule. With a single declared identity the `owner_only` cross is
-owner-versus-anonymous only. Roles compare as exact strings — no hierarchy, no
-case folding — and cross-tenant isolation is not expressible.
+request on a `role_only` endpoint, or — on an `authenticated` endpoint — an
+anonymous request **or** a request under an invalid credential. A 2xx under an
+invalid identity is reported under the same `authenticated` rule, naming that
+identity; two invalid identities that both succeed produce two findings. The
+finding names the caller (`identity_label`) and the policy it broke as the rule;
+the credential is redacted like any other. With a single valid identity the
+`owner_only` cross is owner-versus-anonymous only. Roles compare as exact strings
+— no hierarchy, no case folding — and cross-tenant isolation is not expressible.
 
 The `role_only` precondition exists because the comparison is exact: an identity
 file that spells the role `Admin` against a `required_role` of `admin` declares no

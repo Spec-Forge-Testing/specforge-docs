@@ -259,8 +259,7 @@ declare: `include_encoded_variants`, `include_nulls`, `include_large_values`,
 `include_extra_fields`, `include_empty_values`, `include_unicode_variants`,
 `include_control_chars`, `include_nested_objects`. They are explicit fields,
 not generated from the contract. A guard test pins the set to the contract's
-`include_*` flags (minus `include_duplicate_fields`, which no builder consumes),
-so adding a flag to the contract without adding it here fails that test
+`include_*` flags, so adding a flag to the contract without adding it here fails that test
 ([ADR-027](adr/compiler.md#adr-027)).
 
 ### Base payloads and toggle families

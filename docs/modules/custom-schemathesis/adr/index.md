@@ -46,7 +46,7 @@ tells you what it governs.
 | [ADR-009](models.md#adr-009) | models | `EndpointSpec` keeps its endpoint-level controls flat |
 | [ADR-010](models.md#adr-010) | models | `HackerStrategyContract` is a subclass, dispatched by type |
 | [ADR-011](models.md#adr-011) | models | `GenerationPlan` is a frozen engine-side value that scales by replacement |
-| [ADR-012](models.md#adr-012) | models | `SchemaKeyword` includes `default` |
+| [ADR-012](models.md#adr-012) | models | `SchemaKeyword` omits `default` |
 | [ADR-013](api.md#adr-013) | facade | `run` takes an `ExecutionMode` and per-mode options, nothing else |
 | [ADR-014](api.md#adr-014) | facade | The facade exports what the orchestrator names, and nothing else |
 | [ADR-015](api.md#adr-015) | policy | Endpoint validation is three ordered checks behind one verb |
@@ -92,3 +92,4 @@ tells you what it governs.
 | [ADR-055](engine.md#adr-055) | engine | A phase extension is one registered value object, and every finding names its rule |
 | [ADR-056](engine.md#adr-056) | engine | A request carries its path parameters, and the shared scope ranks the path zone lowest |
 | [ADR-057](engine.md#adr-057) | engine | Undecided business rules are reported as a per-endpoint diagnostic, not as findings |
+| [ADR-058](engine.md#adr-058) | engine | Endpoints with declared side effects are held back by a safety guard, not fuzzed |

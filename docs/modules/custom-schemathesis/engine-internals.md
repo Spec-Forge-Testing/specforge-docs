@@ -10,6 +10,45 @@ order a request travels through them.
 The [modes page](execution-modes.md) covers the runners and how they compose
 these layers; this page is the layers themselves.
 
+## Safety guard
+
+Before a single request leaves the engine, `engine.run()` partitions the
+endpoints into the ones this run may probe and the ones it must hold back. The
+split is `partition_by_safety`, applied once — after the risk ordering, before
+the shared HTTP client opens — so the runners never see a held endpoint and stay
+untouched.
+
+The decision reads each endpoint's `EndpointRisk` and the run's `ExecutionMode`.
+Two risk flags hold an endpoint back, each in the modes where sending a probe
+would do real, irreversible harm:
+
+| Risk flag | Held out of | Why |
+|---|---|---|
+| `external_side_effects` | every request-generating mode — `stateless`, `performance`, `resilience`, `auth`, `stateful` | a probe reaches past the API (sends mail, charges a card, calls a third party) and cannot be undone |
+| `write_operation` | `performance`, `resilience` only | the load and malformed-transport batteries would hammer a mutating endpoint; the correctness modes still probe it |
+
+`replay` is exempt from both: it re-sends a recorded trace verbatim, never a
+fresh probe. `RiskFlag`'s declaration order is precedence —
+`external_side_effects` outranks `write_operation` — so an endpoint carrying
+both is held for the stronger, less reversible reason.
+
+The guard is off by **policy**, not by engine stability:
+`ExecutionConfig.allow_side_effects` (default `False`, set by the CLI's
+`--allow-side-effects`) lifts it and probes every endpoint.
+
+A held endpoint is not dropped from the accounting. `record_held_endpoints`
+folds each one into `RunStats.by_endpoint` as a zero-request `EndpointStats`
+whose `held_back_by` names the flag that held it (empty for a probed endpoint),
+so the report, the storage row and the live summary all show which endpoints the
+run declined to touch and why.
+
+!!! note "Auth mode and a held producer"
+    In `auth` mode, holding back an endpoint that produces the state another
+    endpoint's owner-only check needs leaves that check with no producer, and the
+    run fails with a typed `AccessLinkError` naming the missing producer rather
+    than silently skipping the check. `--allow-side-effects` is the way to
+    complete such a run.
+
 ## HTTP transport
 
 `engine/http/` owns everything the wire needs. One `AsyncOrchestrator` is

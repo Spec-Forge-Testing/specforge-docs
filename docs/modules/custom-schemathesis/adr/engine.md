@@ -1432,3 +1432,76 @@ rule never evaluated never appears — so a non-empty list always means "declare
 tried, undecidable here". The counter costs one merged frozenset per endpoint and one
 nullable JSON column; a run that declares no rules, or runs in a mode that does not
 account for them, carries an empty list and pays nothing.
+
+---
+
+## ADR-058 — Endpoints with declared side effects are held back by a safety guard, not fuzzed { #adr-058 }
+
+**Status:** accepted · `engine/safety_guard.py`, `engine/__init__.py`, `models/engine/execution.py`, `models/engine/stats.py`
+
+### Context
+
+A producer's `EndpointRisk` already declares whether an endpoint writes
+(`write_operation`) or reaches past the API with an effect that cannot be undone
+(`external_side_effects`). Until now the engine fuzzed every compiled endpoint
+the same way, so a run against a live API could send a real payment, delete a
+real record or fire a real webhook, and there was no in-engine way to say
+"explore everything except the endpoints that hurt to touch". Sending fewer
+requests is not the answer: one destructive request is one too many.
+
+### Decision
+
+**A safety guard partitions the run's endpoints before dispatch.**
+`partition_by_safety` runs once in `engine.run()` — after the risk ordering,
+before the shared HTTP client opens — and splits the ordered endpoints into a
+`probed` set and a `held` set. A `RiskFlag` holds an endpoint out of the modes
+where its harm is real: `external_side_effects` out of **every**
+request-generating mode (`stateless`, `performance`, `resilience`, `auth`,
+`stateful`), `write_operation` out of `performance` and `resilience` only.
+`replay` is exempt from both, because it re-sends a recorded trace rather than
+generating requests. `RiskFlag`'s declaration order is precedence, so an
+endpoint carrying both flags is held for the stronger, less reversible reason.
+
+The runners are untouched — they only ever receive the probed set, so no runner
+carries safety logic and no mode can forget it. A held endpoint is not dropped
+from the accounting: `record_held_endpoints` folds each one into
+`RunStats.by_endpoint` as a zero-request `EndpointStats` whose `held_back_by`
+names the flag, so it stays visible in the report, the storage column and the
+live summary. The guard is a **policy**, not an engine-stability setting:
+`ExecutionConfig.allow_side_effects` (the `--allow-side-effects` flag, default
+off) lifts it, and it is persisted with the run's recipe so a re-run inherits
+the operator's decision.
+
+### Rejected
+
+- **Documenting the risk flags as accepted-but-inert.** Carrying
+  `write_operation`/`external_side_effects` on the contract while the engine
+  fuzzed the endpoint anyway would leave the most dangerous run behaviour to a
+  note no operator reads. A declared risk the engine can act on must change what
+  the engine does.
+- **Holding only the load families back for an external side effect.** Dropping
+  just the `performance`/`resilience` batteries would still let `stateless`,
+  `auth` and `stateful` send a real, irreversible request. An external side
+  effect is unsafe in every mode, so it is held out of all of them.
+- **Two separate permissions, one per flag.** A second knob doubles the surface
+  for a distinction an operator rarely wants: someone who accepts real writes
+  almost always accepts them for the whole run. One permission that lifts the
+  whole guard is the proportionate control — the two flags already differ in
+  *which* modes hold them, which is where the real distinction lives.
+- **A run-level list of endpoints to skip.** A hand-maintained exclusion list
+  would drift from the contract and duplicate what `EndpointRisk` already
+  declares per endpoint. The producer that knows an endpoint writes is the right
+  place to say so, once, in the contract — a per-endpoint flag, not a separate
+  list to keep in sync.
+
+### Consequences
+
+A run against a live service no longer fires a producer-flagged destructive
+request unless the operator opts in. The guard is one partition at the engine's
+entry point, costing one flag check per endpoint and a zero-request row per held
+endpoint. One edge is explicit: in `auth` mode a held endpoint that another
+endpoint's owner-only check depends on breaks that link, and the run fails with a
+typed `AccessLinkError` naming the missing producer rather than silently skipping
+the check — the operator lifts the guard with `--allow-side-effects` to run it.
+`replay` stays faithful: it reproduces exactly what a prior run sent, so a trace
+recorded with the guard on carries the held endpoints' absence unchanged.

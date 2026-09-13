@@ -78,8 +78,8 @@ producer is a follow-up, and produced contracts are not persisted with the
 analysis.
 
 The adapter's fused path (`_contract_to_info`) projects the kernel sections onto
-the engine's own types: `risk` as is; `attack`'s five endpoint-level fields into
-`EndpointAttackContract`; each `field_hints["zone.field"]` — in
+the engine's own types: `risk` as is; `attack` (the kernel `EndpointAttack`)
+rides along whole; each `field_hints["zone.field"]` — in
 `StrategyMode.HACKER` only, since the default profile rejects hacker contracts —
 promotes the addressed parameter or dotted body field to a
 `HackerStrategyContract` carrying the hint's profiles and toggles (a nested body

@@ -713,7 +713,7 @@ at all, a transport failure.
 
 ## ADR-048 — Semantic properties are checked by an always-on oracle, not an execution mode { #adr-048 }
 
-**Status:** accepted · `engine/oracles/semantic/`, `engine/oracles/builtin.py`, `engine/oracles/context.py`, `models/engine/crash_report.py`
+**Status:** accepted · Superseded in part by [ADR-056](#adr-056) · `engine/oracles/semantic/`, `engine/oracles/builtin.py`, `engine/oracles/context.py`, `models/engine/crash_report.py`
 
 ### Context
 
@@ -763,8 +763,10 @@ non-terminal at precedence 55, a semantic violation and a latency violation can
 both be recorded for one response. Path parameters are not reachable to an
 `INPUT_CONSTRAINT`: the blueprint carries them only inside the request URL, so a
 rule over a path parameter resolves to no value and stays undecided — a current
-limitation of the input scope. The oracle only observes: it never steers
-generation toward inputs that would break an `input_constraint`, and it cannot
+limitation of the input scope. (Superseded in part by [ADR-056](#adr-056): the
+request now carries its typed path parameters, and a rule may name one.) The
+oracle only observes: it never steers generation toward inputs that would break
+an `input_constraint`, and it cannot
 express a rule that relates a request field to a response field, because the
 kernel has no namespace spanning both.
 
@@ -1089,7 +1091,7 @@ several identities, and cross-tenant isolation is still not expressible.
 
 ## ADR-054 — The semantic phase steers generation toward a declared input constraint { #adr-054 }
 
-**Status:** accepted · Supersedes the "never steers generation" clause of [ADR-048](#adr-048) · `models/phase.py`, `strategy_compiler/conditional_phases.py`, `strategy_compiler/fields/builtin.py`, `budget/reservation.py`, `engine/fuzzers/phases.py`, `engine/fuzzers/semantic/`, `engine/oracles/semantic/scope.py`, `engine/oracles/semantic/declared.py`
+**Status:** accepted · Supersedes the "never steers generation" clause of [ADR-048](#adr-048) · Superseded in part by [ADR-056](#adr-056) · `models/phase.py`, `strategy_compiler/conditional_phases.py`, `strategy_compiler/fields/builtin.py`, `budget/reservation.py`, `engine/fuzzers/phases.py`, `engine/fuzzers/semantic/`, `engine/oracles/semantic/scope.py`, `engine/oracles/semantic/declared.py`
 
 ### Context
 
@@ -1137,7 +1139,9 @@ Generation and evaluation share one scope. `flatten_input_scope` and
 read, so the two cannot disagree on what a rule sees or where a field lives; a value
 that contradicts its declared type is dropped from that scope, so a 2xx to a
 wrong-typed input is not reported as a business-rule violation: the rule does not
-speak about that input. The oracle's verdict is otherwise unchanged.
+speak about that input. The oracle's verdict is otherwise unchanged. (Superseded in
+part by [ADR-056](#adr-056), which adds the path zone to this scope at the lowest
+precedence.)
 
 ### Rejected
 
@@ -1271,3 +1275,78 @@ Dedup and shrink outcomes are unaffected: an intrinsic id is constant per invari
 it adds nothing to a finding's identity, and the two status-code branches were already
 separated by the status code the signature carries. This completes ADR-049's channel:
 the rule is no longer inert for any oracle.
+
+## ADR-056 — A request carries its path parameters, and the shared scope ranks the path zone lowest { #adr-056 }
+
+**Status:** accepted · Extends [ADR-054](#adr-054), supersedes the path-parameter limitation of [ADR-048](#adr-048) · `models/engine/execution.py`, `models/engine/trace.py`, `engine/http/injector.py`, `engine/trace/recorder.py`, `engine/trace/rehydrate.py`, `engine/oracles/semantic/scope.py`, `engine/oracles/semantic/declared.py`, `engine/oracles/semantic/oracle.py`, `engine/payload.py`, `engine/fuzzers/semantic/zones.py`, `engine/fuzzers/semantic/field_pairs.py`, `engine/fuzzers/semantic/filtering.py`
+
+### Context
+
+The producer's vocabulary already lets a business rule name a path parameter — a
+rule over `PATCH /users/{id}` may say `id > 0`. The compiled endpoint carries the
+path zone, and generation draws it. But the drawn value only ever lived inside the
+interpolated URL: `RequestBlueprint` held `headers`, `query_params` and `json_body`
+as named fields, and the path segment folded into `url` as a percent-encoded string.
+The semantic oracle flattened body, query and headers into one namespace and found
+nothing named `id`, so a rule over a path parameter resolved to no value and stayed
+undecided ([ADR-048](#adr-048)). The value existed at compile time and was lost at
+URL interpolation.
+
+### Decision
+
+**The drawn path values travel with the request as a typed value.**
+`RequestBlueprint.path_params` and `TracedRequest.path_params` hold the raw
+path-parameter values as drawn — typed as drawn, not stringified — before URL
+interpolation. The injector populates the blueprint from the payload's path zone;
+the URL still carries the percent-encoded segment, so encoding is an **output
+projection** of the same value, not the value itself. The recorder writes the field
+into the trace and rehydration reads it back, so a replay rebuilds the same typed
+path.
+
+**The shared input scope adds the path zone at the lowest precedence.**
+`ZONE_OVERRIDE_ORDER` becomes `(PATH, BODY, QUERY, HEADER)`, and
+`flatten_input_scope` overlays the four zones in that order — so a name declared in
+more than one zone resolves to the last listed, and PATH, listed first, has the
+lowest precedence. The reason PATH ranks lowest rather than highest: a path
+parameter is always present and always required, so ranking it highest would let it
+silently shadow the data zone (body, query, header) a rule most plausibly
+constrains. A path parameter therefore only decides a name that no data zone
+declares. Path values enter the scope raw and typed — an `integer` path parameter is
+judged as an `int` — while only headers are stringified, because a header is a
+string on the wire. `resolve_declared_field` resolves the PATH zone too, so the
+phase's numeric and field-pair constructors build violating and conforming path
+values from the same scope the oracle reads (only the header zone is excluded from
+the numeric constructor, its values being strings). `path_params` is a **required**
+trace field: a trace recorded before it existed fails validation on load.
+
+### Rejected
+
+- **Reconstructing path values by matching the template against the URL.** The
+  oracle could parse `/users/0` back against `/users/{id}` to recover `id`. This is
+  fragile: percent-encoding, slashes inside a value and empty segments make the
+  inverse ambiguous, and it would reconstruct a *string* where the rule needs the
+  drawn type. Carrying the typed value is exact and free.
+- **Ranking the path zone highest.** A path parameter is always present, so giving it
+  top precedence would let it decide any shared name — shadowing the body, query or
+  header field a rule most likely means. Lowest precedence keeps the path a
+  tie-breaker for names no data zone claims.
+- **Removing path parameters from the rule vocabulary.** Forbidding a rule over a
+  path parameter would keep the scope simple at the cost of a legitimate, common
+  constraint (`id > 0`), and would diverge the engine from the contract the producer
+  is allowed to author.
+- **An optional trace field.** Defaulting `path_params` to empty would let a trace
+  recorded before the field load without it, hiding a pre-field trace behind a silent
+  empty map instead of an honest validation error. The project is pre-release: traces
+  are regenerated, not migrated.
+
+### Consequences
+
+A rule over a path parameter is now decidable: a `0` drawn for `id` on `PATCH
+/users/{id}`, accepted with a 2xx, is a `SEMANTIC_PROPERTY` finding that cites the
+declared rule, and the phase constructs violating and conforming path values instead
+of leaving the rule to chance. Values that URL normalization would drop (`""`, `.`,
+`..`) are filtered by the compiler, so an unsendable path never becomes a finding.
+The canonical example of a rule the phase can never decide moves from a path
+parameter to a **numeric header declared `integer`**: a header is stringified and
+then dropped by declared-type conformance, so such a rule stays undetermined and only
+the unfiltered valid arm generates. Existing traces regenerate rather than migrate.

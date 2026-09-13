@@ -234,10 +234,13 @@ and an identity that declares no role never satisfies a `role_only` endpoint's
 `required_role`.
 
 `RequestBlueprint` is the immutable request built from a compiled endpoint and
-a payload: method, URL, headers, query, JSON body, `phase`, `endpoint_id`,
-the `config_header_names` (whose values are credentials and are never
-recorded), the `identity_label`, and an `unsendable_reason` when the request
-must not be sent. `generated_headers` is the subset the fuzzer produced.
+a payload: method, URL, headers, query, `path_params`, JSON body, `phase`,
+`endpoint_id`, the `config_header_names` (whose values are credentials and are
+never recorded), the `identity_label`, and an `unsendable_reason` when the
+request must not be sent. `path_params` holds the raw path-parameter values as
+drawn, typed as drawn, before URL interpolation — the URL still carries the
+percent-encoded segment, but the semantic oracle reads the typed value.
+`generated_headers` is the subset the fuzzer produced.
 
 `ExecutionResult` is the canonical record of one request
 ([Architecture](architecture.md#executionresult-is-the-canonical-record-of-a-request)).
@@ -287,7 +290,11 @@ actually sent — the recipe for reproducing it. Shrinking requests are absent:
 their conclusion is the crash report. Each `TracedRequest` is an observed fact,
 so no field has a default; credentials are omitted rather than redacted (only
 the config header *names* are recorded), `omitted_url_userinfo` flags a
-stripped `user:pass@`, and `sent_at_ms` is excluded from anything hashed.
+stripped `user:pass@`, the raw `path_params` sent before URL interpolation are
+recorded alongside the query and body, and `sent_at_ms` is excluded from
+anything hashed. Because no field has a default, a trace recorded before
+`path_params` existed fails validation on load — traces are regenerated, not
+migrated.
 `TruncationRecord` records where and why a run, or one endpoint, was cut short:
 a `TruncationReason`, the `endpoint_id`, the `requests_sent` before the cut and
 an optional `detail`.

@@ -189,14 +189,18 @@ rule's `PropertyClass`:
 | Property class | Judged against |
 |---|---|
 | `RESPONSE_INVARIANT` | the response body |
-| `INPUT_CONSTRAINT` | the flattened request the server accepted — body keys, query and headers in one namespace |
+| `INPUT_CONSTRAINT` | the flattened request the server accepted — path parameters, body keys, query and headers in one namespace |
 
 The flattened request is one shared function, `flatten_input_scope(body, query,
-headers)` (`engine/oracles/semantic/scope.py`), used by both the oracle and the
-generator so the two can never disagree on what a rule sees. It overlays the
-three zones in `ZONE_OVERRIDE_ORDER` — body, then query, then headers — so a name
-declared in more than one zone resolves to the **last** listed, and it stringifies
-every header value, because a header is a string on the wire. A companion,
+headers, path=...)` (`engine/oracles/semantic/scope.py`), used by both the oracle
+and the generator so the two can never disagree on what a rule sees. It overlays
+the four zones in `ZONE_OVERRIDE_ORDER` — path, then body, then query, then headers
+— so a name declared in more than one zone resolves to the **last** listed. Path is
+first and therefore **lowest** precedence: a path parameter only decides a name that
+no data zone (body, query, header) declares, and on a collision the data zone wins,
+because a data zone is the field a rule most plausibly constrains. Only header
+values are stringified, because a header is a string on the wire; path values enter
+raw and typed, so an `integer` path parameter is judged as an `int`. A companion,
 `resolve_declared_field` (`declared.py`), resolves a declared field to its zone by
 that same precedence, so generation and evaluation agree on where a referenced
 field lives.
@@ -209,10 +213,11 @@ kept, since no declared type contradicts it — so a header declared numeric is 
 compared as a number, while a name the contract never mentions still reaches the
 rule.
 
-Path parameters are **not** reachable to an `INPUT_CONSTRAINT`: the blueprint
-carries them only inside the request URL, never as a named field, so a rule that
-references one resolves to no value. This is a current limitation of the input
-scope, not a rejection — the property is simply never decided.
+A rule may name a **path parameter**: the request carries the raw drawn path values
+alongside the URL (`RequestBlueprint.path_params`), so a rule over `PATCH
+/users/{id}` sent as `/users/0` sees `id` as `0` and a 2xx makes `id > 0` a finding
+that cites the declared rule. Values URL normalization would drop — `""`, `.`, `..`
+— are filtered by the compiler, so an unsendable request never becomes a finding.
 
 `evaluator.py` walks the tree with a `functools.singledispatch` over the six node
 kinds — never `eval`, so nothing the LLM authored is executed. A field reference
@@ -264,8 +269,8 @@ for any phase with no extension; `plan_passes` calls it as it builds each pass.
   declared bounds, integer bounds rounded to the correct integer, and the value
   spliced into an otherwise valid draw. An empty region — a comparison the declared
   schema already rules out — yields nothing, so the phase never sends a
-  schema-invalid value to fake a violation. This constructor covers body and query
-  fields.
+  schema-invalid value to fake a violation. This constructor covers path, body and
+  query fields — every zone but the header, whose values are strings on the wire.
 - **Two fields sharing a declared schema** are built by rearranging the drawn
   values: swapped for an order comparison, copied for equality or inequality. It is
   type-agnostic — numbers, strings and dates compare the way the evaluator already
@@ -276,9 +281,11 @@ for any phase with no extension; `plan_passes` calls it as it builds each pass.
   the rule: the violating arm keeps draws the evaluator scores `False`, the
   conforming arm those it scores `True`.
 
-The unfiltered valid arm is the safety net. A rule no arm can decide — one over a
-path parameter, say — filters both directed arms empty, but the valid arm always
-has candidates, so the phase never exhausts and never truncates the run. Such a
+The unfiltered valid arm is the safety net. A rule no arm can decide — a numeric
+rule over a header declared `integer`, say, whose value is stringified and then
+dropped by declared-type conformance — filters both directed arms empty, but the
+valid arm always has candidates, so the phase never exhausts and never truncates
+the run. Such a
 rule silently degrades to plain valid draws: the phase could not construct a
 violation, so it sends valid inputs, exactly as the oracle stays undecided on the
 same rule. When a semantic finding is shrunk, the shrinker minimizes it over the
@@ -490,8 +497,11 @@ could not be honored.
 the recipe for reproducing it. Shrinking requests are absent by construction.
 Each `TracedRequest` is an observed fact: credentials are *omitted* rather than
 redacted (only the config header names are kept), a URL's `user:pass@` is
-stripped and flagged with `omitted_url_userinfo`, and `sent_at_ms` is excluded
-from anything hashed. `canonical_json` serializes a trace so equal content
+stripped and flagged with `omitted_url_userinfo`, the raw `path_params` sent
+before URL interpolation are recorded alongside the query and body, and
+`sent_at_ms` is excluded from anything hashed. `path_params` is a required field:
+a trace recorded before it existed fails validation on load rather than
+rehydrating without it — traces are regenerated, not migrated. `canonical_json` serializes a trace so equal content
 yields equal bytes, and `content_hash` is its SHA-256 with the timing dropped,
 so two runs that sent the same requests content-address alike.
 

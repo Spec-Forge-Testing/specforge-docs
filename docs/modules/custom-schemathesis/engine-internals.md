@@ -622,3 +622,21 @@ strategy chosen by a factory, never a runtime flag
 ([ADR-040](adr/engine.md#adr-040)): `TimedPacer` waits until each request's
 recorded `sent_at_ms` measured from a fixed `t0`, so drift never compounds and a
 past slot waits zero; `ImmediatePacer` never waits.
+
+A replay does not blindly re-send a dead target's whole trace. `engine/http/`
+carries a `TargetLivenessMonitor` that the `ReplayRunner` feeds each result as it
+returns. The monitor counts a streak of target failures — the
+`TARGET_FAILURE_CATEGORIES` (`timeout`, `availability`) — and ignores anything
+that was never sent (no evidence either way). When the streak reaches
+`MAX_INFRA_FAILURES` (5) it fires one `probe_liveness()` `HEAD`: a dead target
+returns `target_down` and a live one `infrastructure_abort`, and either stops the
+loop with a `TruncationRecord`. `run_status_of(truncation)` then maps that record
+to the run's status — `aborted` for `target_down`, `truncated` otherwise.
+
+Because the loop can stop short, the produced trace is a **prefix** of the
+recorded one. `assess_fidelity(recorded, observed, truncation)` takes that record:
+it compares `observed` against the matching prefix of the recorded requests, and
+allows `observed` to be shorter than the recording **only** when a truncation is
+present (a short replay with no truncation, or an overshoot, is still a
+programming error and raises). The level it returns therefore describes the prefix
+alone, and the truncation record itself rides along in the trace it hands back.

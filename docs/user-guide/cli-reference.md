@@ -687,7 +687,8 @@ unexpectedly.
     - **possibly resolved** (✓) — the response changed cleanly *and* the replay
       ran with **exact** fidelity: every other request answered as recorded.
     - **inconclusive** (⚠) — the response changed, but the surrounding trace
-      diverged (reduced fidelity) or the request got no response at all.
+      diverged (reduced fidelity), the request got no response at all, or the
+      replay stopped before that request was re-sent.
 
     "Possibly resolved" is never "resolved", by design. A replay re-sends one
     recorded stimulus: a clean answer proves *this request* no longer triggers
@@ -703,6 +704,16 @@ unexpectedly.
     for the same defect) stays two rows, never averaged. The grouping is
     presentation only — the saved document and `--json-output` keep one
     verdict per request.
+
+    A replay **stops if the target goes down while it runs**. After a streak of
+    infrastructure failures (timeouts, connection refusals) the command probes
+    the target once; a dead target ends the replay `aborted`, a target that
+    answers ends it `truncated`, and in both cases the remaining requests are not
+    re-sent. The report header therefore shows a **Run status** row and a
+    **Requests not replayed** count next to **Requests replayed**, and when any
+    request was skipped it prints a notice that those requests were not re-sent and
+    their defects are inconclusive. Every recorded defect past the point the replay
+    stopped is ruled **inconclusive** — absence of evidence, not a clean bill.
 
     The command refuses recipes it cannot replay whole, **before sending a
     single request**: an empty trace, a missing or tampered trace artifact

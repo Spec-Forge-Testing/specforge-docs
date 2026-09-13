@@ -112,9 +112,10 @@ exploration.
 
 ## Replay
 
-Re-send a recorded trace verbatim. `validate_replayable` reports readiness
-first; during the replay only server errors are checked (no contracts are
-evaluated), and the verdict is a `ReplayFidelity`.
+Re-send a recorded trace in order, at its recorded pace, until the target goes
+down. `validate_replayable` reports readiness first; during the replay only
+server errors are checked (no contracts are evaluated), and the verdict is a
+`ReplayFidelity`.
 
 ```mermaid
 sequenceDiagram
@@ -123,20 +124,44 @@ sequenceDiagram
     participant P as Pacer (Timed | Immediate)
     participant Rh as rehydrate_request
     participant Orch as AsyncOrchestrator
+    participant LM as TargetLivenessMonitor
     participant Fi as assess_fidelity
 
     RR->>VR: validate_replayable(trace, config) → ReplayReadiness
-    loop per TracedRequest
+    loop per TracedRequest, until the target is confirmed down
         RR->>P: wait_until(sent_at_ms)
         RR->>Rh: rehydrate_request(traced, config) → RequestBlueprint
         RR->>Orch: execute(blueprint)
+        RR->>LM: observe(result) → stop reason?
     end
-    RR->>Fi: assess_fidelity(trace, results) → ReplayFidelity
+    RR->>Fi: assess_fidelity(trace, results, truncation) → ReplayFidelity
     RR-->>RR: EngineRunResult (findings=(), status, trace, fidelity)
 ```
 
 `preserve_timing=True` selects the timed pacer, which waits until each
 request's recorded `sent_at_ms`; `False` selects the immediate pacer.
+
+### Stopping on a dead target
+
+A replay no longer always ends `completed`. A `TargetLivenessMonitor` watches the
+stream of results as they come back. A streak of target failures
+(`timeout` or `availability`) reaching `MAX_INFRA_FAILURES` (5) trips a single
+liveness probe — a `HEAD` to the base URL:
+
+- if the target is dead, the replay stops re-sending and ends `aborted` with the
+  truncation reason `target_down`;
+- if it answers, the run ends `truncated` with `infrastructure_abort` and stops
+  as well.
+
+A request that was never sent is no evidence about the target — it neither
+advances the streak nor clears it — and an isolated failure never cuts. When a
+replay stops early, the trace it produced is a **prefix** of the recorded one, and
+the truncation record travels in that trace. `assess_fidelity` compares only the
+prefix, so the fidelity level (`exact` or `reduced`) describes that prefix alone.
+Every recorded defect beyond the prefix was never re-sent, so the CLI rules it
+`inconclusive` — absence of evidence, like a request that got no response. The
+JSON report schema is unchanged: run status and truncation already flow through
+it.
 
 ## Performance
 

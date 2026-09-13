@@ -42,7 +42,10 @@ its metrics, endpoint stats and crashes stay queryable through `history` and
 
 `ReportDocument` is a frozen, `extra="forbid"` Pydantic model: a pure function
 of a run's persisted data, never a live object. It carries a `schema_version`
-("1.8" today), bumped when the shape changes in a way a reader cannot ignore.
+("1.9" today), bumped when the shape changes in a way a reader cannot ignore.
+1.9 is additive over 1.8: each `endpoints[]` entry gains `held_back_by` — the
+risk flag the safety guard used to keep that endpoint out of the run, empty when
+the endpoint was probed.
 1.8 is additive over 1.7: each `endpoints[]` entry gains `undecided_rules` — the
 ids of any declared rules the run's oracle evaluated at that endpoint and could
 never decide (empty unless some rule stayed undetermined on every response).
@@ -70,7 +73,7 @@ rule the finding broke, when an oracle named one.
 | `analysis` | The recipe the run executed: id, label, strategy mode, whether it was stateful, and the repo hash it was generated against. |
 | `run` | The run's own identity and outcome: id, ordinal, origin (original/replay), `executed_at`, duration, `status`, `fidelity`, its comparability mark, `signal`/`signal_causes` (see below), and - when the run was cut short - `truncation` (`reason` plus `endpoint_id`), otherwise `null`. |
 | `metrics` | The finding funnel and request counters, `null` when a run recorded none. |
-| `endpoints` | One entry per endpoint touched: requests, `examples_planned`, raw findings, crash count, its latency distribution, `starved_identities` - the labels of any declared identities the endpoint's budget could not fund, empty unless the run split budget by identity and ran short of it - and `undecided_rules` - the ids of any declared rules the oracle evaluated here and could never decide (a rule left undetermined on every response, e.g. a numeric rule on a header declared `integer`), empty unless the run's mode accounts for them (`stateless`, `performance`) and some rule stayed undecidable. |
+| `endpoints` | One entry per endpoint touched: requests, `examples_planned`, raw findings, crash count, its latency distribution, `starved_identities` - the labels of any declared identities the endpoint's budget could not fund, empty unless the run split budget by identity and ran short of it - and `undecided_rules` - the ids of any declared rules the oracle evaluated here and could never decide (a rule left undetermined on every response, e.g. a numeric rule on a header declared `integer`), empty unless the run's mode accounts for them (`stateless`, `performance`) and some rule stayed undecidable - and `held_back_by` - the risk flag (`external_side_effects` or `write_operation`) the safety guard used to keep this endpoint out of the run, empty when it was probed. A held endpoint's entry carries zero requests. |
 | `coverage` | The declared-endpoint partition behind the run - `declared`/`targeted`/`excluded`/`filtered`/`exercised` counts plus `excluded_endpoints` (method, path, reason) - `null` for a replay, which never compiles. |
 | `producer_exclusions` | One entry (`method`, `path`, `reason`) per endpoint the inference contract producer soft-dropped to schema-only - see [`fuzz`'s contract producer](cli-reference.md). Empty when no producer ran, when the fixture producer ran (it aborts rather than drop), or when nothing was dropped. |
 | `defects` | One entry per crash, ordered most-severe-first (the same order the live crash tables render): identity, reproducer and what the run observed - the same shape `inspect --crash <id>` and `compare` project a crash through. Every crash carries `rule_id` and `rule_description`: the business rule the contract declared for a business-rule or access-control finding, or the rule the invariant enforces on its own for every other one. |

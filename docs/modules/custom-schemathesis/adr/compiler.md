@@ -165,7 +165,8 @@ attack builders need those flags, and the two lists could drift.
 
 `AttackToggles` names the eight consumed flags as explicit fields and reads them
 in `from_contract`. A guard test pins the field set to the contract's `include_*`
-flags, minus `include_duplicate_fields`, which no builder consumes.
+flags, so a new contract flag that no builder reads fails the test until it is
+either consumed or removed.
 
 ### Rejected
 

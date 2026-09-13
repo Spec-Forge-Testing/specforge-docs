@@ -210,7 +210,7 @@ which are one concept with an order and an iterator.
 
 ### Context
 
-The hacker contract is the base contract plus `attack_profiles` and nine
+The hacker contract is the base contract plus `attack_profiles` and eight
 `include_*` payload-variant toggles; its `properties` and `items` are re-typed
 so nested values keep the hacker knobs. Flattening it into the base contract
 plus an optional `attack` extension was considered.
@@ -219,7 +219,7 @@ plus an optional `attack` extension was considered.
 
 A pydantic subclass. The phase registry is keyed by `(contract_type, Phase)`
 and resolved by MRO, so a hacker contract picks up the base phases plus
-`attack` without a branch anywhere. The nine toggles are grouped for the
+`attack` without a branch anywhere. The eight toggles are grouped for the
 builders in an `AttackToggles` value object derived from the contract's
 aliases, the same way `HACKER_EXTRA_FIELDS` is derived. A profile decides
 which contract type it accepts through `contract_type` and
@@ -271,30 +271,37 @@ that needs a different budget derives a new plan.
 
 ---
 
-## ADR-012 — `SchemaKeyword` includes `default` { #adr-012 }
+## ADR-012 — `SchemaKeyword` omits `default` { #adr-012 }
 
 **Status:** accepted · `models/schema.py`, `models/contracts/normalization.py`
 
 ### Context
 
-No builder consumes `default`, so it was tempting to leave it out of the
-vocabulary and keep it as a loose string beside the enum. But it is a real
-JSON Schema keyword, a field of `BaseStrategyContract`, and the policy layer
-reads it when checking which fields a type may carry.
+`default` is a real JSON Schema keyword, but no builder generates a value from
+it and no strategy contract carries it. The orchestrator's adapter derives the
+keywords it forwards from `BaseStrategyContract`'s own fields, so a keyword the
+contract does not declare is dropped at the boundary and never reaches the
+engine. Carrying `default` in the vocabulary and in the allow-list would name a
+keyword the engine has no effect for.
 
 ### Decision
 
-`default` is a member. `ALLOWED_FIELDS_BY_TYPE` is a clean
-`frozenset[SchemaKeyword]` per type. The hacker table keeps
-`frozenset[SchemaKeyword | str]`, honestly: `HACKER_EXTRA_FIELDS` are the
-hacker contract's own snake_case wire names, not schema keywords.
+`default` is not a `SchemaKeyword` member and is absent from
+`ALLOWED_FIELDS_BY_TYPE`. A `default` in an OpenAPI schema is ignored — the
+adapter never forwards it, the engine never generates from it. The vocabulary
+holds only keywords a builder or the policy layer actually consumes, so
+`ALLOWED_FIELDS_BY_TYPE` is a clean `frozenset[SchemaKeyword]` per type. The
+hacker table keeps `frozenset[SchemaKeyword | str]`, honestly: `HACKER_EXTRA_FIELDS`
+are the hacker contract's own snake_case wire names, not schema keywords.
 
 ### Rejected
 
-A loose string constant with a comment explaining why it is not in the enum.
-The absent member would leak into the type of the base allow-list.
+Keeping `default` as an accepted-but-inert member with a comment explaining why
+no builder reads it. It would name a keyword the engine never honours and leak
+an unused member into the base allow-list's type. A keyword the engine ignores
+is dropped silently at the boundary rather than documented as inert vocabulary.
 
 ### Consequences
 
-Twenty-two keywords. The base allow-list has one element type; the hacker
+Twenty-one keywords. The base allow-list has one element type; the hacker
 allow-list's union names exactly the two things it holds.

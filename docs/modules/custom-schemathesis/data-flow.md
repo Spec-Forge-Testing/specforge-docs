@@ -22,7 +22,7 @@ engine owns the ones that are its own.
 | `StrategyMode` | `models/strategy_mode.py` | `Default` · `Hacker` (capitalized: the wire spelling the LLM emits) |
 | `Phase` | `models/phase.py` | `valid` · `boundary` · `invalid` · `attack` · `transition` · `mutation` · `semantic` |
 | `SchemaType` | `models/schema.py` | `string` · `integer` · `number` · `boolean` · `array` · `object` · `null` |
-| `SchemaKeyword` | `models/schema.py` | the 22 JSON Schema keywords the engine reads, by wire spelling: `type` · `enum` · `const` · `nullable` · `required` · `default` · `properties` · `items` · `format` · `pattern` · `multipleOf` · `minimum` · `maximum` · `exclusiveMinimum` · `exclusiveMaximum` · `minLength` · `maxLength` · `minItems` · `maxItems` · `minProperties` · `maxProperties` · `allowExtraFields` |
+| `SchemaKeyword` | `models/schema.py` | the 21 JSON Schema keywords the engine reads, by wire spelling: `type` · `enum` · `const` · `nullable` · `required` · `properties` · `items` · `format` · `pattern` · `multipleOf` · `minimum` · `maximum` · `exclusiveMinimum` · `exclusiveMaximum` · `minLength` · `maxLength` · `minItems` · `maxItems` · `minProperties` · `maxProperties` · `allowExtraFields` |
 | `SchemaFormat` | `models/schema.py` | `email` · `uuid` · `date` · `date-time` · `uri` · `ipv4` · `hostname` · `byte` |
 
 The engine-side outcome vocabularies follow the same rule:
@@ -112,7 +112,7 @@ The two kernel DTOs an endpoint may carry:
 | DTO | Fields |
 |---|---|
 | `EndpointRisk` | `risk_score` (0–100, default 50), `criticality`, `sensitivity`, `auth_surface`, `write_operation`, `external_side_effects` |
-| `EndpointAttack` | `attack_profiles`, `focus_fields`, `sensitive_fields`, `aggressiveness` (0–10), `mutation_depth` (0–10), `field_hints` keyed by zone-qualified field path |
+| `EndpointAttack` | `focus_fields`, `sensitive_fields`, `aggressiveness` (0–10), `mutation_depth` (0–10), `field_hints` keyed by zone-qualified field path — each hint carries that field's `attack_profiles` |
 
 `EndpointBudgetContract` is the engine's own: `max_examples` (default
 `DEFAULT_MAX_EXAMPLES`), an optional `phase_split` (`dict[Phase, float]`,
@@ -125,7 +125,7 @@ optional `deadline_ms`.
 shares; it uses `populate_by_name=True` and camelCase aliases so a JSON Schema
 fragment validates directly (`type`, `exclusiveMinimum`, `minLength`, …).
 `HackerStrategyContract` is a pydantic subclass that adds `attack_profiles` and
-the nine `include_*` payload-variant toggles; the compiler dispatches on it by
+the eight `include_*` payload-variant toggles; the compiler dispatches on it by
 type, not by a mode flag. Its `properties` and `items` are re-typed so nested
 values keep the hacker knobs ([ADR-010](adr/models.md#adr-010)).
 

@@ -6,31 +6,8 @@ fuzzing. Every command listed here is typed at the REPL prompt; the two that als
 run straight from your shell (`specforge`, `specforge init`) are called out under
 [Commands run from your shell](#commands-run-from-your-shell).
 
-New to the vocabulary? [Core Concepts](concepts.md) explains the workflow in plain words and
-the [Glossary](glossary.md) defines every term used below in one sentence.
-
-## Commands summary
-
-| Command | Category | Description |
-| :--- | :--- | :--- |
-| **`doctor`** | Diagnostics | Checks environment, pipeline dependencies, and LLM setup. |
-| **`doctor --fix`** | Diagnostics | Guided automated installation and dependency fixes. |
-| **`init`** | Setup | Scaffolds the local workspace (`.specforge/` directory and a default `specforge.toml`). |
-| **`contract-engine`** | Contract | Validates or analyzes an OpenAPI spec, listing its endpoints and any deviations. |
-| **`trace`** | Analysis | Static code tracing from an OpenAPI endpoint. |
-| **`ast-extract`** | Analysis | Inspects extracted code structures and LLM context. |
-| **`fuzz`** | Execution | Compiles test-case generators from the schema and fuzzes a live API. |
-| **`replay`** | Execution | Re-sends an analysis's recorded trace and rules a verdict per defect. |
-| **`history`** | History | Browses persisted projects, analyses and runs, with filters. |
-| **`inspect`** | History | Shows one run in full (metrics, latency, crashes, unconfirmed findings, artifacts), or one finding in full — a confirmed crash's payload, headers and response body, or an unconfirmed finding's state and signature. |
-| **`compare`** | History | Diffs two runs' defect sets — appeared, persisted, possibly resolved — marking a pair that is not directly comparable. |
-| **`prune`** | History | Reports, compresses and deletes stored artifacts under a retention policy you spell out. |
-| **`ls`** · **`cd`** | Navigation | List files / change the session's working directory. |
-| **`!`** | System | Runs a system shell command directly from the REPL. |
-| **`clear`** · **`cls`** | System | Clears the screen and redraws the banner. |
-| **`help`** | System | Lists commands, or shows one command's help panel. |
-| **`exit`** | System | Leaves the REPL. |
-| **`theme`** | Settings | Switches the CLI UI color theme. |
+!!! note
+    New to the vocabulary? [Core Concepts](concepts.md) explains the workflow in plain words and the [Glossary](glossary.md) defines every term used below in one sentence.
 
 ## Running
 
@@ -48,6 +25,8 @@ so a mistyped one silently does nothing — check the spelling here if a run beh
 unexpectedly.
 
 ## Commands
+
+### Setup & Diagnostics
 
 ??? "`doctor` — environment & dependency diagnostics"
 
@@ -117,6 +96,75 @@ unexpectedly.
     This command also runs straight from your shell as `specforge init` — see
     [Commands run from your shell](#commands-run-from-your-shell). Both forms do the
     same thing.
+
+??? "Workspace navigation — `ls`, `cd`, `clear`, `help`, `exit`"
+
+    The REPL keeps a **current working directory** — the same one `!` commands run
+    in — so you can move around a repository without leaving the session. These
+    built-ins do that and a few other housekeeping tasks:
+
+    ```text
+    SpecForge ❯ cd lib/contract_engine   # move into a directory
+    SpecForge ❯ cd                       # print the current directory, move nowhere
+    SpecForge ❯ ls                       # list the current directory
+    SpecForge ❯ ls docs                  # list a specific directory
+    ```
+
+    | Command | What it does |
+    | :--- | :--- |
+    | `ls [path]` | Lists the entries in `path` (the current directory by default), directories first and marked. |
+    | `cd [path]` | Changes the working directory to `path`; with no argument, prints where you are. |
+    | `clear` (alias `cls`) | Clears the screen and redraws the banner. |
+    | `help [command]` | Lists every command, or shows one command's help panel. |
+    | `exit` | Ends the session cleanly (so does `Ctrl-D`). |
+
+    `cd` moves the whole process, so the working directory it sets is what `trace`,
+    `ast-extract` and every `!` command see afterwards; relative paths you pass to
+    other commands are resolved against it. A path that does not exist is reported as
+    an error and the session keeps going.
+
+??? "`!` — run system commands"
+
+    ```text
+    SpecForge ❯ !git status
+    SpecForge ❯ !pytest -q
+    ```
+
+    Prefix any line with `!` to run it as a system command from the same session.
+    The escape is **explicit on purpose**: a line without `!` is always resolved as
+    an internal command (and a typo gets a fuzzy suggestion, never an accidental
+    system call), so internal-vs-system resolution stays unambiguous.
+
+    - **Streaming output.** `stdout` and `stderr` are shown live as the command
+      runs, so long commands (`pytest`, `docker build`) show progress instead of
+      going silent. `stderr` is visually differentiated and a non-zero exit code is
+      reported clearly.
+    - **Shared working directory.** Commands run in the REPL's current directory, so
+      the internal `cd` and `!ls` / `!git` stay in sync.
+    - **Never breaks the loop.** A missing executable, an unparsable line or a
+      failing command are reported and the REPL keeps going. The child's stdin is
+      closed, so an interactive program gets EOF instead of hanging the session.
+    - **Disable in CI/CD.** Set `SPECFORGE_SYSTEM_COMMANDS=0` (or `false` / `no` /
+      `off`) to turn the escape off in non-interactive environments.
+
+    > Scope: the primary target is Linux/Docker (Windows is best-effort). v1 runs a
+    > single program without a shell (no pipes, redirection or built-ins like `dir`)
+    > and is not interactive (no `vim` / `rebase -i`); a PTY-backed executor for full
+    > interactivity is a planned follow-up.
+
+??? "`theme` — switch the UI color theme"
+
+    ```text
+    SpecForge ❯ theme          # list themes, marking the active one
+    SpecForge ❯ theme mono     # switch at runtime
+    ```
+
+    Switching the theme re-skins **everything** — console output, the banner and the
+    REPL prompt. Bundled themes: `default`, `mono`, `nord`, `dracula`, `solarized`,
+    `matrix`; the theme can also be chosen at startup with `SPECFORGE_THEME=<name>`.
+    An unknown name is refused, and the refusal lists the ones that exist.
+
+### Contract & Static Analysis
 
 ??? "`contract-engine` — validate or analyze an OpenAPI spec"
 
@@ -215,6 +263,8 @@ unexpectedly.
     dependency trace degrades to *hybrid* or *fallback* mode, `--payload`/`--raw` still
     show the primary controller and the selected fallback files, so there is always
     something to inspect.
+
+### Fuzzing
 
 ??? "`fuzz` — generate test cases from the schema and fuzz a live API"
 
@@ -541,6 +591,8 @@ unexpectedly.
     and, when it was, the effective budget it ran with (`stateful_config`: examples,
     steps per sequence and distinct bugs per sequence).
 
+### History, Replay & Comparison
+
 ??? "`history` — browse persisted projects, analyses and runs"
 
     ```text
@@ -793,73 +845,6 @@ unexpectedly.
     database, not the artifact store — and `history --project` shows a
     **Replayable** column derived from the trace's presence, so a consented
     trace deletion is visible the moment it happens.
-
-??? "Workspace navigation — `ls`, `cd`, `clear`, `help`, `exit`"
-
-    The REPL keeps a **current working directory** — the same one `!` commands run
-    in — so you can move around a repository without leaving the session. These
-    built-ins do that and a few other housekeeping tasks:
-
-    ```text
-    SpecForge ❯ cd lib/contract_engine   # move into a directory
-    SpecForge ❯ cd                       # print the current directory, move nowhere
-    SpecForge ❯ ls                       # list the current directory
-    SpecForge ❯ ls docs                  # list a specific directory
-    ```
-
-    | Command | What it does |
-    | :--- | :--- |
-    | `ls [path]` | Lists the entries in `path` (the current directory by default), directories first and marked. |
-    | `cd [path]` | Changes the working directory to `path`; with no argument, prints where you are. |
-    | `clear` (alias `cls`) | Clears the screen and redraws the banner. |
-    | `help [command]` | Lists every command, or shows one command's help panel. |
-    | `exit` | Ends the session cleanly (so does `Ctrl-D`). |
-
-    `cd` moves the whole process, so the working directory it sets is what `trace`,
-    `ast-extract` and every `!` command see afterwards; relative paths you pass to
-    other commands are resolved against it. A path that does not exist is reported as
-    an error and the session keeps going.
-
-??? "`!` — run system commands"
-
-    ```text
-    SpecForge ❯ !git status
-    SpecForge ❯ !pytest -q
-    ```
-
-    Prefix any line with `!` to run it as a system command from the same session.
-    The escape is **explicit on purpose**: a line without `!` is always resolved as
-    an internal command (and a typo gets a fuzzy suggestion, never an accidental
-    system call), so internal-vs-system resolution stays unambiguous.
-
-    - **Streaming output.** `stdout` and `stderr` are shown live as the command
-      runs, so long commands (`pytest`, `docker build`) show progress instead of
-      going silent. `stderr` is visually differentiated and a non-zero exit code is
-      reported clearly.
-    - **Shared working directory.** Commands run in the REPL's current directory, so
-      the internal `cd` and `!ls` / `!git` stay in sync.
-    - **Never breaks the loop.** A missing executable, an unparsable line or a
-      failing command are reported and the REPL keeps going. The child's stdin is
-      closed, so an interactive program gets EOF instead of hanging the session.
-    - **Disable in CI/CD.** Set `SPECFORGE_SYSTEM_COMMANDS=0` (or `false` / `no` /
-      `off`) to turn the escape off in non-interactive environments.
-
-    > Scope: the primary target is Linux/Docker (Windows is best-effort). v1 runs a
-    > single program without a shell (no pipes, redirection or built-ins like `dir`)
-    > and is not interactive (no `vim` / `rebase -i`); a PTY-backed executor for full
-    > interactivity is a planned follow-up.
-
-??? "`theme` — switch the UI color theme"
-
-    ```text
-    SpecForge ❯ theme          # list themes, marking the active one
-    SpecForge ❯ theme mono     # switch at runtime
-    ```
-
-    Switching the theme re-skins **everything** — console output, the banner and the
-    REPL prompt. Bundled themes: `default`, `mono`, `nord`, `dracula`, `solarized`,
-    `matrix`; the theme can also be chosen at startup with `SPECFORGE_THEME=<name>`.
-    An unknown name is refused, and the refusal lists the ones that exist.
 
 ## Commands run from your shell
 

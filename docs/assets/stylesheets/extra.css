@@ -352,7 +352,7 @@
 
 /* Enlaces */
 .md-typeset a {
-  color: var(--accent-color);
+  color: var(--brand-color);
   text-decoration: none;
   font-weight: 500;
   transition: color 0.15s ease, text-decoration 0.15s ease;
@@ -480,12 +480,12 @@
    izquierdo que toma el color semántico del tipo de aviso — el mismo mapeo
    que los tokens de la CLI (accent/success/warning/error, theme.py). */
 .md-typeset .admonition {
-  background: transparent;
-  border-radius: 0;
+  background: color-mix(in srgb, var(--accent-color) 8%, transparent);
+  border-radius: 0 6px 6px 0;
   border: none;
   border-left: 2px solid var(--accent-color);
   box-shadow: none;
-  padding: 0.4rem 0 0.4rem 1rem;
+  padding: 0.6rem 1rem;
   margin: 1.5em 0;
 }
 
@@ -499,6 +499,8 @@
   font-weight: 600;
   font-size: 0.75rem;
   padding: 0 0 0.4rem !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
   color: var(--text-bright);
 }
 
@@ -511,17 +513,20 @@
 .md-typeset .admonition.tip,
 .md-typeset .admonition.success {
   border-left-color: var(--success-color);
+  background: color-mix(in srgb, var(--success-color) 8%, transparent);
 }
 
 .md-typeset .admonition.warning,
 .md-typeset .admonition.caution {
   border-left-color: var(--warning-color);
+  background: color-mix(in srgb, var(--warning-color) 8%, transparent);
 }
 
 .md-typeset .admonition.danger,
 .md-typeset .admonition.failure,
 .md-typeset .admonition.error {
   border-left-color: var(--error-color);
+  background: color-mix(in srgb, var(--error-color) 8%, transparent);
 }
 
 /* ==========================================================================

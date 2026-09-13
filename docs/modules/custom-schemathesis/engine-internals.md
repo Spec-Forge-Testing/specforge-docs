@@ -246,6 +246,52 @@ invariant shared by every rule on the endpoint. The id rides all the way to the
 crash report, the finding signature, storage and the report; the description
 rides alongside it but is never compared ([ADR-049](adr/engine.md#adr-049)).
 
+### Rules the run could not decide
+
+Evaluation is total, so a rule that a response cannot answer is never a finding —
+but until it was recorded, an undecidable rule was indistinguishable from a
+satisfied one. The oracle now reports which rules it decided and which it could
+not, per response. As it walks an endpoint's declared rules the
+`semantic_property` oracle sorts each one: a rule whose root evaluates to a
+boolean (either way) is **decided**; a rule whose root evaluates to `UNDETERMINED`
+— it names a field the request or response did not carry, or a value the declared
+type rules out — is **undecided**. The result rides the verdict as a
+`RuleDecisions(decided, undecided)` (`engine/oracles/verdict.py`), and the ordered
+pipeline merges every oracle's decisions into the `OracleReport(violations,
+rule_decisions)` that `check_response` returns. The short-circuit on the first
+broken rule is unchanged: the rules after a broken one are not evaluated on that
+response, so they fall into neither set for it.
+
+**A rule is "never decided" per endpoint, not per response.** Stateless
+exploration folds each response's `RuleDecisions` into a running
+`ExplorationState.rule_decisions`, and when the endpoint's exploration ends it
+reports `RuleDecisions.never_decided` — the rules that were undecided on some
+response and decided on none (`undecided - decided`) — as
+`ExplorationOutcome.undecided_rules`. A rule the oracle managed to decide on even
+one response is not listed: a single decidable draw retroactively clears it. A
+rule the oracle never evaluated at all — an endpoint that returned no 2xx — is not
+listed either, because it was never observed.
+
+This is a **diagnostic, not a finding**. An undecidable rule stays silent about
+the API, exactly as the verdict rules require; the run's status and its findings
+are unchanged. But a rule that stays undecidable across the *whole* exploration is
+a signal about the contract or the run's coverage — the field it names never came
+back, or its declared type makes it undecidable in principle — and reporting it
+turns that silent degradation into something a reader can act on. The canonical
+example is a rule that compares a **header declared `integer`** numerically: a
+header is a string on the wire, and a value that contradicts its declared type is
+dropped from the semantic scope before evaluation, so the numeric comparison never
+sees a number and the rule is undetermined on every response — never decided.
+
+Only the two modes that drive the stateless fuzzer's full accounting report it:
+**stateless** and **performance**. Stateful, replay, auth and resilience runs leave
+it empty, exactly like `starved_identities`, and shrink re-sends never contribute
+(shrinking runs off the findings, not the exploration state). The run loop merges
+the per-endpoint lists and `build_stats` / `build_unshrunk_stats` surface them as
+`EndpointStats.undecided_rules` (sorted rule ids), from where they reach storage,
+the [run report](../../user-guide/reports.md) and the
+[CLI views](../../user-guide/cli-reference.md) ([ADR-057](adr/engine.md#adr-057)).
+
 ### How the semantic phase steers generation
 
 Observing a broken `input_constraint` only helps if a request actually breaks it.
@@ -404,7 +450,8 @@ but the callback **never raises on a finding** — it only accumulates drawn
 payloads into a batch and, when the batch fills to `max_concurrency`, flushes
 it: builds every blueprint, executes them concurrently on the one loop, and
 folds each result back in draw order. Folding evaluates the oracles, records a
-`RawFinding` on a violation, and maintains the abort counters.
+`RawFinding` on a violation, accumulates the oracles' rule decisions (above), and
+maintains the abort counters.
 
 **One stop signal crosses the `@given` boundary.** When folding decides the pass
 must stop, it sets a `Cut` on the shared state and raises a single internal

@@ -285,6 +285,16 @@ unexpectedly.
       identity (`stateless`, `performance`) — with the default budgets it never
       fires. These are the same labels `report.json` carries per endpoint in
       `starved_identities` (see [Run report](reports.md)).
+    - **Rules the run could not decide** — a table, endpoint → rules, listing the
+      ids of any declared business rules the oracle evaluated at that endpoint but
+      could never decide: a rule left undetermined on every response, because the
+      field it names never came back or its declared type rules the comparison out
+      (e.g. a numeric rule on a header declared `integer`). It is a diagnostic
+      about the contract or the run's coverage, not a defect — the run's status and
+      findings are unchanged. The section appears only when some rule stayed
+      undecidable, and only in the modes that account for it (`stateless`,
+      `performance`). These are the same ids `report.json` carries per endpoint in
+      `undecided_rules` (see [Run report](reports.md)).
 
     A run the target's liveness probe found dead is cut **before** shrinking, so
     its findings were collected but never confirmed. The report never calls that a
@@ -579,7 +589,10 @@ unexpectedly.
     identity (when any), **State** (`flaky` or `unverified`) and how many times it
     was **Seen**; an **Identities the budget could not reach** table (endpoint →
     labels) when the run left any declared identity unfunded — the same
-    `starved_identities` the fuzz report shows; and the run's **artifacts** — the
+    `starved_identities` the fuzz report shows; a **Rules the run could not decide**
+    table (method, path → rules), after the identities table, when the run left any
+    declared rule undecidable — the same `undecided_rules` the fuzz report shows;
+    and the run's **artifacts** — the
     execution trace plus the
     `report.json`/`report.html` pair every save now leaves (see
     [Run report](reports.md)).

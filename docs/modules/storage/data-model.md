@@ -163,6 +163,7 @@ connection" would be hidden, non-thread-safe mutable state.
       | `findings_confirmed` | `int` | Materialized count of this endpoint's confirmed rows in `findings` (not a copy). |
       | `latency` | `LatencyRecord` | The endpoint's latency distribution, nested from seven flat columns. |
       | `starved_identities` | `str \| None` | The identity labels this endpoint's budget could not fund, as a JSON list; `NULL` when every declared identity was funded. Only modes that split budget by identity ever populate it. |
+      | `undecided_rules` | `str \| None` | The ids of any declared rules the oracle evaluated here and could never decide, as a JSON list; `NULL` when none stayed undecidable. Only modes that account for them (`stateless`, `performance`) ever populate it. |
 
 ??? "`LatencyRecord` - An endpoint's **latency distribution**, in milliseconds."
 

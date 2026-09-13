@@ -342,7 +342,10 @@ requests. It is empty unless the endpoint declares more identities than its
 per-phase budget can fund, and only modes that split budget by identity
 (`stateless`, `performance`) ever populate it — the others leave it empty. This
 turns an identity that would otherwise be dropped in silence into a reported
-signal.
+signal. It also carries `undecided_rules`: the ids of any declared rules the
+oracle evaluated at the endpoint and could never decide — undetermined on every
+response — populated by the same two modes and empty in the rest, turning a rule
+that could never be checked into the same kind of reported signal.
 
 The lifecycle mechanics — one producer per counter, the flaky count measured in
 the shrinker rather than derived by subtraction — are the engine's finding

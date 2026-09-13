@@ -1507,3 +1507,108 @@ typed `AccessLinkError` naming the missing producer rather than silently skippin
 the check — the operator lifts the guard with `--allow-side-effects` to run it.
 `replay` stays faithful: it reproduces exactly what a prior run sent, so a trace
 recorded with the guard on carries the held endpoints' absence unchanged.
+
+## ADR-059 — Invalid credentials are declared not fabricated, a replay stops on a dead target, and a TLS half-close is not applicable { #adr-059 }
+
+**Status:** accepted · `models/engine/execution.py`, `models/engine/access.py`, `engine/runners/auth/`, `engine/oracles/access_control.py`, `engine/http/liveness.py`, `engine/replay/fidelity.py`, `engine/runners/replay.py`, `engine/runners/resilience/raw_socket.py`
+
+### Context
+
+Three execution gaps surfaced once the engine ran against live services, each a
+place where the engine assumed more than the world guaranteed.
+
+An `authenticated` endpoint was probed with a single anonymous request. That
+proves the endpoint refuses *no* credential, but not that it refuses a *bad* one
+— an expired, revoked or garbage token a real client would present. The engine
+had no honest way to obtain such a token: fabricating one (mangling a valid
+header, inventing a signature) tests the target against a credential the operator
+never authorized and reports a "bypass" that may just be a malformed request the
+server rightly 400s.
+
+A replay always ended `completed`. It re-sent every recorded request in order
+even when the target had stopped answering, so a service that fell over mid-replay
+produced a wall of timeout results, a fidelity verdict computed against a target
+that was no longer there, and no signal that the run itself was untrustworthy.
+
+The mid-request-close resilience attack performs a TCP half-close (`write_eof`)
+so the server's real reaction to a truncated request is observed. TLS cannot
+half-close. The transport used to catch the resulting `NotImplementedError` and
+fall back to a full close, which produced `connection_dropped` findings that were
+artefacts of the client closing the socket, not of the server degrading — a false
+positive over every `https://` target.
+
+### Decision
+
+**Invalid credentials are declared in config, and one derived view of valid
+identities feeds every consumer.** `Identity` carries a `credential`
+(`CredentialKind`, default `valid`); an `--identities` entry sets
+`credential = "invalid"` with the headers of a token the operator knows the target
+must reject. `ExecutionConfig` exposes `valid_identities` and `invalid_identities`
+as derived views over `identities`, and every identity consumer — owner selection,
+role holders, the stateless/performance budget split, stateful rotation — reads
+`valid_identities` rather than filtering at each site. Only the auth runner sends
+under an invalid identity: the `authenticated` planner crosses the anonymous
+request *and* each invalid identity, records their labels on the
+`AccessExpectation` (`invalid_labels`, accepted only under that policy), and a 2xx
+under one is an `access_control` finding on the same `authenticated` rule naming
+that identity. `owner_only` and `role_only` cross invalid identities as ordinary
+non-privileged callers, flagged by their existing rules. The runner's precondition
+now requires at least one valid identity, raising a typed `AccessIdentityError`
+otherwise.
+
+**A replay stops when a confirmed target failure means the target is down, and
+its trace is a prefix.** A `TargetLivenessMonitor` watches the result stream: a
+streak of target failures (`timeout`/`availability`) reaching `MAX_INFRA_FAILURES`
+fires one liveness probe (`HEAD` to the base URL). A dead target ends the replay
+`aborted` (`target_down`); a live one ends it `truncated` (`infrastructure_abort`);
+either stops re-sending. A request never sent is no evidence and neither advances
+nor clears the streak. The produced trace is then a prefix of the recording, so
+`assess_fidelity` compares only the prefix and its level describes the prefix
+alone, the truncation record travels in the trace, and the CLI rules every
+recorded defect past the prefix `inconclusive`.
+
+**A TLS half-close is decided statically as not applicable.** Over an `https://`
+base URL the raw-socket transport checks, before it takes a slot or opens a
+socket, that the attack requires a half-close and returns an `unsendable_request`
+result with the detail "mid-request close is not applicable over TLS: the
+transport cannot half-close" — the same shape as an unsupported scheme. No finding
+is produced, the request counts as infrastructure in the endpoint's stats, and the
+former full-close fallback is gone. Over `http://` nothing changes.
+
+### Rejected
+
+- **Fabricating an invalid credential in the engine.** Mutating a valid token or
+  synthesizing a bad one tests the target against a credential the operator never
+  authorized and cannot distinguish a real bypass from a server rejecting a
+  malformed request. The operator declares the token they know is invalid; the
+  engine only crosses it.
+- **Filtering identities by credential kind at each call site.** Re-deriving "the
+  valid ones" in owner selection, role holders, the budget split and stateful
+  rotation would scatter the same rule across the runner and let one site forget
+  it. One derived view on `ExecutionConfig` is the single source every consumer
+  reads.
+- **A replay that always completes, or a post-hoc detection.** Re-sending a dead
+  target's whole trace yields meaningless results and hammers a service already
+  down; deciding "was it down?" only after the fact keeps sending in the
+  meantime. Stopping on a confirmed failure, with an explicit prefix and
+  inconclusive verdicts past it, reports what actually happened.
+- **A full-close fallback or a new diagnostic field for TLS.** Falling back to a
+  full close manufactures `connection_dropped` findings that are the client's
+  doing, not the server's; adding a field to mark them would ask every downstream
+  reader to special-case a case that should never have produced a finding. An
+  attack that cannot be delivered over the connection is `unsendable_request`,
+  the shape the transport already uses for a request it will not send.
+
+### Consequences
+
+The auth mode now proves an authenticated endpoint rejects a bad credential, not
+only that it refuses anonymity, and the finding names the offending identity with
+the credential redacted. A run whose identities are all invalid has no valid pool
+and fails fast with `AccessIdentityError`. A replay is trustworthy when the target
+dies under it: its status says `aborted` or `truncated`, its header shows the
+count of requests not re-sent, and the defects it could not re-observe are
+`inconclusive` rather than silently dropped or falsely cleared. The JSON report
+schema is unchanged — status and truncation already flowed through it. Resilience
+runs over `https://` no longer report a false `connection_dropped`; the
+mid-request-close attack contributes an infrastructure count instead of a finding
+there, and runs unchanged over `http://`.

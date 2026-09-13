@@ -91,3 +91,4 @@ tells you what it governs.
 | [ADR-054](engine.md#adr-054) | engine | The semantic phase steers generation toward a declared input constraint |
 | [ADR-055](engine.md#adr-055) | engine | A phase extension is one registered value object, and every finding names its rule |
 | [ADR-056](engine.md#adr-056) | engine | A request carries its path parameters, and the shared scope ranks the path zone lowest |
+| [ADR-057](engine.md#adr-057) | engine | Undecided business rules are reported as a per-endpoint diagnostic, not as findings |

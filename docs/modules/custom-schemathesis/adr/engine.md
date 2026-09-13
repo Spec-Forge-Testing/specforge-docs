@@ -1350,3 +1350,85 @@ The canonical example of a rule the phase can never decide moves from a path
 parameter to a **numeric header declared `integer`**: a header is stringified and
 then dropped by declared-type conformance, so such a rule stays undetermined and only
 the unfiltered valid arm generates. Existing traces regenerate rather than migrate.
+
+## ADR-057 — Undecided business rules are reported as a per-endpoint diagnostic, not as findings { #adr-057 }
+
+**Status:** accepted · Extends [ADR-048](#adr-048), builds on [ADR-044](#adr-044) · `engine/oracles/verdict.py`, `engine/oracles/registry.py`, `engine/oracles/semantic/oracle.py`, `engine/fuzzers/stateless/state.py`, `engine/fuzzers/stateless/folding.py`, `engine/fuzzers/stateless/__init__.py`, `engine/runners/loop.py`, `engine/findings/stats.py`, `models/engine/results.py`, `models/engine/stats.py`
+
+### Context
+
+The semantic oracle evaluates every declared business rule against each accepted
+(2xx) response, and its evaluator is total: a rule that references a field the
+request or response did not carry, or a value the declared type rules out, yields
+`UNDETERMINED` rather than raising, and an undetermined root is deliberately never
+a finding — an undecidable rule must not accuse the API ([ADR-048](#adr-048)). The
+common case is a rule that reads a header numerically while the header is declared
+`integer`: a header is a string on the wire and a wrong-typed value is dropped from
+the scope, so the comparison can never see a number.
+
+The cost was silent. An undetermined rule and a satisfied rule looked identical from
+outside the oracle, so a rule that was *never* decidable — its field never came
+back, or its type made it undecidable in principle — degraded silently: the run
+reported a clean endpoint and no one learned that a declared rule had never once
+been checked. That is exactly the kind of unmeasured gap the package's counters
+exist to make visible.
+
+### Decision
+
+**The oracle observes; a run reports the rules it could never decide, per
+endpoint.** As it walks an endpoint's rules the `semantic_property` oracle
+classifies each: decided when its root evaluates to a boolean either way, undecided
+when it evaluates to `UNDETERMINED`. The split rides the verdict as a
+`RuleDecisions(decided, undecided)` and the ordered pipeline merges every oracle's
+split into the one `OracleReport(violations, rule_decisions)` that `check_response`
+returns — a single pipeline result object rather than a second return channel. Both
+declared rule classes are covered by the same mechanism: an input constraint judged
+against the flattened request and a response invariant judged against the body.
+
+Stateless exploration folds each response's decisions into a per-endpoint
+`RuleDecisions`, and at the end of the endpoint reports `never_decided` — the rules
+undecided on some response and decided on **none** (`undecided - decided`). A rule
+decided on even one response is cleared retroactively; a rule the oracle never
+evaluated (an endpoint with no 2xx) is not counted, because it was never observed.
+
+The result is a **diagnostic, not a finding**: the run's status and its findings are
+unchanged. It travels the same path a starved identity does — `ExplorationOutcome`,
+the run loop's per-endpoint merge, `EndpointStats.undecided_rules` (sorted rule ids),
+the `undecided_rules` storage column, report schema **1.8**, and the run detail and
+live fuzz views — and it is populated only by the modes that run the stateless
+fuzzer's full accounting, **stateless** and **performance**. Stateful, replay, auth
+and resilience leave it empty, and shrink re-sends never contribute.
+
+### Rejected
+
+- **Counting undecidable rules in the generation phase.** The compiler knows a rule's
+  declared types and could flag "this rule can never hold on the wire" before a run.
+  But the generation phase never sees a response, so it cannot tell a rule that is
+  undecidable *in principle* (a numeric header) from one that is merely undecided *so
+  far* because the field has not yet appeared. The distinction the diagnostic reports
+  — undecided on some response, decided on none — only exists after execution.
+- **One finding per undecidable rule.** Emitting a finding would put an undecidable
+  rule in the crash tables and count it against the run's status. But it is not a
+  defect in the target: the API did nothing wrong, and the rule may be undecidable
+  because of the contract, not the service. A finding would inflate the funnel with
+  something no reproducer can shrink.
+- **A bare counter without names.** "3 rules undecided" tells a reader something is
+  wrong but not which rule to review. The rule id is the actionable part — it points
+  at the exact declared rule and the field it names — so the diagnostic carries the
+  sorted ids, not a count.
+- **Listing every rule an endpoint never evaluated.** Reporting rules on an endpoint
+  that returned no 2xx would drown the signal: those rules were not undecidable, they
+  were simply never reached, and their absence is already visible as the endpoint's
+  missing successful responses. Only rules the oracle actually tried and could not
+  decide are reported.
+
+### Consequences
+
+A rule that can never be checked is now visible instead of silent: the numeric-header
+rule, and any rule whose field never comes back, is listed under the endpoint that
+declared it, in the fuzz summary, `inspect`/`history` and `report.json` at schema
+1.8. The signal is honest by construction — a rule decided even once drops off, and a
+rule never evaluated never appears — so a non-empty list always means "declared,
+tried, undecidable here". The counter costs one merged frozenset per endpoint and one
+nullable JSON column; a run that declares no rules, or runs in a mode that does not
+account for them, carries an empty list and pays nothing.

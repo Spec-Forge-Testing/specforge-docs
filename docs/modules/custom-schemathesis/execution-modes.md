@@ -240,6 +240,15 @@ for. The connection-cut-off attack half-closes the socket and reads the server's
 actual reaction, so the verdict is the server's, not an artefact of the client
 closing.
 
+A half-close is a TCP operation that TLS cannot express. Over an `https://` base
+URL the raw transport therefore decides **statically** — before it takes a
+concurrency slot or opens a socket — that the mid-request-close attack is not
+applicable, and returns an `unsendable_request` result with the detail *"mid-request
+close is not applicable over TLS: the transport cannot half-close"* (the same
+shape it uses for an unsupported scheme). No finding is produced and the request
+is counted as infrastructure in the endpoint's stats. Over `http://` the attack
+runs exactly as before.
+
 ## Auth
 
 Cross the declared identities against each endpoint's access policy and watch

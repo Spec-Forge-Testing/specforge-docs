@@ -954,8 +954,10 @@ infrastructure categories so it reaches the resilience oracle and counts as a
 degradation on the same footing as a 5xx — a crash mid-response is a crash. A
 timeout or a 4xx (429 included) stays graceful. The connection-cut-off attack
 half-closes its socket and reads whatever the server sends back, so the verdict
-is the server's reaction, not an artefact of the client having closed; on a TLS
-transport, which cannot half-close, it falls back to a full close.
+is the server's reaction, not an artefact of the client having closed. TLS cannot
+half-close, so over an `https://` target the attack is not applicable and is
+skipped as an `unsendable_request` rather than delivered a different way
+([ADR-059](#adr-059)).
 
 ### Rejected
 

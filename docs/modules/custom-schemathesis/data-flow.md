@@ -225,13 +225,17 @@ batch size), `max_retries`, `headers`, `backoff_base`, and `identities`. A
 `mode="after"` validator rejects duplicate identity labels, because a label
 keys findings, reports and replays.
 
-`Identity` is a `label` plus credential `headers` and an optional `role`. It
-comes from the user's execution config, never from the contract producer, so it
-carries no contract fields. `headers={}` models an anonymous identity — no
-credentials at all, still worth a label so a 2xx from it is as accountable as any
-other. `role` names the role the identity acts under; an empty string is rejected,
-and an identity that declares no role never satisfies a `role_only` endpoint's
-`required_role`.
+`Identity` is a `label` plus credential `headers`, an optional `role`, and a
+`credential` kind. It comes from the user's execution config, never from the
+contract producer, so it carries no contract fields. `headers={}` models an
+anonymous identity — no credentials at all, still worth a label so a 2xx from it
+is as accountable as any other. `role` names the role the identity acts under; an
+empty string is rejected, and an identity that declares no role never satisfies a
+`role_only` endpoint's `required_role`. `credential` (`CredentialKind`, default
+`valid`) marks whether the target should accept the identity's headers; an
+`invalid` identity carries a token the target must reject, and `ExecutionConfig`
+splits the pool into `valid_identities` and `invalid_identities` for the consumers
+that need one or the other.
 
 `RequestBlueprint` is the immutable request built from a compiled endpoint and
 a payload: method, URL, headers, query, `path_params`, JSON body, `phase`,

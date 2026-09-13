@@ -87,8 +87,8 @@ Field names of this family are stable: they are persisted as columns.
 
 | Name | One line |
 |---|---|
-| `ExecutionConfig` | global runtime: `base_url` (required), timeouts, concurrency, headers, identities |
-| `Identity` | one caller identity: a `label`, its credential `headers`, and an optional `role` (never empty) that only a `role_only` endpoint reads; `None` never satisfies a required role |
+| `ExecutionConfig` | global runtime: `base_url` (required), timeouts, concurrency, headers, identities. `valid_identities` and `invalid_identities` are derived views that split `identities` by credential kind; every mode rotates through `valid_identities` |
+| `Identity` | one caller identity: a `label`, its credential `headers`, an optional `role` (never empty) that only a `role_only` endpoint reads (`None` never satisfies a required role), and a `credential` (`CredentialKind`, default `VALID`) |
 | `StatelessOptions`, `StatefulOptions`, `PerformanceOptions`, `ReplayOptions` | passed to `run(options=...)` per mode |
 
 ## Enums (only those a consumer touches)
@@ -100,8 +100,9 @@ Field names of this family are stable: they are persisted as columns.
 | `RunStatus` | a run's terminal outcome: `COMPLETED` / `TRUNCATED` / `ABORTED` |
 | `FindingState` | a finding's settled state: `CONFIRMED` / `FLAKY` / `UNVERIFIED` |
 | `ErrorCategory` | the outcome category of one request |
-| `TruncationReason` | why a run, or one endpoint, was cut short |
+| `TruncationReason` | why a run, or one endpoint, was cut short (includes `TARGET_DOWN`, `INFRASTRUCTURE_ABORT`) |
 | `FidelityLevel` | `EXACT` / `REDUCED` |
+| `CredentialKind` | whether an identity's credentials are ones the target should accept: `VALID` / `INVALID` |
 
 `Zone`, `Phase`, `SchemaType`, `Sensitivity` and the other vocabularies are
 internal or kernel-owned and are not exported by the engine facade; import the
@@ -131,6 +132,7 @@ kernel's from `specforge_contracts`.
 | `EngineError` | an execution invariant was violated |
 | `AccessLinkError` | the auth runner cannot honor an `owner_only` endpoint's producer link — its bundle has no producer in the run, or provisioning the owner resource broke the producer's own contract (`endpoint_id`, `bundle`) |
 | `AccessRoleError` | the auth runner cannot cross a `role_only` endpoint: no declared identity holds its required role; raised before the first request, its message naming the roles the run did declare (`endpoint_id`, `required_role`) |
+| `AccessIdentityError` | the auth runner has no valid declared identity to run against; raised before the first request |
 
 All descend from `CustomSchemathesisError`, never from `ValueError`
 ([ADR-001](adr/foundations.md#adr-001)). The full taxonomy, including

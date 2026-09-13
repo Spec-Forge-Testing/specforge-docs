@@ -112,9 +112,10 @@ exploration.
 
 ## Replay
 
-Re-send a recorded trace verbatim. `validate_replayable` reports readiness
-first; during the replay only server errors are checked (no contracts are
-evaluated), and the verdict is a `ReplayFidelity`.
+Re-send a recorded trace in order, at its recorded pace, until the target goes
+down. `validate_replayable` reports readiness first; during the replay only
+server errors are checked (no contracts are evaluated), and the verdict is a
+`ReplayFidelity`.
 
 ```mermaid
 sequenceDiagram
@@ -123,20 +124,44 @@ sequenceDiagram
     participant P as Pacer (Timed | Immediate)
     participant Rh as rehydrate_request
     participant Orch as AsyncOrchestrator
+    participant LM as TargetLivenessMonitor
     participant Fi as assess_fidelity
 
     RR->>VR: validate_replayable(trace, config) → ReplayReadiness
-    loop per TracedRequest
+    loop per TracedRequest, until the target is confirmed down
         RR->>P: wait_until(sent_at_ms)
         RR->>Rh: rehydrate_request(traced, config) → RequestBlueprint
         RR->>Orch: execute(blueprint)
+        RR->>LM: observe(result) → stop reason?
     end
-    RR->>Fi: assess_fidelity(trace, results) → ReplayFidelity
+    RR->>Fi: assess_fidelity(trace, results, truncation) → ReplayFidelity
     RR-->>RR: EngineRunResult (findings=(), status, trace, fidelity)
 ```
 
 `preserve_timing=True` selects the timed pacer, which waits until each
 request's recorded `sent_at_ms`; `False` selects the immediate pacer.
+
+### Stopping on a dead target
+
+A replay no longer always ends `completed`. A `TargetLivenessMonitor` watches the
+stream of results as they come back. A streak of target failures
+(`timeout` or `availability`) reaching `MAX_INFRA_FAILURES` (5) trips a single
+liveness probe — a `HEAD` to the base URL:
+
+- if the target is dead, the replay stops re-sending and ends `aborted` with the
+  truncation reason `target_down`;
+- if it answers, the run ends `truncated` with `infrastructure_abort` and stops
+  as well.
+
+A request that was never sent is no evidence about the target — it neither
+advances the streak nor clears it — and an isolated failure never cuts. When a
+replay stops early, the trace it produced is a **prefix** of the recorded one, and
+the truncation record travels in that trace. `assess_fidelity` compares only the
+prefix, so the fidelity level (`exact` or `reduced`) describes that prefix alone.
+Every recorded defect beyond the prefix was never re-sent, so the CLI rules it
+`inconclusive` — absence of evidence, like a request that got no response. The
+JSON report schema is unchanged: run status and truncation already flow through
+it.
 
 ## Performance
 
@@ -215,6 +240,15 @@ for. The connection-cut-off attack half-closes the socket and reads the server's
 actual reaction, so the verdict is the server's, not an artefact of the client
 closing.
 
+A half-close is a TCP operation that TLS cannot express. Over an `https://` base
+URL the raw transport therefore decides **statically** — before it takes a
+concurrency slot or opens a socket — that the mid-request-close attack is not
+applicable, and returns an `unsendable_request` result with the detail *"mid-request
+close is not applicable over TLS: the transport cannot half-close"* (the same
+shape it uses for an unsupported scheme). No finding is produced and the request
+is counted as infrastructure in the endpoint's stats. Over `http://` the attack
+runs exactly as before.
+
 ## Auth
 
 Cross the declared identities against each endpoint's access policy and watch
@@ -224,13 +258,22 @@ the producer declared; an endpoint with no `access`, or a `public` one, is never
 sent.
 
 The run **fails fast before any request** on three conditions, checked in this
-order: no identity is declared (`EngineError`); a `role_only` endpoint requires a
-role no declared identity holds (`AccessRoleError`, naming the endpoint, the
-required role and the roles the run did declare); or an `owner_only` endpoint
-names a bundle no endpoint in the run produces (`AccessLinkError`). For an
-`owner_only` endpoint the owner is always the first declared identity
-(`config.identities[0]`); a `role_only` endpoint privileges every identity whose
-`role` equals its `required_role`, wherever it sits in the list.
+order: no **valid** identity is declared (`AccessIdentityError`); a `role_only`
+endpoint requires a role no valid identity holds (`AccessRoleError`, naming the
+endpoint, the required role and the roles the run did declare); or an `owner_only`
+endpoint names a bundle no endpoint in the run produces (`AccessLinkError`). For
+an `owner_only` endpoint the owner is always the first valid identity
+(`config.valid_identities[0]`); a `role_only` endpoint privileges every valid
+identity whose `role` equals its `required_role`, wherever it sits in the list.
+
+An identity declared with `credential = "invalid"` (see
+[the CLI reference](../../user-guide/cli-reference.md#commands)) carries a token
+the target must reject — expired, revoked or garbage. Only the auth mode sends
+requests under it, and only under the `authenticated` policy is it treated as a
+distinct probe. Everywhere else — owner selection, role holders, the
+stateless/performance budget split, stateful identity rotation — only the valid
+identities take part, read from `config.valid_identities`. A run with only invalid
+identities has no valid pool and stops with `AccessIdentityError`.
 
 The package `engine/runners/auth/` is split by the question each module answers:
 `plan.py` holds what a plan is (`Crossing`, `Provisioning`, `PlanContext`) and the
@@ -258,7 +301,7 @@ sequenceDiagram
         else role_only
             AR->>Orch: send under every identity lacking the role, and anonymously
         else authenticated
-            AR->>Orch: one anonymous probe (config headers stripped)
+            AR->>Orch: one anonymous probe (config headers stripped), and one under each invalid credential
         end
         AR->>Or: check each crossing (access_expectation)
         Or-->>AR: 2xx for an excluded caller → violation
@@ -272,18 +315,21 @@ it depends on the policy:
 
 | Policy | What the runner sends |
 |---|---|
-| `authenticated` | one anonymous probe, with the config credential headers stripped so it is truly anonymous |
-| `owner_only` | provision the owner's resource under the **first** declared identity, capture the bundle value from the response, write it into the endpoint's consuming zone/field, then re-send under every **other** identity and once anonymously |
-| `role_only` | provision nothing; send under every declared identity whose `role` is **not** the `required_role` (an identity with no role included) and once anonymously. Holders of the role are never sent; when every identity holds it, only the anonymous request goes out |
+| `authenticated` | one anonymous probe, with the config credential headers stripped so it is truly anonymous, plus one probe under **each** invalid identity's credential |
+| `owner_only` | provision the owner's resource under the **first** valid identity, capture the bundle value from the response, write it into the endpoint's consuming zone/field, then re-send under every **other** valid identity and once anonymously. Invalid identities cross as ordinary non-privileged callers |
+| `role_only` | provision nothing; send under every valid identity whose `role` is **not** the `required_role` (an identity with no role included) and once anonymously. Holders of the role are never sent; when every identity holds it, only the anonymous request goes out. Invalid identities cross as ordinary role-less callers |
 
 A crossing is a finding when the `access_control` oracle sees a success for a
 caller the policy excludes: another identity or an anonymous request on an
 `owner_only` resource, an identity without the required role or an anonymous
-request on a `role_only` endpoint, or an anonymous request on an `authenticated`
-endpoint. The finding names the caller (`identity_label`) and the policy it broke
-as the rule. With a single declared identity the `owner_only` cross is
-owner-versus-anonymous only. Roles compare as exact strings — no hierarchy, no
-case folding — and cross-tenant isolation is not expressible.
+request on a `role_only` endpoint, or — on an `authenticated` endpoint — an
+anonymous request **or** a request under an invalid credential. A 2xx under an
+invalid identity is reported under the same `authenticated` rule, naming that
+identity; two invalid identities that both succeed produce two findings. The
+finding names the caller (`identity_label`) and the policy it broke as the rule;
+the credential is redacted like any other. With a single valid identity the
+`owner_only` cross is owner-versus-anonymous only. Roles compare as exact strings
+— no hierarchy, no case folding — and cross-tenant isolation is not expressible.
 
 The `role_only` precondition exists because the comparison is exact: an identity
 file that spells the role `Admin` against a `required_role` of `admin` declares no

@@ -373,6 +373,12 @@ unexpectedly.
     role = "account-owner"
     [identities.headers]
     Authorization = "Bearer alice-token"
+
+    [[identities]]
+    label = "expired"
+    credential = "invalid"
+    [identities.headers]
+    Authorization = "Bearer expired-token"
     ```
 
     Write `role` before `[identities.headers]`: any key after that line belongs to
@@ -380,6 +386,16 @@ unexpectedly.
     A role is an exact, case-sensitive string, it cannot be empty, and an identity
     that declares none never satisfies an endpoint that requires a role. Only
     `--mode auth` reads it.
+
+    An entry may set `credential = "invalid"` (the default is `"valid"`) to carry a
+    token the target **must reject** — expired, revoked or garbage. Only `--mode
+    auth` sends requests under an invalid identity: on an `authenticated` endpoint
+    it is crossed alongside the anonymous probe, and a `2xx` under it is an
+    access-control finding naming that identity (two invalid identities that both
+    succeed are two findings). Everywhere else — owner selection, role holders, the
+    stateless and performance example budget, stateful session rotation — only the
+    valid identities take part, and a run whose identities are all invalid stops
+    before its first request. The credential headers are redacted like any other.
 
     Labels must be unique — they key findings, crash reports and replays. Each
     endpoint phase's example budget is split evenly across the declared identities
@@ -406,14 +422,16 @@ unexpectedly.
     identities against each endpoint's access policy and flags a `2xx` a caller
     should not have obtained (a cross-identity or anonymous read of an owner's
     resource, a success without the required role on a role-restricted endpoint,
-    or an anonymous success on an authenticated endpoint). `auth` needs
+    an anonymous success on an authenticated endpoint, or a success under an
+    invalid credential on an authenticated endpoint). `auth` needs
     `--identities` and a contract producer — `--contracts <dir>` — whose contracts
     declare an `access` policy; an endpoint with no `access`, or a `public` one, is
-    never sent. On an `owner_only` endpoint the owner is the first identity
-    declared. A `role_only` endpoint is sent under every identity that does not
-    declare its required role, and once anonymously; it needs at least one
-    identity declaring exactly that role, or the run stops before its first
-    request. `--latency-sla-ms` is refused with any other mode than `performance`.
+    never sent, and the run needs at least one **valid** identity. On an
+    `owner_only` endpoint the owner is the first valid identity declared. A
+    `role_only` endpoint is sent under every identity that does not declare its
+    required role, and once anonymously; it needs at least one identity declaring
+    exactly that role, or the run stops before its first request.
+    `--latency-sla-ms` is refused with any other mode than `performance`.
 
     `--mode stateful` switches to [stateful fuzzing](../modules/custom-schemathesis/execution-modes.md#stateful):
     requests are **chained into sequences** instead of each operation being fuzzed on
@@ -721,7 +739,8 @@ unexpectedly.
     - **possibly resolved** (✓) — the response changed cleanly *and* the replay
       ran with **exact** fidelity: every other request answered as recorded.
     - **inconclusive** (⚠) — the response changed, but the surrounding trace
-      diverged (reduced fidelity) or the request got no response at all.
+      diverged (reduced fidelity), the request got no response at all, or the
+      replay stopped before that request was re-sent.
 
     "Possibly resolved" is never "resolved", by design. A replay re-sends one
     recorded stimulus: a clean answer proves *this request* no longer triggers
@@ -737,6 +756,16 @@ unexpectedly.
     for the same defect) stays two rows, never averaged. The grouping is
     presentation only — the saved document and `--json-output` keep one
     verdict per request.
+
+    A replay **stops if the target goes down while it runs**. After a streak of
+    infrastructure failures (timeouts, connection refusals) the command probes
+    the target once; a dead target ends the replay `aborted`, a target that
+    answers ends it `truncated`, and in both cases the remaining requests are not
+    re-sent. The report header therefore shows a **Run status** row and a
+    **Requests not replayed** count next to **Requests replayed**, and when any
+    request was skipped it prints a notice that those requests were not re-sent and
+    their defects are inconclusive. Every recorded defect past the point the replay
+    stopped is ruled **inconclusive** — absence of evidence, not a clean bill.
 
     The command refuses recipes it cannot replay whole, **before sending a
     single request**: an empty trace, a missing or tampered trace artifact

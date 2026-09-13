@@ -6,8 +6,8 @@ edit_uri: ""
 theme:
   name: material
   language: en
-  logo: assets/imgs/logo.png
-  favicon: assets/imgs/logo.png
+  logo: assets/imgs/hex-mark.svg
+  favicon: assets/imgs/hex-mark.svg
   
   features:
     - navigation.instant

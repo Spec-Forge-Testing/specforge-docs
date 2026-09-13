@@ -4,70 +4,91 @@
    1. SISTEMA DE DESIGN TOKENS Y PALETAS (LIGHT & SLATE)
    ========================================================================== */
 
-/* MODO CLARO (DEFAULT / MATERIAL YOU M3 LIGHT) */
+/* Semantic identity shared with the CLI (specforge_cli/ui/theme.py, "default"
+   theme). Values are the CLI's actual theme tokens, not a hand-eyeballed
+   approximation, so the docs site and a screenshot of the CLI read as the
+   same product. Background/foreground neutrals have no CLI counterpart (a
+   terminal's canvas is whoever's terminal emulator) and are picked fresh
+   per scheme below. */
+
+/* MODO CLARO (DEFAULT) */
 :root,
 [data-md-color-scheme="default"] {
   --md-font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
   --md-font-code: 'JetBrains Mono', monospace;
 
-  /* Colores de Superficie */
-  --bg-main: #f4f5eb;          /* Fondo crema principal */
-  --bg-card: #e8eae0;          /* Tarjetas y superficies */
-  --bg-code: #131a28;          /* Fondo para bloques de código */
-  --bg-chip-active: #dce0cd;   /* Píldora activa del sidebar */
-  
-  /* Tipografía */
-  --text-main: #1a1c18;        /* Texto de cuerpo */
-  --text-muted: #5d6255;       /* Texto secundario y etiquetas */
-  --text-bright: #000000;      /* Encabezados y títulos */
-  
-  /* Acentos y Bordes */
-  --accent-color: #536531;     /* Verde oliva M3 */
-  --border-subtle: rgba(0, 0, 0, 0.08);
+  /* Colores de Superficie — lienzo claro y plano, sin tinte */
+  --bg-main: #fafafa;
+  --bg-card: #f4f4f5;          /* Superficies leves (búsqueda, botones de footer) */
+  --bg-code: transparent;      /* Bloques de código: sin caja, ver §6 */
+  --bg-chip-active: #ede9fe;   /* Píldora activa del sidebar (violeta muy tenue) */
+
+  /* Tipografía — el cuerpo es "muted" por defecto, el brillo se reserva */
+  --text-main: #52525b;        /* Texto de cuerpo (CLI 'muted', variante clara) */
+  --text-muted: #71717a;       /* Texto terciario / etiquetas (CLI light MUTED) */
+  --text-bright: #18181b;      /* Encabezados y títulos */
+
+  /* Marca — tokens reales del tema "default" claro de la CLI */
+  --brand-color: #9333ea;      /* CLI light PROMPT (violeta) */
+  --accent-color: #2563eb;     /* CLI light ACCENT (azul) */
+  --success-color: #059669;    /* CLI light SUCCESS */
+  --warning-color: #d97706;    /* CLI light WARNING */
+  --error-color: #e11d48;      /* CLI light ERROR */
+  --border-subtle: #e4e4e7;    /* CLI light BORDER */
 
   /* Mapeo con variables nativas de MkDocs */
   --md-default-bg-color: var(--bg-main);
   --md-default-bg-color--page: var(--bg-main);
   --md-default-fg-color: var(--text-main);
   --md-default-fg-color--light: var(--text-muted);
-  --md-primary-fg-color: var(--bg-main);
+  --md-primary-fg-color: var(--brand-color);
   --md-accent-fg-color: var(--accent-color);
+  --md-typeset-color--success: var(--success-color);
+  --md-typeset-color--warning: var(--warning-color);
+  --md-typeset-color--error: var(--error-color);
 
   --md-grid-max-width: 90rem;
   --md-code-bg-color: var(--bg-code);
-  --md-code-fg-color: #e2e8f0;
+  --md-code-fg-color: var(--text-main);
 
   /* Ancho de la columna de contenido (compartido con el footer prev/next) */
   --sf-content-max-width: 68rem;
 }
 
-/* MODO OSCURO (SLATE) */
+/* MODO OSCURO (SLATE) — el lienzo de la CLI: negro puro, sin tinte azul/violeta */
 [data-md-color-scheme="slate"] {
   /* Colores de Superficie */
-  --bg-main: #141824;
-  --bg-card: #1b2131;
-  --bg-code: #0b0f19;
-  --bg-chip-active: #2b354d;
-  
+  --bg-main: #111111;
+  --bg-card: #1a1a1a;          /* Superficies leves (búsqueda, botones de footer) */
+  --bg-code: transparent;      /* Bloques de código: sin caja, ver §6 */
+  --bg-chip-active: #2a1f3d;   /* Píldora activa del sidebar (violeta muy tenue) */
+
   /* Tipografía */
-  --text-main: #cbd5e1;
-  --text-muted: #808ea3;
-  --text-bright: #ffffff;
-  
-  /* Acentos y Bordes */
-  --accent-color: #68bee3;
-  --border-subtle: rgba(255, 255, 255, 0.08);
+  --text-main: #a1a1aa;        /* Texto de cuerpo (CLI 'muted') */
+  --text-muted: #737373;       /* Texto terciario / etiquetas */
+  --text-bright: #e5e5e5;      /* Encabezados y títulos */
+
+  /* Marca — tokens reales del tema "default" de la CLI (theme.py::_DEFAULT) */
+  --brand-color: #a855f7;      /* CLI PROMPT (violeta) */
+  --accent-color: #5d87ff;     /* CLI ACCENT (azul) */
+  --success-color: #10b981;    /* CLI SUCCESS */
+  --warning-color: #f59e0b;    /* CLI WARNING */
+  --error-color: #f43f5e;      /* CLI ERROR */
+  --border-subtle: #3f3f46;    /* CLI BORDER */
 
   /* Mapeo con variables nativas de MkDocs */
   --md-default-bg-color: var(--bg-main);
   --md-default-bg-color--page: var(--bg-main);
   --md-default-fg-color: var(--text-main);
   --md-default-fg-color--light: var(--text-muted);
-  --md-primary-fg-color: var(--bg-main);
+  --md-primary-fg-color: var(--brand-color);
   --md-accent-fg-color: var(--accent-color);
+  --md-typeset-color--success: var(--success-color);
+  --md-typeset-color--warning: var(--warning-color);
+  --md-typeset-color--error: var(--error-color);
 
   --md-code-bg-color: var(--bg-code);
-  --md-code-fg-color: #d1d5db;
+  --md-code-fg-color: var(--text-bright);
 }
 
 /* ==========================================================================
@@ -175,7 +196,7 @@
 
 .md-nav__link:hover {
   color: var(--text-bright);
-  background-color: rgba(255, 255, 255, 0.04);
+  background-color: color-mix(in srgb, var(--text-bright) 6%, transparent);
 }
 
 /* Píldora activa (Sidebar Izquierdo) */
@@ -360,65 +381,59 @@
 }
 
 .md-typeset img {
-  border-radius: 12px;
+  border-radius: 8px;
   border: 1px solid var(--border-subtle);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
   display: block;
   margin: 1.5em auto;
 }
 
-/* Citas (Blockquotes) estilo tarjeta Tip/Note */
+/* Citas (Blockquotes) — sin caja: borde izquierdo + indentación, como los
+   paneles de Rich que la CLI abandonó. Ver §6/§7 para el mismo tratamiento
+   en código y admonitions. */
 .md-typeset blockquote {
   position: relative;
-  background-color: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: 16px;
-  padding: 1.2rem 1.2rem 1rem 2.5rem;
+  background: transparent;
+  border: none;
+  border-left: 2px solid var(--border-subtle);
+  border-radius: 0;
+  padding: 0.2rem 0 0.2rem 1rem;
   margin: 1.5em 0;
   color: var(--text-main);
   font-size: 0.7rem;
 }
 
-.md-typeset blockquote::before {
-  content: "💬  Note";
-  position: absolute;
-  top: 0.9rem;
-  left: 1.1rem;
-  font-weight: 700;
-  font-size: 0.85rem;
-  color: var(--accent-color);
-  display: block;
-}
-
 .md-typeset blockquote > p {
-  margin: 0.8em 0 0 1.8rem;
+  margin: 0.4em 0 0;
   color: var(--text-main);
 }
 
 .md-typeset blockquote > p:first-child {
-  padding-top: 0.6rem;
+  margin-top: 0;
 }
 
 /* ==========================================================================
-   6. BLOQUES DE CÓDIGO SINTÁCTICO
+   6. BLOQUES DE CÓDIGO SINTÁCTICO — estilo "left-rail" de la CLI
    ========================================================================== */
+/* La CLI dejó de envolver la salida en `rich.Panel`; el equivalente web es
+   perder la caja (fondo + sombra + esquinas) y marcar el bloque con un solo
+   borde izquierdo, como una franja de terminal. */
 .md-typeset .highlight {
-  background-color: var(--bg-code);
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  background: transparent;
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
   margin: 1em 0;
   overflow: hidden;
 }
 
 .md-typeset div.highlight > pre,
 .md-typeset pre {
-  background-color: transparent;
+  background-color: var(--bg-code);
   border: none;
+  border-left: 2px solid var(--border-subtle);
   border-radius: 0;
-  box-shadow: none;
   margin: 0;
-  padding: 0.8rem 1rem;
+  padding: 0.8rem 0 0.8rem 1.25rem;
   overflow-x: auto;
 }
 
@@ -429,7 +444,7 @@
   font-family: var(--md-font-code);
   font-size: 0.7rem;
   line-height: 1.5;
-  color: #e2e8f0;
+  color: var(--text-bright);
 }
 
 /* Tablas de números de línea */
@@ -448,36 +463,65 @@
   background: transparent;
   border: none;
   padding-right: 0.8rem;
-  color: #475569;
+  color: var(--text-muted);
   user-select: none;
 }
 
 .md-typeset .linenodiv pre {
   padding: 0.8rem 0 0.8rem 1rem;
-  color: #475569;
+  color: var(--text-muted);
+  border-left: none;
 }
 
 /* ==========================================================================
-   7. TARJETAS DE AVISOS (ADMONITIONS / TIPS)
+   7. AVISOS (ADMONITIONS / DETAILS) — estilo "left-rail", sin caja
    ========================================================================== */
-.md-typeset .admonition,
-.md-typeset details {
-  background-color: var(--bg-card);
-  border-radius: 12px;
-  border: 1px solid var(--border-subtle);
+/* Mismo tratamiento que el código (§6): sin fondo ni sombra, un borde
+   izquierdo que toma el color semántico del tipo de aviso — el mismo mapeo
+   que los tokens de la CLI (accent/success/warning/error, theme.py). */
+.md-typeset .admonition {
+  background: transparent;
+  border-radius: 0;
+  border: none;
+  border-left: 2px solid var(--accent-color);
   box-shadow: none;
-  padding: 0.8rem 1rem;
+  padding: 0.4rem 0 0.4rem 1rem;
+  margin: 1.5em 0;
 }
 
+/* Material colorea el título por tipo con selectores de mayor especificidad
+   (p. ej. `.admonition.info > .admonition-title`) que ganarían sobre esta
+   regla sin !important, dejando una franja de color detrás del texto. */
 .md-typeset .admonition-title {
-  background-color: transparent;
-  font-weight: 700;
-  font-size: 0.82rem;
-  color: var(--accent-color);
+  background-color: transparent !important;
+  box-shadow: none !important;
+  font-family: var(--md-font-code);
+  font-weight: 600;
+  font-size: 0.75rem;
+  padding: 0 0 0.4rem !important;
+  color: var(--text-bright);
 }
 
 .md-typeset .admonition-title::before {
-  background-color: var(--accent-color);
+  display: none !important;
+}
+
+/* Nota/info: azul (CLI accent). Tip/success: verde. Warning: ámbar.
+   Danger/failure/error: rojo — la franja izquierda es la única señal de tipo. */
+.md-typeset .admonition.tip,
+.md-typeset .admonition.success {
+  border-left-color: var(--success-color);
+}
+
+.md-typeset .admonition.warning,
+.md-typeset .admonition.caution {
+  border-left-color: var(--warning-color);
+}
+
+.md-typeset .admonition.danger,
+.md-typeset .admonition.failure,
+.md-typeset .admonition.error {
+  border-left-color: var(--error-color);
 }
 
 /* ==========================================================================
@@ -581,7 +625,7 @@
 .md-typeset details {
   background-color: transparent !important;
   border: none !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important; /* Línea divisora sutil */
+  border-bottom: 1px solid var(--border-subtle) !important; /* Línea divisora sutil */
   border-radius: 0 !important;
   margin: 0 !important;
   box-shadow: none !important;
@@ -594,7 +638,7 @@
 }
 
 .md-typeset details summary:hover {
-  background-color: rgba(255, 255, 255, 0.03) !important;
+  background-color: color-mix(in srgb, var(--text-bright) 4%, transparent) !important;
 }
 
 .md-typeset details[open] {
@@ -609,4 +653,57 @@
 /* Ajustar el espacio izquierdo donde estaba el ícono */
 .md-typeset details summary {
   padding-left: 0.5rem !important;
+}
+
+/* ==========================================================================
+   9. TARJETAS DE GRID (landing — "Start Here")
+   ========================================================================== */
+/* Material dibuja cada card de un `.grid.cards` como una caja con sombra —
+   la misma "heavy web UI" que el resto del sitio abandona. Se reemplaza por
+   el mismo borde izquierdo que código/admonitions, coloreado por intención:
+   azul (accent) para las cards orientadas a uso, violeta (brand) para las
+   de desarrollo interno — el mismo ancla de navegación que separa "usar
+   Spec Forge" de "extender Spec Forge" en la portada. */
+.md-typeset .grid.cards > ul > li {
+  background: transparent;
+  border: none;
+  border-left: 2px solid var(--border-subtle);
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0.9rem 0 0.9rem 1.1rem;
+  transition: border-color 0.15s ease;
+}
+
+.md-typeset .grid.cards > ul > li:hover {
+  box-shadow: none;
+  border-left-color: var(--text-muted);
+}
+
+.md-typeset .grid.cards > ul > li > hr {
+  border-color: var(--border-subtle);
+  margin: 0.6rem 0;
+}
+
+/* Portada: una sola columna, apilada, en vez del grid lado a lado por
+   defecto de Material. */
+.md-typeset .grid.cards.sf-start-here {
+  grid-template-columns: 1fr;
+}
+
+/* Portada — "usar Spec Forge" (azul) vs. "extender Spec Forge" (violeta),
+   la misma ancla de color que el resto de la identidad de marca. */
+.sf-start-here > ul > li:nth-of-type(1) {
+  border-left-color: var(--accent-color);
+}
+
+.sf-start-here > ul > li:nth-of-type(1) a {
+  color: var(--accent-color);
+}
+
+.sf-start-here > ul > li:nth-of-type(2) {
+  border-left-color: var(--brand-color);
+}
+
+.sf-start-here > ul > li:nth-of-type(2) a {
+  color: var(--brand-color);
 }

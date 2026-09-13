@@ -108,8 +108,7 @@ The boundary object between the AI side and the execution engine is `EndpointCon
   producer emits the kernel's `EndpointContract`, the orchestrator's adapter translates it into
   the engine's `CompilerInput`, and the engine's `policy` layer validates it. The shared
   vocabulary (`EndpointRisk`, the `AttackProfile` literal, `TransitionInvariant`,
-  `SemanticProperty`) is imported by the engine from the kernel, not redefined, so it crosses
-  that seam untranslated; the types the engine keeps of its own — the per-value
-  `HackerStrategyContract`, the endpoint-level `EndpointAttackContract`, the state-link family
-  — are filled by the adapter from the contract's `attack`, its `field_hints` and its
-  `transitions`.
+  `SemanticProperty`, and `EndpointAttack` itself) is imported by the engine from the kernel,
+  not redefined, so it crosses that seam untranslated; the types the engine keeps of its own —
+  the per-value `HackerStrategyContract`, the state-link family — are filled by the adapter from
+  the contract's `field_hints` and its `transitions`.

@@ -391,6 +391,21 @@ unexpectedly.
     `mutation` phases and widens generation toward adversarial values. The two words are the
     engine's own `StrategyMode` values, so a new mode needs no second list here.
 
+    A **safety guard** decides which endpoints a run may actually probe. By
+    default the engine holds back any endpoint a producer's contract marks with a
+    `risk` flag: `external_side_effects` is held out of **every** request-generating
+    mode (`stateless`, `performance`, `resilience`, `auth`, `stateful`), and
+    `write_operation` is held out of `performance` and `resilience` only. Replay is
+    exempt — it re-sends a recorded trace, never a fresh probe. A held endpoint
+    still appears in the run with zero requests, and the summary lists it under
+    **Endpoints held back by the safety guard** (with the risk flag as the reason)
+    and hints *"Re-run with --allow-side-effects to probe them."* `--allow-side-effects`
+    lifts the guard and probes every endpoint; the flag is stored with the run's
+    recipe, so a `replay` or a re-run of a saved analysis inherits it. In `--mode
+    auth`, holding back an endpoint that is the producer another endpoint's
+    owner-only check needs fails the run with an `Access Link Error` that names the
+    missing producer; `--allow-side-effects` is the way to let that run proceed.
+
     A **contract producer** supplies each selected endpoint's enriched
     `EndpointContract`, fused over its OpenAPI base with the Contract Engine's
     `fuse_contract` — the contract's invariants win on conflict, the base fills the
@@ -432,7 +447,6 @@ unexpectedly.
       },
       "risk": {"risk_score": 65, "criticality": "medium", "write_operation": true},
       "attack": {
-        "attack_profiles": ["injection", "auth_bypass"],
         "focus_fields": ["body.article"],
         "field_hints": {"body.article.title": {"attack_profiles": ["xss", "sql_injection"]}}
       },
@@ -444,9 +458,12 @@ unexpectedly.
     ```
 
     What each section becomes in the run: the enriched `parameters`/`body` shape
-    the strategies. `risk` and `attack`'s endpoint-level fields ride along to the
-    engine as they are — nothing in the engine consumes them yet, so they do not
-    change a run today. Each `field_hints["zone.field"]` entry promotes the
+    the strategies. `risk` rides along and the engine reads it — `risk_score`
+    orders and budgets the endpoints, and `write_operation`/`external_side_effects`
+    decide whether the safety guard holds the endpoint back from a probing run
+    (see `--allow-side-effects` above). `attack`'s endpoint-level fields ride along
+    too. Each
+    `field_hints["zone.field"]` entry promotes the
     addressed parameter or dotted body field to the engine's per-value hacker
     contract with the hint's payload families and toggles, **under `--strategy
     hacker` only** — `default` ignores the hints. Each `transitions` entry is

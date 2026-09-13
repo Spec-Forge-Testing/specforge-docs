@@ -27,12 +27,14 @@ and the contract can never drift between them. The execution engine keeps its
 own request-shape models — the orchestrator projects the contract onto them —
 but takes its shared vocabulary from here: `EndpointRisk` (the engine's
 `EndpointRiskContract` is this very class), the `AttackProfile` literal,
-`TransitionInvariant`, `ZoneLocation`, `EndpointAccess` and the
-`SemanticProperty` expression tree are imported by `custom_schemathesis`, not
-copied, so the objects a producer emits reach the engine untranslated. The engine's endpoint-level
-`EndpointAttackContract` stays its own and has no `field_hints`: the
-orchestrator projects the five endpoint-level fields of `attack` onto it and
-promotes each `FieldAttack` hint onto the addressed field's per-value contract.
+`TransitionInvariant`, `ZoneLocation`, `EndpointAccess`, the `SemanticProperty`
+expression tree and `EndpointAttack` itself (with its `FieldAttack` hints) are
+imported by `custom_schemathesis`, not copied, so the objects a producer emits
+reach the engine untranslated. Payload families are chosen **per field**: each
+`field_hints` entry promotes the addressed field to the engine's per-value
+hacker contract, carrying that field's `attack_profiles`. There is no
+endpoint-wide payload-family selector — the endpoint level only carries focus,
+sensitivity and effort.
 
 ## Why a separate package?
 
@@ -66,7 +68,7 @@ kinds of content, each with its own wire dialect:
 | --- | --- | --- | --- |
 | `parameters` (path/query/header), `body` | `SchemaProperty` | The request shape as JSON Schema, refined by the LLM with the constraints the spec leaves implicit | camelCase aliases (`minLength`), snake_case in Python |
 | `risk` | `EndpointRisk` | How critical and sensitive the endpoint is: score, criticality, sensitivity, auth surface, write operation, external side effects | snake_case, no alias |
-| `attack` | `EndpointAttack` | Which payload families to run, where to focus, how hard, and per-field hints in `field_hints` keyed by `zone.field` (`FieldAttack`) | snake_case, no alias |
+| `attack` | `EndpointAttack` | Where to focus, which fields are sensitive, how hard (`aggressiveness`, `mutation_depth`), and the per-field hints in `field_hints` keyed by `zone.field` (`FieldAttack`) — each hint carries the payload families (`attack_profiles`) for that field | snake_case, no alias |
 | `transitions` | `TransitionInvariant` | What a follow-up request must observe after this endpoint succeeds: expected statuses, echoed fields, trigger statuses | snake_case, no alias |
 | `semantic_properties` | `SemanticProperty` | Business rules as a closed expression tree of six node kinds discriminated by `kind` | snake_case, no alias |
 | `access` | `EndpointAccess` | Who may call the endpoint (`policy`: `public` / `authenticated` / `owner_only` / `role_only`); for `owner_only`, the `owner_bundle` naming the state-link bundle the endpoint consumes whose producing identity is the owner; for `role_only`, the `required_role` a caller must hold | snake_case, no alias |
@@ -108,7 +110,7 @@ no hierarchy, so `admin` is not satisfied by `Admin` or by a broader role.
 The package supports Python 3.10+. Consumers add it to their test path
 (`pythonpath = ["src", "../contracts/src"]`) and install it in their runtime image.
 `custom_schemathesis` goes one step further and declares it as a runtime dependency
-(`specforge-contracts>=0.4.0`), so its CI job and its `fixtures-api` Docker image
+(`specforge-contracts>=0.5.0`), so its CI job and its `fixtures-api` Docker image
 install `lib/contracts` first — which is why that image is built from the
 repository root. Installation, test and lint commands are centralized in
 [Contributing & Testing](../../developer-guide/contributing.md).

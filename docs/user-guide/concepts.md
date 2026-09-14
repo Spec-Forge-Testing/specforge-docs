@@ -141,7 +141,9 @@ The `fuzz` command has four modes, chosen with `--mode`, plus the separate `repl
 - **`--mode stateful`** chains requests into sequences, surfacing bugs that only appear when
   operations run in a certain order.
 - **`--mode performance`** sustains load and, with `--latency-sla-ms`, fails any endpoint
-  slower than the threshold you set.
+  slower than the threshold you set. With `--concurrency-steps` it instead climbs a
+  concurrency ladder — replaying each endpoint across increasing load levels — and flags any
+  whose latency grows as the load grows.
 - **`--mode resilience`** sends a fixed battery of malformed-transport requests (slow, partial,
   oversized, deeply nested, wrong content type) and flags any endpoint that answers with a
   server error, hangs or crashes instead of refusing cleanly.

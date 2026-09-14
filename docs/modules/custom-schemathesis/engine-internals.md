@@ -189,7 +189,8 @@ every other invariant the rule is *intrinsic*: `intrinsic_verdict(invariant)`
 invariant's value and whose description is the one-sentence requirement the
 invariant enforces on its own — that a response is never a 5xx, carries a declared
 status code, matches the declared schema and `Content-Type`, answers within the
-latency SLA, degrades cleanly under chaos, or honours a produced resource's state
+latency SLA, does not slow down as concurrency grows beyond the run's tolerance,
+degrades cleanly under chaos, or honours a produced resource's state
 transition. Which invariants are contract-declared is the single `frozenset`
 `DECLARED_RULE_INVARIANTS`; every other invariant is intrinsic by exclusion, with no
 per-finding flag to persist. `evaluate` runs the oracles in `(order, name)`

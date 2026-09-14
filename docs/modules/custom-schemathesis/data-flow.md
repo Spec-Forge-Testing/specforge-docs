@@ -380,9 +380,10 @@ records a step that got no response at all (a transport failure).
 
 `EngineRunResult.status` is the run's terminal outcome as a `RunStatus`:
 `completed` when nothing truncated it, `aborted` when a `TARGET_DOWN` or
-`STATE_LINK_ABORT` cut it, `truncated` for every other cut. The engine derives
-it from the truncation reason; the orchestrator persists it as recorded
-([ADR-045](adr/engine.md#adr-045)).
+`STATE_LINK_ABORT` cut it, `cancelled` when the caller stopped it (a `CANCELLED`
+cut, see [Progress and cancellation](progress-and-cancellation.md)), `truncated`
+for every other cut. The engine derives it from the truncation reason; the
+orchestrator persists it as recorded ([ADR-045](adr/engine.md#adr-045)).
 
 ## Failures, not `None`
 

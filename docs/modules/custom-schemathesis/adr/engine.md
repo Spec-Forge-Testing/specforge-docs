@@ -1775,3 +1775,95 @@ ladder is persisted with its recipe. The engine facade exports `ConcurrencyLadde
 when a step exceeds the run's `max_concurrency` or an endpoint funds no valid
 baseline. Leaving the ladder unset changes nothing: the flat load run, an empty
 profile, no degradation findings.
+
+---
+
+## ADR-062 — The engine exposes its own typed observer and cancellation token; a listener adapts them to the protocol { #adr-062 }
+
+**Status:** accepted · `models/engine/cancellation.py`, `models/engine/observer.py`, `models/engine/events.py`, `models/engine/run_signals.py`, `models/engine/run_status.py`, `models/engine/trace.py`, `engine/progress/constants.py`, `engine/progress/emitter.py`, `engine/progress/facts.py`, `engine/__init__.py`
+
+### Context
+
+A long run gives a caller no way to stop it and no way to see inside it. Both are
+needed: an interactive frontend must let a user abort a fuzz that is taking too
+long, and it must paint progress while it runs. Yet the engine is a black box the
+frontend never imports — the wire between them is a separate protocol — so the
+engine cannot depend on that protocol's event shapes, its cancellation mechanism
+or its transport. Whatever the engine exposes has to be self-contained and stay
+meaningful to an in-process caller that speaks no protocol at all.
+
+### Decision
+
+**Two signals, each a Protocol the engine owns, each defaulting to a Null Object.**
+Cancellation is a `CancellationToken` — one read-only `cancelled` property that
+never raises — and watching is a `RunObserver` — one `on_event(event)`. The caller
+holds a `CancellationSource` (the write side, `cancel()`), and hands the run only
+its `token` (the read side); the run can never cancel itself. Absent either
+signal, `run` wires `NULL_TOKEN` (never cancelled) or `NULL_OBSERVER` (swallows
+every event), so no downstream path needs an `if observer is not None`, and a run
+nobody watches builds no emitter and computes no counters.
+
+**Events are frozen value objects discriminated by `kind`.** Each of the nine is a
+slotted frozen dataclass carrying a `ClassVar` `EventKind`, and `RunEvent` is their
+union. A listener switches on `kind` — a `StrEnum` — and never guesses a type;
+adding an event is a new class in the union, not a new parameter anywhere.
+
+**Cancellation is a value, never an exception.** A polled token that has tripped
+becomes a `TruncationRecord` with reason `cancelled`, carried back on the trace
+exactly like a budget or target-down cut. Inside stateless exploration the cut is
+**sticky**: `mark_cancelled` sets it only when no earlier cut is present, and the
+shrinker gates on the token immediately before its next send, so a cancelled
+minimization abandons the finding rather than confirming it. Nothing is thrown to
+unwind the run.
+
+**A cancelled run is an honest result.** It returns a full `EngineRunResult` whose
+`status` is a distinct `RunStatus.CANCELLED`, its findings not yet confirmed
+counted `unverified`, no request sent after the mark, and the shared HTTP client
+closed. The status says the caller stopped the run; it makes no claim about the
+API. Cancellation **outranks** a soft budget or deadline cut but **not** a
+confirmed dead target: a liveness probe or an all-breakers-open verdict is a fact
+about the world and stands over a cancellation that arrived beside it.
+
+**The waits are chunked.** The HTTP backoff and the replay pacer sleep through
+`wait_chunks`, steps of at most `CANCELLATION_POLL_INTERVAL_S`, so a cancel is
+noticed within that window instead of at the end of a full delay.
+
+**Both signals travel as one `RunSignals` carrier**, built once by `run` and passed
+down the `RunRequest`, so a runner takes a single value rather than two parameters
+threaded everywhere. Behind `progress` sits a `ProgressEmitter` that forwards a
+fact untouched and throttles a `tick` to `MIN_TICK_INTERVAL_S`, holding the run's
+clock and its `sent`/`total`/`findings` counters.
+
+### Rejected
+
+- **Killing the run's thread.** A hard kill leaves the HTTP client, the trace and
+  the counters in an arbitrary state — no honest result, no clean close. Reading a
+  flag between units of work stops the run at a point where its record is
+  consistent.
+- **A callback per HTTP request.** At thousands of requests a second it would flood
+  the listener with events carrying nothing the throttled counter does not already
+  hold. Events fire at folding boundaries; the counter is a state snapshot, not a
+  log.
+- **Importing the protocol's event and cancellation types.** It would couple the
+  engine to the wire and invert the dependency the black-box boundary exists to
+  keep out. The engine owns plain in-process types; the listener maps them.
+- **Signalling a cancelled run with `None` or an exception.** `None` erases the
+  partial trace and counters the caller may still want; an exception forces every
+  caller into a `try` for an outcome that is normal, not a failure. A cancelled run
+  is a first-class terminal status.
+- **An `asyncio.Event` tied to the engine's event loop.** Cancellation must be set
+  from any thread — a signal handler, a UI thread — without reaching into the
+  bridge loop the engine runs HTTP on. A `threading.Event` behind the source is
+  loop-agnostic and safe to set from anywhere.
+
+### Consequences
+
+The facade exports the cancellation and observer surface — `CancellationSource`,
+`CancellationToken`, `RunObserver`, `RunEvent`, `EventKind`, `TargetDownVerdict`
+and the nine event classes — and `run` gains keyword-only `cancellation` and
+`observer` parameters, both defaulting to their Null Object. `RunStatus` gains a
+`cancelled` member and `TruncationReason` a `cancelled` reason. A caller that wants
+neither is unaffected: the defaults make watching and stopping free. The CLI's
+listener maps each event to a `progress` notification and derives what the engine
+does not know — an endpoint's short number, a finding's stable id and severity, and
+the narrowed wire status — so a new event never touches the protocol's routing.

@@ -689,7 +689,9 @@ unexpectedly.
     id. For a **confirmed** crash it shows the request's **minimal payload** broken
     down by zone, its **sanitized headers**, the **identity it was found under**,
     and the **body the API responded with** — which is usually where the error
-    message lives; when the crash carries them, it also shows the **stack trace**
+    message lives, and whose sensitive fields (`password`, `token`, `secret` and
+    their kin) arrive already redacted as `***`; when the crash carries them, it
+    also shows the **stack trace**
     and the **transition sequence**: the chain of requests that produced a stateful
     finding. Every crash also names the rule it broke: a business-rule or
     access-control crash shows a **Business rule** row reading `<id> —

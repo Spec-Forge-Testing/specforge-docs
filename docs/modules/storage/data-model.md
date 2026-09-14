@@ -207,7 +207,7 @@ connection" would be hidden, non-thread-safe mutable state.
       | `status_code` | `int \| None` | Status code of the failing response; `NULL` with no reproducer. |
       | `minimal_payload` | `str \| None` | Minimal reproducible payload, as JSON; `NULL` with no reproducer. |
       | `sanitized_headers` | `str \| None` | Headers as JSON, with secrets already redacted by the engine; `NULL` with no reproducer. |
-      | `response_body` | `str \| None` | Body of the failing response; `NULL` with no reproducer. |
+      | `response_body` | `str \| None` | Body of the failing response, with sensitive field values already redacted to `***` by the engine; `NULL` with no reproducer. |
       | `stack_trace` | `str \| None` | Filled in later by the Auto-Fixer; the engine leaves it `None`. |
       | `transition_sequence` | `str \| None` | Request chain as JSON, stateful findings only. |
       | `represented_findings` | `int` | Raw findings this row stands for: itself, its unshrunk group mates and the duplicates it absorbed. Always 1 for stateful findings. |

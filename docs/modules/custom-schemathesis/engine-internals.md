@@ -451,8 +451,22 @@ group → shrink → materialize → dedupe → assemble → stats.
   subtraction** ([ADR-018](adr/engine.md#adr-018)).
 - **Materialize.** `build_crash_report` is the single assembler of a
   `CrashReport`, from a `FindingFacts` — the source-agnostic subject of a report
-  — plus the request and result. Redaction happens here and nowhere else:
-  sensitive headers and payload fields are replaced with a placeholder.
+  — plus the request and result. Redaction happens here and nowhere else: request
+  headers (`Authorization`, `Cookie`, `X-Api-Key` and the config header names) and
+  the declared sensitive payload fields are replaced with `***`, and the
+  `response_body` is redacted by field name at any depth of a JSON body — objects
+  and arrays of objects alike. The response names come from two sources: a built-in
+  table of credential-bearing names (`password`, `token`, `access_token`, `secret`,
+  `api_key`, `cookie`, `session`, `private_key` and their siblings in
+  `SENSITIVE_BODY_FIELDS`) and the endpoint's own declared `sensitive_fields` — of
+  which only the last path segment counts, since a response has no zones. Matching
+  is exact after normalization (case-folded, `_` and `-` removed), so
+  `accessToken`, `access-token` and `access_token` all match; there is no suffix or
+  substring matching and no shape heuristic, so `next_page_token` and a
+  JWT-looking string in an unrelated field are left alone. Non-JSON text bodies,
+  scalars and `None` pass through unchanged, and the input body is never mutated —
+  the signature and the trace still see the raw body
+  ([ADR-060](adr/engine.md#adr-060)).
   `materialize_report` is the no-shrink path, used by the modes that never
   minimize ([ADR-037](adr/engine.md#adr-037)).
 - **Dedupe.** `dedupe_crash_reports` keeps one report per `ReportKey` — method,
@@ -594,6 +608,13 @@ a trace recorded before it existed fails validation on load rather than
 rehydrating without it — traces are regenerated, not migrated. `canonical_json` serializes a trace so equal content
 yields equal bytes, and `content_hash` is its SHA-256 with the timing dropped,
 so two runs that sent the same requests content-address alike.
+
+The trace is the replay recipe, not a shareable report, so it is **not** put
+through body redaction: a request's `json_body` is generated data, and the
+config/identity credential headers were already omitted by name. One consequence
+is worth stating plainly: a value the engine captures from a response through a
+state link — a resource id, by design — is re-sent verbatim on replay, so a
+producer that captured a secret into a bundle would leave it in the trace.
 
 `rehydrate_request` is the inverse: it reconstructs a `RequestBlueprint` from a
 traced request under a fresh config, applying three rules — the recorded

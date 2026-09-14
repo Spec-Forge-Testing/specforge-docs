@@ -77,7 +77,7 @@ Field names of this family are stable: they are persisted as columns.
 | `ConfirmedFinding` | a settled reproducer: carries its `report` |
 | `FlakyFinding`, `UnverifiedFinding` | a settled group: its `signature` and how many raw `occurrences` it stands for |
 | `RunStats`, `EndpointStats`, `LatencyStats` | run, endpoint and latency counters |
-| `CrashReport`, `InvariantViolation` | a confirmed finding's reproducer and the invariant it broke |
+| `CrashReport`, `InvariantViolation` | a confirmed finding's reproducer and the invariant it broke — its `response_body` has sensitive field values redacted to `***` by name |
 | `ViolatedRule` | the rule a `CrashReport` broke (`id` + `description`) — declared by the contract for a `semantic_property` / `access_control` finding, or intrinsic to the invariant for every other one |
 | `ExecutionTrace`, `TracedRequest`, `TruncationRecord` | the replayable record |
 | `ResponseDivergence`, `ReplayFidelity` | the replay comparison |

@@ -316,7 +316,8 @@ body fingerprint) into `FindingGroup`s, then shrunk into `CrashReport`s. A
 `CrashReport` carries the `minimal_payload` keyed by zone, the
 `invariant_violated`, an optional `rule` (the `ViolatedRule` the response broke,
 with a `rule_id` shortcut to its id), `sanitized_headers`, the `identity_label`,
-the `status_code` and `response_body`, an optional `stack_trace`, the
+the `status_code` and `response_body` (with sensitive field values redacted by
+name to `***`), an optional `stack_trace`, the
 `transition_sequence` for stateful findings, and `represented_findings` — how
 many raw findings it stands for, adjusted through `standing_for`.
 

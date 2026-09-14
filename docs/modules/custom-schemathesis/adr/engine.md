@@ -1612,3 +1612,89 @@ schema is unchanged — status and truncation already flowed through it. Resilie
 runs over `https://` no longer report a false `connection_dropped`; the
 mid-request-close attack contributes an infrastructure count instead of a finding
 there, and runs unchanged over `http://`.
+
+## ADR-060 — A crash report's response body is redacted by field name, and a confirmed finding's identity is fixed where it is confirmed { #adr-060 }
+
+**Status:** accepted · `engine/findings/redaction.py`, `engine/findings/constants.py`, `engine/findings/materializer.py`, `engine/fuzzers/stateful/supervisor.py`, `engine/findings/assembler.py`, `models/engine/results.py`
+
+### Context
+
+A `CrashReport` is a shareable artifact: it is persisted, rendered into the JSON
+and HTML reports, and shown by the crash inspector. Its `response_body` is
+captured verbatim from the target, and a target hands back credentials — a login
+endpoint returns a `token`, a 5xx echoes the request that carried a `password`, a
+session endpoint mirrors a `cookie`. Request headers and the request payload were
+already redacted at the single point where a report is assembled; the response
+body was not, so a secret the API returned reached the database, the report file
+and the inspector in the clear.
+
+Fixing this ran into a second, subtler problem. A finding's identity is a
+`FindingSignature`, and part of that signature is a *fingerprint of the response
+body's shape* — each field mapped to its JSON type. A confirmed finding's
+signature used to be re-derived from the report's response body. Redacting that
+body first would change the fingerprint: a non-string secret (a numeric
+`session_id`, say) replaced by the string `***` flips a field's type, and the
+flaky-reconciliation step — which drops a flaky finding once a confirmed report
+already stands for it — would no longer recognize its own confirmed twin.
+
+### Decision
+
+**Redact the response body by field name, in the materializer, and nowhere else.**
+`sanitize_response_body` walks a parsed JSON body and replaces the value of any
+sensitive field with `***`, at any nesting depth, through objects and arrays of
+objects alike. Two sources supply the names: a built-in table,
+`SENSITIVE_BODY_FIELDS` (`password`, `token`, `access_token`, `refresh_token`,
+`id_token`, `secret`, `client_secret`, `api_key`, `authorization`, `cookie`,
+`session`, `session_id`, `private_key`), and the endpoint's own declared
+`sensitive_fields` — of which only the last path segment is used, because a
+response has no request zones to qualify. Matching is **exact after
+normalization**: a name is case-folded and stripped of `_` and `-`, so
+`accessToken`, `access-token` and `access_token` all match `access_token`. There
+is no suffix, substring or shape matching. The walk builds a new body and never
+mutates its input.
+
+**Fix the confirmed finding's identity where the finding is confirmed, not from
+its report.** The stateful supervisor records a `confirmed_signatures` list at the
+moment it confirms a defect, carried on `StatefulExplorationOutcome`, and
+flaky reconciliation compares those signatures directly rather than re-deriving a
+signature from the (now redacted) report body. Redaction can therefore never move
+a finding's identity.
+
+### Rejected
+
+- **Redacting when persisting, or when rendering the report.** Either would let
+  the raw secret reach a store the redaction does not cover: redacting only on the
+  way to the database still leaves it in an in-memory report the inspector prints,
+  and redacting only at render time leaves it in the database row. Redacting once,
+  where the report is assembled, covers every downstream consumer by construction.
+- **Shape heuristics such as JWT detection.** Recognizing a secret by what its
+  value looks like is non-deterministic at the edges: it both misses secrets in an
+  unexpected format and false-positives on an unrelated field that happens to look
+  like a token, and the same run could redact a field one time and not the next.
+- **Suffix or substring matching.** Matching `*_token` or `*key` would swallow
+  `next_page_token`, `sort_key` and other innocuous fields whose values are exactly
+  the debugging detail a crash report exists to show.
+- **Redacting the trace.** The trace is the replay recipe: it must re-send what
+  the run actually put on the wire, byte for byte. Rewriting a value in it would
+  break verbatim replay, and its request bodies are generated data while its
+  credential headers are already omitted by name.
+- **A type-preserving placeholder, or a stored fingerprint on the report, to
+  protect identity.** A placeholder that mimicked each value's type to keep the
+  fingerprint stable would leak the value's shape and complicate the redactor for
+  a problem that the identity fix already removes; storing a pre-computed
+  fingerprint on the report to read back later would add a redundant field whose
+  only job is to paper over deriving identity from a mutated body. Taking the
+  signature where the finding is confirmed needs neither.
+
+### Consequences
+
+A secret the target returns no longer leaves the engine in the clear: the stored
+finding, the JSON and HTML reports, and `inspect --crash` all show `***` for a
+sensitive field, at any depth. The report schema is unchanged — only values
+change, not the shape — so nothing downstream needs to migrate. Because a
+confirmed finding's signature is now taken where it is confirmed, before report
+deduplication, the flaky twin of a report that dedup folded into another is
+reconciled too, where before it could slip through. One residual exposure remains
+by design and is documented as such: a value captured from a response through a
+state link is re-sent verbatim on replay, so a producer that captures a secret
+into a bundle carries it in the trace.

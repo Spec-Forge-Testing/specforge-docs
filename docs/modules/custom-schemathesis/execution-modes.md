@@ -27,7 +27,7 @@ run keeps its original order.
 | `STATELESS` | `StatelessOptions` | `include_repeated_requests` |
 | `STATEFUL` | `StatefulOptions` | `max_examples`, `step_count`, `max_distinct_bugs` |
 | `REPLAY` | `ReplayOptions` | `trace`, `preserve_timing` |
-| `PERFORMANCE` | `PerformanceOptions` | `latency_sla_ms`, `load_factor` |
+| `PERFORMANCE` | `PerformanceOptions` | `latency_sla_ms`, `load_factor`, `concurrency_ladder` |
 | `RESILIENCE` | none | the built-in chaos battery |
 | `AUTH` | none | the declared `identities` and each endpoint's `access` policy |
 
@@ -183,6 +183,62 @@ sequenceDiagram
     F->>Or: check → SLA breach
     Loop->>Fnd: group → materialize (no shrink) → dedupe → build_unshrunk_stats
 ```
+
+### The concurrency ladder
+
+A `PerformanceOptions.concurrency_ladder` turns the mode from *"is every response
+under the SLA?"* into *"does latency grow as the load grows?"*. It is a small
+frozen value object — a strictly increasing tuple of `steps` and a `tolerance`
+ratio (default `0.5`) — validated on construction: fewer than two steps, a
+non-increasing progression, or a step below `1` is rejected before any run
+starts.
+
+A **step** is one concurrency level. For each endpoint the runner replays only
+its `valid` phase, once per step, with exactly that step's number of requests in
+flight — the step's concurrency temporarily caps the run's shared connection
+pool, so a step of `8` sends eight at a time and no more. The step's example
+budget is a stable floor (at least `MIN_STEP_SAMPLES` sent samples, so the p95 is
+meaningful) rounded up to whole batches, and split evenly across the run's valid
+identities so every identity's share is a whole number of batches. The order the
+ladder walks is baseline-first.
+
+The **first step is the baseline**: its p95 latency is the reference every later
+step is judged against. A later step is **degraded** when its p95 exceeds the
+baseline p95 by more than the tolerance — with the default `0.5`, a step whose p95
+is more than 1.5× the baseline's. The baseline never degrades against itself, and
+a step that sent nothing (or a baseline that did) is never called degraded.
+
+Each degraded step becomes one `LATENCY_DEGRADATION` finding. It is **anchored on
+a real request**: the sent request whose latency sits at the step's nearest-rank
+p95, so the finding points at an actual exchange rather than a computed number.
+Its reproducer is the synthetic payload `{"concurrency_step": N}` naming the step.
+Degraded steps that answered with the same response signature fold into one
+report that names the rest through `represented_findings` — the profile already
+records each step, so the report does not repeat them. The rule the finding cites
+is intrinsic: *"a clean response's latency must not grow with concurrency beyond
+the run's tolerance."*
+
+If a step is **truncated** (a deadline or a dead target cuts it), the endpoint's
+ladder ends there: the completed steps still form its profile, the unmeasured
+ones are simply absent.
+
+### The load profile
+
+Whatever the ladder measures lands on the endpoint's stats as `load_profile`: a
+tuple of `LoadStepStats`, one per completed step, each carrying the step's
+`concurrency`, its full `LatencyStats` distribution and its `degraded` verdict.
+This is where the per-step latencies live; the finding only points into it.
+
+### Preconditions and the no-ladder guarantee
+
+Two conditions are checked **before the first request** and fail typed with a
+`ConcurrencyLadderError`: a step above the run's `max_concurrency` (it could never
+run at that level), and an endpoint that funds no `valid` examples (the ladder
+would have no baseline to measure — the error names the endpoint).
+
+Leaving `concurrency_ladder` unset is the default, and the mode then behaves
+exactly as it always has: the flat load run above, an empty `load_profile`, and no
+degradation findings.
 
 ## Resilience
 

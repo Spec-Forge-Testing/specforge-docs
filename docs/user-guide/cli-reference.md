@@ -433,6 +433,28 @@ unexpectedly.
     exactly that role, or the run stops before its first request.
     `--latency-sla-ms` is refused with any other mode than `performance`.
 
+    `--concurrency-steps <n,n,...>` turns a performance run into a **concurrency
+    ladder**: instead of sustaining one load level, the engine replays each
+    endpoint's valid phase once per step at that step's number of requests in
+    flight, and flags an endpoint whose latency grows as the load grows. The steps
+    are a comma-separated, strictly increasing progression (e.g. `1,4,8`); the
+    first is the baseline every later step's p95 latency is compared against.
+    `--degradation-tolerance <ratio>` sets how much slower a later step may be
+    before it counts as degraded — the ratio over the baseline's p95, so `0.25`
+    means "more than 25% slower" (the engine defaults it when omitted).
+    `--degradation-tolerance` requires `--concurrency-steps`, and both apply only
+    to `--mode performance`. `--max-concurrency` caps the ladder: a step above it
+    is refused. A progression the engine rejects — fewer than two steps, or one
+    that does not strictly increase — is reported as an **invalid concurrency
+    ladder** error before any request is sent. A degraded step is reported under
+    the invariant **latency grows under load**, with the concurrency step as its
+    reproducer.
+
+    ```text
+    fuzz -f spec.yaml --base-url http://localhost:8000 --mode performance \
+        --concurrency-steps 1,4,8 --degradation-tolerance 0.25
+    ```
+
     `--mode stateful` switches to [stateful fuzzing](../modules/custom-schemathesis/execution-modes.md#stateful):
     requests are **chained into sequences** instead of each operation being fuzzed on
     its own, which surfaces order-dependent failures — a resource created, deleted,
@@ -605,9 +627,10 @@ unexpectedly.
     trace keeps the label each request was sent under, and a replay re-supplies the
     values from `--identities <file>.toml`. The run also records its outcome `status`
     (`completed`/`truncated`/`aborted`), the replay `fidelity` when it is one, and the
-    engine version as provenance. The analysis records whether the run was stateful
-    and, when it was, the effective budget it ran with (`stateful_config`: examples,
-    steps per sequence and distinct bugs per sequence).
+    engine version as provenance. The analysis records the execution mode it ran and,
+    in `execution_options`, the effective options of that mode — a stateful run's
+    budget (examples, steps per sequence and distinct bugs per sequence), a performance
+    run's SLA and concurrency ladder, and so on for any mode that carries options.
 
 ### History, Replay & Comparison
 

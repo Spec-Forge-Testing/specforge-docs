@@ -99,8 +99,8 @@ connection" would be hidden, non-thread-safe mutable state.
       | `label` | `str \| None` | Optional human-readable label. |
       | `generated_against_repo_hash` | `str` | Hash of the repo the trace was generated against. |
       | `strategy_mode` | `str` | Hypothesis strategy mode used to generate it. |
-      | `stateful` | `bool` | Whether the analysis runs stateful chains. |
-      | `stateful_config` | `str \| None` | Stateful config, serialized as JSON. |
+      | `execution_mode` | `str` | How the trace was generated: `stateless`, `stateful`, `performance`, `resilience` or `auth`. |
+      | `execution_options` | `str \| None` | The effective options of that execution mode, serialized as JSON; `NULL` for a mode with no options. Every mode's options are stored here (previously only a stateful run stored its config). |
       | `execution_config` | `str` | Execution config as JSON (headers already sanitized). |
       | `engine_version` | `str \| None` | Engine version that produced the analysis (provenance only). |
 
@@ -165,6 +165,7 @@ connection" would be hidden, non-thread-safe mutable state.
       | `starved_identities` | `str \| None` | The identity labels this endpoint's budget could not fund, as a JSON list; `NULL` when every declared identity was funded. Only modes that split budget by identity ever populate it. |
       | `undecided_rules` | `str \| None` | The ids of any declared rules the oracle evaluated here and could never decide, as a JSON list; `NULL` when none stayed undecidable. Only modes that account for them (`stateless`, `performance`) ever populate it. |
       | `held_back_by` | `str \| None` | The risk flag the safety guard used to keep this endpoint out of the run (`external_side_effects` or `write_operation`); `NULL` when the endpoint was probed. A held endpoint's row records zero `requests`. |
+      | `load_profile` | `str \| None` | The concurrency-ladder steps a performance run measured at this endpoint, as a JSON list (`concurrency`, the step's `latency` distribution, and its `degraded` verdict); `NULL` when the run had no ladder. |
 
 ??? "`LatencyRecord` - An endpoint's **latency distribution**, in milliseconds."
 

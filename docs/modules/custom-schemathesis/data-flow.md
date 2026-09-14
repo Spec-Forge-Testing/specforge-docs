@@ -30,7 +30,7 @@ The engine-side outcome vocabularies follow the same rule:
 | Enum | Members (`.value`) |
 |---|---|
 | `ErrorCategory` | `success` · `client_error` · `server_error` · `contract_violation` · `timeout` · `availability` · `unsendable_request` · `connection_dropped` |
-| `InvariantViolation` | `not_a_server_error` · `status_code_conformance` · `response_schema_conformance` · `content_type_conformance` · `state_transition` · `latency_sla` · `resilience_degradation` · `semantic_property` · `access_control` |
+| `InvariantViolation` | `not_a_server_error` · `status_code_conformance` · `response_schema_conformance` · `content_type_conformance` · `state_transition` · `latency_sla` · `latency_degradation` · `resilience_degradation` · `semantic_property` · `access_control` |
 | `TruncationReason` | `infrastructure_abort` · `deadline_exceeded` · `target_down` · `state_link_abort` · `generation_exhausted` |
 | `FidelityLevel` | `exact` · `reduced` |
 
@@ -265,7 +265,7 @@ parameter per mode. `None` means the mode's defaults.
 |---|---|
 | `StatelessOptions` | `include_repeated_requests` (validated, not yet wired to generation) |
 | `StatefulOptions` | `max_examples` and `step_count` bound the breadth and length of each generated sequence; `max_distinct_bugs` controls the loop-until-dry depth (`1`, the default, runs one pass and reports the first defect; higher values keep re-running, suppressing each found defect, at a proportional cost in requests) |
-| `PerformanceOptions` | `latency_sla_ms` (the SLA the oracle enforces) and `load_factor`, a multiplier applied to each phase's example budget to sustain load |
+| `PerformanceOptions` | `latency_sla_ms` (the SLA the oracle enforces) and `load_factor`, a multiplier applied to each phase's example budget to sustain load; `concurrency_ladder` (a `ConcurrencyLadder` of strictly increasing `steps` and a degradation `tolerance`) replays the valid phase once per step and flags latency that grows with concurrency |
 | `ReplayOptions` | `trace` to re-send and `preserve_timing` (wait between requests to match the recorded schedule) |
 
 `StatefulOptions` is persisted by the orchestrator as part of a run's recipe,

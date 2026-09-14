@@ -95,3 +95,4 @@ tells you what it governs.
 | [ADR-058](engine.md#adr-058) | engine | Endpoints with declared side effects are held back by a safety guard, not fuzzed |
 | [ADR-059](engine.md#adr-059) | engine | Invalid credentials are declared not fabricated, a replay stops on a dead target, and a TLS half-close is not applicable |
 | [ADR-060](engine.md#adr-060) | engine | A crash report's response body is redacted by field name, and a confirmed finding's identity is fixed where it is confirmed |
+| [ADR-061](engine.md#adr-061) | engine | Latency degradation under load is a concurrency ladder on the performance options, anchored on a real request |

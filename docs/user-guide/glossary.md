@@ -25,6 +25,9 @@ name, that name follows in `code font`.
 | **Stateless** | Fuzzing each operation on its own, one request at a time. |
 | **Stateful** | Chaining requests into sequences to find order-dependent bugs. |
 | **Performance / latency SLA** | A mode that sustains load and fails endpoints slower than a threshold you set (`--latency-sla-ms`). |
+| **Concurrency ladder** | A strictly increasing list of load levels (`--concurrency-steps 1,4,8`) a performance run replays an endpoint across, comparing each level's latency against the first to see if it grows under load. |
+| **Load profile** | Per-endpoint latency measured at each step of a concurrency ladder — the distribution at every level, and whether that level degraded. |
+| **Degradation tolerance** | How much slower a higher load level may be before it counts as degraded — a ratio over the baseline level's p95 latency (`--degradation-tolerance`). |
 | **Resilience** | A mode that sends malformed-transport requests and flags endpoints that fail instead of refusing cleanly. |
 | **Replay** | Re-sending a saved run's recorded requests verbatim, to check whether a bug is still there. |
 | **Trace** | The ordered list of requests a run actually sent, recorded so the run can be replayed. |

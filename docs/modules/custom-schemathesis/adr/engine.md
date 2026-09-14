@@ -1698,3 +1698,80 @@ reconciled too, where before it could slip through. One residual exposure remain
 by design and is documented as such: a value captured from a response through a
 state link is re-sent verbatim on replay, so a producer that captures a secret
 into a bundle carries it in the trace.
+
+## ADR-061 — Latency degradation under load is a concurrency ladder on the performance options, anchored on a real request { #adr-061 }
+
+**Status:** accepted · `models/engine/options.py`, `models/engine/stats.py`, `engine/runners/performance/ladder.py`, `engine/runners/performance/degradation.py`, `engine/runners/performance/runner.py`, `engine/runners/performance/constants.py`, `models/engine/crash_report.py`, `engine/oracles/rules.py`
+
+### Context
+
+The performance mode scaled request **volume** against a single, fixed latency
+SLA: it asked *"is every response under this threshold?"* and nothing more.
+Nothing in the engine compared latency **across load levels** — the failure mode
+where an endpoint is fine when idle and collapses under concurrency was invisible.
+An SLA cannot express it: a threshold that passes at one request in flight passes
+at fifty, and one that fails at fifty fails at one; neither says *latency grew
+because the load grew*. Answering that needs at least two measurements at
+different concurrencies and a comparison between them — a shape the per-response
+SLA oracle structurally cannot produce.
+
+### Decision
+
+**Model the load progression as a value object on the performance options.**
+`ConcurrencyLadder` — a frozen `steps` tuple validated strictly increasing with at
+least two entries, plus a `tolerance` ratio — hangs off
+`PerformanceOptions.concurrency_ladder`. Absent, the mode is unchanged; present,
+it drives a ladder run.
+
+**Run each endpoint's valid phase once per step, at exactly N requests in flight,
+through the run's own connection pool.** A step temporarily caps the shared
+orchestrator's concurrency at that step's level, so "N in flight" is enforced by
+the same pool that governs every other mode rather than a parallel executor. Each
+step's budget is a stable floor rounded up to whole batches of `N × identities`,
+so every identity's share is a whole number of full-concurrency batches and the
+p95 is measured on enough samples to be meaningful.
+
+**Judge each step against the first, and anchor the finding on a real request.**
+The first step is the baseline; a later step degrades when its p95 exceeds the
+baseline p95 by more than the tolerance. Percentiles are **nearest-rank**, so the
+step's p95 is an observed sample — the runner keeps the actual `ExecutionResult`
+at that index and anchors the `LATENCY_DEGRADATION` finding on it, with a synthetic
+`{"concurrency_step": N}` reproducer naming the step. The invariant carries an
+intrinsic rule (`engine/oracles/rules.py`): *"a clean response's latency must not
+grow with concurrency beyond the run's tolerance."*
+
+**Record the full measurement as per-endpoint stats.** Every completed step lands
+on `EndpointStats.load_profile` as a `LoadStepStats` (its concurrency, its latency
+distribution, its degraded verdict). The profile is the record of what happened;
+the finding only points into it.
+
+### Rejected
+
+- **A per-response oracle, like the latency SLA.** An oracle sees one response at
+  a time and cannot see an aggregate across a step, let alone across steps. The
+  degradation verdict is a comparison of two distributions — it has no meaning at
+  the granularity an oracle judges.
+- **A new finding shape for aggregate results.** Introducing a distinct
+  aggregate-finding type would fork the findings pipeline — its own dedup,
+  materialization, persistence and reporting — for a single case. Anchoring the
+  degradation on the real request at the step's p95 lets it flow through the
+  existing `RawFinding` → report path unchanged.
+- **A field on the crash report naming the degraded step.** The `load_profile`
+  already names every step and its verdict; a redundant field on the report would
+  duplicate what the per-endpoint stats hold and drift from it.
+- **Measuring drift over time or hunting resource leaks.** Latency creep across a
+  long soak, or leaked connections and memory, need long runs and their own
+  statistical machinery; they are a different question from *does concurrency slow
+  this endpoint down*, and out of scope here.
+
+### Consequences
+
+The run report schema moves to **1.10**: each `endpoints[]` entry gains an additive
+`load_profile`. Storage gains a `run_endpoint_stats.load_profile` JSON column, and
+the analyses table's `stateful_config` becomes `execution_options` — the effective
+options of **any** execution mode, not just stateful — so a performance run's
+ladder is persisted with its recipe. The engine facade exports `ConcurrencyLadder`,
+`LoadStepStats` and the typed `ConcurrencyLadderError`, raised before any request
+when a step exceeds the run's `max_concurrency` or an endpoint funds no valid
+baseline. Leaving the ladder unset changes nothing: the flat load run, an empty
+profile, no degradation findings.

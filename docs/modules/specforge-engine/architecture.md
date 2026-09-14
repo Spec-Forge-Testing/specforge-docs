@@ -10,7 +10,7 @@ output; dependencies point one way only.
 |---|---|---|---|
 | **policy** | `policy/` | validate the compiler input at the boundary | HTTP, LLM calls |
 | **strategy_compiler** | `strategy_compiler/` | validated contracts → `SearchStrategy`s | HTTP, re-validation |
-| **engine** | `engine/` | execute, check, minimize, report | see a `StrategyMode` |
+| **engine** | `runtime/` | execute, check, minimize, report | see a `StrategyMode` |
 
 Three leaf packages sit under the stages and are shared without inverting the
 direction:
@@ -28,7 +28,7 @@ the kernel; the kernel never imports the engine.
 ## Module layout
 
 ```text
-src/custom_schemathesis/
+src/specforge_engine/
 ├── __init__.py            # Public facade, curated __all__
 ├── main.py                # compile_strategies() and run(): thin delegators
 ├── constants.py           # Engine-health numbers shared by two or more layers
@@ -54,7 +54,7 @@ src/custom_schemathesis/
 │       ├── builtin.py     # the seven built-in phase registrations
 │       ├── default/       # valid · boundary · invalid · constraints
 │       └── hacker/        # request · mutation · mutation_operators · payloads · builders · tables
-└── engine/                # Execution
+└── runtime/                # Execution
     ├── payload.py         # ZonedPayload: the value object a strategy draws
     ├── ordering.py        # order_by_risk: most-risky-first, before dispatch
     ├── http/              # Async orchestrator, request injection, credentials, error classifier
@@ -91,7 +91,7 @@ models/
 │   ├── dialect.py · normalization.py · response.py · state_link.py · endpoint_controls.py
 │   └── strategies/     # BaseStrategyContract, HackerStrategyContract
 ├── compiler/           # compiler-side DTOs: CompilerInput, EndpointSpec, RequestZones, CompilationOutcome
-└── engine/             # engine-side DTOs: EngineInput, GenerationPlan, runtime, options, results, trace, replay
+└── runtime/             # engine-side DTOs: EngineInput, GenerationPlan, runtime, options, results, trace, replay
 ```
 
 The enums sit at the package root because both the compiler and the engine key
@@ -105,17 +105,17 @@ Dependencies inside `models/` are acyclic and point downward:
 ```mermaid
 graph TD
     root["models/*.py<br/>(enums · StrategyModeProfile)"] --> contracts
-    compiler["models/compiler"] --> engine["models/engine"]
+    compiler["models/compiler"] --> engine["models/runtime"]
     engine --> contracts["models/contracts"]
     contracts --> kernel["specforge_contracts (kernel, leaf)"]
     root --> kernel
 ```
 
-`models/compiler` depends on `models/engine` because `CompilationOutcome`
-carries the `EngineInput` the engine consumes; `models/engine` depends on
+`models/compiler` depends on `models/runtime` because `CompilationOutcome`
+carries the `EngineInput` the engine consumes; `models/runtime` depends on
 `models/contracts` because compiled endpoints keep the contract's risk, attack,
 response and state-link DTOs; `models/contracts` re-exports the kernel and adds
-the engine's own contracts. `GenerationPlan` lives in `models/engine/plan.py`
+the engine's own contracts. `GenerationPlan` lives in `models/runtime/plan.py`
 because it is a field of `CompiledEndpointStrategies` — part of the shape of
 `EngineInput`, produced by the compiler and read by the engine
 ([ADR-006](adr/models.md#adr-006), [ADR-011](adr/models.md#adr-011)).
@@ -133,13 +133,13 @@ graph TD
     compiler --> fields["strategy_compiler/fields"]
 
     engine["engine (run, ordering, payload)"]
-    engine --> runners["engine/runners (registry · loop)"]
-    runners --> fuzzers["engine/fuzzers (stateless / stateful)"]
-    runners --> findings["engine/findings"]
-    fuzzers --> http["engine/http"]
-    fuzzers --> harness["engine/harness"]
-    fuzzers --> oracles["engine/oracles"]
-    runners --> etrace["engine/trace · replay"]
+    engine --> runners["runtime/runners (registry · loop)"]
+    runners --> fuzzers["runtime/fuzzers (stateless / stateful)"]
+    runners --> findings["runtime/findings"]
+    fuzzers --> http["runtime/http"]
+    fuzzers --> harness["runtime/harness"]
+    fuzzers --> oracles["runtime/oracles"]
+    runners --> etrace["runtime/trace · replay"]
 
     profiles["profiles (registry)"]
     budget["budget (arithmetic)"]
@@ -178,7 +178,7 @@ graph TD
 ## `ExecutionResult` is the canonical record of a request
 
 Every request the engine sends produces one `ExecutionResult`. The stats
-builders in `engine/findings/` and the trace recorder in `engine/trace/` are
+builders in `runtime/findings/` and the trace recorder in `runtime/trace/` are
 projections of that stream — a read model each, never a second source of
 truth. That is why a counter has exactly one producer and why the trace and
 the stats of one run always agree ([ADR-017](adr/engine.md#adr-017)).
@@ -194,5 +194,5 @@ the stats of one run always agree ([ADR-017](adr/engine.md#adr-017)).
 | HTTP execution rules stay put | one event loop in a daemon thread; the orchestrator is required |
 | Honest signal | one producer per counter; flaky is measured, not subtracted |
 | User policy is separate from engine stability | `*Options` for user policy; `constants.py` for stability numbers |
-| Domain exceptions, no `print` | `CustomSchemathesisError` taxonomy; the engine raises, the CLI renders |
+| Domain exceptions, no `print` | `SpecforgeEngineError` taxonomy; the engine raises, the CLI renders |
 | Dependencies point one way | the kernel is the leaf; the engine imports it, never the reverse |

@@ -1,4 +1,4 @@
-# Testing `custom_schemathesis`
+# Testing `specforge_engine`
 
 The suite freezes the engine's observable behaviour: what a contract compiles
 to, what a replay returns, which enums serialize how, and that every extension
@@ -12,7 +12,7 @@ an explicit, reviewed change to one of these.
 | **Projection guard** | the goldens' projection rules: enum keys stringify to their wire value, a strategy map collapses to its sorted keys | `tests/characterization/test_projection_guard.py` |
 | **Enum contract** | every vocabulary enum is a `StrEnum` whose `str()` is its `.value` | `tests/models/test_enum_contract.py` |
 | **Extensibility suite** | the five registry axes each accept a new row via `isolated()` + `registered_*()`: a phase, a re-pointed strategy-mode profile, an oracle, a runner (a new mode driven end to end through the facade) and a chaos transport | `tests/test_extensibility_gate.py` |
-| **Public-surface guard** | `custom_schemathesis.__all__` equals a frozen list written out in the test — adding or removing an export fails it by name; every export resolves, internal helpers such as `sanitize_headers` stay unexported, `EndpointRisk`/`EndpointAttack` are the kernel classes from `specforge_contracts`, and the `StatefulOptions` field reserve (`max_examples`, `step_count`, `max_distinct_bugs`) round-trips through `model_dump`/`model_validate` because the orchestrator persists that dump | `tests/test_public_api.py` |
+| **Public-surface guard** | `specforge_engine.__all__` equals a frozen list written out in the test — adding or removing an export fails it by name; every export resolves, internal helpers such as `sanitize_headers` stay unexported, `EndpointRisk`/`EndpointAttack` are the kernel classes from `specforge_contracts`, and the `StatefulOptions` field reserve (`max_examples`, `step_count`, `max_distinct_bugs`) round-trips through `model_dump`/`model_validate` because the orchestrator persists that dump | `tests/test_public_api.py` |
 | **Entry-point surface** | `main.__all__` lists exactly the two entry points, each importable and callable, and `compile` never hides the builtin | `tests/test_main.py` |
 | **Field-consumer guard** | every field of the 18 contract models exported by `models.contracts` (derived from its `__all__`) is either registered against the module that reads it or excepted with a written reason; an unregistered field, a stale entry for a removed field, or a blank justification fails the suite | `tests/models/contracts/test_field_consumers.py` |
 | **Toggle-field guard** | every attack toggle maps to a contract include-flag, so no knob is dead | `tests/strategy_compiler/fields/hacker/test_request.py`, `test_payloads.py` |
@@ -25,7 +25,7 @@ Install and container commands are in
 Locally, from the package directory:
 
 ```bash
-cd lib/custom_schemathesis
+cd lib/specforge_engine
 python -m pytest -q                                  # full suite, coverage gate at 75%
 python -m pytest tests/characterization -q           # goldens only
 ```
@@ -71,7 +71,7 @@ intended one (update the file, and explain why in the commit).
   transitively: if the compiled output is unchanged, the input change did not
   change the logic. `StatefulOptions` crosses the input/output line — the
   orchestrator persists it — so its field set is pinned by its own test in
-  `tests/models/engine/test_options.py`, including a `model_validate(model_dump())`
+  `tests/models/runtime/test_options.py`, including a `model_validate(model_dump())`
   round-trip, and re-asserted at the facade by the public-surface guard.
 - A projection that collapses strategies to sorted keys does not see which
   bytes a strategy generates. The drawn values are pinned by the replay trace

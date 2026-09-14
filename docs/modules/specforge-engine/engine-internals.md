@@ -1,6 +1,6 @@
 # Engine internals
 
-`engine/` executes a compiled `EngineInput` against a live API and turns what
+`runtime/` executes a compiled `EngineInput` against a live API and turns what
 comes back into findings, statistics and a replayable trace. It is the deep
 machinery the [runners](execution-modes.md) drive: an HTTP transport, the
 Hypothesis harness, the response oracles, the finding pipeline, the two
@@ -75,7 +75,7 @@ event catalog and the per-mode boundaries is on
 
 ## HTTP transport
 
-`engine/http/` owns everything the wire needs. One `AsyncOrchestrator` is
+`runtime/http/` owns everything the wire needs. One `AsyncOrchestrator` is
 opened for a whole run — a single `httpx.AsyncClient`, a concurrency
 `asyncio.Semaphore(max_concurrency)`, and a retry policy — and every request of
 the run passes through it.
@@ -161,7 +161,7 @@ drawn as JSON `null`), and a value. `has_body` is true for the last two.
 
 ## The Hypothesis harness
 
-`engine/harness/` is the seam between Hypothesis's synchronous callbacks and the
+`runtime/harness/` is the seam between Hypothesis's synchronous callbacks and the
 engine's async HTTP. There is exactly one event loop for the whole process,
 started eagerly in a daemon thread when `harness/bridge` is imported; `run_sync`
 hands a coroutine to it and blocks for the result. Every async call the fuzzers
@@ -185,7 +185,7 @@ identities — the one place a run draws which caller a request is sent under.
 
 ## Response oracles
 
-`engine/oracles/` judges one response. Oracles form an **ordered pipeline**, a
+`runtime/oracles/` judges one response. Oracles form an **ordered pipeline**, a
 Chain of Responsibility, not a keyed lookup. Each satisfies the `ResponseOracle`
 Protocol — a `name`, an `order: OraclePrecedence`, and `check(context) ->
 OracleVerdict` — and precedence is a named `IntEnum` value, never a magic gap
@@ -203,7 +203,7 @@ OracleVerdict` — and precedence is a named `IntEnum` value, never a magic gap
 | `SEMANTIC` (55) | `semantic_property` | a 2xx that breaks a declared business rule (non-terminal) |
 | `LATENCY` (60) | `latency_sla` | a clean 2xx/3xx slower than the run's SLA |
 
-The `OracleVerdict` shape lives in its own leaf module, `engine/oracles/verdict.py`
+The `OracleVerdict` shape lives in its own leaf module, `runtime/oracles/verdict.py`
 (with the shared `CONTINUE` verdict), so the verdict depends on nothing else in the
 oracles package and the package stays free of import cycles. A verdict carries the
 `violation` an oracle decided, whether it is `terminal`, and an optional `rule: ViolatedRule | None`
@@ -213,7 +213,7 @@ names its rule.** For a
 `semantic_property` or `access_control` finding the rule is *declared* by the
 contract — the business rule's own id and text, or the enforced access policy. For
 every other invariant the rule is *intrinsic*: `intrinsic_verdict(invariant)`
-(built on `engine/oracles/rules.py`) attaches a `ViolatedRule` whose id is the
+(built on `runtime/oracles/rules.py`) attaches a `ViolatedRule` whose id is the
 invariant's value and whose description is the one-sentence requirement the
 invariant enforces on its own — that a response is never a 5xx, carries a declared
 status code, matches the declared schema and `Content-Type`, answers within the
@@ -260,7 +260,7 @@ rule's `PropertyClass`:
 | `INPUT_CONSTRAINT` | the flattened request the server accepted — path parameters, body keys, query and headers in one namespace |
 
 The flattened request is one shared function, `flatten_input_scope(body, query,
-headers, path=...)` (`engine/oracles/semantic/scope.py`), used by both the oracle
+headers, path=...)` (`runtime/oracles/semantic/scope.py`), used by both the oracle
 and the generator so the two can never disagree on what a rule sees. It overlays
 the four zones in `ZONE_OVERRIDE_ORDER` — path, then body, then query, then headers
 — so a name declared in more than one zone resolves to the **last** listed. Path is
@@ -324,7 +324,7 @@ not, per response. As it walks an endpoint's declared rules the
 boolean (either way) is **decided**; a rule whose root evaluates to `UNDETERMINED`
 — it names a field the request or response did not carry, or a value the declared
 type rules out — is **undecided**. The result rides the verdict as a
-`RuleDecisions(decided, undecided)` (`engine/oracles/verdict.py`), and the ordered
+`RuleDecisions(decided, undecided)` (`runtime/oracles/verdict.py`), and the ordered
 pipeline merges every oracle's decisions into the `OracleReport(violations,
 rule_decisions)` that `check_response` returns. The short-circuit on the first
 broken rule is unchanged: the rules after a broken one are not evaluated on that
@@ -370,12 +370,12 @@ aims generation at the rule, so the violation stops depending on luck.
 
 The phase compiles a valid strategy per field, and the engine refines the
 assembled payload once per endpoint. `refine_for_phase(strategy, endpoint, phase)`
-(`engine/fuzzers/phases.py`) looks the phase up in the phase-extension registry via
+(`runtime/fuzzers/phases.py`) looks the phase up in the phase-extension registry via
 `phase_extension_for(phase)` and applies the extension's `refiner` — for the
 `semantic` extension, `build_semantic_payloads` — returning the strategy untouched
 for any phase with no extension; `plan_passes` calls it as it builds each pass.
 `build_semantic_payloads`
-(`engine/fuzzers/semantic/`) mixes, for each declared input constraint, a
+(`runtime/fuzzers/semantic/`) mixes, for each declared input constraint, a
 **violating** arm and a **conforming** arm, and always one unfiltered **valid** arm:
 
 - A field compared against a **numeric literal** is built directly: the bounds
@@ -457,7 +457,7 @@ must not be masked by a terminal schema violation raised lower in the chain
 
 ## The finding pipeline
 
-`engine/findings/` turns raw findings into deduplicated crash reports, the
+`runtime/findings/` turns raw findings into deduplicated crash reports, the
 public finding union and the run's statistics. A finding's life runs signature →
 group → shrink → materialize → dedupe → assemble → stats.
 
@@ -521,7 +521,7 @@ The counters and their single producers are laid out in
 
 ## Stateless exploration
 
-`engine/fuzzers/stateless/` explores one endpoint at a time, no sequencing.
+`runtime/fuzzers/stateless/` explores one endpoint at a time, no sequencing.
 
 `plan_passes` builds one `Pass` per `(phase, identity)`: the phase's example
 budget (authoritative from the `GenerationPlan`, or the budget split for a
@@ -578,7 +578,7 @@ is not accepted as its shrink.
 
 ## Stateful sequencing
 
-`engine/fuzzers/stateful/` drives sequences of linked operations as a Hypothesis
+`runtime/fuzzers/stateful/` drives sequences of linked operations as a Hypothesis
 `RuleBasedStateMachine`, built **dynamically** for a given set of endpoints:
 one `Bundle` per referenced name, one `@rule` per endpoint, and an optional
 `@initialize` that fixes one identity for the whole sequence
@@ -588,7 +588,7 @@ A rule's state link drives the chaining: it **produces** a captured
 response value into a bundle, **consumes** bundled values into later requests'
 zones. The capture primitive itself — `capture`, which pulls a production's
 dotted `response_field` out of a response body once its status matches, and
-`matches_declared_statuses` — lives in `engine/state_link/`, the shared home for
+`matches_declared_statuses` — lives in `runtime/state_link/`, the shared home for
 state-link mechanics used by both the stateful machine and the auth runner.
 A state link also optionally `invalidates` the bundle so a deleted resource is not
 operated on again, and declares **transition invariants** — a follow-up probe
@@ -626,7 +626,7 @@ could not be honored.
 
 ## Trace and replay
 
-`engine/trace/` records **only what a run put on the wire**, in send order —
+`runtime/trace/` records **only what a run put on the wire**, in send order —
 the recipe for reproducing it. Shrinking requests are absent by construction.
 Each `TracedRequest` is an observed fact: credentials are *omitted* rather than
 redacted (only the config header names are kept), a URL's `user:pass@` is
@@ -664,7 +664,7 @@ replay pointed at another host is refused pre-flight even when the trace kept it
 own userinfo. A trace that cannot be replayed is an expected answer, not an
 error.
 
-`engine/replay/` compares and paces. `assess_fidelity` classifies a replay as
+`runtime/replay/` compares and paces. `assess_fidelity` classifies a replay as
 `EXACT` or `REDUCED`: a request whose observed status differs from the recorded
 one is a `ResponseDivergence`, but a divergence on a request that was itself a
 finding does not reduce fidelity — re-observing it is the point. Pacing is a
@@ -673,7 +673,7 @@ strategy chosen by a factory, never a runtime flag
 recorded `sent_at_ms` measured from a fixed `t0`, so drift never compounds and a
 past slot waits zero; `ImmediatePacer` never waits.
 
-A replay does not blindly re-send a dead target's whole trace. `engine/http/`
+A replay does not blindly re-send a dead target's whole trace. `runtime/http/`
 carries a `TargetLivenessMonitor` that the `ReplayRunner` feeds each result as it
 returns. The monitor counts a streak of target failures — the
 `TARGET_FAILURE_CATEGORIES` (`timeout`, `availability`) — and ignores anything

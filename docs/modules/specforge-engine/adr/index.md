@@ -1,6 +1,6 @@
-# Custom Schemathesis — Decision records
+# Spec Forge Engine — Decision records
 
-Decisions taken while building `custom_schemathesis` that are not obvious
+Decisions taken while building `specforge_engine` that are not obvious
 from reading the code, and that someone would otherwise be tempted to undo.
 Each record states the situation that forced the decision, what was decided,
 the alternative that was rejected, and what it costs.
@@ -35,7 +35,7 @@ tells you what it governs.
 
 | | Area | Decision |
 | --- | --- | --- |
-| [ADR-001](foundations.md#adr-001) | package | Every domain exception descends from `CustomSchemathesisError`, none from `ValueError` |
+| [ADR-001](foundations.md#adr-001) | package | Every domain exception descends from `SpecforgeEngineError`, none from `ValueError` |
 | [ADR-002](foundations.md#adr-002) | package | The root `constants.py` imports nothing, and the phase splits are profile data |
 | [ADR-003](foundations.md#adr-003) | package | A type's suffix names the role it plays at the boundary |
 | [ADR-004](models.md#adr-004) | models | Closed vocabularies are `StrEnum` members, the shared ones owned by the kernel |
@@ -97,3 +97,4 @@ tells you what it governs.
 | [ADR-060](engine.md#adr-060) | engine | A crash report's response body is redacted by field name, and a confirmed finding's identity is fixed where it is confirmed |
 | [ADR-061](engine.md#adr-061) | engine | Latency degradation under load is a concurrency ladder on the performance options, anchored on a real request |
 | [ADR-062](engine.md#adr-062) | engine | The engine exposes its own typed observer and cancellation token; a listener adapts them to the protocol |
+| [ADR-063](foundations.md#adr-063) | package | The engine package is `specforge_engine`, and its execution layer is `runtime/` |

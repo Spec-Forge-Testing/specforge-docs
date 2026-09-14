@@ -1,6 +1,6 @@
-# Custom Schemathesis — API reference
+# Spec Forge Engine — API reference
 
-Everything `custom_schemathesis` exposes, and nothing else. Every name below is
+Everything `specforge_engine` exposes, and nothing else. Every name below is
 importable from the package root; anything reached through a deeper module
 path is internal and may change without notice
 ([ADR-014](adr/api.md#adr-014)). The tables mirror the package's `__all__`, a
@@ -12,7 +12,7 @@ For how the stages work inside, see [Architecture](architecture.md) and
 [decision records](adr/index.md).
 
 ```python
-from custom_schemathesis import (
+from specforge_engine import (
     compile_strategies, run,
     CompilerInput, EndpointSpec, RequestZones,
     BaseStrategyContract, HackerStrategyContract,
@@ -163,15 +163,15 @@ kernel's from `specforge_contracts`.
 | `AccessRoleError` | the auth runner cannot cross a `role_only` endpoint: no declared identity holds its required role; raised before the first request, its message naming the roles the run did declare (`endpoint_id`, `required_role`) |
 | `AccessIdentityError` | the auth runner has no valid declared identity to run against; raised before the first request |
 
-All descend from `CustomSchemathesisError`, never from `ValueError`
+All descend from `SpecforgeEngineError`, never from `ValueError`
 ([ADR-001](adr/foundations.md#adr-001)). The full taxonomy, including
 `EndpointCompilationError` and `StatefulLinkError`, is importable from
-`custom_schemathesis.exceptions`.
+`specforge_engine.exceptions`.
 
 ## Strategy compiler
 
 These names are not on the facade — they live under
-`custom_schemathesis.strategy_compiler` and its `fields` subpackage. They are
+`specforge_engine.strategy_compiler` and its `fields` subpackage. They are
 the surface an extension registers against and the seams the compiler's own
 tests exercise, documented for that reason
 ([Strategy compiler](strategy-compiler.md), [Extension guide](extension-guide.md)).

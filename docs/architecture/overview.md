@@ -39,7 +39,7 @@ flowchart TD
     end
 
     subgraph Execution ["4. Fuzzing & Storage"]
-        UC --> CS["custom_schemathesis"]
+        UC --> CS["specforge_engine"]
         CS --> HS["Hypothesis strategies"]
         HS --> HF["HTTP fuzzing<br/><i>(stateless · stateful · performance ·<br/>resilience · replay)</i>"]
         HF --> ST[(storage)]
@@ -58,7 +58,7 @@ lib/
 ├── contract_engine/        # OpenAPI ingestion + adaptation + fusion
 ├── core_ast/                # tree-sitter static analysis
 ├── semantic_inference/      # LLM router + inference
-├── custom_schemathesis/     # policy + strategy compiler + engine (six execution modes)
+├── specforge_engine/     # policy + strategy compiler + engine (six execution modes)
 └── storage/                 # SQLite persistence
 docker-compose.yml           # monorepo orchestration (root entry point)
 ```
@@ -72,7 +72,7 @@ docker-compose.yml           # monorepo orchestration (root entry point)
 | `lib/contract_engine/` | Validates OpenAPI 3.x (`prance`), translates Swagger 2.0 into it, flattens endpoints, fuses base schemas with LLM invariants. |
 | `lib/core_ast/` | Deterministic, stateless AST analysis (`tree-sitter`); locates routes/handlers/deps via `patterns.toml`. |
 | `lib/semantic_inference/` | Provider-agnostic LLM interface (`LiteLLM`): retries, fallbacks, invariant inference. |
-| `lib/custom_schemathesis/` | Compiles contracts to Hypothesis strategies; runs the six execution modes over async HTTP (`httpx`): stateless, stateful, performance, resilience, replay, auth. |
+| `lib/specforge_engine/` | Compiles contracts to Hypothesis strategies; runs the six execution modes over async HTTP (`httpx`): stateless, stateful, performance, resilience, replay, auth. |
 | `lib/storage/` | SQLite layer (Repository pattern, Pydantic DTOs) + on-disk artifact persistence with hash dedup. |
 
 ## Design principles
@@ -80,7 +80,7 @@ docker-compose.yml           # monorepo orchestration (root entry point)
 - **Layered pipeline** — each module is a stage: typed input → pure transform → typed output.
   Stages never reach backward into later stages.
 - **Dependency direction** — upstream modules never import downstream ones at runtime (e.g.
-  `contract_engine` knows nothing of `custom_schemathesis`). Only `core/` wires multiple pipeline
+  `contract_engine` knows nothing of `specforge_engine`). Only `core/` wires multiple pipeline
   engines together.
 - **Boundary DTOs** — stages communicate only through Pydantic DTOs, never shared mutable state.
 - **Determinism** — static/transform stages are deterministic and side-effect free: same input →

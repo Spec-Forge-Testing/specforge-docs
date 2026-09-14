@@ -200,7 +200,7 @@ compile, or the reverse:
   zero.
 
 The predicate itself, `has_input_constraint(endpoint)`, lives in the neutral leaf
-`custom_schemathesis/semantic_properties.py`, imported by the composition root that
+`specforge_engine/semantic_properties.py`, imported by the composition root that
 registers the extension, so the compiler (which decides the phase exists) and the
 engine (which decides how it draws) cannot disagree on which properties constrain
 an input.

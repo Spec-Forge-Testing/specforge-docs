@@ -1,6 +1,6 @@
-# Custom Schemathesis — Decision records — Public API
+# Spec Forge Engine — Decision records — Public API
 
-Part of the [Custom Schemathesis decision records](index.md). Decisions about
+Part of the [Spec Forge Engine decision records](index.md). Decisions about
 the facade: what `run` takes, what is exported, and how input is validated at
 the policy boundary.
 
@@ -8,7 +8,7 @@ the policy boundary.
 
 ## ADR-013 — `run` takes an `ExecutionMode` and per-mode options, nothing else { #adr-013 }
 
-**Status:** accepted · `main.py`, `engine/__init__.py`, `engine/runners/`
+**Status:** accepted · `main.py`, `runtime/__init__.py`, `runtime/runners/`
 
 ### Context
 

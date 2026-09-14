@@ -1,12 +1,12 @@
-# Custom Schemathesis — Decision records — Foundations
+# Spec Forge Engine — Decision records — Foundations
 
-Part of the [Custom Schemathesis decision records](index.md). Package-wide
+Part of the [Spec Forge Engine decision records](index.md). Package-wide
 decisions: how failures are typed, where shared constants live, and how a
 type's name tells you its role.
 
 ---
 
-## ADR-001 — Every domain exception descends from `CustomSchemathesisError`, none from `ValueError` { #adr-001 }
+## ADR-001 — Every domain exception descends from `SpecforgeEngineError`, none from `ValueError` { #adr-001 }
 
 **Status:** accepted · `exceptions.py`
 
@@ -22,7 +22,7 @@ the caller can report what was found before the abort.
 
 ### Decision
 
-One root, `CustomSchemathesisError(Exception)`. `PolicyError`,
+One root, `SpecforgeEngineError(Exception)`. `PolicyError`,
 `StrategyCompilationError` (with `EndpointCompilationError`, which carries the
 `endpoint_id` and the underlying reason) and `EngineError` (with
 `StatefulLinkError`) hang from it. `StatefulLinkError` takes `endpoint_id` and
@@ -128,7 +128,7 @@ transitively ([Testing](../testing.md)).
 
 ## ADR-042 — Each stage owns its constants; the root holds only what two or more layers share { #adr-042 }
 
-**Status:** accepted · `constants.py`, `engine/**/constants.py`
+**Status:** accepted · `constants.py`, `runtime/**/constants.py`
 
 ### Context
 
@@ -144,7 +144,7 @@ and a name with one consumer at the root reads as if it were shared.
 The root `constants.py` holds **only** what two or more layers read — the
 status-class thresholds, `MAX_INFRA_FAILURES`, `CONTENT_TYPE_HEADER`,
 `MS_PER_SECOND`. Every stage keeps its own `constants.py` for what only it uses:
-`engine/http/constants.py` for the retry policy, `engine/findings/constants.py`
+`runtime/http/constants.py` for the retry policy, `runtime/findings/constants.py`
 for the fingerprint and percentile numbers, each fuzzer's `constants.py` for its
 own thresholds. A constant with a single consumer lives in that consumer's
 stage; promoting one to the root is a deliberate step that asserts a second
@@ -161,3 +161,58 @@ truly shared behind those that merely happen to sit together.
 A number lives next to the code that reads it; the root file is a short,
 honest list of what is genuinely shared; and moving a constant to the root is
 the moment to check that both layers mean the same thing by it.
+
+---
+
+## ADR-063 — The engine package is `specforge_engine`, and its execution layer is `runtime/` { #adr-063 }
+
+**Status:** accepted · `pyproject.toml`, `exceptions.py`, `__init__.py`, `runtime/`, `models/runtime/`
+
+### Context
+
+The package's name was inherited from an early prototype that was built on top of
+the third-party [Schemathesis](https://schemathesis.readthedocs.io/) tool. The
+engine no longer resembles that tool and does not depend on it: its
+property-based machinery is built directly on `hypothesis` and
+`hypothesis-jsonschema`. A name that reads as "a customized Schemathesis" tells a
+new reader the wrong thing about both the lineage and the dependencies, and it
+does not share the `specforge_` prefix the other installable modules already
+carry.
+
+Inside the package, the execution layer lived under `engine/`, so a
+fully-qualified path read `specforge_engine.engine.runners` — the word "engine"
+twice, once as the distribution and once as a subpackage that is really the
+*runtime* side of the pipeline, distinct from the compile layer that precedes it.
+
+### Decision
+
+Four renames, applied together with no compatibility layer:
+
+| Old | New |
+| --- | --- |
+| folder `lib/custom_schemathesis` | `lib/specforge_engine` |
+| import package `custom_schemathesis` | `specforge_engine` |
+| distribution `custom-schemathesis` | `specforge-engine` |
+| root exception `CustomSchemathesisError` | `SpecforgeEngineError` |
+
+The execution subpackage `engine/` becomes `runtime/`, and `models/engine/`
+becomes `models/runtime/`, so a path reads `specforge_engine.runtime.runners`
+instead of doubling "engine". The public facade — every name importable from
+`specforge_engine` — is unchanged; only the package it lives in is renamed.
+
+No shims, no import aliases, no deprecated re-exports.
+
+### Rejected
+
+Keeping the inherited name, or shipping an alias that re-exports the old package.
+Both preserve a name that misleads about lineage and dependency, and an alias
+would have to be maintained and then removed regardless. With no external
+consumers to protect, one clean rename costs less than a compatibility surface
+that would outlive its purpose.
+
+### Consequences
+
+Every consumer imports from `specforge_engine` and catches `SpecforgeEngineError`;
+the install line is `pip install -e lib/specforge_engine`; the CI job and test
+matrix entry are named `specforge_engine`. The documentation section moved from
+`modules/custom-schemathesis/` to `modules/specforge-engine/` with no redirect.

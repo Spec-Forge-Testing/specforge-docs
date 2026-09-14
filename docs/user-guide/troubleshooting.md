@@ -16,13 +16,13 @@ automatically are shown so you can resolve them by hand.
 
 ## `fuzz` refuses: the engine is not installed
 
-**Symptom.** `fuzz` answers *"Fuzzing requires the 'contract-engine' and 'custom-schemathesis'
+**Symptom.** `fuzz` answers *"Fuzzing requires the 'contract-engine' and 'specforge-engine'
 libraries"* and does nothing.
 
 **Cause.** The fuzzing engine is an optional dependency and is not installed in this
 environment.
 
-**Fix.** Install it — `pip install -e lib/contract_engine -e lib/custom_schemathesis` — or run
+**Fix.** Install it — `pip install -e lib/contract_engine -e lib/specforge_engine` — or run
 `doctor --fix`, which does the same.
 
 ## "History unavailable: storage engine not installed"

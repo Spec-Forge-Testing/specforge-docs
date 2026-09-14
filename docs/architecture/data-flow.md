@@ -45,11 +45,11 @@ flowchart TD
 | Source → handler context | `core_ast` payload builders | `semantic_inference` | [`LLMPayload`](../modules/core-ast/index.md#public-api-re-exports) | `core_ast` stages (typed DTO per stage) |
 | Context → invariants | `semantic_inference.generate_endpoint_contract` | `fuse_contract` | [`EndpointContract`](../modules/contracts/index.md#the-model) | `semantic_inference` validates the raw LLM output as `SemanticEndpointContract` (`extra="forbid"`) before converting it to the kernel contract |
 | Base + invariants → unified | `contract_engine.fuse_contract` | `core/` fuzz adapter | [`UnifiedEndpointContract`](../modules/contract-engine/index.md) | `fuse_contract` (identity from the OpenAPI base, invariants merged in) |
-| Unified → engine input | `core/` fuzz adapter (`endpoints_to_compiler_input`) | `compile_strategies` | [`CompilerInput` / `EndpointSpec`](../modules/custom-schemathesis/strategy-compiler.md) | the engine's `policy` layer validates each `EndpointSpec` |
-| Compile → run | `custom_schemathesis.compile_strategies` | `custom_schemathesis.run` | [`EngineInput`](../modules/custom-schemathesis/engine-internals.md) | `compile_strategies` (translation only; never re-validates) |
-| Run → result | `custom_schemathesis.run` | `core/` persistence | [`EngineRunResult`](../modules/custom-schemathesis/index.md#the-public-facade) (the `findings` union, the terminal `status`, and the [`ExecutionTrace`](../modules/custom-schemathesis/index.md#reproducibility)) | the engine emits it; the run's abort policy watches target-failure categories |
+| Unified → engine input | `core/` fuzz adapter (`endpoints_to_compiler_input`) | `compile_strategies` | [`CompilerInput` / `EndpointSpec`](../modules/specforge-engine/strategy-compiler.md) | the engine's `policy` layer validates each `EndpointSpec` |
+| Compile → run | `specforge_engine.compile_strategies` | `specforge_engine.run` | [`EngineInput`](../modules/specforge-engine/engine-internals.md) | `compile_strategies` (translation only; never re-validates) |
+| Run → result | `specforge_engine.run` | `core/` persistence | [`EngineRunResult`](../modules/specforge-engine/index.md#the-public-facade) (the `findings` union, the terminal `status`, and the [`ExecutionTrace`](../modules/specforge-engine/index.md#reproducibility)) | the engine emits it; the run's abort policy watches target-failure categories |
 | Result → storage | `core/` persistence service | `storage` repositories | [`RunRecord` + trace artifact](../modules/storage/data-model.md#data-models-dtos) | one transaction per composed write (project → analysis → run) |
-| Storage → replay | `storage` (recorded trace) | `custom_schemathesis` replay mode | [`ExecutionTrace`](../modules/custom-schemathesis/index.md#reproducibility) | replay checks the trace is replayable before sending, then compares recorded vs observed status per request |
+| Storage → replay | `storage` (recorded trace) | `specforge_engine` replay mode | [`ExecutionTrace`](../modules/specforge-engine/index.md#reproducibility) | replay checks the trace is replayable before sending, then compares recorded vs observed status per request |
 
 The hierarchy `storage` writes is **project → analysis → run**: an *analysis* is the replayable
 recipe (its resolved contracts plus the recorded trace), and a *run* is one execution of it. Replay
@@ -64,7 +64,7 @@ acyclic and one-directional.
   model output is validated: it is parsed into a strict model (`extra="forbid"`, so a hallucinated
   key fails loudly) and only then converted to the kernel `EndpointContract`. No downstream stage
   ever sees an unvalidated LLM response.
-- **The execution engine never sees OpenAPI or the LLM's output.** `custom_schemathesis` consumes
+- **The execution engine never sees OpenAPI or the LLM's output.** `specforge_engine` consumes
   `EngineInput` alone. The OpenAPI shape is resolved away in ingestion, and the LLM's contribution
   reaches the engine only as constraints already merged into `UnifiedEndpointContract` and then
   translated by the orchestrator's adapter.

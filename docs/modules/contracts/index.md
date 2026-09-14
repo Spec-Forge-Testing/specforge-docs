@@ -9,7 +9,7 @@ flowchart TD
         direction LR
         SI["semantic_inference"] --> CE["contract_engine<br/><i>(fusion)</i>"]
         CE --> CO["core<br/><i>(adapter)</i>"]
-        CO --> CS["custom_schemathesis"]
+        CO --> CS["specforge_engine"]
     end
 
     SC[["specforge_contracts<br/><i>(canonical EndpointContract)</i>"]]
@@ -29,7 +29,7 @@ but takes its shared vocabulary from here: `EndpointRisk` (the engine's
 `EndpointRiskContract` is this very class), the `AttackProfile` literal,
 `TransitionInvariant`, `ZoneLocation`, `EndpointAccess`, the `SemanticProperty`
 expression tree and `EndpointAttack` itself (with its `FieldAttack` hints) are
-imported by `custom_schemathesis`, not copied, so the objects a producer emits
+imported by `specforge_engine`, not copied, so the objects a producer emits
 reach the engine untranslated. Payload families are chosen **per field**: each
 `field_hints` entry promotes the addressed field to the engine's per-value
 hacker contract, carrying that field's `attack_profiles`. There is no
@@ -109,7 +109,7 @@ no hierarchy, so `admin` is not satisfied by `Admin` or by a broader role.
 
 The package supports Python 3.10+. Consumers add it to their test path
 (`pythonpath = ["src", "../contracts/src"]`) and install it in their runtime image.
-`custom_schemathesis` goes one step further and declares it as a runtime dependency
+`specforge_engine` goes one step further and declares it as a runtime dependency
 (`specforge-contracts>=0.5.0`), so its CI job and its `fixtures-api` Docker image
 install `lib/contracts` first — which is why that image is built from the
 repository root. Installation, test and lint commands are centralized in

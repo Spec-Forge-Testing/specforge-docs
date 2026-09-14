@@ -1,6 +1,6 @@
-# Custom Schemathesis — Decision records — Engine
+# Spec Forge Engine — Decision records — Engine
 
-Part of the [Custom Schemathesis decision records](index.md). Decisions about
+Part of the [Spec Forge Engine decision records](index.md). Decisions about
 execution: the per-request record, how findings are counted, how runners are
 composed, how a request is sent and checked, and what replay needs.
 
@@ -8,7 +8,7 @@ composed, how a request is sent and checked, and what replay needs.
 
 ## ADR-017 — `ExecutionResult` is the canonical record of a request; stats and trace are projections { #adr-017 }
 
-**Status:** accepted · `models/engine/execution.py`, `engine/findings/stats.py`, `engine/trace/recorder.py`
+**Status:** accepted · `models/runtime/execution.py`, `runtime/findings/stats.py`, `runtime/trace/recorder.py`
 
 ### Context
 
@@ -39,7 +39,7 @@ always agree, because they read the same records.
 
 ## ADR-018 — Flaky findings are counted where they are observed, in the shrinker { #adr-018 }
 
-**Status:** accepted · `engine/findings/shrinker.py`, `models/engine/results.py`
+**Status:** accepted · `runtime/findings/shrinker.py`, `models/runtime/results.py`
 
 ### Context
 
@@ -74,7 +74,7 @@ by construction.
 
 ## ADR-019 — Stateful runs discard flaky findings { #adr-019 }
 
-**Status:** accepted · Superseded by [ADR-047](#adr-047) · `engine/fuzzers/stateful/outcome.py`
+**Status:** accepted · Superseded by [ADR-047](#adr-047) · `runtime/fuzzers/stateful/outcome.py`
 
 ### Context
 
@@ -105,7 +105,7 @@ stateful run's stats should not take the zero as "nothing was flaky".
 
 ## ADR-020 — Finding resolution is a callable on the loop specification { #adr-020 }
 
-**Status:** accepted · Superseded in part by [ADR-043](#adr-043) · `engine/runners/loop.py`
+**Status:** accepted · Superseded in part by [ADR-043](#adr-043) · `runtime/runners/loop.py`
 
 ### Context
 
@@ -138,7 +138,7 @@ spec nothing.
 
 ## ADR-021 — Options are resolved beside the runner registry { #adr-021 }
 
-**Status:** accepted · `engine/runners/registry.py`
+**Status:** accepted · `runtime/runners/registry.py`
 
 ### Context
 
@@ -166,7 +166,7 @@ handling; it declares `options_type` and the registry does the rest.
 
 ## ADR-022 — Replay readiness is a value object the engine computes { #adr-022 }
 
-**Status:** accepted · Superseded in part by [ADR-045](#adr-045), [ADR-046](#adr-046) · `engine/trace/`, `models/engine/replay.py`
+**Status:** accepted · Superseded in part by [ADR-045](#adr-045), [ADR-046](#adr-046) · `runtime/trace/`, `models/runtime/replay.py`
 
 ### Context
 
@@ -199,7 +199,7 @@ run, fidelity after it, and the two are separate values.
 
 ## ADR-033 — A zoned payload is a value object with a body sentinel { #adr-033 }
 
-**Status:** accepted · `engine/payload.py`
+**Status:** accepted · `runtime/payload.py`
 
 ### Context
 
@@ -232,7 +232,7 @@ guessing a dict's keys.
 
 ## ADR-034 — One stop signal crosses the `@given` boundary { #adr-034 }
 
-**Status:** accepted · `engine/fuzzers/stateless/state.py`, `engine/fuzzers/stateless/exploration.py`
+**Status:** accepted · `runtime/fuzzers/stateless/state.py`, `runtime/fuzzers/stateless/exploration.py`
 
 ### Context
 
@@ -267,7 +267,7 @@ raises.
 
 ## ADR-035 — Exploration state is run-scoped; the liveness probe is shared across endpoints { #adr-035 }
 
-**Status:** accepted · `engine/fuzzers/stateless/state.py`, `engine/fuzzers/stateless/folding.py`
+**Status:** accepted · `runtime/fuzzers/stateless/state.py`, `runtime/fuzzers/stateless/folding.py`
 
 ### Context
 
@@ -302,7 +302,7 @@ endpoint.
 
 ## ADR-036 — Oracles run as an ordered pipeline with central precedence, registered explicitly { #adr-036 }
 
-**Status:** accepted · `engine/oracles/precedence.py`, `engine/oracles/registry.py`, `engine/oracles/builtin.py`
+**Status:** accepted · `runtime/oracles/precedence.py`, `runtime/oracles/registry.py`, `runtime/oracles/builtin.py`
 
 ### Context
 
@@ -338,7 +338,7 @@ no dispatcher edit, no import-order surprise.
 
 ## ADR-037 — `FindingFacts` is the single subject of every crash report { #adr-037 }
 
-**Status:** accepted · `engine/findings/materializer.py`, `models/engine/results.py`
+**Status:** accepted · `runtime/findings/materializer.py`, `models/runtime/results.py`
 
 ### Context
 
@@ -372,7 +372,7 @@ has to produce a `FindingFacts`.
 
 ## ADR-038 — The stateful machine is built in a builder, and a pass ends in a closed set of outcomes { #adr-038 }
 
-**Status:** accepted · `engine/fuzzers/stateful/machine_builder.py`, `engine/fuzzers/stateful/outcome.py`
+**Status:** accepted · `runtime/fuzzers/stateful/machine_builder.py`, `runtime/fuzzers/stateful/outcome.py`
 
 ### Context
 
@@ -411,7 +411,7 @@ exhaustively.
 
 ## ADR-039 — A `StatefulLinkError` is reconstructed to name its endpoint, never mutated { #adr-039 }
 
-**Status:** accepted · `engine/fuzzers/stateful/rule.py`, `engine/fuzzers/stateful/supervisor.py`
+**Status:** accepted · `runtime/fuzzers/stateful/rule.py`, `runtime/fuzzers/stateful/supervisor.py`
 
 ### Context
 
@@ -446,7 +446,7 @@ one; and the partial exploration always rides out with the error.
 
 ## ADR-040 — Pacing is a strategy chosen by a factory, not a flag { #adr-040 }
 
-**Status:** accepted · `engine/replay/pacing.py`
+**Status:** accepted · `runtime/replay/pacing.py`
 
 ### Context
 
@@ -478,7 +478,7 @@ not a new branch.
 
 ## ADR-041 — A chaos transport is a Protocol resolved from a registry { #adr-041 }
 
-**Status:** accepted · `engine/runners/resilience/transport.py`, `engine/runners/resilience/attacks.py`
+**Status:** accepted · `runtime/runners/resilience/transport.py`, `runtime/runners/resilience/attacks.py`
 
 ### Context
 
@@ -512,7 +512,7 @@ one built-in `httpx` transport without the runner knowing how it works.
 
 ## ADR-043 — The shared endpoint loop is a higher-order function over a three-field spec { #adr-043 }
 
-**Status:** accepted · Supersedes the loop-shape part of [ADR-020](#adr-020) · `engine/runners/loop.py`
+**Status:** accepted · Supersedes the loop-shape part of [ADR-020](#adr-020) · `runtime/runners/loop.py`
 
 ### Context
 
@@ -554,7 +554,7 @@ shape does not fit writes its own loop and owes the spec nothing.
 
 ## ADR-044 — The public findings are a closed union of outcomes; the counters stay measurements { #adr-044 }
 
-**Status:** accepted · `models/engine/findings.py`, `engine/findings/assembler.py`, `models/engine/results.py`
+**Status:** accepted · `models/runtime/findings.py`, `runtime/findings/assembler.py`, `models/runtime/results.py`
 
 ### Context
 
@@ -598,7 +598,7 @@ and `collapsed` has no object precisely because it names duplicates, not defects
 
 ## ADR-045 — Run status is derived by the engine from the truncation reason { #adr-045 }
 
-**Status:** accepted · `models/engine/run_status.py`, `models/engine/results.py`
+**Status:** accepted · `models/runtime/run_status.py`, `models/runtime/results.py`
 
 ### Context
 
@@ -635,7 +635,7 @@ it, because a run that raises has no `EngineRunResult` to carry a status.
 
 ## ADR-046 — Replay readiness separates missing URL userinfo from a host mismatch, and checks every request's host { #adr-046 }
 
-**Status:** accepted · `models/engine/replay.py`, `engine/trace/rehydrate.py`, `engine/trace/replay_readiness.py`
+**Status:** accepted · `models/runtime/replay.py`, `runtime/trace/rehydrate.py`, `runtime/trace/replay_readiness.py`
 
 ### Context
 
@@ -674,7 +674,7 @@ recorded for, because the host check is pre-flight and covers every request.
 
 ## ADR-047 — Stateful runs report flaky findings as an occurrence count { #adr-047 }
 
-**Status:** accepted · Supersedes [ADR-019](#adr-019) · `engine/fuzzers/stateful/flaky.py`, `engine/findings/stats.py`, `engine/findings/assembler.py`
+**Status:** accepted · Supersedes [ADR-019](#adr-019) · `runtime/fuzzers/stateful/flaky.py`, `runtime/findings/stats.py`, `runtime/findings/assembler.py`
 
 ### Context
 
@@ -713,7 +713,7 @@ at all, a transport failure.
 
 ## ADR-048 — Semantic properties are checked by an always-on oracle, not an execution mode { #adr-048 }
 
-**Status:** accepted · Superseded in part by [ADR-056](#adr-056) · `engine/oracles/semantic/`, `engine/oracles/builtin.py`, `engine/oracles/context.py`, `models/engine/crash_report.py`
+**Status:** accepted · Superseded in part by [ADR-056](#adr-056) · `runtime/oracles/semantic/`, `runtime/oracles/builtin.py`, `runtime/oracles/context.py`, `models/runtime/crash_report.py`
 
 ### Context
 
@@ -772,7 +772,7 @@ kernel has no namespace spanning both.
 
 ## ADR-049 — A finding names the rule it broke through a generic, stable channel { #adr-049 }
 
-**Status:** accepted · Amends [ADR-048](#adr-048) · `models/engine/crash_report.py`, `models/engine/results.py`, `engine/oracles/registry.py`, `engine/oracles/semantic/oracle.py`, `models/engine/findings.py`, `engine/fuzzers/stateless/shrinking.py`
+**Status:** accepted · Amends [ADR-048](#adr-048) · `models/runtime/crash_report.py`, `models/runtime/results.py`, `runtime/oracles/registry.py`, `runtime/oracles/semantic/oracle.py`, `models/runtime/findings.py`, `runtime/fuzzers/stateless/shrinking.py`
 
 ### Context
 
@@ -840,7 +840,7 @@ another oracle has a rule to name.
 
 ## ADR-050 — Access control is declared by the producer and checked by a dormant oracle woken by the auth runner { #adr-050 }
 
-**Status:** accepted · Extends [ADR-049](#adr-049) · `specforge_contracts/access.py`, `models/engine/access.py`, `engine/oracles/access_control.py`, `engine/oracles/precedence.py`, `engine/runners/auth/`, `models/execution_mode.py`
+**Status:** accepted · Extends [ADR-049](#adr-049) · `specforge_contracts/access.py`, `models/runtime/access.py`, `runtime/oracles/access_control.py`, `runtime/oracles/precedence.py`, `runtime/runners/auth/`, `models/execution_mode.py`
 
 ### Context
 
@@ -919,7 +919,7 @@ expressible — it waits until the `access` vocabulary grows a notion of role.
 
 ## ADR-052 — Raw-socket chaos transport for framing-level resilience attacks { #adr-052 }
 
-**Status:** accepted · Extends [ADR-041](#adr-041) · `engine/runners/resilience/raw_socket.py`, `engine/runners/resilience/raw_message.py`, `engine/runners/resilience/raw_attacks.py`, `engine/http/orchestrator.py`, `models/engine/execution.py`, `engine/oracles/resilience.py`
+**Status:** accepted · Extends [ADR-041](#adr-041) · `runtime/runners/resilience/raw_socket.py`, `runtime/runners/resilience/raw_message.py`, `runtime/runners/resilience/raw_attacks.py`, `runtime/http/orchestrator.py`, `models/runtime/execution.py`, `runtime/oracles/resilience.py`
 
 ### Context
 
@@ -990,7 +990,7 @@ socket is opened. No new flag or mode appears — the mode is still
 
 ## ADR-053 — Role-restricted access is a fourth kernel policy, crossed against the roles the user's identities declare { #adr-053 }
 
-**Status:** accepted · Extends [ADR-050](#adr-050) · `specforge_contracts/access.py`, `models/engine/execution.py`, `models/engine/access.py`, `engine/runners/auth/`, `engine/oracles/access_control.py`, `exceptions.py`
+**Status:** accepted · Extends [ADR-050](#adr-050) · `specforge_contracts/access.py`, `models/runtime/execution.py`, `models/runtime/access.py`, `runtime/runners/auth/`, `runtime/oracles/access_control.py`, `exceptions.py`
 
 ### Context
 
@@ -1093,7 +1093,7 @@ several identities, and cross-tenant isolation is still not expressible.
 
 ## ADR-054 — The semantic phase steers generation toward a declared input constraint { #adr-054 }
 
-**Status:** accepted · Supersedes the "never steers generation" clause of [ADR-048](#adr-048) · Superseded in part by [ADR-056](#adr-056) · `models/phase.py`, `strategy_compiler/conditional_phases.py`, `strategy_compiler/fields/builtin.py`, `budget/reservation.py`, `engine/fuzzers/phases.py`, `engine/fuzzers/semantic/`, `engine/oracles/semantic/scope.py`, `engine/oracles/semantic/declared.py`
+**Status:** accepted · Supersedes the "never steers generation" clause of [ADR-048](#adr-048) · Superseded in part by [ADR-056](#adr-056) · `models/phase.py`, `strategy_compiler/conditional_phases.py`, `strategy_compiler/fields/builtin.py`, `budget/reservation.py`, `runtime/fuzzers/phases.py`, `runtime/fuzzers/semantic/`, `runtime/oracles/semantic/scope.py`, `runtime/oracles/semantic/declared.py`
 
 ### Context
 
@@ -1183,7 +1183,7 @@ valid draws.
 
 ## ADR-055 — A phase extension is one registered value object, and every finding names its rule { #adr-055 }
 
-**Status:** accepted · Extends [ADR-054](#adr-054), completes [ADR-049](#adr-049) · `phase_extensions.py`, `phase_extension_builtins.py`, `__init__.py`, `strategy_compiler/effective_phases.py`, `engine/fuzzers/phases.py`, `engine/oracles/verdict.py`, `engine/oracles/rules.py`, `models/engine/crash_report.py`, `engine/oracles/builtin.py`, `engine/oracles/latency.py`, `engine/oracles/resilience.py`, `engine/fuzzers/stateful/transitions.py`
+**Status:** accepted · Extends [ADR-054](#adr-054), completes [ADR-049](#adr-049) · `phase_extensions.py`, `phase_extension_builtins.py`, `__init__.py`, `strategy_compiler/effective_phases.py`, `runtime/fuzzers/phases.py`, `runtime/oracles/verdict.py`, `runtime/oracles/rules.py`, `models/runtime/crash_report.py`, `runtime/oracles/builtin.py`, `runtime/oracles/latency.py`, `runtime/oracles/resilience.py`, `runtime/fuzzers/stateful/transitions.py`
 
 ### Context
 
@@ -1246,7 +1246,7 @@ repeat the invariant.
 - **Building the declaration in either layer.** Putting the whole `PhaseExtension` in
   the compiler would drag the engine's refiner up into `strategy_compiler`; putting
   it in the engine would drag the compiler's predicate and budget share down into
-  `engine/`. Either inverts a dependency. A neutral registry populated from a
+  `runtime/`. Either inverts a dependency. A neutral registry populated from a
   composition root keeps both layers reading, neither owning.
 - **Registering from a subpackage `__init__`.** Wiring the built-in extension as an
   import side effect of a subpackage would make the registered set depend on which
@@ -1280,7 +1280,7 @@ the rule is no longer inert for any oracle.
 
 ## ADR-056 — A request carries its path parameters, and the shared scope ranks the path zone lowest { #adr-056 }
 
-**Status:** accepted · Extends [ADR-054](#adr-054), supersedes the path-parameter limitation of [ADR-048](#adr-048) · `models/engine/execution.py`, `models/engine/trace.py`, `engine/http/injector.py`, `engine/trace/recorder.py`, `engine/trace/rehydrate.py`, `engine/oracles/semantic/scope.py`, `engine/oracles/semantic/declared.py`, `engine/oracles/semantic/oracle.py`, `engine/payload.py`, `engine/fuzzers/semantic/zones.py`, `engine/fuzzers/semantic/field_pairs.py`, `engine/fuzzers/semantic/filtering.py`
+**Status:** accepted · Extends [ADR-054](#adr-054), supersedes the path-parameter limitation of [ADR-048](#adr-048) · `models/runtime/execution.py`, `models/runtime/trace.py`, `runtime/http/injector.py`, `runtime/trace/recorder.py`, `runtime/trace/rehydrate.py`, `runtime/oracles/semantic/scope.py`, `runtime/oracles/semantic/declared.py`, `runtime/oracles/semantic/oracle.py`, `runtime/payload.py`, `runtime/fuzzers/semantic/zones.py`, `runtime/fuzzers/semantic/field_pairs.py`, `runtime/fuzzers/semantic/filtering.py`
 
 ### Context
 
@@ -1355,7 +1355,7 @@ the unfiltered valid arm generates. Existing traces regenerate rather than migra
 
 ## ADR-057 — Undecided business rules are reported as a per-endpoint diagnostic, not as findings { #adr-057 }
 
-**Status:** accepted · Extends [ADR-048](#adr-048), builds on [ADR-044](#adr-044) · `engine/oracles/verdict.py`, `engine/oracles/registry.py`, `engine/oracles/semantic/oracle.py`, `engine/fuzzers/stateless/state.py`, `engine/fuzzers/stateless/folding.py`, `engine/fuzzers/stateless/__init__.py`, `engine/runners/loop.py`, `engine/findings/stats.py`, `models/engine/results.py`, `models/engine/stats.py`
+**Status:** accepted · Extends [ADR-048](#adr-048), builds on [ADR-044](#adr-044) · `runtime/oracles/verdict.py`, `runtime/oracles/registry.py`, `runtime/oracles/semantic/oracle.py`, `runtime/fuzzers/stateless/state.py`, `runtime/fuzzers/stateless/folding.py`, `runtime/fuzzers/stateless/__init__.py`, `runtime/runners/loop.py`, `runtime/findings/stats.py`, `models/runtime/results.py`, `models/runtime/stats.py`
 
 ### Context
 
@@ -1439,7 +1439,7 @@ account for them, carries an empty list and pays nothing.
 
 ## ADR-058 — Endpoints with declared side effects are held back by a safety guard, not fuzzed { #adr-058 }
 
-**Status:** accepted · `engine/safety_guard.py`, `engine/__init__.py`, `models/engine/execution.py`, `models/engine/stats.py`
+**Status:** accepted · `runtime/safety_guard.py`, `runtime/__init__.py`, `models/runtime/execution.py`, `models/runtime/stats.py`
 
 ### Context
 
@@ -1510,7 +1510,7 @@ recorded with the guard on carries the held endpoints' absence unchanged.
 
 ## ADR-059 — Invalid credentials are declared not fabricated, a replay stops on a dead target, and a TLS half-close is not applicable { #adr-059 }
 
-**Status:** accepted · `models/engine/execution.py`, `models/engine/access.py`, `engine/runners/auth/`, `engine/oracles/access_control.py`, `engine/http/liveness.py`, `engine/replay/fidelity.py`, `engine/runners/replay.py`, `engine/runners/resilience/raw_socket.py`
+**Status:** accepted · `models/runtime/execution.py`, `models/runtime/access.py`, `runtime/runners/auth/`, `runtime/oracles/access_control.py`, `runtime/http/liveness.py`, `runtime/replay/fidelity.py`, `runtime/runners/replay.py`, `runtime/runners/resilience/raw_socket.py`
 
 ### Context
 
@@ -1615,7 +1615,7 @@ there, and runs unchanged over `http://`.
 
 ## ADR-060 — A crash report's response body is redacted by field name, and a confirmed finding's identity is fixed where it is confirmed { #adr-060 }
 
-**Status:** accepted · `engine/findings/redaction.py`, `engine/findings/constants.py`, `engine/findings/materializer.py`, `engine/fuzzers/stateful/supervisor.py`, `engine/findings/assembler.py`, `models/engine/results.py`
+**Status:** accepted · `runtime/findings/redaction.py`, `runtime/findings/constants.py`, `runtime/findings/materializer.py`, `runtime/fuzzers/stateful/supervisor.py`, `runtime/findings/assembler.py`, `models/runtime/results.py`
 
 ### Context
 
@@ -1701,7 +1701,7 @@ into a bundle carries it in the trace.
 
 ## ADR-061 — Latency degradation under load is a concurrency ladder on the performance options, anchored on a real request { #adr-061 }
 
-**Status:** accepted · `models/engine/options.py`, `models/engine/stats.py`, `engine/runners/performance/ladder.py`, `engine/runners/performance/degradation.py`, `engine/runners/performance/runner.py`, `engine/runners/performance/constants.py`, `models/engine/crash_report.py`, `engine/oracles/rules.py`
+**Status:** accepted · `models/runtime/options.py`, `models/runtime/stats.py`, `runtime/runners/performance/ladder.py`, `runtime/runners/performance/degradation.py`, `runtime/runners/performance/runner.py`, `runtime/runners/performance/constants.py`, `models/runtime/crash_report.py`, `runtime/oracles/rules.py`
 
 ### Context
 
@@ -1737,7 +1737,7 @@ baseline p95 by more than the tolerance. Percentiles are **nearest-rank**, so th
 step's p95 is an observed sample — the runner keeps the actual `ExecutionResult`
 at that index and anchors the `LATENCY_DEGRADATION` finding on it, with a synthetic
 `{"concurrency_step": N}` reproducer naming the step. The invariant carries an
-intrinsic rule (`engine/oracles/rules.py`): *"a clean response's latency must not
+intrinsic rule (`runtime/oracles/rules.py`): *"a clean response's latency must not
 grow with concurrency beyond the run's tolerance."*
 
 **Record the full measurement as per-endpoint stats.** Every completed step lands
@@ -1780,7 +1780,7 @@ profile, no degradation findings.
 
 ## ADR-062 — The engine exposes its own typed observer and cancellation token; a listener adapts them to the protocol { #adr-062 }
 
-**Status:** accepted · `models/engine/cancellation.py`, `models/engine/observer.py`, `models/engine/events.py`, `models/engine/run_signals.py`, `models/engine/run_status.py`, `models/engine/trace.py`, `engine/progress/constants.py`, `engine/progress/emitter.py`, `engine/progress/facts.py`, `engine/__init__.py`
+**Status:** accepted · `models/runtime/cancellation.py`, `models/runtime/observer.py`, `models/runtime/events.py`, `models/runtime/run_signals.py`, `models/runtime/run_status.py`, `models/runtime/trace.py`, `runtime/progress/constants.py`, `runtime/progress/emitter.py`, `runtime/progress/facts.py`, `runtime/__init__.py`
 
 ### Context
 

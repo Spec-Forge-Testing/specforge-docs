@@ -39,7 +39,7 @@ runs as one all-or-nothing transaction through a **Unit of Work** — see the
 ## Read next
 
 - [Data model](data-model.md): every persisted record, relationship and test setup.
-- [Custom Schemathesis](../custom-schemathesis/index.md): producer of execution
+- [Spec Forge Engine](../specforge-engine/index.md): producer of execution
   results and crash reports.
 - [CLI Reference](../../user-guide/cli-reference.md): the `fuzz` command persists each run
   through this engine (on by default, `--no-save` to opt out).

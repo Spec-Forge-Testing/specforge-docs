@@ -72,7 +72,10 @@ Inside stateless exploration the cut is **sticky**: `mark_cancelled` sets it onl
 if no earlier cut is already in place, so a deadline or a target-down cut that came
 first keeps its own, more specific reason. At the shrinker's send point the same
 check is a hard gate — a shrink search cancelled before its next request abandons
-that finding rather than confirming it.
+that finding rather than confirming it. The liveness probe obeys the same rule:
+both stateless failure streaks read the token before probing and cut with
+`cancelled` instead, and a replay skips its liveness check once cancelled, so a
+cancelled run never sends the probe either.
 
 ### What a cancelled run returns
 
@@ -202,10 +205,11 @@ serial, so the observer is called from one thread and needs no locking of its ow
 
 There is deliberately **never one event per HTTP request**: a batch of concurrent
 requests folds into a single `tick`, and at thousands of requests a second a
-per-request event would carry nothing the counter does not already hold. The one
-per-request emission is replay's `tick`, one per replayed request — and even that
-is throttled by `MIN_TICK_INTERVAL_S`, so a fast replay does not flood the
-listener.
+per-request event would carry nothing the counter does not already hold. The
+stateless runner also ticks once per shrink attempt, so the counter keeps moving
+while findings are being minimised. The one per-request emission is replay's
+`tick`, one per replayed request — and even that is throttled by
+`MIN_TICK_INTERVAL_S`, so a fast replay does not flood the listener.
 
 An observer's `on_event` runs inline in the run: it should be cheap and must not
 raise. Anything expensive — rendering, disk, network — belongs on the listener's

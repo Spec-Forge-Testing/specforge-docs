@@ -49,6 +49,30 @@ run declined to touch and why.
     than silently skipping the check. `--allow-side-effects` is the way to
     complete such a run.
 
+## Run signals
+
+The two optional signals a caller wires into `run` — a way to stop the run and a
+way to watch it — travel together as one frozen `RunSignals` carrier
+(`cancellation`, `progress`), so a runner takes a single value instead of two
+parameters threaded through every call. `run` builds it once and passes it down
+through the `RunRequest`; every runner, the shared endpoint loop and both fuzzers
+read `signals.cancellation` at their boundaries and report through
+`signals.progress`. When the caller supplies neither, `NULL_SIGNALS` carries a
+never-cancelled token and a no-op progress sink, so the paths downstream need no
+special case.
+
+`progress` is a `Progress` Protocol, not the raw observer: a `ProgressEmitter`
+sits behind it and owns the run's clock, the tick throttle and the three counters
+(`sent`, `total`, `findings`). It forwards a **fact** event straight through and
+**throttles** a `tick` to at most one per `MIN_TICK_INTERVAL_S`, reading the live
+wire-request count from the orchestrator each time. The emitter is built only when
+an observer is supplied; otherwise `run` wires the no-op `NULL_PROGRESS` and
+computes no counters at all. Cancellation is read as a plain value — a sticky
+`Cut` inside stateless exploration, a `TruncationRecord` with reason `cancelled`
+at every other boundary — never thrown. The full treatment of both signals, the
+event catalog and the per-mode boundaries is on
+[Progress and cancellation](progress-and-cancellation.md).
+
 ## HTTP transport
 
 `engine/http/` owns everything the wire needs. One `AsyncOrchestrator` is
@@ -73,7 +97,11 @@ on a bare socket while still passing through the run's one concurrency cap.
 `429`, `502` or `503`, or an `httpx.ConnectTimeout`, is retried up to
 `max_retries` times; the backoff is exponential (`2**attempt * backoff_base`)
 with jitter, capped at `MAX_BACKOFF_S`, and it is slept **outside** the
-concurrency slot so a waiting retry frees its slot for other work. Every other
+concurrency slot so a waiting retry frees its slot for other work. The sleep is
+**chunked** so a cancelled run does not wait it out: it runs through `wait_chunks`
+in steps of at most `CANCELLATION_POLL_INTERVAL_S` and ends the moment the run's
+cancellation token trips, in which case the last attempt's result is returned
+unretried (see [Progress and cancellation](progress-and-cancellation.md)). Every other
 transport error is returned on the first attempt: a 4xx or 5xx is the API's
 answer, not a fault to paper over, and a malformed URL will never succeed.
 

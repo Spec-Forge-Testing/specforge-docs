@@ -36,13 +36,19 @@ hide the builtin `compile`.
 `StrategyMode`; a per-endpoint compile failure is an exclusion, not an
 exception.
 
-### `run(engine_input, config, *, mode=ExecutionMode.STATELESS, options=None) -> EngineRunResult`
+### `run(engine_input, config, *, mode=ExecutionMode.STATELESS, options=None, cancellation=NULL_TOKEN, observer=NULL_OBSERVER) -> EngineRunResult`
 
 Execute an `EngineInput` against the API at `config.base_url` in one
 `ExecutionMode` (a member or its string). `options` is validated against the
 selected runner's options type; `None` means that mode's defaults, and a mode
 whose options carry a required field — replay's trace — raises before any
 request is sent.
+
+`cancellation` is a `CancellationToken` the run polls between units of work to
+stop cooperatively; `observer` is a `RunObserver` that receives every progress
+event. Both are keyword-only and default to a Null Object, so a run nobody stops
+and nobody watches pays nothing for either. What they are and how they behave is
+in [Progress and cancellation](progress-and-cancellation.md).
 
 **Raises** `EngineError` for an unknown mode or a violated execution
 invariant, `StatefulLinkError` when a state link cannot be honored.
@@ -91,16 +97,39 @@ Field names of this family are stable: they are persisted as columns.
 | `Identity` | one caller identity: a `label`, its credential `headers`, an optional `role` (never empty) that only a `role_only` endpoint reads (`None` never satisfies a required role), and a `credential` (`CredentialKind`, default `VALID`) |
 | `StatelessOptions`, `StatefulOptions`, `PerformanceOptions`, `ReplayOptions` | passed to `run(options=...)` per mode |
 
+## Cancellation and progress
+
+The two signals a caller may wire into `run`, and the events an observer receives.
+See [Progress and cancellation](progress-and-cancellation.md) for how they behave.
+
+| Name | One line |
+|---|---|
+| `CancellationSource` | the write side a caller holds: `cancel()` stops the run, `.token` is the read-only view it passes to `run(cancellation=...)` |
+| `CancellationToken` | the read side the run polls: a Protocol with one read-only `cancelled` property that never raises |
+| `RunObserver` | the observer Protocol: a single `on_event(event)` receiving every `RunEvent` |
+| `RunEvent` | the discriminated union of the nine event classes, on `kind` |
+| `EventKind` | the `StrEnum` discriminator, one member per event class |
+| `RunStarted` | `started`: the run began fuzzing `endpoints` many endpoints |
+| `EndpointStarted` | `endpoint_started`: `endpoint_id`, 1-based `index`, `total` |
+| `PhaseStarted` | `phase_started`: `endpoint_id`, `phase` |
+| `ProgressTick` | `tick`: absolute `elapsed_s`, `sent`, `total`, `findings` |
+| `FindingObserved` | `finding`: `endpoint_id`, `status_code`, `invariant`, `phase` |
+| `InfraFailure` | `infra_failure`: `endpoint_id`, `reason`, `streak`, `limit` |
+| `TargetDown` | `target_down`: `base_url`, `verdict` (`TargetDownVerdict`) |
+| `RunTruncated` | `truncated`: `endpoint_id`, `reason` |
+| `RunFinished` | `finished`: the terminal `status` |
+| `TargetDownVerdict` | how a run decided the target is down: `LIVENESS_PROBE_FAILED` / `CIRCUIT_BREAKERS_OPEN` |
+
 ## Enums (only those a consumer touches)
 
 | Name | One line |
 |---|---|
 | `ExecutionMode` | `STATELESS` / `STATEFUL` / `REPLAY` / `PERFORMANCE` / `RESILIENCE` / `AUTH` |
 | `StrategyMode` | `DEFAULT` / `HACKER` (global on `CompilerInput`) |
-| `RunStatus` | a run's terminal outcome: `COMPLETED` / `TRUNCATED` / `ABORTED` |
+| `RunStatus` | a run's terminal outcome: `COMPLETED` / `TRUNCATED` / `ABORTED` / `CANCELLED` |
 | `FindingState` | a finding's settled state: `CONFIRMED` / `FLAKY` / `UNVERIFIED` |
 | `ErrorCategory` | the outcome category of one request |
-| `TruncationReason` | why a run, or one endpoint, was cut short (includes `TARGET_DOWN`, `INFRASTRUCTURE_ABORT`) |
+| `TruncationReason` | why a run, or one endpoint, was cut short (includes `TARGET_DOWN`, `INFRASTRUCTURE_ABORT`, `CANCELLED`) |
 | `FidelityLevel` | `EXACT` / `REDUCED` |
 | `CredentialKind` | whether an identity's credentials are ones the target should accept: `VALID` / `INVALID` |
 

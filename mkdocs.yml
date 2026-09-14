@@ -133,6 +133,7 @@ nav:
               - Strategy compiler: modules/custom-schemathesis/strategy-compiler.md
               - Engine internals: modules/custom-schemathesis/engine-internals.md
               - Execution modes: modules/custom-schemathesis/execution-modes.md
+              - Progress and cancellation: modules/custom-schemathesis/progress-and-cancellation.md
               - Extension guide: modules/custom-schemathesis/extension-guide.md
               - API Reference: modules/custom-schemathesis/api-reference.md
               - Decision records:

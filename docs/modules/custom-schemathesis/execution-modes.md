@@ -1,10 +1,12 @@
 # Execution modes
 
-`run(engine_input, config, mode, options=None)` selects a runner object from a
-registry by `ExecutionMode` — never a branch, never a boolean
-([ADR-013](adr/api.md#adr-013)). Each runner satisfies the `ExecutionRunner`
-Protocol (`mode`, `options_type`, `run`). There are six built-in runners,
-registered explicitly by `register_builtin_runners`.
+`run(engine_input, config, mode, options=None, cancellation=..., observer=...)`
+selects a runner object from a registry by `ExecutionMode` — never a branch, never
+a boolean ([ADR-013](adr/api.md#adr-013)). Each runner satisfies the
+`ExecutionRunner` Protocol (`mode`, `options_type`, `run`). There are six built-in
+runners, registered explicitly by `register_builtin_runners`. The optional
+`cancellation` and `observer` signals — how a caller stops a run and watches it —
+are covered on their own page ([Progress and cancellation](progress-and-cancellation.md)).
 
 Stateless and performance share one loop template (`explore_endpoints`, a
 higher-order function taking an `EndpointLoopSpec` value object that bundles the
@@ -39,6 +41,26 @@ the runner for the mode (raising `EngineError` for an unknown one), the second
 validates the caller's options against the runner's `options_type` and supplies
 that mode's defaults when `None` is passed, so no runner repeats the check
 ([ADR-021](adr/engine.md#adr-021)).
+
+## Cancelling a run
+
+Every mode polls the run's `cancellation` token at its own natural boundaries and
+stops cooperatively — a unit already on the wire finishes, the next never starts:
+
+| Mode | Where it checks | On cancel |
+|---|---|---|
+| Stateless | between endpoints, between passes and drawn examples, before each shrink send | the endpoint stops at the boundary; findings not yet confirmed are left unverified |
+| Performance | between endpoints and between ladder steps (plus the stateless points above) | the ladder ends at its completed steps |
+| Stateful | between supervisor passes | reports already confirmed are kept |
+| Replay | before each replayed request | the trace stops at the requests sent so far |
+| Resilience, Auth | between endpoints | the next endpoint is not attacked/crossed |
+
+A cancelled run adds a fifth terminal status beside `completed`, `truncated` and
+`aborted`: `RunStatus.CANCELLED`, carried by a `TruncationRecord` with reason
+`cancelled`. It says the caller asked to stop and makes no claim about the API. A
+cancellation outranks a soft budget or deadline cut but not a confirmed dead
+target. The full behaviour, the events a run emits, and how a listener maps them to
+the wire are on [Progress and cancellation](progress-and-cancellation.md).
 
 ## Stateless (default)
 

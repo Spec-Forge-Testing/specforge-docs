@@ -389,12 +389,12 @@ orchestrator persists it as recorded ([ADR-045](adr/engine.md#adr-045)).
 
 Expected alternative results are Result objects (`CompilationOutcome`,
 `ReplayReadiness`); genuine failures are typed domain exceptions rooted at
-`CustomSchemathesisError` (`exceptions.py`), so no builtin `ValueError` /
+`SpecforgeEngineError` (`exceptions.py`), so no builtin `ValueError` /
 `RuntimeError` crosses a package boundary
 ([ADR-001](adr/foundations.md#adr-001)):
 
 ```text
-CustomSchemathesisError
+SpecforgeEngineError
 ├── PolicyError                      # boundary validation failed
 ├── StrategyCompilationError         # a contract cannot become a strategy
 │   └── EndpointCompilationError     # …for a specific endpoint (carries endpoint_id + the reason)

@@ -353,7 +353,7 @@ stateless/performance budget split, stateful identity rotation — only the vali
 identities take part, read from `config.valid_identities`. A run with only invalid
 identities has no valid pool and stops with `AccessIdentityError`.
 
-The package `engine/runners/auth/` is split by the question each module answers:
+The package `runtime/runners/auth/` is split by the question each module answers:
 `plan.py` holds what a plan is (`Crossing`, `Provisioning`, `PlanContext`) and the
 request builders; `planners.py` holds one planner per policy behind
 `planner_for`; `preconditions.py` holds the checks that must pass before the first

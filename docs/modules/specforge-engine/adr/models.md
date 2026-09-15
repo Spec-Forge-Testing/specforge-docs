@@ -1,6 +1,6 @@
-# Custom Schemathesis — Decision records — Models
+# Spec Forge Engine — Decision records — Models
 
-Part of the [Custom Schemathesis decision records](index.md). Decisions about
+Part of the [Spec Forge Engine decision records](index.md). Decisions about
 the vocabularies, the contract package and the boundary DTOs in `models/`.
 
 ---
@@ -80,12 +80,12 @@ imports the engine.
 
 ## ADR-006 — The contract vocabulary is a sibling of the compiler and engine models { #adr-006 }
 
-**Status:** accepted · `models/contracts/`, `models/compiler/`, `models/engine/`
+**Status:** accepted · `models/contracts/`, `models/compiler/`, `models/runtime/`
 
 ### Context
 
 `models/compiler/outcome.py` carries the `EngineInput`: the compiler produces
-the engine's input, so `models/compiler → models/engine`. `models/engine/
+the engine's input, so `models/compiler → models/runtime`. `models/runtime/
 engine_input.py` keeps the contract DTOs the engine still needs at run time —
 risk, attack, budget, responses, state links. If those contracts lived under
 `models/compiler/`, the engine models would import the compiler models and
@@ -93,8 +93,8 @@ the two folders would depend on each other.
 
 ### Decision
 
-`models/contracts/` sits beside `models/compiler/` and `models/engine/`. The
-direction is `models/compiler → models/engine → models/contracts →
+`models/contracts/` sits beside `models/compiler/` and `models/runtime/`. The
+direction is `models/compiler → models/runtime → models/contracts →
 specforge_contracts`, with the enums and `StrategyModeProfile` at the root of
 `models/`. The contracts are the shared boundary vocabulary of both stages,
 not the compiler's.
@@ -241,7 +241,7 @@ a field inspection. A third contract type is a subclass and a registration.
 
 ## ADR-011 — `GenerationPlan` is a frozen engine-side value that scales by replacement { #adr-011 }
 
-**Status:** accepted · `models/engine/plan.py`
+**Status:** accepted · `models/runtime/plan.py`
 
 ### Context
 
@@ -253,7 +253,7 @@ dict is easy to mutate and impossible to compare.
 
 ### Decision
 
-A `@dataclass(frozen=True, slots=True)` in `models/engine/plan.py`: it is
+A `@dataclass(frozen=True, slots=True)` in `models/runtime/plan.py`: it is
 part of the shape of `EngineInput`, so it lives on the engine side, in the
 direction [ADR-006](#adr-006) fixes. Scaling is `scaled(factor)`, a
 `dataclasses.replace` that multiplies `examples_per_phase`; `factor == 1`

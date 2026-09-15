@@ -6,12 +6,12 @@ extension axes, each a registry populated at import time, each with a public
 
 | Axis | Add one by | Registry | Test seam |
 |---|---|---|---|
-| **Runner** (how a run executes) | an `ExecutionRunner` + `register_runner(...)` | `engine/runners/registry.py` | `isolated()` + `registered_modes()` |
+| **Runner** (how a run executes) | an `ExecutionRunner` + `register_runner(...)` | `runtime/runners/registry.py` | `isolated()` + `registered_modes()` |
 | **Profile** (what gets generated) | a `StrategyMode` member + `register_profile(StrategyModeProfile(...))` | `profiles/registry.py` | `isolated()` + `registered_strategy_modes()` |
 | **Phase** (a generation phase) | a `GenerationPhase(name=Phase.X, ...)` + `register_phase(...)` | `strategy_compiler/fields/registry.py` | `isolated()` + `registered_phases()` |
 | **Phase extension** (an extra phase that activates on a datum) | a `PhaseExtension(phase, applies, share, refiner)` + `register_phase_extension(...)` | `phase_extensions.py` | `isolated()` + `registered_phase_extensions()` |
-| **Oracle** (a response check) | a class satisfying `ResponseOracle` + `register_oracle(...)` | `engine/oracles/registry.py` | `isolated()` + `registered_oracle_names()` |
-| **Chaos transport** | a factory under a new key in the transport table | `engine/runners/resilience/transport.py` | `isolated()` |
+| **Oracle** (a response check) | a class satisfying `ResponseOracle` + `register_oracle(...)` | `runtime/oracles/registry.py` | `isolated()` + `registered_oracle_names()` |
+| **Chaos transport** | a factory under a new key in the transport table | `runtime/runners/resilience/transport.py` | `isolated()` |
 
 An unknown key raises a domain exception — `PolicyError` from the profile
 registry, `EngineError` from the engine-side registries — never a builtin
@@ -29,10 +29,10 @@ class ExecutionRunner(Protocol):
     def run(self, request: RunRequest, orchestrator: AsyncOrchestrator) -> EngineRunResult: ...
 ```
 
-Register it beside the built-ins in `engine/runners/__init__.py`:
+Register it beside the built-ins in `runtime/runners/__init__.py`:
 
 ```python
-from custom_schemathesis.engine.runners import register_runner
+from specforge_engine.runtime.runners import register_runner
 
 register_runner(MyRunner())
 ```
@@ -52,9 +52,9 @@ The built-ins are registered in `profiles/builtin.py`. A new one is a
 `StrategyMode` member plus one call:
 
 ```python
-from custom_schemathesis.models import Phase, StrategyMode, StrategyModeProfile
-from custom_schemathesis.models.contracts import ALLOWED_FIELDS_BY_TYPE, BaseStrategyContract
-from custom_schemathesis.profiles import register_profile
+from specforge_engine.models import Phase, StrategyMode, StrategyModeProfile
+from specforge_engine.models.contracts import ALLOWED_FIELDS_BY_TYPE, BaseStrategyContract
+from specforge_engine.profiles import register_profile
 
 register_profile(
     StrategyModeProfile(
@@ -73,12 +73,12 @@ which is what keeps the engine ignorant of `StrategyMode`.
 ## Add a phase
 
 A phase is a `GenerationPhase(name=Phase.X, contract_type=..., build=...)`
-registered through `custom_schemathesis.strategy_compiler.fields`:
+registered through `specforge_engine.strategy_compiler.fields`:
 
 ```python
-from custom_schemathesis.models.phase import Phase
-from custom_schemathesis.models.contracts import BaseStrategyContract
-from custom_schemathesis.strategy_compiler.fields import GenerationPhase, register_phase
+from specforge_engine.models.phase import Phase
+from specforge_engine.models.contracts import BaseStrategyContract
+from specforge_engine.strategy_compiler.fields import GenerationPhase, register_phase
 
 
 def build_my_phase(contract, *, context):
@@ -105,11 +105,11 @@ is registered twice: the real builder on the hacker contract, and a valid-value
 fallback on the base contract, exactly as `attack` is:
 
 ```python
-from custom_schemathesis.models.contracts import BaseStrategyContract, HackerStrategyContract
-from custom_schemathesis.models.phase import Phase
-from custom_schemathesis.strategy_compiler.fields import GenerationPhase, register_phase
-from custom_schemathesis.strategy_compiler.fields.default import build_valid_strategy
-from custom_schemathesis.strategy_compiler.fields.hacker import build_hacker_mutation
+from specforge_engine.models.contracts import BaseStrategyContract, HackerStrategyContract
+from specforge_engine.models.phase import Phase
+from specforge_engine.strategy_compiler.fields import GenerationPhase, register_phase
+from specforge_engine.strategy_compiler.fields.default import build_valid_strategy
+from specforge_engine.strategy_compiler.fields.hacker import build_hacker_mutation
 
 register_phase(
     GenerationPhase(name=Phase.MUTATION, contract_type=BaseStrategyContract, build=build_valid_strategy)
@@ -151,11 +151,11 @@ payloads — it is wired from a composition root, `phase_extension_builtins.py`,
 which the package `__init__` calls once. The built-in registration mirrors this:
 
 ```python
-from custom_schemathesis.engine.fuzzers.semantic import build_semantic_payloads
-from custom_schemathesis.models.phase import Phase
-from custom_schemathesis.phase_extensions import PhaseExtension, register_phase_extension
-from custom_schemathesis.semantic_properties import has_input_constraint
-from custom_schemathesis.strategy_compiler.constants import SEMANTIC_SHARE
+from specforge_engine.runtime.fuzzers.semantic import build_semantic_payloads
+from specforge_engine.models.phase import Phase
+from specforge_engine.phase_extensions import PhaseExtension, register_phase_extension
+from specforge_engine.semantic_properties import has_input_constraint
+from specforge_engine.strategy_compiler.constants import SEMANTIC_SHARE
 
 
 def register_builtin_phase_extensions() -> None:
@@ -172,7 +172,7 @@ def register_builtin_phase_extensions() -> None:
 The compiler's `effective_phases` and `effective_split`
 (`strategy_compiler/effective_phases.py`) read the registry so the endpoints that
 compile the phase are exactly the ones that fund it; the engine's `refine_for_phase`
-(`engine/fuzzers/phases.py`) reads it too, applying the extension's `refiner` to a
+(`runtime/fuzzers/phases.py`) reads it too, applying the extension's `refiner` to a
 phase that has one and returning the assembled strategy unchanged for any other
 phase. This is the seam the `semantic` phase uses to turn valid per-field draws into
 inputs that break, or hold, a declared rule — a phase whose intent is a property of
@@ -248,7 +248,7 @@ class ResponseOracle(Protocol):
 `OraclePrecedence` is an `IntEnum`, so precedence is a named value, not a magic
 gap. Oracles run as a Chain of Responsibility: the first terminal verdict
 short-circuits, non-terminal ones continue. All built-ins are registered
-explicitly in `engine/oracles/builtin.py` — never as a side effect of importing
+explicitly in `runtime/oracles/builtin.py` — never as a side effect of importing
 a runner. The nine built-ins are, in precedence order: infrastructure,
 resilience, server error, access control, status code, content type, response
 schema, semantic property, latency ([ADR-036](adr/engine.md#adr-036),
@@ -258,7 +258,7 @@ An oracle can be **dormant until it has its datum**: it registers unconditionall
 but returns `CONTINUE` until the endpoint carries the input it judges. The
 semantic-property oracle is the clearest example — with no business rule declared
 for the endpoint it stands down and costs nothing, and it only ever speaks on a
-2xx (its family lives under `engine/oracles/semantic/`). The `access_control`
+2xx (its family lives under `runtime/oracles/semantic/`). The `access_control`
 oracle is dormant the same way: it stays silent unless the auth runner hands the
 context an `AccessExpectation`, so it fires in an auth run and nowhere else.
 Registration is the extension point; the datum on the context decides whether the
@@ -275,7 +275,7 @@ class ChaosTransport(Protocol):
 ```
 
 Register a factory under a new key with `register_transport(key, factory)` in
-`engine/runners/resilience/transport.py`.
+`runtime/runners/resilience/transport.py`.
 `resolve_transport(attack.transport, orchestrator)` picks it, raising
 `EngineError` for an unknown key, and nothing that dispatches an attack branches
 on the attack itself. Two transports are built in: `httpx`, which routes chaos
@@ -301,7 +301,7 @@ through its public `isolated()` and `registered_*()`; that is how "extension
 is a row, not an edit" stays a testable property.
 
 ```python
-from custom_schemathesis import profiles
+from specforge_engine import profiles
 
 
 def test_custom_profile_is_resolvable():

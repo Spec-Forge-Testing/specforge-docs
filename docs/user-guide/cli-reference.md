@@ -455,7 +455,7 @@ unexpectedly.
         --concurrency-steps 1,4,8 --degradation-tolerance 0.25
     ```
 
-    `--mode stateful` switches to [stateful fuzzing](../modules/custom-schemathesis/execution-modes.md#stateful):
+    `--mode stateful` switches to [stateful fuzzing](../modules/specforge-engine/execution-modes.md#stateful):
     requests are **chained into sequences** instead of each operation being fuzzed on
     its own, which surfaces order-dependent failures — a resource created, deleted,
     then read. `--endpoint`/`--method` still narrow the sequences to the matching

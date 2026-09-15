@@ -60,7 +60,7 @@ Only these modules need a different workflow:
 - **Contracts (`lib/contracts`)**: `pip install -e ".[dev]"`, then run
   `pytest -q --cov=src/specforge_contracts --cov-report=term-missing`, then
   `ruff check src tests`.
-- **Custom Schemathesis (`lib/custom_schemathesis`)**: it depends on the shared
+- **Spec Forge Engine (`lib/specforge_engine`)**: it depends on the shared
   kernel at runtime, so install `lib/contracts` first —
   `pip install -e ../contracts -e ".[dev]"` from the module directory, the same
   command CI runs — then `python -m pytest -q`. Its `fixtures-api` image is built

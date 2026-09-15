@@ -81,13 +81,13 @@ Depends on the stage, and it's what decides how expensive each folder is:
 | `contract_engine` | the contract file | No |
 | `core_ast` | the contract + source code on disk | No |
 | `semantic_inference` | the contract + extracted context | No |
-| `custom_schemathesis` | the contract + **a SUT answering** | **Yes** |
+| `specforge_engine` | the contract + **a SUT answering** | **Yes** |
 
 The first three are static analysis — `core_ast` reads source code, it never
 executes it. That's why today's suite runs offline, in seconds, and the
 corpus as checked into the repo is enough.
 
-`custom_schemathesis` breaks that pattern, because fuzzing means sending
+`specforge_engine` breaks that pattern, because fuzzing means sending
 requests. It needs a SUT up on `http://localhost:8000` and, if it's from
 EMB, compiled first.
 
@@ -158,7 +158,7 @@ row in `esperado/`, not a stuck suite.
 | `contract_engine/` — `polyglot` track | 2 functions × 10 contracts, separate catalog/fixture | Run. **8 of 10 red** |
 | `core_ast/` | 2 functions × 12 implementations | Written, **not run yet**: inherits whatever the previous stage delivers |
 
-`custom_schemathesis` and `semantic_inference` aren't tested yet: those
+`specforge_engine` and `semantic_inference` aren't tested yet: those
 stages aren't finished. When they are, each adds its own folder under the
 same rule — if the seam doesn't exist in the CLI, it doesn't get written
 here.
@@ -259,7 +259,7 @@ relative route, so the full route never appears literal) and Spring hides
 the path behind a named `path = ` attribute. Neither is about language
 grammar. Detail in [Status → `core_ast/`](#core_ast-written-not-run) above.
 
-### 3. EMB's Python class, before the `custom_schemathesis` folder
+### 3. EMB's Python class, before the `specforge_engine` folder
 
 The only piece of infrastructure still missing, needed because that stage
 **does** require a live SUT. Described in
@@ -267,7 +267,7 @@ The only piece of infrastructure still missing, needed because that stage
 
 ### 4. The folders that don't exist yet
 
-`semantic_inference/` and `custom_schemathesis/`, once those modules are
+`semantic_inference/` and `specforge_engine/`, once those modules are
 finished. Same rule as the two that already exist: each one covers from the
 start of the pipeline through its own stage, and if the seam doesn't exist
 in the CLI, it doesn't get written here.

@@ -1,6 +1,6 @@
-# Custom Schemathesis
+# Spec Forge Engine
 
-Custom Schemathesis is the fuzzing engine of the pipeline. Given a validated
+Spec Forge Engine is the fuzzing engine of the pipeline. Given a validated
 description of an API's endpoints — the request zones and the per-value
 generation contract of each field, the risk and attack hints, the expected
 responses and the links between operations — it compiles that description into
@@ -41,7 +41,7 @@ with the rest of the pipeline.
 `compile_strategies` and `run` are the two entry points:
 
 ```python
-from custom_schemathesis import (
+from specforge_engine import (
     BaseStrategyContract, CompilerInput, EndpointSpec, RequestZones,
     ExecutionConfig, ExecutionMode, StrategyMode,
     StatelessOptions, ReplayOptions,
@@ -108,7 +108,7 @@ testable in isolation. See [Architecture](architecture.md).
 
 ## The public facade
 
-Everything you import comes from the top-level `custom_schemathesis` package;
+Everything you import comes from the top-level `specforge_engine` package;
 internal module paths are an implementation detail. The surface is the two
 entry points, the input DTOs the orchestrator builds, the output DTOs it
 consumes, the per-mode `*Options`, the five enums a consumer touches, and the

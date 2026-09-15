@@ -1,6 +1,6 @@
-# Custom Schemathesis — Decision records — Strategy compiler
+# Spec Forge Engine — Decision records — Strategy compiler
 
-Part of the [Custom Schemathesis decision records](index.md). Decisions about
+Part of the [Spec Forge Engine decision records](index.md). Decisions about
 how a validated field becomes a Hypothesis strategy.
 
 ---

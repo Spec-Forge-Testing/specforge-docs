@@ -56,8 +56,8 @@ mode has its own natural boundaries:
 | Before the shrinker's next send | stateless, performance | the finding under minimization is left unverified |
 
 Two waits would otherwise stall a prompt stop, so both are **chunked**: the HTTP
-retry backoff (`engine/http/orchestrator.py`) and the replay pacer's inter-request
-sleep (`engine/replay/pacing.py`) both sleep through `wait_chunks`, which breaks a
+retry backoff (`runtime/http/orchestrator.py`) and the replay pacer's inter-request
+sleep (`runtime/replay/pacing.py`) both sleep through `wait_chunks`, which breaks a
 delay into steps of at most `CANCELLATION_POLL_INTERVAL_S` (0.05 s) and ends the
 moment the token is cancelled. A cancelled run therefore wakes within that window
 rather than at the end of a full backoff. A backoff interrupted this way never

@@ -33,7 +33,7 @@ The unified contract model itself lives in the shared kernel `specforge-contract
 (canonical class `EndpointContract`, at `lib/contracts` in the repository), which
 this package depends on and re-exports as `UnifiedEndpointContract` for backward
 compatibility. The kernel is the single owner shared with `semantic_inference`
-and `custom_schemathesis`, so the contract shape never drifts between stages.
+and `specforge_engine`, so the contract shape never drifts between stages.
 
 Everything you normally need is re-exported from the package root:
 

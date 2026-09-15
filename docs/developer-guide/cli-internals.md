@@ -5,7 +5,7 @@ through the `@command` decorator (`repl/registry.py`) and are dispatched by
 `repl/dispatcher.py`. Presentation is a small design system under `ui/`
 (tokens → theme → components); business logic lives in pure `services/`.
 
-The CLI delegates to `contract-engine`, `core-ast` and Custom Schemathesis; see
+The CLI delegates to `contract-engine`, `core-ast` and Spec Forge Engine; see
 their module pages for the corresponding implementation details. For how to use
 the commands themselves, see the [CLI Reference](../user-guide/cli-reference.md).
 

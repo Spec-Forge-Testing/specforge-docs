@@ -7,7 +7,7 @@ contract — the boundary object that travels across the whole pipeline:
 flowchart TD
     subgraph Flow ["Execution Pipeline"]
         direction LR
-        SI["semantic_inference"] --> CE["contract_engine<br/><i>(fusion)</i>"]
+        SI["semantic_inference"] --> CE["contract_assembly<br/><i>(fusion)</i>"]
         CE --> CO["core<br/><i>(adapter)</i>"]
         CO --> CS["specforge_engine"]
     end
@@ -39,7 +39,7 @@ sensitivity and effort.
 ## Why a separate package?
 
 `semantic_inference` is the most *upstream* module that uses the contract. If the
-models lived in `contract_engine` (a downstream stage), `semantic_inference` would
+models lived in `contract_assembly` (a downstream stage), `semantic_inference` would
 have to import a downstream package — an inverted dependency, which the
 architecture forbids. A neutral kernel sits at the **leaf** of the dependency
 graph, so every stage can depend on it while the data flow stays one-directional
@@ -102,7 +102,7 @@ no hierarchy, so `admin` is not satisfied by `Admin` or by a broader role.
 - **`extra="forbid"`** on every model, so a hallucinated keyword fails
   validation, forcing the LLM to self-correct.
 
-> `contract_engine` re-exports `EndpointContract` under its historical name
+> `contract_assembly` re-exports `EndpointContract` under its historical name
 `UnifiedEndpointContract` (a backward-compatible alias).
 
 ## Development

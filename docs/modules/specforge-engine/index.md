@@ -12,7 +12,7 @@ request it sent so a run can be reproduced.
 > Its job is to answer one question: *"given everything we know about this
 endpoint, what input makes it misbehave — and what is the smallest such input?"*
 
-It is the last stage of the pipeline: `contract_engine` supplies the endpoints,
+It is the last stage of the pipeline: `contract_assembly` supplies the endpoints,
 `core_ast` and `semantic_inference` enrich them with business rules, risk and
 attack hints, and `core/` hands the result to this engine and persists what
 comes back.

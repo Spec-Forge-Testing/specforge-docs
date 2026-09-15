@@ -5,7 +5,7 @@ through the `@command` decorator (`repl/registry.py`) and are dispatched by
 `repl/dispatcher.py`. Presentation is a small design system under `ui/`
 (tokens → theme → components); business logic lives in pure `services/`.
 
-The CLI delegates to `contract-engine`, `core-ast` and Spec Forge Engine; see
+The CLI delegates to `contract-assembly`, `core-ast` and Spec Forge Engine; see
 their module pages for the corresponding implementation details. For how to use
 the commands themselves, see the [CLI Reference](../user-guide/cli-reference.md).
 
@@ -53,14 +53,14 @@ and no network. Three seams are worth knowing:
 
 ## The fuzz seam (`services/fuzz/`)
 
-`core` is the only layer allowed to know both the Contract Engine and the
+`core` is the only layer allowed to know both Contract Assembly and the
 execution engine at once, and `services/fuzz/` is where that seam lives.
 `runner.run_fuzzing` loads and selects the endpoints, derives the state links
 from the spec (`state_link.build_state_links`, over the full declared list so a
 producer and its consumer still chain when the filter keeps only one), asks the
 optional contract producer for each selected endpoint, fuses what it returns
 over the OpenAPI base (`services/contract.fuse_endpoint_contract`, a thin seam
-over the Contract Engine's `fuse_contract`) and hands everything to
+over Contract Assembly's `fuse_contract`) and hands everything to
 `adapter.endpoints_to_compiler_input`.
 
 The producer is a `Protocol` — `produce(endpoint, *, agent_profile) ->
@@ -95,7 +95,7 @@ Failures are typed and stop the run before any request: a hint on an undeclared
 zone or field, or a transition with no match or an ambiguous one, is an
 `UnsupportedSchemaConstructError` naming the endpoint and the offending key; a
 fixture that fails to load, a duplicate for one endpoint, a contract served for
-another endpoint, or a fusion the Contract Engine rejects is a
+another endpoint, or a fusion Contract Assembly rejects is a
 `ContractProducerError(source, detail)` (JSON error code
 `fuzz_contract_producer`).
 

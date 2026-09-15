@@ -45,7 +45,7 @@ cd tests-repos/tests && ./run.sh core_ast -q
 
 It mounts the working copy read-only, so it always tests uncommitted changes. It
 enters through `specforge_cli.services` — `run_static_trace` and
-`extract_endpoint_contexts` — which means it exercises `contract_engine` and
+`extract_endpoint_contexts` — which means it exercises `contract_assembly` and
 `core_ast` chained, not `core_ast` alone.
 
 Each run rewrites `tests/core_ast/output/`, in the same projection as
@@ -87,7 +87,7 @@ and only the hashes showed it.
 
 RealWorld is *one* contract implemented twelve times in small demo apps. The
 repository holds two other corpora — 36 EMB specs and 10 production APIs under
-`polyglot/` — and neither reaches `core_ast`; both feed `contract_engine` only.
+`polyglot/` — and neither reaches `core_ast`; both feed `contract_assembly` only.
 
 The package is therefore well covered in breadth of language and untested at
 repository scale. Measured: the locator over the first 8 endpoints of EMB's

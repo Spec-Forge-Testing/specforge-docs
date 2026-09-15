@@ -22,7 +22,7 @@ flowchart TD
     PAY --> SI
     SI -->|"generate_endpoint_contract"| EC["EndpointContract<br/>(kernel, LLM invariants)"]
 
-    ED --> FUSE["contract_engine.fuse_contract"]
+    ED --> FUSE["contract_assembly.fuse_contract"]
     EC --> FUSE
     FUSE --> UEC["UnifiedEndpointContract"]
 
@@ -41,10 +41,10 @@ flowchart TD
 
 | Seam | Producer | Consumer | Boundary DTO | Validated at |
 | :--- | :--- | :--- | :--- | :--- |
-| Spec → endpoints | `contract_engine.parse_contract` → `ASTAdapter` | `semantic_inference`, `fuse_contract` | [`EndpointDefinition`](../modules/contract-engine/index.md) | `parse_contract` (OpenAPI 3.x / Swagger 2.0 validated on ingest) |
+| Spec → endpoints | `contract_assembly.parse_contract` → `ASTAdapter` | `semantic_inference`, `fuse_contract` | [`EndpointDefinition`](../modules/contract-assembly/index.md) | `parse_contract` (OpenAPI 3.x / Swagger 2.0 validated on ingest) |
 | Source → handler context | `core_ast` payload builders | `semantic_inference` | [`LLMPayload`](../modules/core-ast/index.md#public-api-re-exports) | `core_ast` stages (typed DTO per stage) |
 | Context → invariants | `semantic_inference.generate_endpoint_contract` | `fuse_contract` | [`EndpointContract`](../modules/contracts/index.md#the-model) | `semantic_inference` validates the raw LLM output as `SemanticEndpointContract` (`extra="forbid"`) before converting it to the kernel contract |
-| Base + invariants → unified | `contract_engine.fuse_contract` | `core/` fuzz adapter | [`UnifiedEndpointContract`](../modules/contract-engine/index.md) | `fuse_contract` (identity from the OpenAPI base, invariants merged in) |
+| Base + invariants → unified | `contract_assembly.fuse_contract` | `core/` fuzz adapter | [`UnifiedEndpointContract`](../modules/contract-assembly/index.md) | `fuse_contract` (identity from the OpenAPI base, invariants merged in) |
 | Unified → engine input | `core/` fuzz adapter (`endpoints_to_compiler_input`) | `compile_strategies` | [`CompilerInput` / `EndpointSpec`](../modules/specforge-engine/strategy-compiler.md) | the engine's `policy` layer validates each `EndpointSpec` |
 | Compile → run | `specforge_engine.compile_strategies` | `specforge_engine.run` | [`EngineInput`](../modules/specforge-engine/engine-internals.md) | `compile_strategies` (translation only; never re-validates) |
 | Run → result | `specforge_engine.run` | `core/` persistence | [`EngineRunResult`](../modules/specforge-engine/index.md#the-public-facade) (the `findings` union, the terminal `status`, and the [`ExecutionTrace`](../modules/specforge-engine/index.md#reproducibility)) | the engine emits it; the run's abort policy watches target-failure categories |

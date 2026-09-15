@@ -43,7 +43,7 @@ docker compose run --rm <service> bash
 
 Available module test services are:
 
-- `contract-engine`
+- `contract-assembly`
 - `storage-engine`
 - `core-ast`
 
@@ -76,7 +76,7 @@ Only these modules need a different workflow:
   `python -m pytest -m "not integration" -q`; run live-provider tests with
   `python -m pytest -m integration` after configuring `LLM_MODEL` and its key.
 
-Core AST and Contract Engine primarily use the Compose pattern above, but both
+Core AST and Contract Assembly primarily use the Compose pattern above, but both
 also work from a local venv (`pip install -e ".[dev]"`, then `pytest`/`ruff`
 directly) when you want editor tooling or scripts outside Docker. Core AST can
 additionally install `.[dev,golden-path,tokens]` when optional languages or token

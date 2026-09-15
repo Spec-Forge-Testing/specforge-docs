@@ -53,7 +53,7 @@ next). In typical use, you run these commands in order:
 ```mermaid
 flowchart TD
     doctor[doctor<br/>check the environment] --> init[init<br/>create the workspace]
-    init --> ce[contract-engine<br/>validate / analyze the spec]
+    init --> ce[contract-assembly<br/>validate / analyze the spec]
     ce --> tr[trace / ast-extract<br/>optional: needs source code]
     tr --> fuzz[fuzz<br/>generate and send requests]
     ce --> fuzz
@@ -63,7 +63,7 @@ flowchart TD
 - **`doctor`** checks that every piece Spec Forge needs is installed, and `doctor --fix`
   installs what is missing.
 - **`init`** creates the local workspace (a `.specforge` folder and a config file).
-- **`contract-engine`** validates your spec (`--validate`) or analyzes it (`--analyze`).
+- **`contract-assembly`** validates your spec (`--validate`) or analyzes it (`--analyze`).
 - **`trace`** and **`ast-extract`** read the API's source to locate an endpoint's handler and
   the code it depends on. Both are optional and both need the source checked out.
 - **`fuzz`** does the real work: it compiles test-case generators from the spec, sends

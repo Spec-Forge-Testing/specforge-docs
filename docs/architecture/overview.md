@@ -19,7 +19,7 @@ deep bugs (e.g. `500`s on invalid input instead of proper `4xx`s).
 ```mermaid
 flowchart TD
     subgraph Ingestion ["1. Ingestion & AST Analysis"]
-        O[/OpenAPI spec/] --> CE["contract_engine<br/><i>(parse_contract → ASTAdapter)</i>"]
+        O[/OpenAPI spec/] --> CE["contract_assembly<br/><i>(parse_contract → ASTAdapter)</i>"]
         CE --> ED["EndpointDefinition"]
         
         S[/source_code/] --> CA["core_ast<br/><i>(locate/extract handler logic)</i>"]
@@ -33,7 +33,7 @@ flowchart TD
     end
 
     subgraph Fusion ["3. Contract Fusion"]
-        ED --> FC["contract_engine.fuse_contract<br/><i>(merge)</i>"]
+        ED --> FC["contract_assembly.fuse_contract<br/><i>(merge)</i>"]
         EC --> FC
         FC --> UC[("unified contract<br/><i>(dict)</i>")]
     end
@@ -55,7 +55,7 @@ managing its own dependencies, tests, and Docker setup.
 core/                       # specforge CLI orchestrator (specforge_cli)
 lib/
 ├── contracts/               # shared kernel: EndpointContract + the Spec Forge vocabulary
-├── contract_engine/        # OpenAPI ingestion + adaptation + fusion
+├── contract_assembly/        # OpenAPI ingestion + adaptation + fusion
 ├── core_ast/                # tree-sitter static analysis
 ├── semantic_inference/      # LLM router + inference
 ├── specforge_engine/     # policy + strategy compiler + engine (six execution modes)
@@ -69,7 +69,7 @@ docker-compose.yml           # monorepo orchestration (root entry point)
 | :--- | :--- |
 | `core/` | Interactive CLI/REPL (Typer, Rich, prompt_toolkit): navigation + command orchestration. |
 | `lib/contracts/` | Shared kernel (`specforge_contracts`): the canonical `EndpointContract` and the risk, attack, transition, semantic-property and access vocabulary every stage imports. |
-| `lib/contract_engine/` | Validates OpenAPI 3.x (`prance`), translates Swagger 2.0 into it, flattens endpoints, fuses base schemas with LLM invariants. |
+| `lib/contract_assembly/` | Validates OpenAPI 3.x (`prance`), translates Swagger 2.0 into it, flattens endpoints, fuses base schemas with LLM invariants. |
 | `lib/core_ast/` | Deterministic, stateless AST analysis (`tree-sitter`); locates routes/handlers/deps via `patterns.toml`. |
 | `lib/semantic_inference/` | Provider-agnostic LLM interface (`LiteLLM`): retries, fallbacks, invariant inference. |
 | `lib/specforge_engine/` | Compiles contracts to Hypothesis strategies; runs the six execution modes over async HTTP (`httpx`): stateless, stateful, performance, resilience, replay, auth. |
@@ -80,7 +80,7 @@ docker-compose.yml           # monorepo orchestration (root entry point)
 - **Layered pipeline** — each module is a stage: typed input → pure transform → typed output.
   Stages never reach backward into later stages.
 - **Dependency direction** — upstream modules never import downstream ones at runtime (e.g.
-  `contract_engine` knows nothing of `specforge_engine`). Only `core/` wires multiple pipeline
+  `contract_assembly` knows nothing of `specforge_engine`). Only `core/` wires multiple pipeline
   engines together.
 - **Boundary DTOs** — stages communicate only through Pydantic DTOs, never shared mutable state.
 - **Determinism** — static/transform stages are deterministic and side-effect free: same input →

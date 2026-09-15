@@ -27,9 +27,9 @@ Only one candidate at a time, same port 8000 as `real-world/` and `emb/`.
   pinned source `bootstrap.sh` clones on demand — never committed, same as
   `emb/upstream`.
 * **`specs/<language>.json`** — that candidate's real OpenAPI contract,
-  already captured. This is what `contract_engine` consumes; `candidates/` is
+  already captured. This is what `contract_assembly` consumes; `candidates/` is
   only there to get the API running. Exception: `go.json` is Swagger 2.0
-  (Gotify's real spec), which `contract_engine` translates into OpenAPI 3.x on
+  (Gotify's real spec), which `contract_assembly` translates into OpenAPI 3.x on
   ingestion.
 * **`MANIFEST.tsv`** — one row per language: the source commit SHA (for
   `core_ast`) and the Docker image + digest (for `up.sh`). The only record of
@@ -87,7 +87,7 @@ contract.
 
 ## Consumers
 
-Wired into `tests/contract_engine/` as a separate track — see
+Wired into `tests/contract_assembly/` as a separate track — see
 [Integration suite → `polyglot` track](suite.md#polyglot-track-8-of-10-red).
 **`php` (InvoiceNinja) and `c_sharp` (Jellyfin) load clean; 8 of 10 reject or
 time out.**

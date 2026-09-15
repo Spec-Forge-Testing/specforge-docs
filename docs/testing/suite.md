@@ -10,7 +10,7 @@ parsing + static analysis chained.
 
 ```bash
 ./run.sh                        the whole suite
-./run.sh contract_engine        one folder
+./run.sh contract_assembly        one folder
 ./run.sh -k realworld -v        any pytest argument
 ./run.sh --shell                a shell inside, for poking around
 ```
@@ -65,8 +65,8 @@ output against the file. Since both sides come from the same projection
 prints the exact command that shows the full diff:
 
 ```
-AssertionError: diff tests/contract_engine/esperado/extract_endpoints/webgoat.json \
-                     tests/contract_engine/output/extract_endpoints/webgoat.json
+AssertionError: diff tests/contract_assembly/esperado/extract_endpoints/webgoat.json \
+                     tests/contract_assembly/output/extract_endpoints/webgoat.json
 ```
 
 That's needed because pytest's own diff, on a 204-endpoint contract, just
@@ -78,7 +78,7 @@ Depends on the stage, and it's what decides how expensive each folder is:
 
 | Stage | Consumes | Live API? |
 | --- | --- | --- |
-| `contract_engine` | the contract file | No |
+| `contract_assembly` | the contract file | No |
 | `core_ast` | the contract + source code on disk | No |
 | `semantic_inference` | the contract + extracted context | No |
 | `specforge_engine` | the contract + **a SUT answering** | **Yes** |
@@ -125,21 +125,21 @@ exactly 37 contracts, or the RealWorld one is missing, the session refuses to
 start. It doesn't test Spec Forge — it tests that the harness is looking at
 what it thinks it's looking at.
 
-**`polyglot` is a separate track inside `contract_engine/`, not a 38th entry
+**`polyglot` is a separate track inside `contract_assembly/`, not a 38th entry
 in that pass.** Several of its specs take 60s+ or never return against
-`parse_contract` as it stands today (measured live — see the Contract Engine
-epic), so folding them into the single in-process pass above would hang the
+`parse_contract` as it stands today (measured live — see the Contract Assembly
+module), so folding them into the single in-process pass above would hang the
 whole session before any test could run. `catalogo_polyglot()` and the
 `ingesta_polyglot` fixture mirror the pattern but ingest each spec in its own
 subprocess under a 150s timeout, the same isolation
-`lib/contract_engine/tests/support.py::run_parse_in_child` already uses for
+`lib/contract_assembly/tests/support.py::run_parse_in_child` already uses for
 its own hanging fixture. A real timeout becomes one more `TimeoutExpired`
 row in `esperado/`, not a stuck suite.
 
 ## Status
 
 > **These numbers predate the ingestion work, and the harness has not been
-> re-run.** Everything below was measured before the Contract Engine widened its
+> re-run.** Everything below was measured before Contract Assembly widened its
 > entry edge — tolerant validation, bounded resolution, cycle reporting and
 > Swagger 2.0 translation. The `esperado/` baselines still encode the old
 > verdicts, so the harness will now report *unexpected passes*: contracts it
@@ -154,8 +154,8 @@ row in `esperado/`, not a stuck suite.
 
 | Folder | Covers | Status |
 | --- | --- | --- |
-| `contract_engine/` | 2 functions × 37 contracts (RealWorld + EMB) | Run. **27 of 74 red** |
-| `contract_engine/` — `polyglot` track | 2 functions × 10 contracts, separate catalog/fixture | Run. **8 of 10 red** |
+| `contract_assembly/` | 2 functions × 37 contracts (RealWorld + EMB) | Run. **27 of 74 red** |
+| `contract_assembly/` — `polyglot` track | 2 functions × 10 contracts, separate catalog/fixture | Run. **8 of 10 red** |
 | `core_ast/` | 2 functions × 12 implementations | Written, **not run yet**: inherits whatever the previous stage delivers |
 
 `specforge_engine` and `semantic_inference` aren't tested yet: those
@@ -163,7 +163,7 @@ stages aren't finished. When they are, each adds its own folder under the
 same rule — if the seam doesn't exist in the CLI, it doesn't get written
 here.
 
-### `contract_engine/`: 27 of 74 red
+### `contract_assembly/`: 27 of 74 red
 
 **25 contracts fail to load.** 19 are Swagger 2.0 and 6 are OpenAPI 3.x with
 their own defects — missing `info.title` or `info.version`, path parameters
@@ -189,14 +189,14 @@ CLI raw** in 4 contracts, against the repository's own convention.
 `php` (InvoiceNinja, 379 endpoints) and `c_sharp` (Jellyfin, 382 endpoints)
 load clean — `entra: true`. The other 8 all fail, for two different reasons:
 
-**Fast, real rejections (7):** `go` (Swagger 2.0 — `contract_engine` only
-accepts 3.x, see the Contract Engine epic), `java` (a `"100"` string default
+**Fast, real rejections (7):** `go` (Swagger 2.0 — `contract_assembly` only
+accepts 3.x, see the Contract Assembly module), `java` (a `"100"` string default
 on an `integer` field), `ruby` (a `"null"` string default on an `integer`
 field), `python` (a 2020-12 `itemSchema` keyword under an OAS 3.1
 meta-schema), `rust` (an enum default that doesn't match the enum's own
 values), `javascript` (a response schema that fails every branch of a
 `oneOf`), and `kotlin` (`RecursionError` — schema recursion deep enough that
-Python's own call-stack limit trips before `contract_engine` gets a chance to
+Python's own call-stack limit trips before `contract_assembly` gets a chance to
 reject it cleanly).
 
 **Doesn't finish inside the 150s budget (1):** `typescript` (Directus),
@@ -208,8 +208,8 @@ suite's one authoritative environment — actually produces, not what a
 slower host measures.
 
 None of this is `polyglot`-specific brokenness: every one of these failure
-modes is already tracked as a `contract_engine` defect against real specs
-from other corpora too (see [EMB → `27 of 74 red`](#contract_engine-27-of-74-red)
+modes is already tracked as a `contract_assembly` defect against real specs
+from other corpora too (see [EMB → `27 of 74 red`](#contract_assembly-27-of-74-red)
 above). `polyglot` just adds more real evidence of the same gaps, including
 the one gap neither RealWorld nor EMB could show at all: `parse_contract`
 doesn't scale to large real contracts, full stop, independent of Swagger vs
@@ -243,7 +243,7 @@ template syntax, which was the prior hypothesis.
 
 ### 1. Stop stage 1 from losing contracts
 
-`contract_engine/` has **27 of 74 red**, and everything downstream inherits
+`contract_assembly/` has **27 of 74 red**, and everything downstream inherits
 that: `core_ast/` can't be read as a measurement of language support while
 the contract isn't arriving intact. This is the first item of the contract
 engine's own backlog.

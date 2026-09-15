@@ -1,6 +1,6 @@
-# Contract Engine — Decision records — Ingestion
+# Contract Assembly — Decision records — Ingestion
 
-Part of the [Contract Engine decision records](index.md). Ingestion-stage
+Part of the [Contract Assembly decision records](index.md). Ingestion-stage
 decisions: how a spec file becomes a `ResolvedContract` — which `$ref` pointers
 are followed, what happens to the ones that cannot be, and what it means when
 the conformance validator itself fails to run.

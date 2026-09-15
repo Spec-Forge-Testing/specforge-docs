@@ -1,6 +1,6 @@
-# Contract Engine — Reference
+# Contract Assembly — Reference
 
-The Contract Engine turns an OpenAPI specification into a clean, typed contract
+Contract Assembly turns an OpenAPI specification into a clean, typed contract
 that the rest of the system can consume. It reads the spec, flattens it into a
 list of endpoints, and (optionally) fuses it with the business rules inferred by
 the LLM to produce the final contract the fuzzing engine attacks.
@@ -21,7 +21,7 @@ The package targets Python 3.11+. Its installation, test and lint commands are i
 ## Module layout
 
 ```
-src/contract_engine/
+src/contract_assembly/
 ├── exceptions.py     # domain exceptions
 ├── models/           # data models (ResolvedContract, EndpointDefinition, unified contract re-export)
 ├── ingestion/        # loader · version · resolution · expansion · conformance · references · location · swagger2/ · facade
@@ -38,7 +38,7 @@ and `specforge_engine`, so the contract shape never drifts between stages.
 Everything you normally need is re-exported from the package root:
 
 ```python
-from contract_engine import (
+from contract_assembly import (
     parse_contract,
     ASTAdapter,
     fuse_contract,
@@ -58,7 +58,7 @@ checks it against the OpenAPI 3.x standard, and returns an immutable
 accepted too, and translated on the way in.
 
 ```python
-from contract_engine import parse_contract
+from contract_assembly import parse_contract
 
 contract = parse_contract("openapi.yaml")
 
@@ -225,7 +225,7 @@ Every failure is a typed domain exception carrying context; the module never
 returns `None`, prints, or lets a third-party error escape.
 
 ```
-ContractEngineError
+ContractAssemblyError
 ├── SchemaIngestionError            (always carries .filepath)
 │   ├── SchemaFileNotFoundError     missing file or unsupported extension
 │   ├── SchemaDecodeError           unreadable, unparseable, or not a mapping
@@ -278,7 +278,7 @@ merges path-level parameters into each operation (operation-level parameters win
 on conflict) and keeps only the routing-relevant metadata.
 
 ```python
-from contract_engine import ASTAdapter, parse_contract
+from contract_assembly import ASTAdapter, parse_contract
 
 contract = parse_contract("openapi.yaml")
 endpoints = ASTAdapter(contract).extract_endpoints()
@@ -316,7 +316,7 @@ into the unified shape and then merged with the LLM contract. The merge policy:
   merger edit.
 
 ```python
-from contract_engine import ASTAdapter, fuse_contract, parse_contract
+from contract_assembly import ASTAdapter, fuse_contract, parse_contract
 
 endpoint = ASTAdapter(parse_contract("openapi.yaml")).extract_endpoints()[0]
 
@@ -345,5 +345,5 @@ contract raises `SemanticContractError` (it never merges corrupted data).
 A small executable parses a contract and prints the extracted endpoints:
 
 ```bash
-python -m contract_engine path/to/openapi.yaml
+python -m contract_assembly path/to/openapi.yaml
 ```

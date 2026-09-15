@@ -21,10 +21,10 @@ Run the demo from the repository root:
 
 ```bash
 # 1. Validate the spec
-SpecForge ❯ contract-engine --validate -f core/examples/ast_demo/openapi.yaml
+SpecForge ❯ contract-assembly --validate -f core/examples/ast_demo/openapi.yaml
 
 # 2. List the endpoints and their engine readiness
-SpecForge ❯ contract-engine --analyze -f core/examples/ast_demo/openapi.yaml
+SpecForge ❯ contract-assembly --analyze -f core/examples/ast_demo/openapi.yaml
 
 # 3. Trace the transfer handler against the example source
 SpecForge ❯ trace -c core/examples/ast_demo/openapi.yaml -p core/examples/ast_demo --operation-id transfer

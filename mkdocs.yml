@@ -113,12 +113,13 @@ nav:
                   - API: modules/core-ast/adr/api.md
                   - Foundations: modules/core-ast/adr/foundations.md
               - Integration Tests: modules/core-ast/integration-tests.md
-          - Contract Engine:
-              - Overview: modules/contract-engine/index.md
-              - Reference: modules/contract-engine/reference.md
+          - Contract Assembly:
+              - Overview: modules/contract-assembly/index.md
+              - Reference: modules/contract-assembly/reference.md
               - Decision records:
-                  - Overview: modules/contract-engine/adr/index.md
-                  - Ingestion: modules/contract-engine/adr/ingestion.md
+                  - Overview: modules/contract-assembly/adr/index.md
+                  - Foundations: modules/contract-assembly/adr/foundations.md
+                  - Ingestion: modules/contract-assembly/adr/ingestion.md
           - Contracts (shared kernel): modules/contracts/index.md
           - Storage:
               - Overview: modules/storage/index.md

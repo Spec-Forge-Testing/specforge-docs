@@ -1,6 +1,6 @@
-# Contract Engine
+# Contract Assembly
 
-Contract Engine turns an OpenAPI description into the normalized endpoint contract
+Contract Assembly turns an OpenAPI description into the normalized endpoint contract
 used by the rest of Spec Forge. It is the boundary between external specifications
 and the internal shared model.
 

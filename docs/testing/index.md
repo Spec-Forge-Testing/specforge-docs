@@ -77,7 +77,7 @@ implementations without shelling out to the scripts) while **`emb/` and
 close before their fuzzing-stage test folders can exist. See
 [EMB → Pending](emb.md#pending-a-python-api).
 
-`polyglot/`'s **specs** are wired into `contract_engine/`'s static track — see
+`polyglot/`'s **specs** are wired into `contract_assembly/`'s static track — see
 [Polyglot → Consumers](polyglot.md#consumers) — but its **APIs** aren't
 bootable from the suite yet, for the same reason `emb/` isn't: no Python
 class like `real-world/corpus.py` exists for it, and nothing needs one until

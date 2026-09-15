@@ -70,9 +70,9 @@ authTemplate:
 
 ## Consumers
 
-Today, the `specs/`: [`tests/contract_engine/`](suite.md) uses them as a
+Today, the `specs/`: [`tests/contract_assembly/`](suite.md) uses them as a
 corpus of contracts — 36 of the 37 — **without booting anything**. 19 of them
-are Swagger 2.0, which the Contract Engine now accepts and translates into
+are Swagger 2.0, which Contract Assembly now accepts and translates into
 OpenAPI 3.x on the way in.
 
 The running SUTs are only needed once the fuzzing stage exists.

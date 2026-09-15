@@ -62,7 +62,7 @@ flowchart TD
     - [Architecture Overview](architecture/overview.md) — the pipeline stages and how they
       fit together.
     - [Data Flow](architecture/data-flow.md) — the typed objects that cross between modules.
-    - [Developer Guide › Modules](modules/contract-engine/index.md) — a per-package
+    - [Developer Guide › Modules](modules/contract-assembly/index.md) — a per-package
       implementation deep dive.
 
 </div>

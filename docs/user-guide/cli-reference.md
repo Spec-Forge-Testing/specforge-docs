@@ -41,7 +41,7 @@ unexpectedly.
     It validates:
 
     - **Runtime** — the Python interpreter version and the CLI's own dependencies.
-    - **Pipeline modules** — Contract Engine, AST parser, LLM integration, execution
+    - **Pipeline modules** — Contract Assembly, AST parser, LLM integration, execution
       engine, storage and the shared contracts, probed by import without executing them.
     - **Test runtime** — `pytest` / `pytest-cov`.
     - **LLM configuration** — the module-local `lib/semantic_inference/.env.local`,
@@ -51,7 +51,7 @@ unexpectedly.
     Findings are split into two levels:
 
     - **critical** (✖) — the interpreter, the CLI runtime, or a pipeline stage wired
-      into a working command today (the Contract Engine, the AST parser, the execution
+      into a working command today (Contract Assembly, the AST parser, the execution
       engine). The environment is *not ready* while any critical check fails.
     - **warning** (⚠) — a not-yet-wired pipeline stage, the test runtime, or missing LLM
       configuration. These degrade a capability but don't block the CLI.
@@ -91,7 +91,7 @@ unexpectedly.
     If a `specforge.toml` already exists, `init` asks before overwriting it and
     keeps your file if you decline; the data directory is only created when it is
     missing. It finishes by printing the next two steps: fill in the spec path, then
-    validate it with `contract-engine`.
+    validate it with `contract-assembly`.
 
     This command also runs straight from your shell as `specforge init` — see
     [Commands run from your shell](#commands-run-from-your-shell). Both forms do the
@@ -104,7 +104,7 @@ unexpectedly.
     built-ins do that and a few other housekeeping tasks:
 
     ```text
-    SpecForge ❯ cd lib/contract_engine   # move into a directory
+    SpecForge ❯ cd lib/contract_assembly   # move into a directory
     SpecForge ❯ cd                       # print the current directory, move nowhere
     SpecForge ❯ ls                       # list the current directory
     SpecForge ❯ ls docs                  # list a specific directory
@@ -166,14 +166,14 @@ unexpectedly.
 
 ### Contract & Static Analysis
 
-??? "`contract-engine` — validate or analyze an OpenAPI spec"
+??? "`contract-assembly` — validate or analyze an OpenAPI spec"
 
     ```text
-    SpecForge ❯ contract-engine --validate -f openapi.yaml
-    SpecForge ❯ contract-engine --analyze --file petstore.json
+    SpecForge ❯ contract-assembly --validate -f openapi.yaml
+    SpecForge ❯ contract-assembly --analyze --file petstore.json
     ```
 
-    `contract-engine` reads an OpenAPI contract through the Contract Engine and tells
+    `contract-assembly` reads an OpenAPI contract through the contract assembly module and tells
     you whether Spec Forge can work with it. Pick exactly one mode:
 
     - **`--validate`** — load the spec, report any **deviations** (parts the engine
@@ -187,8 +187,8 @@ unexpectedly.
 
     The spec file is given with `--file`/`-f`; you must supply one, plus exactly one
     mode, or the command refuses with a usage hint.
-    If the Contract Engine library is not installed it says so
-    and points at `pip install -e lib/contract_engine` — see
+    If the contract assembly library is not installed it says so
+    and points at `pip install -e lib/contract_assembly` — see
     [Installation](installation.md). This is the same validation the
     [Example Walkthrough](example-walkthrough.md) runs first, before any tracing or
     fuzzing.
@@ -497,7 +497,7 @@ unexpectedly.
     missing producer; `--allow-side-effects` is the way to let that run proceed.
 
     A **contract producer** supplies each selected endpoint's enriched
-    `EndpointContract`, fused over its OpenAPI base with the Contract Engine's
+    `EndpointContract`, fused over its OpenAPI base with Contract Assembly's
     `fuse_contract` — the contract's invariants win on conflict, the base fills the
     gaps — and the result replaces the bare schema in the compile. `--producer
     {fixture,inference}` picks which producer supplies those contracts; omitting it
@@ -585,7 +585,7 @@ unexpectedly.
     The **fixture producer aborts the whole run**, before a single request: a path
     that is not a directory, a malformed or invalid file (the kernel rejects
     unknown keys), two files declaring the same endpoint, a contract served for an
-    endpoint other than the one it declares, or a fusion the Contract Engine
+    endpoint other than the one it declares, or a fusion Contract Assembly
     rejects all render a **Contract Producer Error** panel naming the file or
     endpoint and the reason (error code `fuzz_contract_producer` under
     `--json-output`) — a fixture the author wrote and got wrong is a mistake to

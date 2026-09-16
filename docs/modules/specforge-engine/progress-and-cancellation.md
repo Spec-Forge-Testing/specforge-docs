@@ -203,13 +203,16 @@ folding boundaries — where results are already being reduced sequentially. HTT
 requests run concurrently on the engine's internal event loop, but folding is
 serial, so the observer is called from one thread and needs no locking of its own.
 
-There is deliberately **never one event per HTTP request**: a batch of concurrent
-requests folds into a single `tick`, and at thousands of requests a second a
-per-request event would carry nothing the counter does not already hold. The
-stateless runner also ticks once per shrink attempt, so the counter keeps moving
-while findings are being minimised. The one per-request emission is replay's
-`tick`, one per replayed request — and even that is throttled by
-`MIN_TICK_INTERVAL_S`, so a fast replay does not flood the listener.
+There is deliberately **never a distinct event per HTTP request**: a batch of
+concurrent requests folds into a single `tick`, and at thousands of requests a
+second a per-request event would carry nothing the counter does not already hold.
+The stateless runner also ticks once per shrink attempt, so the counter keeps
+moving while findings are being minimised. A stateful run ticks on every executed
+step and every transition probe, on top of its per-pass tick, so a long sequence's
+counter tracks work instead of freezing between passes; and replay ticks once per
+replayed request. In every case the underlying advance is bounded by the emitter:
+`MIN_TICK_INTERVAL_S` collapses ticks inside its window, so neither a fast replay
+nor a long stateful sequence floods the listener.
 
 An observer's `on_event` runs inline in the run: it should be cheap and must not
 raise. Anything expensive — rendering, disk, network — belongs on the listener's

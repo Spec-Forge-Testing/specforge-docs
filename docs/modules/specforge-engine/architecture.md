@@ -33,17 +33,19 @@ src/specforge_engine/
 ├── main.py                # compile_strategies() and run(): thin delegators
 ├── constants.py           # Engine-health numbers shared by two or more layers
 ├── exceptions.py          # Domain exception taxonomy
-├── numeric.py             # is_multiple_of: exact arithmetic shared by compiler and oracles
-├── semantic_properties.py # has_input_constraint: the neutral leaf both layers read
-├── phase_extensions.py    # PhaseExtension value object + its registry (isolated, register, lookup)
 ├── phase_extension_builtins.py  # composition root: registers the builtin SEMANTIC extension
+├── shared/                # Stage-neutral helpers; import only models, never a stage
+│   ├── numeric.py         # is_multiple_of: exact arithmetic shared by compiler and oracles
+│   ├── field_addressing.py # is_field_addressed: which zone/field a directive targets
+│   ├── semantic_properties.py # has_input_constraint: the neutral leaf both layers read
+│   └── phase_extensions.py # PhaseExtension value object + its registry (isolated, register, lookup)
 ├── models/                # DTOs and enums (see below)
 ├── profiles/              # Strategy-mode profiles: registry, builtin DEFAULT / HACKER
 ├── budget/                # Example allocation, aggressiveness, risk weighting, shares
 ├── policy/                # validate_endpoint_spec, field-reference checks
 ├── strategy_compiler/     # Per-endpoint compile, zones, planning, fields/
 │   ├── compiler.py        # compile(): per-endpoint orchestration, exclusions
-│   ├── zone.py            # ZoneCompileContext, compile_zone, is_field_addressed
+│   ├── zone.py            # ZoneCompileContext, compile_zone
 │   ├── planning.py        # build_generation_plan, estimate_parameter_space
 │   ├── effective_phases.py # effective_phases / effective_split: read the extension registry
 │   ├── constants.py       # boundary tables, choice counts, attack-profile maps
@@ -55,8 +57,11 @@ src/specforge_engine/
 │       ├── default/       # valid · boundary · invalid · constraints
 │       └── hacker/        # request · mutation · mutation_operators · payloads · builders · tables
 └── runtime/                # Execution
+    ├── facade.py          # run(): resolve the mode, open one client, dispatch, hold safe endpoints
+    ├── safety_guard.py    # partition_by_safety: hold declared side-effect endpoints back
     ├── payload.py         # ZonedPayload: the value object a strategy draws
     ├── ordering.py        # order_by_risk: most-risky-first, before dispatch
+    ├── progress/          # Throttled counters and lifecycle events pushed to an observer
     ├── http/              # Async orchestrator, request injection, credentials, error classifier
     ├── harness/           # The Hypothesis bridge: one event loop, settings, identity strategy
     ├── oracles/           # Response oracles: verdict leaf, intrinsic rules, registry, precedence, the nine builtins

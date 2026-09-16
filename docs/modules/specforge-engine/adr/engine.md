@@ -1867,3 +1867,80 @@ neither is unaffected: the defaults make watching and stopping free. The CLI's
 listener maps each event to a `progress` notification and derives what the engine
 does not know — an endpoint's short number, a finding's stable id and severity, and
 the narrowed wire status — so a new event never touches the protocol's routing.
+
+---
+
+## ADR-065 — The stateful suppression key carries the response status code, and progress ticks every executed step { #adr-065 }
+
+**Status:** accepted · `runtime/fuzzers/stateful/violation.py`, `runtime/fuzzers/stateful/rule.py`, `runtime/fuzzers/stateful/probes.py`, `runtime/findings/deduplicator.py`, `models/runtime/findings.py`
+
+### Context
+
+A stateful run re-executes each candidate sequence many times as Hypothesis
+shrinks it, so the same defect surfaces over and over. The machine suppresses a
+defect it has already reported by keying it on a coarse `Signature`: where the
+step broke (method and path), the invariant, the identity it was sent as, and the
+rule the oracle named. Two things about that key were wrong.
+
+The `Signature` left out the **response status code**, yet the findings layer
+downstream already treats the status as part of a defect's identity: both
+`ReportKey` (the crash-report dedup key) and `FindingSignature` (the grouping key
+for flaky and unverified findings) carry `status_code`. The suppression key was
+therefore *coarser* than the finding key it feeds — an endpoint breaking the same
+invariant under the same rule and identity but answering `401` on one pass and
+`500` on another is two distinct defects to the findings layer, but the stateful
+machine suppressed the second as a duplicate of the first. A real second defect
+went unreported.
+
+Separately, the progress counter moved only **once per completed pass**. A pass
+that chains many requests left the counter frozen for its whole duration, so an
+observer watching a long sequence could not tell a slow run from a stuck one.
+
+### Decision
+
+**The suppression `Signature` carries the status code, so it agrees with the
+findings layer on what makes a defect distinct.** Its fields are the method, the
+path, the invariant, the response status code, the identity label and the rule id
+— the same axes `FindingSignature` uses. The same endpoint, invariant, rule and
+identity failing with two different status codes now yields two findings, one per
+status, instead of one swallowing the other.
+
+**The response body is deliberately not part of the key.** A body varies between
+re-executions of the same logical defect — timestamps, generated ids, echoed
+input — so keying on it would treat one defect as many and defeat suppression
+entirely. The status code is stable across re-executions of the same defect and
+distinguishes genuinely different ones; the body does neither.
+
+**Progress ticks on every executed step and every transition probe**, on top of
+the existing per-pass tick. Each request the machine sends — a rule step and a
+transition probe alike — records its result and advances the counter, so the
+counter tracks work within a pass rather than only at its boundary. The
+`ProgressEmitter` still throttles what an observer receives to one tick per
+`MIN_TICK_INTERVAL_S`, so the extra ticks keep the run's own count truthful
+without flooding a listener.
+
+### Rejected
+
+- **Keying suppression on the response body.** The body is the least stable thing
+  about a re-executed defect; a key that includes it never matches its own earlier
+  occurrence, so nothing is ever suppressed and the shrinker re-reports the same
+  defect on every pass.
+- **Leaving the suppression key coarser than the finding key.** If the two keys
+  disagree on what "distinct" means, a defect the findings layer would count as new
+  is silently dropped upstream before it reaches that layer. The two must define
+  identity the same way; the status code is where they differed.
+- **Ticking once per pass only.** The counter freezes for the length of a long
+  sequence, and an observer cannot distinguish progress from a hang. A per-step
+  tick keeps the count moving with the work.
+- **Emitting one event per request with no throttle.** At the rate a sequence
+  sends, a raw per-request event carries nothing the throttled counter does not
+  already hold. The emitter collapses ticks inside the throttle window, so a
+  per-step tick is safe.
+
+### Consequences
+
+A stateful run now reports one finding per distinct status code for the same
+endpoint, invariant, rule and identity, consistent with the crash-report and
+finding-group keys. Progress advances within a pass, not only at its end, while an
+observer still sees at most one tick per throttle window. Nothing about the coarse
+key beyond the added status field changes, and the body remains outside it.

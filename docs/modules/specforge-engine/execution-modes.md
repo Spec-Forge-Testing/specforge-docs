@@ -26,7 +26,7 @@ run keeps its original order.
 
 | Mode | Options DTO | Fields |
 |---|---|---|
-| `STATELESS` | `StatelessOptions` | `include_repeated_requests` |
+| `STATELESS` | `StatelessOptions` | none — the mode exposes no tuning knob today |
 | `STATEFUL` | `StatefulOptions` | `max_examples`, `step_count`, `max_distinct_bugs` |
 | `REPLAY` | `ReplayOptions` | `trace`, `preserve_timing` |
 | `PERFORMANCE` | `PerformanceOptions` | `latency_sla_ms`, `load_factor`, `concurrency_ladder` |
@@ -44,19 +44,14 @@ that mode's defaults when `None` is passed, so no runner repeats the check
 
 ## Cancelling a run
 
-Every mode polls the run's `cancellation` token at its own natural boundaries and
-stops cooperatively — a unit already on the wire finishes, the next never starts:
+Every mode polls the run's `cancellation` token at its own natural boundaries —
+between endpoints, generation passes, ladder steps, stateful passes, replayed
+requests and shrink sends — and stops cooperatively: a unit already on the wire
+finishes, the next never starts. The boundary-by-boundary table is on
+[Progress and cancellation](progress-and-cancellation.md#where-the-engine-reads-it).
 
-| Mode | Where it checks | On cancel |
-|---|---|---|
-| Stateless | between endpoints, between passes and drawn examples, before each shrink send | the endpoint stops at the boundary; findings not yet confirmed are left unverified |
-| Performance | between endpoints and between ladder steps (plus the stateless points above) | the ladder ends at its completed steps |
-| Stateful | between supervisor passes | reports already confirmed are kept |
-| Replay | before each replayed request | the trace stops at the requests sent so far |
-| Resilience, Auth | between endpoints | the next endpoint is not attacked/crossed |
-
-A cancelled run adds a fifth terminal status beside `completed`, `truncated` and
-`aborted`: `RunStatus.CANCELLED`, carried by a `TruncationRecord` with reason
+A cancelled run ends in the fourth terminal status, beside `completed`,
+`truncated` and `aborted`: `RunStatus.CANCELLED`, carried by a `TruncationRecord` with reason
 `cancelled`. It says the caller asked to stop and makes no claim about the API. A
 cancellation outranks a soft budget or deadline cut but not a confirmed dead
 target. The full behaviour, the events a run emits, and how a listener maps them to
@@ -321,8 +316,8 @@ closing.
 A half-close is a TCP operation that TLS cannot express. Over an `https://` base
 URL the raw transport therefore decides **statically** — before it takes a
 concurrency slot or opens a socket — that the mid-request-close attack is not
-applicable, and returns an `unsendable_request` result with the detail *"mid-request
-close is not applicable over TLS: the transport cannot half-close"* (the same
+applicable, and returns an `unsendable_request` result with the detail *"raw socket
+transport cannot half-close over TLS"* (the same
 shape it uses for an unsupported scheme). No finding is produced and the request
 is counted as infrastructure in the endpoint's stats. Over `http://` the attack
 runs exactly as before.
@@ -333,7 +328,10 @@ Cross the declared identities against each endpoint's access policy and watch
 for a 2xx a caller should not have obtained — the BOLA/IDOR, broken-function-level
 (BFLA) and broken-authentication classes. The runner reads the `access` section
 the producer declared; an endpoint with no `access`, or a `public` one, is never
-sent.
+sent. A run whose contracts declare no `access` at all therefore passes its
+preconditions, sends nothing and completes with zero requests: the engine treats
+that as a valid empty plan, not an error, and telling the user the mode had
+nothing to check is the caller's job.
 
 The run **fails fast before any request** on three conditions, checked in this
 order: no **valid** identity is declared (`AccessIdentityError`); a `role_only`

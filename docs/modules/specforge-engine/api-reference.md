@@ -83,6 +83,7 @@ Field names of this family are stable: they are persisted as columns.
 | `ConfirmedFinding` | a settled reproducer: carries its `report` |
 | `FlakyFinding`, `UnverifiedFinding` | a settled group: its `signature` and how many raw `occurrences` it stands for |
 | `RunStats`, `EndpointStats`, `LatencyStats` | run, endpoint and latency counters |
+| `LoadStepStats` | one concurrency-ladder step on an endpoint's `load_profile`: its `concurrency`, measured `latency` and `degraded` verdict |
 | `CrashReport`, `InvariantViolation` | a confirmed finding's reproducer and the invariant it broke — its `response_body` has sensitive field values redacted to `***` by name |
 | `ViolatedRule` | the rule a `CrashReport` broke (`id` + `description`) — declared by the contract for a `semantic_property` / `access_control` finding, or intrinsic to the invariant for every other one |
 | `ExecutionTrace`, `TracedRequest`, `TruncationRecord` | the replayable record |
@@ -96,6 +97,7 @@ Field names of this family are stable: they are persisted as columns.
 | `ExecutionConfig` | global runtime: `base_url` (required), timeouts, concurrency, headers, identities. `valid_identities` and `invalid_identities` are derived views that split `identities` by credential kind; every mode rotates through `valid_identities` |
 | `Identity` | one caller identity: a `label`, its credential `headers`, an optional `role` (never empty) that only a `role_only` endpoint reads (`None` never satisfies a required role), and a `credential` (`CredentialKind`, default `VALID`) |
 | `StatelessOptions`, `StatefulOptions`, `PerformanceOptions`, `ReplayOptions` | passed to `run(options=...)` per mode |
+| `ConcurrencyLadder` | the value of `PerformanceOptions.concurrency_ladder`: strictly increasing `steps` plus the degradation `tolerance` (frozen) |
 
 ## Cancellation and progress
 
@@ -162,6 +164,7 @@ kernel's from `specforge_contracts`.
 | `AccessLinkError` | the auth runner cannot honor an `owner_only` endpoint's producer link — its bundle has no producer in the run, or provisioning the owner resource broke the producer's own contract (`endpoint_id`, `bundle`) |
 | `AccessRoleError` | the auth runner cannot cross a `role_only` endpoint: no declared identity holds its required role; raised before the first request, its message naming the roles the run did declare (`endpoint_id`, `required_role`) |
 | `AccessIdentityError` | the auth runner has no valid declared identity to run against; raised before the first request |
+| `ConcurrencyLadderError` | a performance run's concurrency ladder cannot be honored — a step exceeds `max_concurrency`, or an endpoint funds no valid examples to measure a baseline (`endpoint_id`); raised before the first request |
 
 All descend from `SpecforgeEngineError`, never from `ValueError`
 ([ADR-001](adr/foundations.md#adr-001)). The full taxonomy, including
@@ -187,7 +190,6 @@ tests exercise, documented for that reason
 | `effective_split(endpoint, base_split) -> Mapping[Phase, float]` (`effective_phases.py`) | a phase split with each activated extension's share reserved; unchanged when none applies |
 | `compile_zone(zone, params, ctx) -> CompiledRequestPart` | one zone's per-phase strategies plus its documentation schema |
 | `build_zone_schema(params, *, force_required) -> dict` | the zone's parameters as a JSON Schema object |
-| `is_field_addressed(zone, name, entries) -> bool` | whether a field is named by an attack addressing list, bare or zone-qualified |
 | `ZoneCompileContext` | endpoint-wide knobs constant across an endpoint's zones |
 
 ### `strategy_compiler.fields`
@@ -233,9 +235,10 @@ key:
 | `MutationOperator` | a frozen `(name, gate, apply)` mutation transform |
 | `mutate_object(obj, depth)` | layered object mutation for prototype-pollution and overflow probing |
 
-### `phase_extensions`
+### `shared`
 
-The package-root registry of phase extensions — an extra generation phase that
+Stage-neutral helpers, importable from `specforge_engine.shared`. Its
+`phase_extensions` module is the registry of phase extensions — an extra generation phase that
 activates, funds itself and refines its payloads only on the endpoints it applies
 to ([Extension guide](extension-guide.md#add-a-phase-extension)).
 
@@ -245,8 +248,11 @@ to ([Extension guide](extension-guide.md#add-a-phase-extension)).
 | `register_phase_extension(extension)` | register an extension under its own phase, replacing any previous one |
 | `registered_phase_extensions()` | the extensions currently registered, in registration order |
 | `phase_extension_for(phase)` | the extension registered for a phase, or `None` when it is not an extension phase |
-| `isolated()` | a context manager giving the block its own extension registry, restored on exit |
-| `register_builtin_phase_extensions()` | the composition root (`phase_extension_builtins.py`) that registers the built-in `semantic` extension; the package `__init__` calls it once |
+| `isolated()` | a context manager giving the block its own extension registry, restored on exit (`shared.phase_extensions`; not re-exported by `shared`) |
+| `is_field_addressed(zone, name, entries) -> bool` | whether a field is named by an attack addressing list, bare or zone-qualified |
+| `has_input_constraint(endpoint) -> bool` | whether the endpoint declares at least one input-constraint semantic property |
+| `input_constraints(properties) -> tuple[SemanticProperty, ...]` | the properties classed as input constraints, in declaration order |
+| `register_builtin_phase_extensions()` | the composition root (`phase_extension_builtins.py`, at the package root) that registers the built-in `semantic` extension; the package `__init__` calls it once |
 
 ## Suffix conventions
 

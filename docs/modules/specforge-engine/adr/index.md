@@ -21,7 +21,10 @@ supersedes it.
 The records are split one file per area, in pipeline order, plus one file for
 decisions that belong to no single area. Numbers stay global and are never
 reused across files — the number tells you when it was written, the file
-tells you what it governs.
+tells you what it governs. The sequence is shared by the whole site, so a number
+missing here belongs to another module:
+[ADR-064](../../contract-assembly/adr/foundations.md#adr-064) is Contract
+Assembly's.
 
 | File | Area | Covers |
 | --- | --- | --- |

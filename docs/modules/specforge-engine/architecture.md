@@ -73,11 +73,11 @@ src/specforge_engine/
     └── runners/           # One runner per ExecutionMode, the shared loop, resilience/, auth/
 ```
 
-The three root leaves — `constants.py`, `exceptions.py`, `numeric.py` — import
-nothing from the package, so any layer, `models/` included, can import them
-without a cycle. `constants.py` holds only the engine-health numbers two or
-more layers read (`DEFAULT_MAX_EXAMPLES`, `MAX_AGGRESSIVENESS`, the
-status-class thresholds, `SAFE_PROBE_METHODS`); every stage keeps its own
+The two root leaves — `constants.py` and `exceptions.py` — import nothing from
+the package, so any layer, `models/` included, can import them without a cycle.
+`constants.py` holds only the engine-health numbers two or more layers read
+(`MAX_AGGRESSIVENESS`, `MAX_INFRA_FAILURES`, the status-class thresholds,
+`CANCELLATION_POLL_INTERVAL_S`); every stage keeps its own
 `constants.py` for what only it uses. The two phase splits are not shared
 constants: they are the data with which `profiles/builtin.py` registers the
 `DEFAULT` and `HACKER` profiles

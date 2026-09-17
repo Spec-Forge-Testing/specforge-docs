@@ -133,9 +133,9 @@ findings**: the flaky ones (seen but not reproduced) and the unverified ones
 tells you what it saw as well as what it proved. They carry no reproducer, only
 the finding's signature and how often it was seen.
 
-## The five ways to run
+## The six ways to run
 
-The `fuzz` command has four modes, chosen with `--mode`, plus the separate `replay` command:
+The `fuzz` command has five modes, chosen with `--mode`, plus the separate `replay` command:
 
 - **`--mode stateless`** (the default) fuzzes each endpoint on its own, one request at a time.
 - **`--mode stateful`** chains requests into sequences, surfacing bugs that only appear when
@@ -147,6 +147,9 @@ The `fuzz` command has four modes, chosen with `--mode`, plus the separate `repl
 - **`--mode resilience`** sends a fixed battery of malformed-transport requests (slow, partial,
   oversized, deeply nested, wrong content type) and flags any endpoint that answers with a
   server error, hangs or crashes instead of refusing cleanly.
+- **`--mode auth`** crosses the identities you declare against each endpoint's access policy
+  and flags a caller that succeeds where the policy forbids it. An API whose contract
+  declares no access policy gives it nothing to check.
 - **`replay`** re-sends a saved run's recorded trace against the live API, to check whether a
   bug is still there.
 

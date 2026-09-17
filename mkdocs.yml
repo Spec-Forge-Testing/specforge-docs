@@ -78,6 +78,36 @@ markdown_extensions:
   - toc:
       permalink: true
 
+plugins:
+  - search
+  - redirects:
+      redirect_maps:
+        modules/custom-schemathesis/index.md: modules/specforge-engine/index.md
+        modules/custom-schemathesis/architecture.md: modules/specforge-engine/architecture.md
+        modules/custom-schemathesis/data-flow.md: modules/specforge-engine/data-flow.md
+        modules/custom-schemathesis/strategy-compiler.md: modules/specforge-engine/strategy-compiler.md
+        modules/custom-schemathesis/engine-internals.md: modules/specforge-engine/engine-internals.md
+        modules/custom-schemathesis/execution-modes.md: modules/specforge-engine/execution-modes.md
+        modules/custom-schemathesis/progress-and-cancellation.md: modules/specforge-engine/progress-and-cancellation.md
+        modules/custom-schemathesis/extension-guide.md: modules/specforge-engine/extension-guide.md
+        modules/custom-schemathesis/api-reference.md: modules/specforge-engine/api-reference.md
+        modules/custom-schemathesis/testing.md: modules/specforge-engine/testing.md
+        modules/custom-schemathesis/adr/index.md: modules/specforge-engine/adr/index.md
+        modules/custom-schemathesis/adr/foundations.md: modules/specforge-engine/adr/foundations.md
+        modules/custom-schemathesis/adr/models.md: modules/specforge-engine/adr/models.md
+        modules/custom-schemathesis/adr/api.md: modules/specforge-engine/adr/api.md
+        modules/custom-schemathesis/adr/compiler.md: modules/specforge-engine/adr/compiler.md
+        modules/custom-schemathesis/adr/engine.md: modules/specforge-engine/adr/engine.md
+        modules/custom-schemathesis/engine-implementation.md: modules/specforge-engine/engine-internals.md
+        modules/custom-schemathesis/reference.md: modules/specforge-engine/api-reference.md
+        modules/custom-schemathesis/replay.md: modules/specforge-engine/execution-modes.md
+        modules/custom-schemathesis/stateful-fuzzing.md: modules/specforge-engine/execution-modes.md
+        modules/custom-schemathesis/strategy-compiler-internals.md: modules/specforge-engine/strategy-compiler.md
+        modules/contract-engine/index.md: modules/contract-assembly/index.md
+        modules/contract-engine/reference.md: modules/contract-assembly/reference.md
+        modules/contract-engine/adr/index.md: modules/contract-assembly/adr/index.md
+        modules/contract-engine/adr/ingestion.md: modules/contract-assembly/adr/ingestion.md
+
 nav:
   - Overview: index.md
   - User Guide:

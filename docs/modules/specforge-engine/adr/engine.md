@@ -2037,3 +2037,92 @@ and never probes. Both target-down verdicts remain reachable, so a run tells apa
 a base URL that is truly down from a gateway whose backends are. The persisted
 truncation record is unchanged, and the shared monitor now serves the replay and
 the stateful mode from one implementation.
+
+## ADR-068 — The sequential runners detect a dead target between endpoints through a shared per-batch watch, and the monitor can abandon a probe in flight { #adr-068 }
+
+**Status:** accepted · `runtime/http/liveness.py`, `runtime/runners/target_watch.py`, `runtime/runners/loop.py`, `runtime/runners/resilience/runner.py`, `runtime/runners/auth/runner.py`, `runtime/runners/replay.py`, `runtime/fuzzers/stateful/supervisor.py`
+
+### Context
+
+The resilience and auth runners had no dead-target detection at all. Each walks
+every endpoint sequentially, dispatching that endpoint's batch — the chaos battery,
+or the identity crossings — concurrently. Against a target that no longer answers,
+both walked **every** endpoint, paying a full timeout on each batch, and then
+reported the run `completed`; a test even asserted a resilience run is always
+completed. Measured against a nineteen-endpoint contract behind a dead target,
+that was 230.4 s over 285 requests across all nineteen endpoints, `completed`, with
+no truncation and no probe ever sent.
+
+The stateless fold, the replay and the stateful mode already share a
+`TargetLivenessMonitor` that counts one streak of target failures and, at the
+threshold, fires a single `HEAD` probe. The two sequential runners simply did not
+use it. Separately, the monitor's probe was awaited unconditionally: a probe
+already in flight ignored the run's cancellation token and held the run for the
+probe's whole timeout.
+
+### Decision
+
+**The sequential runners share the monitor through a per-batch `TargetWatch`.**
+`TargetWatch.for_run(orchestrator, request)` composes the shared
+`TargetLivenessMonitor` wired to the run's orchestrator and cancellation token, and
+`observe_batch(batch, endpoint_id)` feeds one endpoint's results to it after the
+runner has judged them. The first result whose verdict is `TARGET_DOWN` announces
+one `TargetDown` event with `LIVENESS_PROBE_FAILED` and returns a `TARGET_DOWN`
+truncation record naming that endpoint and counting what the batch put on the wire;
+otherwise the run continues to the next endpoint. A probe that answers does not
+stop these runs — the target is alive and a timeout on one endpoint is not a
+finding. The verdict is always `LIVENESS_PROBE_FAILED`: neither runner has a
+per-endpoint circuit breaker, so `CIRCUIT_BREAKERS_OPEN` cannot arise there (it
+belongs to the stateful mode). An auth endpoint whose policy sends nothing leaves
+the streak untouched.
+
+**The cut is between endpoints, deliberately.** Both runners iterate endpoints
+sequentially but dispatch each endpoint's batch concurrently, so a batch already
+dispatched lands in full — walking every endpoint is what cost minutes, and
+stopping at the first confirmed-down endpoint boundary is where the saving is.
+
+**The shared monitor can abandon a probe in flight.** It runs the `HEAD` as a task
+and races it against the cancellation token in poll-interval steps; on the mark it
+cancels the task (a named `_abandon` step) and yields **no verdict**. Because the
+race lives in the monitor, every mode that probes benefits — the replay and the
+stateful watch just pass their token. `probe_liveness` keeps its boolean signature;
+only the monitor's internal verdict widened to allow "no verdict". An abandoned
+probe confirms nothing, so the run seals `cancelled` by itself.
+
+**The post-loop cancellation seal is shared.** Both runners read the token only at
+the *next* endpoint, so a cancellation landing while the last endpoint's batch was
+in flight used to be lost and the run reported `completed`. The seal the stateless
+loop already used (`seal_cancellation`) is now shared by both runners. A confirmed
+dead target still outranks a cancellation, since it already stopped the run.
+
+### Rejected
+
+- **A shortened probe timeout** to fail faster on a dead target. It would
+  manufacture a false dead-target verdict for a slow-but-alive target, turning a
+  latency spike into an `aborted` run.
+- **Cutting mid-batch.** A batch is one concurrent dispatch; stopping inside it
+  would be a rewrite of the concurrent send path to save a fraction of one
+  timeout, against a designed trade that already lands the in-flight batch in full.
+- **An abandoned probe reporting a verdict.** Reporting "alive" would truncate the
+  run with the wrong reason (`infrastructure_abort` rather than `cancelled`);
+  reporting "dead" would manufacture a `target_down` verdict that then outranks the
+  caller's own cancellation. An abandoned probe confirms nothing, so it yields no
+  verdict and the run seals `cancelled`.
+- **Duplicating the streak logic in each runner.** The monitor already expresses "a
+  streak of target failures, then one probe"; a hand-rolled copy in each runner
+  would be two more implementations to keep in step with the stateless fold, the
+  replay and the stateful watch, and the first to drift. `TargetWatch` composes the
+  one monitor instead.
+
+### Consequences
+
+Against a dead target the resilience and auth runners now cut at the first
+confirmed-down endpoint boundary: re-measured on the same nineteen-endpoint
+scenario, 14.6 s over 15 requests at one endpoint, `aborted` with `target_down` and
+one `TargetDown` event, down from 230.4 s over 285 requests across all nineteen
+and `completed`. A cancellation landing during the last endpoint's batch now seals
+`cancelled` instead of being lost, and no run holds for a probe once cancelled. The
+shared monitor now serves the replay, the stateful mode and the two sequential
+runners from one implementation. One boundary remains, by design: a target whose
+base URL answers while every endpoint is broken is still walked in full, because
+any answered result resets the streak.

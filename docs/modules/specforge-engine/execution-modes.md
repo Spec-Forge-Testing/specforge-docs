@@ -331,6 +331,29 @@ shape it uses for an unsupported scheme). No finding is produced and the request
 is counted as infrastructure in the endpoint's stats. Over `http://` the attack
 runs exactly as before.
 
+### Stopping on a dead target
+
+A resilience run does not walk every endpoint against a target that has stopped
+answering. After judging one endpoint's battery, the runner feeds that batch to a
+run-wide `TargetWatch` — the shared `TargetLivenessMonitor` composed for the run.
+Once a streak of target failures reaches `MAX_INFRA_FAILURES` and the monitor's
+`HEAD` probe confirms the target is down, the run stops before the next endpoint
+and ends `aborted` with the truncation reason `target_down`, announcing one
+`TargetDown` event with the verdict `LIVENESS_PROBE_FAILED`.
+
+A probe that **answers** does not stop the run: the target is alive, a timeout on
+one endpoint is not a finding, and the run continues to the next endpoint exactly
+as before. Resilience has no per-endpoint circuit breakers, so the only
+target-down verdict it reaches is `LIVENESS_PROBE_FAILED`.
+
+The cut falls **between endpoints, deliberately**. The runner iterates endpoints
+sequentially but dispatches each endpoint's battery concurrently, so a batch
+already on the wire lands in full — walking every endpoint against a dead target
+is what cost minutes, and stopping at the first confirmed-down endpoint boundary
+is where the saving is. One boundary of what this detects: a target whose base URL
+answers while every endpoint is broken is still walked in full, because any
+answered result resets the streak.
+
 ## Auth
 
 Cross the declared identities against each endpoint's access policy and watch
@@ -429,3 +452,20 @@ is null, the producer broke its own contract and the runner raises
 `AccessLinkError` naming the endpoint and the bundle rather than crossing a
 resource it never established. Findings are **materialized without shrinking** —
 a cross-identity read is already its own minimal reproducer.
+
+### Stopping on a dead target
+
+Auth detects a dead target the same way resilience does. After crossing one
+endpoint, the runner feeds that endpoint's crossings to a run-wide `TargetWatch`
+composing the shared `TargetLivenessMonitor`; once a streak of target failures
+reaches `MAX_INFRA_FAILURES` and the probe confirms the target is down, the run
+stops before the next endpoint and ends `aborted` with `target_down`, announcing
+one `TargetDown` event with the verdict `LIVENESS_PROBE_FAILED` (auth has no
+per-endpoint circuit breakers, so no other verdict arises here). A probe that
+**answers** does not stop the run — the target is alive and the run continues.
+
+An endpoint whose policy sends nothing — a `public` endpoint, or one with no
+`access` — leaves the streak untouched. As in resilience, the cut falls **between
+endpoints**: each endpoint's crossings are dispatched concurrently, so a batch
+already on the wire lands in full, and a target whose base URL answers while every
+endpoint is broken is still walked in full.

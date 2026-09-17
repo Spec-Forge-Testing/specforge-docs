@@ -629,14 +629,44 @@ isolates the single `try`/`except` ([ADR-038](adr/engine.md#adr-038)):
   sequence. That pass counts as "could not reproduce" — the same fact as a flaky
   violation — and the run moves on to the next pass.
 
-A per-endpoint `EndpointCircuitBreaker` takes an endpoint that stops answering
-out of the machine for the rest of the run — there is no half-open state — so a
-dead endpoint cannot starve a still-live consumer of a bundle it needs.
-The run-level truncation is inferred from which breakers opened:
-`TARGET_DOWN` when every rule endpoint the run reached opened,
-`INFRASTRUCTURE_ABORT` when only some did, `GENERATION_EXHAUSTED` when the
-machine never drew an eligible sequence, and `STATE_LINK_ABORT` when a link
-could not be honored.
+Two guards decide whether the next step may be sent, both answered by the
+collector's single `is_send_blocked(endpoint_id)`. A per-endpoint
+`EndpointCircuitBreaker` takes an endpoint that stops answering out of the
+machine for the rest of the run — there is no half-open state — so one dead
+endpoint cannot starve a still-live consumer of a bundle it needs; that stays the
+breaker's job, "one endpoint broken, the rest alive". Alongside it, a **run-wide
+liveness watch** (`RunLivenessWatch`, a `LivenessWatch` composed onto the
+collector) feeds the same `TargetLivenessMonitor` the replay uses from the
+collector's one `record` point. Both send sites — a rule step and a transition
+probe — ask `is_send_blocked` the one question: the run stopped (cancelled, or the
+watch confirmed a dead target) or this endpoint's own breaker is open.
+
+So a dead target now costs at most `MAX_INFRA_FAILURES` requests plus **one**
+liveness probe for the whole run, not one failure streak per endpoint. Once the
+watch's probe confirms the target is down, every send is blocked: a pass already
+in flight drains as no-op steps (it never raises — an exception inside a
+Hypothesis example would come back as a `FlakyFailure`), and the supervisor stops
+between passes.
+
+The run-level truncation is resolved with the run-wide cut winning over the
+breakers'. A confirmed dead target cuts `TARGET_DOWN` naming the endpoint of the
+request that completed the failure streak (mirroring the stateless fold), and it
+wins over a breaker-derived cut because it happened first. Absent a run-wide cut,
+the truncation is inferred from which breakers opened: `TARGET_DOWN` when every
+rule endpoint the run reached opened, `INFRASTRUCTURE_ABORT` when only some did,
+`GENERATION_EXHAUSTED` when the machine never drew an eligible sequence, and
+`STATE_LINK_ABORT` when a link could not be honored.
+
+A `TARGET_DOWN` cut therefore reaches one of two verdicts, carried on the
+runtime-only `StatefulExplorationOutcome.target_down_verdict` and announced to the
+observer: `LIVENESS_PROBE_FAILED` when the run-wide probe confirmed it, and
+`CIRCUIT_BREAKERS_OPEN` for a reachable base URL whose rule endpoints all broke —
+a gateway up with its backends down. A probe that *answers* never halts the run:
+the target is alive, the streak resets, and the per-endpoint breakers stay in
+charge, so both verdicts remain reachable. The verdict travels in the outcome, not
+in the persisted `TruncationRecord` (whose `endpoint_id` the CLI reads), so the
+runner announces the verdict the outcome carries rather than assuming one
+([ADR-066](adr/engine.md#adr-066)).
 
 ## Trace and replay
 
@@ -688,14 +718,20 @@ recorded `sent_at_ms` measured from a fixed `t0`, so drift never compounds and a
 past slot waits zero; `ImmediatePacer` never waits.
 
 A replay does not blindly re-send a dead target's whole trace. `runtime/http/`
-carries a `TargetLivenessMonitor` that the `ReplayRunner` feeds each result as it
-returns. The monitor counts a streak of target failures — the
+carries a `TargetLivenessMonitor` — shared machinery: the `ReplayRunner` feeds it
+each result as it returns, and the stateful mode feeds the same monitor through its
+run-wide watch (above). The monitor counts a streak of target failures — the
 `TARGET_FAILURE_CATEGORIES` (`timeout`, `availability`) — and ignores anything
 that was never sent (no evidence either way). When the streak reaches
 `MAX_INFRA_FAILURES` (5) it fires one `probe_liveness()` `HEAD`: a dead target
 returns `target_down` and a live one `infrastructure_abort`, and either stops the
 loop with a `TruncationRecord`. `run_status_of(truncation)` then maps that record
 to the run's status — `aborted` for `target_down`, `truncated` otherwise.
+
+A streak a probe already resolved **starts over on the next failure**, so a caller
+that keeps running is not re-probed on every following failure. The `streak` still
+reads the threshold immediately after the verdict — the value the replay
+reports — and only rolls back to zero when the next failure arrives.
 
 Because the loop can stop short, the produced trace is a **prefix** of the
 recorded one. `assess_fidelity(recorded, observed, truncation)` takes that record:

@@ -127,6 +127,15 @@ already covers its signature ([ADR-047](adr/engine.md#adr-047)). When a state
 link cannot be honored the run raises `StatefulLinkError` carrying the partial
 exploration.
 
+A dead target costs the run at most `MAX_INFRA_FAILURES` requests plus one
+liveness probe: a run-wide watch feeds the shared `TargetLivenessMonitor` and, once
+its probe confirms the target is down, blocks every send and cuts the run
+`target_down`. One endpoint that stops answering while the rest of the target stays
+alive is a different case, and stays the per-endpoint circuit breaker's job — it
+takes that endpoint out of the machine so a live consumer is not starved of a
+bundle. Both cases are laid out in
+[Engine internals](engine-internals.md#stateful-sequencing).
+
 ## Replay
 
 Re-send a recorded trace in order, at its recorded pace, until the target goes

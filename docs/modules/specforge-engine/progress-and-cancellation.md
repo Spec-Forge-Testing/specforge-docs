@@ -51,7 +51,7 @@ mode has its own natural boundaries:
 | Between endpoints | stateless, performance, resilience, auth | the next endpoint is not started |
 | Between generation passes and between drawn examples | stateless, performance | the current endpoint stops at the pass or batch boundary |
 | Between ladder steps | performance | the endpoint's ladder ends at the completed steps |
-| Between stateful passes | stateful | the supervisor loop stops before the next pass |
+| Before each stateful step and between stateful passes | stateful | the pass in flight stops sending at the mark, then the supervisor loop stops before the next pass |
 | Before each replayed request | replay | the trace stops at the requests sent so far |
 | Before the shrinker's next send | stateless, performance | the finding under minimization is left unverified |
 
@@ -72,10 +72,14 @@ Inside stateless exploration the cut is **sticky**: `mark_cancelled` sets it onl
 if no earlier cut is already in place, so a deadline or a target-down cut that came
 first keeps its own, more specific reason. At the shrinker's send point the same
 check is a hard gate — a shrink search cancelled before its next request abandons
-that finding rather than confirming it. The liveness probe obeys the same rule:
+that finding rather than confirming it. In the stateful mode the collector gates
+**every** send on the token, so a pass in flight stops sending at the mark rather
+than running to the pass boundary — against a dead target that turns a full
+per-step timeout into nothing. The liveness probe obeys the same rule everywhere:
 both stateless failure streaks read the token before probing and cut with
-`cancelled` instead, and a replay skips its liveness check once cancelled, so a
-cancelled run never sends the probe either.
+`cancelled` instead, a replay skips its liveness check once cancelled, and a
+stateful streak completed by the request in flight never probes once the run is
+cancelled — a cancelled run never sends the probe.
 
 ### What a cancelled run returns
 
@@ -93,7 +97,10 @@ A cancelled run returns a complete, honest `EngineRunResult`:
 - Findings a cancelled run has not confirmed are counted **unverified**, one
   `UnverifiedFinding` per signature, rather than spending requests shrinking them —
   a run the caller has abandoned cannot afford to confirm anything. A stateful run,
-  which confirms each defect as it goes, keeps the reports it had already settled.
+  which confirms each defect as it goes, keeps the reports it had already settled;
+  a defect it was still confirming when the mark landed is reported **flaky**,
+  because the state machine's replay of it no longer sends — the same fact under
+  the name that mode has for it.
 - The shared HTTP client is closed on the way out, cancelled or not.
 
 The engine **persists nothing** — a cancelled result is returned to the caller,
@@ -104,11 +111,13 @@ which decides whether to keep it.
 When more than one reason to stop is present, the ranking is fixed. A cancellation
 seen between endpoints, or after exploration finishes, **outranks** a soft budget
 or deadline cut already recorded — the caller's intent wins over a partial run's
-own truncation. But it does **not** outrank a confirmed dead target: a stateless
-liveness probe or a stateful run whose circuit breakers all opened has established
-the API is down, and that verdict (`aborted`, reason `target_down`) stands over a
-cancellation that arrived alongside it. A dead target is a fact about the world; a
-cancellation is a fact about the caller, and the world wins.
+own truncation. A cancellation arriving during the last stateful pass is sealed
+`cancelled` too. But it does **not** outrank a confirmed dead target: a stateless
+liveness probe, a stateful run whose run-wide liveness probe confirmed it, or a
+stateful run whose circuit breakers all opened has established the API is down, and
+that verdict (`aborted`, reason `target_down`) stands over a cancellation that
+arrived alongside it. A dead target is a fact about the world; a cancellation is a
+fact about the caller, and the world wins.
 
 ## The observer
 
@@ -150,8 +159,10 @@ listener switches on `kind` and never guesses a type:
 emitted for each finding once shrinking has confirmed it, so it is unconfirmed
 until then; in stateful it fires the moment a defect is confirmed. `TargetDown`
 carries a `TargetDownVerdict` naming how the run decided —
-`LIVENESS_PROBE_FAILED` (a stateless or replay `HEAD` probe) or
-`CIRCUIT_BREAKERS_OPEN` (every stateful rule endpoint's breaker opened).
+`LIVENESS_PROBE_FAILED` (a `HEAD` probe confirmed it: stateless, replay, or the
+stateful run's own run-wide probe) or `CIRCUIT_BREAKERS_OPEN` (a reachable base
+URL whose stateful rule endpoints all broke — a gateway up with its backends
+down).
 `RunFinished` is always the last event, and `RunTruncated` precedes it only for a
 cut local to one endpoint — a run that halted outright (`target_down`,
 `cancelled`) reports its reason through the final status instead.

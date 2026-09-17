@@ -31,7 +31,7 @@ The engine-side outcome vocabularies follow the same rule:
 |---|---|
 | `ErrorCategory` | `success` · `client_error` · `server_error` · `contract_violation` · `timeout` · `availability` · `unsendable_request` · `connection_dropped` |
 | `InvariantViolation` | `not_a_server_error` · `status_code_conformance` · `response_schema_conformance` · `content_type_conformance` · `state_transition` · `latency_sla` · `latency_degradation` · `resilience_degradation` · `semantic_property` · `access_control` |
-| `TruncationReason` | `infrastructure_abort` · `deadline_exceeded` · `target_down` · `state_link_abort` · `generation_exhausted` |
+| `TruncationReason` | `infrastructure_abort` · `deadline_exceeded` · `target_down` · `state_link_abort` · `generation_exhausted` · `cancelled` |
 | `FidelityLevel` | `exact` · `reduced` |
 
 ### Enums serialize as their wire value
@@ -115,7 +115,7 @@ The two kernel DTOs an endpoint may carry:
 | `EndpointAttack` | `focus_fields`, `sensitive_fields`, `aggressiveness` (0–10), `mutation_depth` (0–10), `field_hints` keyed by zone-qualified field path — each hint carries that field's `attack_profiles` |
 
 `EndpointBudgetContract` is the engine's own: `max_examples` (default
-`DEFAULT_MAX_EXAMPLES`), an optional `phase_split` (`dict[Phase, float]`,
+200), an optional `phase_split` (`dict[Phase, float]`,
 fractions ≥ 0 summing to at most 1), `max_combinations_per_case`, and an
 optional `deadline_ms`.
 
@@ -221,7 +221,10 @@ and returns `self` when `factor == 1`
 — without it the engine cannot build absolute requests, and failing at
 construction is clearer than reporting synthetic availability errors later.
 The rest have defaults: `timeout_s`, `max_concurrency` (also the exploration
-batch size), `max_retries`, `headers`, `backoff_base`, and `identities`. A
+batch size), `max_retries`, `headers`, `backoff_base`, `identities`, and
+`allow_side_effects` (default `False`: endpoints the producer marked as writing
+or side-effecting are held back by the
+[safety guard](engine-internals.md#safety-guard) instead of probed). A
 `mode="after"` validator rejects duplicate identity labels, because a label
 keys findings, reports and replays.
 
@@ -340,7 +343,7 @@ producer:
 | `requests_shrink` | requests the shrinking phase put on the wire; not part of `total_requests` |
 
 `EndpointStats` mirrors the per-endpoint subset (`requests`,
-`examples_planned`, `findings_raw`, `crash_reports`) plus a `LatencyStats`
+`examples_planned`, `findings_raw`, `findings_confirmed`) plus a `LatencyStats`
 whose fields all default to zero, so `LatencyStats()` is a valid "no samples"
 value — an endpoint can carry a confirmed crash report with no surviving
 requests to time. It also carries `starved_identities`: the labels of declared
@@ -352,7 +355,14 @@ turns an identity that would otherwise be dropped in silence into a reported
 signal. It also carries `undecided_rules`: the ids of any declared rules the
 oracle evaluated at the endpoint and could never decide — undetermined on every
 response — populated by the same two modes and empty in the rest, turning a rule
-that could never be checked into the same kind of reported signal.
+that could never be checked into the same kind of reported signal. Two more
+fields follow the same rule of saying out loud what did not happen or what was
+measured: `held_back_by` names the risk flag that kept the
+[safety guard](engine-internals.md#safety-guard) from probing the endpoint (empty
+for a probed one), and `load_profile` is a tuple of `LoadStepStats` — one per
+completed step of a performance run's
+[concurrency ladder](execution-modes.md#the-load-profile), empty in every other
+case.
 
 The lifecycle mechanics — one producer per counter, the flaky count measured in
 the shrinker rather than derived by subtraction — are the engine's finding
@@ -401,7 +411,11 @@ SpecforgeEngineError
 ├── StrategyCompilationError         # a contract cannot become a strategy
 │   └── EndpointCompilationError     # …for a specific endpoint (carries endpoint_id + the reason)
 └── EngineError                      # an execution invariant was violated
-    └── StatefulLinkError            # a state link could not be honored (carries partial_exploration)
+    ├── StatefulLinkError            # a state link could not be honored (carries partial_exploration)
+    ├── AccessLinkError              # an owner_only endpoint's producer link cannot be honored
+    ├── AccessRoleError              # no valid identity holds a role_only endpoint's required role
+    ├── AccessIdentityError          # the auth runner has no valid identity to run against
+    └── ConcurrencyLadderError       # a performance run's concurrency ladder cannot be honored
 ```
 
 ## Runtime value objects

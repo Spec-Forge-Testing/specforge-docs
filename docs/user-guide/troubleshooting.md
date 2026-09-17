@@ -39,12 +39,12 @@ browsed. Fuzzing itself still works.
 ## The target is down / connection refused
 
 **Symptom.** A run stops early with *"Run aborted: the target stopped responding"*; the report
-marks it truncated (`target_down`) and says the remaining endpoints were skipped.
+marks it `aborted` (truncation reason `target_down`) and says the remaining endpoints were skipped.
 
 **Cause.** The live API at `--base-url` stopped answering while the run was exploring it.
 
 **Fix.** Confirm the API is running and reachable at the exact `--base-url` you passed, then
-re-run. A truncated run is saved, so you can inspect what it reached before it was cut.
+re-run. An aborted run is saved, so you can inspect what it reached before it was cut.
 
 ## "--latency-sla-ms only applies to --mode performance"
 

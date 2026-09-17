@@ -596,7 +596,7 @@ unexpectedly.
 
     Producer exclusions are surfaced everywhere the run is: under *Endpoints
     excluded by the contract producer* in the fuzz summary, in `inspect --run <id>`
-    for the saved run, and in the run-report document (schema 1.5) as
+    for the saved run, and in the run-report document (since schema 1.4) as
     `producer_exclusions` (see [Run report](reports.md)). They are persisted per
     run, so a schema-only endpoint is never silently dropped — the run always says
     which endpoints it could not enrich, and why.
@@ -953,8 +953,8 @@ captures the document and nothing else.
 The envelope is the same shape for every command and every outcome:
 
 ```json
-{"schema_version": "1.3", "command": "fuzz", "status": "ok", "data": { ... }, "error": null, "warnings": []}
-{"schema_version": "1.3", "command": "fuzz", "status": "error", "data": null, "error": {"code": "...", "message": "..."}, "warnings": []}
+{"schema_version": "1.10", "command": "fuzz", "status": "ok", "data": { ... }, "error": null, "warnings": []}
+{"schema_version": "1.10", "command": "fuzz", "status": "error", "data": null, "error": {"code": "...", "message": "..."}, "warnings": []}
 ```
 
 `status` is `ok` or `error`, never both, and every key is present regardless

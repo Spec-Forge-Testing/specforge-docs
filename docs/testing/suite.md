@@ -158,9 +158,8 @@ row in `esperado/`, not a stuck suite.
 | `contract_assembly/` — `polyglot` track | 2 functions × 10 contracts, separate catalog/fixture | Run. **8 of 10 red** |
 | `core_ast/` | 2 functions × 12 implementations | Written, **not run yet**: inherits whatever the previous stage delivers |
 
-`specforge_engine` and `semantic_inference` aren't tested yet: those
-stages aren't finished. When they are, each adds its own folder under the
-same rule — if the seam doesn't exist in the CLI, it doesn't get written
+`specforge_engine` and `semantic_inference` have no folder here yet. When
+they get one, each follows the same rule — if the seam doesn't exist in the CLI, it doesn't get written
 here.
 
 ### `contract_assembly/`: 27 of 74 red
@@ -267,7 +266,6 @@ The only piece of infrastructure still missing, needed because that stage
 
 ### 4. The folders that don't exist yet
 
-`semantic_inference/` and `specforge_engine/`, once those modules are
-finished. Same rule as the two that already exist: each one covers from the
+`semantic_inference/` and `specforge_engine/`. Same rule as the two that already exist: each one covers from the
 start of the pipeline through its own stage, and if the seam doesn't exist
 in the CLI, it doesn't get written here.

@@ -41,7 +41,7 @@ flowchart TD
     subgraph Execution ["4. Fuzzing & Storage"]
         UC --> CS["specforge_engine"]
         CS --> HS["Hypothesis strategies"]
-        HS --> HF["HTTP fuzzing<br/><i>(stateless · stateful · performance ·<br/>resilience · replay)</i>"]
+        HS --> HF["HTTP fuzzing<br/><i>(stateless · stateful · performance ·<br/>resilience · auth · replay)</i>"]
         HF --> ST[(storage)]
     end
 ```

@@ -105,11 +105,20 @@ unretried (see [Progress and cancellation](progress-and-cancellation.md)). Every
 transport error is returned on the first attempt: a 4xx or 5xx is the API's
 answer, not a fault to paper over, and a malformed URL will never succeed.
 
+A request the client cannot put on the wire at all — a header value carrying
+non-ASCII text, or an embedded line break the transport refuses — is caught at
+send time and returned as an **unsendable result** (`UNSENDABLE_REQUEST`, no
+status code), never as a transport fault. It is not counted as a wire request,
+never retried and never a finding; it is only recorded in stats by category, and
+its detail names the offending header, never its value.
+
 `error_classifier.py` maps outcomes to an `ErrorCategory`. `classify_response`
 turns a status into `SERVER_ERROR` / `CLIENT_ERROR` / `None` (a clean 2xx/3xx);
 `classify_exception` walks `type(exc).__mro__` against a small table so a
 transport exception resolves to the nearest matching category — a subclass need
-not be listed to be classified.
+not be listed to be classified. A local protocol error the client raises before
+the request leaves — a header it will not encode — resolves to
+`UNSENDABLE_REQUEST`, alongside a malformed URL or an unsupported scheme.
 
 `CONNECTION_DROPPED` sits apart from the infrastructure categories on purpose. A
 peer that refuses the connection or never answers is `AVAILABILITY` or
@@ -613,7 +622,12 @@ isolates the single `try`/`except` ([ADR-038](adr/engine.md#adr-038)):
   could be recovered, the event is still tallied. `build_stateful_stats` sums
   both into `findings_flaky`, and `reconcile_flaky_with_confirmed` folds away any
   flaky finding a confirmed report already stands for
-  ([ADR-047](adr/engine.md#adr-047)).
+  ([ADR-047](adr/engine.md#adr-047)). A pass whose *rule set* diverged between the
+  failing run and its replay lands here too: a rule is eligible only while its
+  bundle is non-empty, and bundles fill from the target's own responses, so
+  Hypothesis can draw a different set of eligible rules when it replays a failing
+  sequence. That pass counts as "could not reproduce" — the same fact as a flaky
+  violation — and the run moves on to the next pass.
 
 A per-endpoint `EndpointCircuitBreaker` takes an endpoint that stops answering
 out of the machine for the rest of the run — there is no half-open state — so a

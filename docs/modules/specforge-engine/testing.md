@@ -34,6 +34,18 @@ Async tests need no marker (`asyncio_mode = "auto"`). Engine tests that make
 real HTTP calls set `settings(deadline=None)` so load does not trip
 Hypothesis's deadline.
 
+Green is more than a passing suite. The package type-checks under **`mypy --strict`**
+(`[tool.mypy]` in `pyproject.toml`, and a type-check step in CI), and `ruff` stays
+clean on `src/` and `tests/`. The type checker sees the whole boundary because the
+shared kernel [`specforge_contracts`](../contracts/index.md) ships a `py.typed`
+marker, so the vocabularies and contract DTOs the engine imports carry their types
+across the package edge rather than degrading to `Any`.
+
+```bash
+python -m mypy src/specforge_engine                  # strict, part of green
+python -m ruff check src tests
+```
+
 The fixtures API serves on `http://localhost:8000` with `poe demo` from the
 repository root. Each endpoint exists to reproduce one class of defect —
 missing ownership checks, fixed and load-dependent latency, an unhandled

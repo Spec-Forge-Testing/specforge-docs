@@ -98,3 +98,4 @@ tells you what it governs.
 | [ADR-061](engine.md#adr-061) | engine | Latency degradation under load is a concurrency ladder on the performance options, anchored on a real request |
 | [ADR-062](engine.md#adr-062) | engine | The engine exposes its own typed observer and cancellation token; a listener adapts them to the protocol |
 | [ADR-063](foundations.md#adr-063) | package | The engine package is `specforge_engine`, and its execution layer is `runtime/` |
+| [ADR-065](engine.md#adr-065) | engine | The stateful suppression key carries the response status code, and progress ticks every executed step |

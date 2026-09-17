@@ -1944,3 +1944,96 @@ endpoint, invariant, rule and identity, consistent with the crash-report and
 finding-group keys. Progress advances within a pass, not only at its end, while an
 observer still sees at most one tick per throttle window. Nothing about the coarse
 key beyond the added status field changes, and the body remains outside it.
+
+## ADR-066 — The stateful mode shares the liveness monitor and cuts a dead target run-wide in one streak, with the verdict carried in the outcome { #adr-066 }
+
+**Status:** accepted · `runtime/http/liveness.py`, `runtime/fuzzers/stateful/liveness_watch.py`, `runtime/fuzzers/stateful/collector.py`, `runtime/fuzzers/stateful/probes.py`, `runtime/fuzzers/stateful/rule.py`, `runtime/fuzzers/stateful/supervisor.py`, `runtime/fuzzers/stateful/truncation.py`, `runtime/runners/stateful.py`, `models/runtime/results.py`
+
+### Context
+
+The stateful mode concluded a target was down only once **every** rule endpoint's
+own circuit breaker had opened, and it never probed the target itself. Each
+endpoint's breaker needs `MAX_INFRA_FAILURES` failures to open, so against an
+unreachable target the run paid that streak once per endpoint before it could
+cut — for a nineteen-endpoint contract, nineteen full streaks. Measured against a
+dead target with a two-second timeout, that was 194.7 s over 95 requests, with no
+liveness probe ever sent.
+
+The stateless fold and the replay had already solved the same problem: a shared
+`TargetLivenessMonitor` counts one streak of target failures and, at the
+threshold, fires a single `HEAD` probe that tells a dead target from a live one.
+The stateful mode simply did not use it. It also cancelled coarsely — it read the
+cancellation token only between passes, so a pass in flight kept sending after the
+mark, a full timeout per step against a dead target.
+
+A second, subtler defect lived in the monitor. Once its streak reached the
+threshold and a probe resolved it, the streak stayed at the threshold, so a caller
+that kept running re-probed on every following failure instead of waiting for a
+fresh streak.
+
+### Decision
+
+**The stateful mode feeds the one shared monitor through a run-wide watch.** A
+`LivenessWatch` Protocol with a `RunLivenessWatch` implementation (wrapping the
+shared `TargetLivenessMonitor`) and a `NULL_WATCH` null object is composed onto the
+`StatefulCollector`, next to the per-endpoint breaker, and fed from the collector's
+single `record` point. Both send sites — the rule step and the transition probe —
+ask the collector one question, `is_send_blocked(endpoint_id)`: the run stopped
+(cancelled, or a confirmed dead target) or this endpoint's own breaker is open. A
+dead target therefore costs at most `MAX_INFRA_FAILURES` requests plus **one**
+probe for the whole run, instead of one streak per endpoint. A pass in flight
+drains as no-op steps and the supervisor stops between passes.
+
+**A run-wide cut wins over a breaker-derived one and names the endpoint of the
+request that completed the streak**, mirroring the stateless fold, because it
+happened first. The two `TARGET_DOWN` verdicts stay distinct and both reachable:
+`LIVENESS_PROBE_FAILED` when the run-wide probe confirmed it, and
+`CIRCUIT_BREAKERS_OPEN` for a reachable base URL whose rule endpoints all broke — a
+gateway up with its backends down. A probe that answers does not halt the run: the
+target is alive, the streak resets, and the breakers stay in charge.
+
+**The verdict travels in the runtime-only outcome, not in the persisted record.**
+`StatefulExplorationOutcome.target_down_verdict` carries it and the runner
+announces the verdict the outcome holds; `TruncationRecord` is unchanged, because
+it is persisted and the CLI reads its `endpoint_id`.
+
+**The monitor's streak restarts after a probe resolves it.** A streak that a probe
+already adjudicated starts over on the next failure, so an alive target is not
+re-probed on every following failure. The `streak` still reads the threshold
+immediately after the verdict — the value the replay reports — and rolls back only
+when the next failure arrives.
+
+**Cancellation is read on every send.** The collector gates each send on the
+token, a streak completed by the request in flight never probes once the run is
+cancelled (the rule the stateless fold and the replay already follow), and a
+cancellation arriving during the last pass is sealed `cancelled`. A confirmed dead
+target is still kept over a later cancellation.
+
+### Rejected
+
+- **A third copy of the streak logic in the stateful mode.** The monitor already
+  expresses "a streak of target failures, then one probe"; a hand-rolled stateful
+  copy would be a third implementation to keep in step with the stateless fold and
+  the replay, and the first to drift.
+- **Absorbing the stateless fold's copy into the shared monitor as well.** The
+  stateless fold's cut is not the same shape: it would force the monitor to grow a
+  per-endpoint streak, a second streak over consecutive 500s, a different probe that
+  re-sends the last known-good request rather than a bare `HEAD`, live event
+  emission, and cutting by raising an exception. Folding all of that into one
+  monitor would make it a catch-all rather than the single-question object the
+  stateful mode and the replay need; the fold keeps its own, richer cut.
+- **Putting the verdict in `TruncationRecord`.** The record is persisted and read
+  back by the CLI, which needs only the reason and the endpoint; adding a
+  presentation-time verdict to a stored shape would couple persistence to how a run
+  is announced. The verdict is runtime-only, so it rides the outcome instead.
+
+### Consequences
+
+Against a dead target the stateful mode now cuts in one streak plus one probe:
+re-measured on the same nineteen-endpoint scenario with a two-second timeout, 13.7 s
+over 5 requests and a single probe, down from 194.7 s over 95 requests and none. A
+cancelled stateful run stops sending at the mark rather than at the pass boundary,
+and never probes. Both target-down verdicts remain reachable, so a run tells apart
+a base URL that is truly down from a gateway whose backends are. The persisted
+truncation record is unchanged, and the shared monitor now serves the replay and
+the stateful mode from one implementation.

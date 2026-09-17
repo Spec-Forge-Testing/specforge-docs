@@ -249,7 +249,9 @@ percent-encoded segment, but the semantic oracle reads the typed value.
 `ExecutionResult` is the canonical record of one request
 ([Architecture](architecture.md#executionresult-is-the-canonical-record-of-a-request)).
 `category` maps `error=None` to `ErrorCategory.SUCCESS`; `was_sent` is false
-only for `UNSENDABLE_REQUEST`. `INFRA_CATEGORIES` is deliberately wider than
+only for `UNSENDABLE_REQUEST` — a blueprint the injector flagged before sending,
+or a request the client refused at send time because a header value carried
+non-ASCII text or a line break. `INFRA_CATEGORIES` is deliberately wider than
 `TARGET_FAILURE_CATEGORIES`: a request that could not be sent says nothing
 about the API — neither that it misbehaved nor that it is down — so it is
 recorded in stats but never counted as evidence the target is failing, and

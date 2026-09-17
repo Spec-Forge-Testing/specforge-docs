@@ -9,7 +9,7 @@ extension axes, each a registry populated at import time, each with a public
 | **Runner** (how a run executes) | an `ExecutionRunner` + `register_runner(...)` | `runtime/runners/registry.py` | `isolated()` + `registered_modes()` |
 | **Profile** (what gets generated) | a `StrategyMode` member + `register_profile(StrategyModeProfile(...))` | `profiles/registry.py` | `isolated()` + `registered_strategy_modes()` |
 | **Phase** (a generation phase) | a `GenerationPhase(name=Phase.X, ...)` + `register_phase(...)` | `strategy_compiler/fields/registry.py` | `isolated()` + `registered_phases()` |
-| **Phase extension** (an extra phase that activates on a datum) | a `PhaseExtension(phase, applies, share, refiner)` + `register_phase_extension(...)` | `phase_extensions.py` | `isolated()` + `registered_phase_extensions()` |
+| **Phase extension** (an extra phase that activates on a datum) | a `PhaseExtension(phase, applies, share, refiner)` + `register_phase_extension(...)` | `shared/phase_extensions.py` | `isolated()` + `registered_phase_extensions()` |
 | **Oracle** (a response check) | a class satisfying `ResponseOracle` + `register_oracle(...)` | `runtime/oracles/registry.py` | `isolated()` + `registered_oracle_names()` |
 | **Chaos transport** | a factory under a new key in the transport table | `runtime/runners/resilience/transport.py` | `isolated()` |
 
@@ -23,7 +23,7 @@ An `ExecutionRunner` is a Protocol:
 
 ```python
 class ExecutionRunner(Protocol):
-    mode: str
+    mode: ExecutionMode
     options_type: type[BaseModel] | None
 
     def run(self, request: RunRequest, orchestrator: AsyncOrchestrator) -> EngineRunResult: ...
@@ -153,8 +153,11 @@ which the package `__init__` calls once. The built-in registration mirrors this:
 ```python
 from specforge_engine.runtime.fuzzers.semantic import build_semantic_payloads
 from specforge_engine.models.phase import Phase
-from specforge_engine.phase_extensions import PhaseExtension, register_phase_extension
-from specforge_engine.semantic_properties import has_input_constraint
+from specforge_engine.shared import (
+    PhaseExtension,
+    has_input_constraint,
+    register_phase_extension,
+)
 from specforge_engine.strategy_compiler.constants import SEMANTIC_SHARE
 
 
@@ -190,7 +193,8 @@ it.
 
 ## Add a string format
 
-A string `format` is served by the constraint tables in
+A string `format` is served by two tables: `FORMAT_PATTERNS` in
+`strategy_compiler/constants.py` and `DATE_RANGE_STRATEGIES` in
 `strategy_compiler/fields/default/constraints.py`. Two ways in, by nature of
 the format:
 

@@ -42,10 +42,11 @@ with the endpoint's risk, attack, budget, responses and state link into a
 `_reporting_endpoint_identity` catches a `StrategyCompilationError` raised
 while compiling one endpoint, attaches the endpoint's identity, and re-raises it
 as an `EndpointCompilationError` — which `compile` turns into an
-`EndpointExclusion`. A `PolicyError` is **not** caught: the one the planner
-raises for a foreign phase split (below) propagates out of `compile`
-unchanged, because it means the input itself is malformed for the mode, not
-that this one endpoint is uncompilable ([ADR-031](adr/compiler.md#adr-031)).
+`EndpointExclusion`. A `PolicyError` is **not** caught, and the compiler raises
+none of its own: a foreign phase split (below) is rejected earlier, at the policy
+boundary, by `validate_endpoint_spec`, because it means the input itself is
+malformed for the mode, not that this one endpoint is uncompilable
+([ADR-031](adr/compiler.md#adr-031)).
 
 ## Which contracts and phases apply: the profile
 
@@ -200,7 +201,7 @@ compile, or the reverse:
   zero.
 
 The predicate itself, `has_input_constraint(endpoint)`, lives in the neutral leaf
-`specforge_engine/semantic_properties.py`, imported by the composition root that
+`specforge_engine/shared/semantic_properties.py`, imported by the composition root that
 registers the extension, so the compiler (which decides the phase exists) and the
 engine (which decides how it draws) cannot disagree on which properties constrain
 an input.
@@ -216,7 +217,8 @@ builders ([ADR-016](adr/compiler.md#adr-016)).
 | `fields/default/valid.py` | `SchemaType → valid builder` |
 | `fields/default/boundary.py` | `SchemaType → boundary builder` |
 | `fields/default/invalid.py` | `SchemaType → invalid builder` |
-| `fields/default/constraints.py` | `SchemaFormat → regex pattern`; the date-range builders `DATE_RANGE_STRATEGIES` |
+| `constants.py` | `FORMAT_PATTERNS`: `SchemaFormat → regex pattern` |
+| `fields/default/constraints.py` | the date-range builders `DATE_RANGE_STRATEGIES`, and `regex_strategy` over `FORMAT_PATTERNS` |
 | `fields/hacker/payloads.py` | `SchemaType → base-payload builder`; the toggle-family table |
 
 Two overrides ride on top of the type dispatch. The boundary phase shrinks any
@@ -377,8 +379,9 @@ object, built in one place, never mutated afterwards
 - `phase_split` is the budget's own split when it declares one, otherwise the
   profile's — grown on the `attack` share by aggressiveness through
   `derive_attack_split` when the mode has an attack phase. A budget that
-  declares a phase outside the mode's split is a `PolicyError`, raised by the
-  planner and propagated out of `compile`.
+  declares a phase outside the mode's split is a `PolicyError` raised by
+  `validate_endpoint_spec` at the policy boundary; the planner takes a declared
+  split as already validated.
 - `estimated_combinations` is `estimate_parameter_space` over every zone's
   parameters, capped at `COMBINATION_SPACE_CAP` (10⁹).
 - `allowed_combinations` clamps the estimate into `1..max_combinations_per_case`.

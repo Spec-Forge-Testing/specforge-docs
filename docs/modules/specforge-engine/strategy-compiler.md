@@ -85,6 +85,7 @@ never guards for `None` ([ADR-024](adr/compiler.md#adr-024)):
 | `mutation_depth` | how deep object mutation recurses (hacker) |
 | `aggressiveness` | the attack-vs-benign mix weight (hacker) |
 | `extra_profiles` | attack profiles the endpoint's risk earns, added to the field's own |
+| `text_alphabet` | the character set a compiled string may draw from: `OPEN` (the full Unicode space) or `WIRE_SENDABLE`; `OPEN` everywhere but the header zone |
 
 `EMPTY_CONTEXT` is the shared instance for an endpoint with no attack knobs and
 no risk-derived profiles.
@@ -238,6 +239,79 @@ builder rather than the format's regex.
 | `LARGE_ARRAY_SIZE` · `SMALL_ARRAY_SIZE` | 1000 · 10 | attack array lengths |
 | `MUTATION_OVERFLOW_FIELD_SIZE` | 4096 | the overflow field in a mutated object |
 | `DEFAULT_MUTATION_DEPTH` | 1 | mutation depth when no context sets it |
+
+## String values and the wire alphabet
+
+A string is generated to be *sendable* to the destination it is bound for. Most
+zones — body, query, path — carry the full Unicode space, so their strings draw
+from an **open** alphabet (every codepoint but the surrogates). A header value
+cannot: the client encodes it as strict ASCII before framing, and the framing
+layer refuses NUL, CR, LF and whitespace at either edge. A header string drawn
+from the open alphabet is therefore almost always unencodable, and the request
+never leaves the client — an honest "unsendable" result, but budget spent on a
+value that could never reach the server.
+
+So the compiler narrows the alphabet by zone *while generating*, not after. A
+`_ZONE_TEXT_ALPHABET` table maps `Zone.HEADER` to `WIRE_SENDABLE`; every other
+zone keeps `OPEN`. `compile_parameter` narrows the `GenerationContext`'s
+`text_alphabet` to the zone's before compiling, and the string builders draw
+their characters through it.
+
+The **wire-sendable** alphabet is printable ASCII without space, `0x21..0x7E`.
+It is the set of characters *measured* to survive this transport in any
+position, not a set read off a spec: everything below `0x21` (the controls and
+space) or above `0x7E` (all non-ASCII) is refused by the client encoder or the
+framing grammar. Space and tab are legal in a header only as an interior
+separator between tokens; a header parameter is nearly always a single token, so
+generating the separator form is coverage knowingly not taken. Control
+characters that would in fact pass are also left out on purpose: looking valid is
+this phase's job — stressing the server with hostile bytes is the attack phase's.
+
+### Per branch of the string builder
+
+`string_strategy` reads the field through a `SchemaView` and the alphabet through
+the context, and each branch honours the alphabet it is handed:
+
+| The field declares | Under the open alphabet | Under the wire alphabet |
+|---|---|---|
+| free text (no `format`, no `pattern`) | text of the declared length over the open alphabet | text of the declared length over the wire alphabet |
+| a special-cased `format` (`email`, `uuid`, `date`, `date-time`, `uri`, `ipv4`, `hostname`, `byte`) | the format's regex | the same regex — every `FORMAT_PATTERNS` entry is ASCII by construction |
+| an unspecial-cased `format` | the `hypothesis-jsonschema` fallback | wire-alphabet text of the declared length, keeping a co-declared `pattern` |
+| a `pattern` | the pattern, drawn full-match | the pattern intersected with the wire alphabet |
+
+The format regexes are all ASCII, so the wire alphabet leaves the special-cased
+formats unchanged. (The `date`, `date-time` and `ipv4` patterns match ASCII
+digits `[0-9]` rather than the Unicode decimal category, so a "date" is a date in
+every zone, not a string of Tamil or fullwidth digits.)
+
+One branch cannot always honour the alphabet: a **pattern that admits no
+wire-alphabet value keeps its open draw**. The restricted pattern is validated
+eagerly at compile time; if it is alphabet-incompatible it falls back to the
+unrestricted draw rather than raising. The generator refuses a character class
+that contains *any* character outside the alphabet — `[aé]{2}` is refused even
+though `aa` is drawable — so excluding such an endpoint would lose coverage that
+exists today. The rule is therefore: restrict where possible, behave as before
+where not. Nothing is excluded, nothing raises.
+
+### Why narrow, not filter
+
+The path zone already drops a few discrete whole values it cannot send, with a
+`.filter` after generation. The header restriction is deliberately **not** the
+same mechanism and the two are not unified into one table: a filter rejects a
+handful of finished values, whereas nearly everything the open alphabet draws is
+non-ASCII, so a header filter would reject almost every draw and Hypothesis would
+give up with `filter_too_much`. The alphabet has to be narrowed *during*
+generation — which is why the zone reaches the string builders at all
+([ADR-067](adr/compiler.md#adr-067)).
+
+### Which phases restrict
+
+The narrowing applies only where a phase means "this should reach the server":
+the `valid`, `semantic`, and non-hostile `attack`/`mutation` phases, all of which
+share the valid string builder. The `boundary` phase already draws ASCII from its
+own length table. The hostile `attack` and `mutation` pools — control characters,
+high bytes — are left untouched on purpose: such a payload still cannot cross
+this transport, which is the raw-socket path's business, not the client's.
 
 ## The hacker side
 

@@ -371,3 +371,83 @@ as `attack` does, so a plain field inside a hacker-mode compile still compiles.
 Hacker compiles gain a fifth phase for every field; `RunStats.by_phase` reports
 `mutation` separately; nullable seeds are filtered so an operator always receives
 a typed value; storage's phase description lists `mutation`.
+
+---
+
+## ADR-067 — A header's text alphabet is narrowed at generation by zone, derived from what the wire carries, and an incompatible pattern falls back rather than excluding the endpoint { #adr-067 }
+
+**Status:** accepted · `strategy_compiler/zone.py`, `strategy_compiler/fields/context.py`, `strategy_compiler/fields/default/alphabet.py`, `strategy_compiler/fields/default/valid.py`, `strategy_compiler/constants.py`
+
+### Context
+
+A `header` string parameter was drawn from almost the whole Unicode space. But a
+header value cannot carry it: the client encodes header values as strict ASCII
+before framing, and the framing grammar
+(`field_value = ([^\x00\s]+(?:[ \t]+[^\x00\s]+)*)?`) refuses NUL, CR, LF, VT, FF
+and whitespace at either edge. A header string drawn from the open alphabet is
+therefore almost always unencodable, and the request never leaves the client — an
+honest "unsendable" result, but budget spent on a value that could never reach
+the server. Measured on a real corpus endpoint, 64 of 200 requests (32%) never
+reached the wire. The valid phase looked like it was exploring the endpoint while
+most of its examples never left the client.
+
+### Decision
+
+**The compiler narrows a string's alphabet by zone, during generation.** The
+`GenerationContext` carries a `text_alphabet` (`OPEN` | `WIRE_SENDABLE`, default
+`OPEN`); a `_ZONE_TEXT_ALPHABET` table maps `Zone.HEADER` to `WIRE_SENDABLE`, and
+`compile_parameter` narrows the context to the zone's alphabet before compiling.
+A `TextAlphabet` **mode enum** names the alphabet, and a small table
+(`alphabet.py`) maps the mode to the `SearchStrategy` of characters — the value
+object carries the choice, not the strategy.
+
+**The wire alphabet is measured, not read off a spec.** It is printable ASCII
+without space, `0x21..0x7E` — the set proven to survive the client encoder and
+the framing grammar in any position. Space and tab, legal only as an interior
+separator between tokens, and the control characters that would in fact pass
+(`\x01`, `\x08`, `\x1f`, `\x7f`) are deliberately not generated: a header
+parameter is nearly always a single token, and producing valid values is this
+phase's job, not stressing the framing layer.
+
+**An alphabet-incompatible pattern falls back to its open draw.** The restricted
+pattern is validated eagerly at compile time, so an incompatibility surfaces
+there rather than from inside a running generation — the boundary the engine
+already closed for requests it cannot build. The generator refuses a character
+class containing any character outside the alphabet, even when a compatible value
+exists (`[aé]{2}` is refused though `aa` is drawable), so the branch restricts
+where it can and keeps the open draw where it cannot. Nothing is excluded,
+nothing raises.
+
+The same fix makes the `date`, `date-time` and `ipv4` format patterns match
+`[0-9]` rather than the Unicode decimal category, so those formats are ASCII in
+every zone, not only in headers.
+
+### Rejected
+
+- **A filter over drawn values, like the path zone's.** Nearly everything the
+  open alphabet draws is non-ASCII, so a header filter would reject almost every
+  draw and Hypothesis would abandon it with `filter_too_much`. The alphabet must
+  be narrowed while generating, not after.
+- **Unifying the path zone's value filter with the header's character
+  restriction into one table.** They are different mechanisms: the path filter
+  rejects a few discrete finished values, the header restriction constrains the
+  characters a value is built from. Merging them would blur a post-generation
+  reject with a during-generation constraint.
+- **Excluding an endpoint whose pattern cannot honour the alphabet.** Because the
+  generator refuses a class that admits any outside character even when a
+  drawable value exists, exclusion would lose coverage the open draw still
+  provides. Falling back keeps it.
+- **Putting the alphabet's `SearchStrategy` in the context value object.** The
+  context is a frozen bag of endpoint knobs; a mode enum plus a mode→strategy
+  table keeps the strategy out of the value object and the choice serializable and
+  comparable.
+
+### Consequences
+
+On the measured endpoint, 0 of 200 requests are now unsendable, down from 64. The
+header zone spends its valid, semantic and non-hostile attack/mutation budget on
+values that reach the server; every other zone keeps the open alphabet, and the
+hostile attack and mutation pools are untouched, since a payload that cannot cross
+this transport is the raw-socket path's concern. The `GenerationContext` grows one
+field, and a new zone that needs its own alphabet is a row in
+`_ZONE_TEXT_ALPHABET`.

@@ -103,3 +103,4 @@ Assembly's.
 | [ADR-063](foundations.md#adr-063) | package | The engine package is `specforge_engine`, and its execution layer is `runtime/` |
 | [ADR-065](engine.md#adr-065) | engine | The stateful suppression key carries the response status code, and progress ticks every executed step |
 | [ADR-066](engine.md#adr-066) | engine | The stateful mode shares the liveness monitor and cuts a dead target run-wide in one streak, with the verdict carried in the outcome |
+| [ADR-067](compiler.md#adr-067) | strategy_compiler | A header's text alphabet is narrowed at generation by zone, derived from what the wire carries, and an incompatible pattern falls back rather than excluding the endpoint |

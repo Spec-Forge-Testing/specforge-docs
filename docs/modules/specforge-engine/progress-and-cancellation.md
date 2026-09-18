@@ -79,7 +79,12 @@ per-step timeout into nothing. The liveness probe obeys the same rule everywhere
 both stateless failure streaks read the token before probing and cut with
 `cancelled` instead, a replay skips its liveness check once cancelled, and a
 stateful streak completed by the request in flight never probes once the run is
-cancelled — a cancelled run never sends the probe.
+cancelled — a cancelled run never sends the probe. The shared
+`TargetLivenessMonitor` also **abandons a probe already in flight**: it runs the
+`HEAD` as a task and races it against the token, so a cancellation landing while a
+probe is outstanding drops that probe and yields no verdict rather than holding the
+run for the probe's full timeout. A cancelled run therefore neither sends a new
+probe nor waits out one in flight.
 
 ### What a cancelled run returns
 
@@ -112,12 +117,17 @@ When more than one reason to stop is present, the ranking is fixed. A cancellati
 seen between endpoints, or after exploration finishes, **outranks** a soft budget
 or deadline cut already recorded — the caller's intent wins over a partial run's
 own truncation. A cancellation arriving during the last stateful pass is sealed
-`cancelled` too. But it does **not** outrank a confirmed dead target: a stateless
-liveness probe, a stateful run whose run-wide liveness probe confirmed it, or a
-stateful run whose circuit breakers all opened has established the API is down, and
-that verdict (`aborted`, reason `target_down`) stands over a cancellation that
-arrived alongside it. A dead target is a fact about the world; a cancellation is a
-fact about the caller, and the world wins.
+`cancelled` too, and the resilience and auth runners seal it the same way: each
+reads the token only at the *next* endpoint, so a shared post-loop seal
+(`seal_cancellation`) catches a cancellation that lands while the last endpoint's
+batch was still in flight, which would otherwise be lost and the run reported
+`completed`. But a cancellation does **not** outrank a confirmed dead target: a
+stateless liveness probe, a stateful run whose run-wide liveness probe confirmed
+it, a stateful run whose circuit breakers all opened, or a resilience or auth run
+whose per-batch watch confirmed it has established the API is down, and that
+verdict (`aborted`, reason `target_down`) stands over a cancellation that arrived
+alongside it — the dead target already stopped the run. A dead target is a fact
+about the world; a cancellation is a fact about the caller, and the world wins.
 
 ## The observer
 
@@ -159,10 +169,12 @@ listener switches on `kind` and never guesses a type:
 emitted for each finding once shrinking has confirmed it, so it is unconfirmed
 until then; in stateful it fires the moment a defect is confirmed. `TargetDown`
 carries a `TargetDownVerdict` naming how the run decided —
-`LIVENESS_PROBE_FAILED` (a `HEAD` probe confirmed it: stateless, replay, or the
-stateful run's own run-wide probe) or `CIRCUIT_BREAKERS_OPEN` (a reachable base
-URL whose stateful rule endpoints all broke — a gateway up with its backends
-down).
+`LIVENESS_PROBE_FAILED` (a `HEAD` probe confirmed it: stateless, replay, the
+stateful run's own run-wide probe, or the resilience and auth runners' per-batch
+watch) or `CIRCUIT_BREAKERS_OPEN` (a reachable base URL whose stateful rule
+endpoints all broke — a gateway up with its backends down). `CIRCUIT_BREAKERS_OPEN`
+is the stateful mode's alone: resilience and auth have no per-endpoint breakers, so
+they always report `LIVENESS_PROBE_FAILED`.
 `RunFinished` is always the last event, and `RunTruncated` precedes it only for a
 cut local to one endpoint — a run that halted outright (`target_down`,
 `cancelled`) reports its reason through the final status instead.
@@ -195,15 +207,17 @@ Not every mode reaches every boundary, so the set of events differs by mode.
 | `tick` | ● | ● | ● | ● | | |
 | `finding` | ● | ● | ● | | ● | ● |
 | `infra_failure` | ● | ● | ● | ● | | |
-| `target_down` | ● | ● | ● | ● | | |
+| `target_down` | ● | ● | ● | ● | ● | ● |
 | `truncated` | ● | ● | ● | ● | | |
 | `finished` | ● | ● | ● | ● | ● | ● |
 
 Replay emits no `finding` — it evaluates only for a dead target, never contracts —
 and its `started` reports the endpoints partitioned for the run, which a
 trace-only caller leaves empty. Resilience and auth never `tick` (each endpoint is
-one deterministic exchange, so a counter adds nothing) and never `truncated` (they
-stop only on cancellation, which halts and reports through the status). Stateful
+one deterministic exchange, so a counter adds nothing) and never `truncated`: they
+stop on a cancellation or a confirmed dead target, and both halt the run outright
+and report through the final status rather than a per-endpoint `truncated` event —
+a confirmed dead target also emitting one `target_down` first. Stateful
 never announces an endpoint or a phase: it drives a sequence, not one endpoint at a
 time, and its `tick` always carries `total` of `0`.
 

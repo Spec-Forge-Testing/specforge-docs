@@ -636,7 +636,7 @@ machine for the rest of the run — there is no half-open state — so one dead
 endpoint cannot starve a still-live consumer of a bundle it needs; that stays the
 breaker's job, "one endpoint broken, the rest alive". Alongside it, a **run-wide
 liveness watch** (`RunLivenessWatch`, a `LivenessWatch` composed onto the
-collector) feeds the same `TargetLivenessMonitor` the replay uses from the
+collector) feeds the shared `TargetLivenessMonitor` from the
 collector's one `record` point. Both send sites — a rule step and a transition
 probe — ask `is_send_blocked` the one question: the run stopped (cancelled, or the
 watch confirmed a dead target) or this endpoint's own breaker is open.
@@ -718,15 +718,52 @@ recorded `sent_at_ms` measured from a fixed `t0`, so drift never compounds and a
 past slot waits zero; `ImmediatePacer` never waits.
 
 A replay does not blindly re-send a dead target's whole trace. `runtime/http/`
-carries a `TargetLivenessMonitor` — shared machinery: the `ReplayRunner` feeds it
-each result as it returns, and the stateful mode feeds the same monitor through its
-run-wide watch (above). The monitor counts a streak of target failures — the
+carries a `TargetLivenessMonitor` — shared machinery used by every mode that
+probes: the `ReplayRunner` feeds it each result as it returns, the stateful mode
+feeds the same monitor through its run-wide watch (above), and the two sequential
+runners (resilience and auth) feed it through a per-batch `TargetWatch`
+(below). The monitor counts a streak of target failures — the
 `TARGET_FAILURE_CATEGORIES` (`timeout`, `availability`) — and ignores anything
 that was never sent (no evidence either way). When the streak reaches
 `MAX_INFRA_FAILURES` (5) it fires one `probe_liveness()` `HEAD`: a dead target
 returns `target_down` and a live one `infrastructure_abort`, and either stops the
 loop with a `TruncationRecord`. `run_status_of(truncation)` then maps that record
 to the run's status — `aborted` for `target_down`, `truncated` otherwise.
+
+The monitor takes the run's cancellation token and can **abandon a probe in
+flight**. It runs the `HEAD` as a task and races it against the token in
+poll-interval steps; if the run is cancelled while the probe is outstanding, the
+monitor cancels the task and yields **no verdict**. An in-flight request cannot be
+called back, and an abandoned probe confirms nothing, so the monitor discards it
+rather than awaiting a full timeout — a cancelled run never *holds* for a probe.
+`probe_liveness` keeps its boolean signature; only the monitor's internal verdict
+widened to allow "no verdict". Because the race lives in the monitor, every mode
+that probes benefits — the replay and the stateful watch simply pass their token.
+
+### The per-batch target watch
+
+The resilience and auth runners iterate endpoints sequentially but dispatch each
+endpoint's batch — the chaos battery, or the identity crossings — concurrently.
+`runtime/runners/target_watch.py` gives them dead-target detection without a copy
+of the streak logic: `TargetWatch.for_run(orchestrator, request)` composes the
+shared monitor wired to the run's orchestrator and cancellation token, and
+`observe_batch(batch, endpoint_id)` feeds each result of one endpoint's batch to
+the monitor. The first result whose verdict is `TARGET_DOWN` announces a
+`TargetDown` event with `LIVENESS_PROBE_FAILED` and returns a `TARGET_DOWN`
+truncation record naming that endpoint and counting what the batch put on the wire;
+otherwise it returns `None` and the run goes on.
+
+**The cut is between endpoints, deliberately.** Each runner judges an endpoint's
+batch, then asks the watch, and stops on a cut before the next endpoint. Because a
+batch is dispatched concurrently, its timeouts are paid in parallel, so a batch
+already on the wire lands in full — walking every endpoint against a dead target is
+what cost minutes, and cutting mid-batch would be a rewrite of the concurrent send
+path to save a fraction of one timeout. An auth endpoint whose policy sends nothing
+leaves the streak untouched. Neither runner has a per-endpoint circuit breaker, so
+`LIVENESS_PROBE_FAILED` is the only target-down verdict they reach —
+`CIRCUIT_BREAKERS_OPEN` belongs to the stateful mode. One boundary of what this
+detects: a target whose base URL answers while every endpoint is broken is still
+walked in full, since any answered result resets the streak.
 
 A streak a probe already resolved **starts over on the next failure**, so a caller
 that keeps running is not re-probed on every following failure. The `streak` still

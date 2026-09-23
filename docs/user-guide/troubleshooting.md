@@ -36,6 +36,33 @@ browsed. Fuzzing itself still works.
 
 **Fix.** Install the storage engine (see `doctor`), then re-run.
 
+## A library is installed but `doctor` says it needs a restart
+
+**Symptom.** `doctor` reports a component as *"{library} is installed, but this process started
+without it"* and asks you to restart, even though the library is now on disk.
+
+**Cause.** Each optional library is imported once per process. A library installed while Spec
+Forge was already running is not picked up until the process restarts, so `doctor` reports it as
+present-but-not-loaded — as blocking as missing.
+
+**Fix.** Restart Spec Forge to load it. See how the
+[dependency gateways and the doctor](../modules/core/index.md#dependency-gateways-and-the-doctor)
+tell this state apart from a clean install.
+
+## A library is present but `doctor` reports it broken
+
+**Symptom.** A library is installed, yet `doctor` reports it as missing and prints a reason that
+is not a plain "not installed" — an import error message or an exception type.
+
+**Cause.** A library that **raises while importing** counts as absent. Its gateway carries the
+import failure's own reason: an `ImportError`'s message verbatim, or any other exception named by
+its type. A broken install (a missing transitive dependency, an incompatible version) reads this
+way.
+
+**Fix.** Read the reason `doctor` prints and repair the install it names, then re-run `doctor`.
+The [dependency gateways](../modules/core/index.md#dependency-gateways-and-the-doctor) are the
+single owner of that answer per library.
+
 ## The target is down / connection refused
 
 **Symptom.** A run stops early with *"Run aborted: the target stopped responding"*; the report

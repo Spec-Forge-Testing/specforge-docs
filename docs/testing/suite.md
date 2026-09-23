@@ -30,7 +30,7 @@ in what a made-up contract never has: 1,497 endpoints, versions from 2.0 to
 simulating.
 
 **Entry only through the CLI.** Everything goes through
-`specforge_cli.services`, never importing a `lib/` package directly. What's
+`specforge_core.services`, never importing a `lib/` package directly. What's
 under test is the pipeline as the product actually uses it, not the
 libraries in isolation.
 

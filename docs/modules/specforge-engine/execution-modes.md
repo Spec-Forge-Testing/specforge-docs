@@ -365,6 +365,13 @@ preconditions, sends nothing and completes with zero requests: the engine treats
 that as a valid empty plan, not an error, and telling the user the mode had
 nothing to check is the caller's job.
 
+For every targeted endpoint the run crossed nothing against, the engine folds a
+typed reason into `EndpointStats.unprobed_reason` — `declared_public` when the
+endpoint was `public` (nothing to cross, complete evidence) or `access_undeclared`
+when it declared no access policy (so the run could not tell what to probe). That
+lets a downstream reader distinguish a by-design skip, which does not degrade the
+run, from a missing declaration, which does.
+
 The run **fails fast before any request** on three conditions, checked in this
 order: no **valid** identity is declared (`AccessIdentityError`); a `role_only`
 endpoint requires a role no valid identity holds (`AccessRoleError`, naming the

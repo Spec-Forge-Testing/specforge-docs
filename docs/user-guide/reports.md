@@ -42,7 +42,11 @@ its metrics, endpoint stats and crashes stay queryable through `history` and
 
 `ReportDocument` is a frozen, `extra="forbid"` Pydantic model: a pure function
 of a run's persisted data, never a live object. It carries a `schema_version`
-("1.10" today), bumped when the shape changes in a way a reader cannot ignore.
+("1.11" today), bumped when the shape changes in a way a reader cannot ignore.
+1.11 is additive over 1.10: each `endpoints[]` entry gains `unprobed_reason` —
+why a targeted endpoint that drew no requests was left unprobed (`declared_public`
+for a by-design public skip, `access_undeclared` for a missing access policy),
+empty when the endpoint was probed or held back for another reason.
 1.10 is additive over 1.9: each `endpoints[]` entry gains `load_profile` — the
 per-step latency a performance run's concurrency ladder measured at that endpoint,
 empty unless the run used a ladder. Each step is `{concurrency, latency, degraded}`,
@@ -77,10 +81,10 @@ rule the finding broke, when an oracle named one.
 | --- | --- |
 | `tool` | Which tool produced the document (`name`), and the engine version that ran the analyzed API. |
 | `project` | The analyzed project's name. |
-| `analysis` | The recipe the run executed: id, label, strategy mode, whether it was stateful, and the repo hash it was generated against. |
+| `analysis` | The recipe the run executed: id, label, strategy mode, execution mode (`stateless`, `stateful`, `performance`, `resilience`, `auth`), and the repo hash it was generated against. |
 | `run` | The run's own identity and outcome: id, ordinal, origin (original/replay), `executed_at`, duration, `status`, `fidelity`, its comparability mark, `signal`/`signal_causes` (see below), and - when the run was cut short - `truncation` (`reason` plus `endpoint_id`), otherwise `null`. |
 | `metrics` | The finding funnel and request counters, `null` when a run recorded none. |
-| `endpoints` | One entry per endpoint touched: requests, `examples_planned`, raw findings, crash count, its latency distribution, `starved_identities` - the labels of any declared identities the endpoint's budget could not fund, empty unless the run split budget by identity and ran short of it - and `undecided_rules` - the ids of any declared rules the oracle evaluated here and could never decide (a rule left undetermined on every response, e.g. a numeric rule on a header declared `integer`), empty unless the run's mode accounts for them (`stateless`, `performance`) and some rule stayed undecidable - and `held_back_by` - the risk flag (`external_side_effects` or `write_operation`) the safety guard used to keep this endpoint out of the run, empty when it was probed. A held endpoint's entry carries zero requests - and `load_profile` - the per-step latency a performance run's concurrency ladder measured here (`concurrency`, the step's `latency` distribution, and whether that step `degraded`), empty unless the run used a ladder. |
+| `endpoints` | One entry per endpoint touched: requests, `examples_planned`, raw findings, crash count, its latency distribution, `starved_identities` - the labels of any declared identities the endpoint's budget could not fund, empty unless the run split budget by identity and ran short of it - and `undecided_rules` - the ids of any declared rules the oracle evaluated here and could never decide (a rule left undetermined on every response, e.g. a numeric rule on a header declared `integer`), empty unless the run's mode accounts for them (`stateless`, `performance`) and some rule stayed undecidable - and `held_back_by` - the risk flag (`external_side_effects` or `write_operation`) the safety guard used to keep this endpoint out of the run, empty when it was probed. A held endpoint's entry carries zero requests - and `load_profile` - the per-step latency a performance run's concurrency ladder measured here (`concurrency`, the step's `latency` distribution, and whether that step `degraded`), empty unless the run used a ladder - and `unprobed_reason` - why a targeted endpoint that drew no requests was left unprobed (`declared_public` for a by-design public skip, `access_undeclared` for a missing access policy), empty when the endpoint was probed or held back for another reason. The HTML report shows this reason in a **Not probed** column. |
 | `coverage` | The declared-endpoint partition behind the run - `declared`/`targeted`/`excluded`/`filtered`/`exercised` counts plus `excluded_endpoints` (method, path, reason) - `null` for a replay, which never compiles. |
 | `producer_exclusions` | One entry (`method`, `path`, `reason`) per endpoint the inference contract producer soft-dropped to schema-only - see [`fuzz`'s contract producer](cli-reference.md). Empty when no producer ran, when the fixture producer ran (it aborts rather than drop), or when nothing was dropped. |
 | `defects` | One entry per crash, ordered most-severe-first (the same order the live crash tables render): identity, reproducer and what the run observed - the same shape `inspect --crash <id>` and `compare` project a crash through. Every crash carries `rule_id` and `rule_description`: the business rule the contract declared for a business-rule or access-control finding, or the rule the invariant enforces on its own for every other one. |
@@ -157,8 +161,9 @@ the id there is dropped, since it would only repeat the invariant name.
 
 `run.signal` is `"clean"` or `"degraded"`, `null` for a replay (coverage is a
 compilation-time fact a replay never produces, so trustworthiness there is
-read from `fidelity` instead); `run.signal_causes` lists why when degraded -
-`no_responses`, `endpoints_excluded` and/or `endpoints_unreached`. See
+read from `fidelity` instead); `run.signal_causes` lists why when degraded, in
+render order - `no_responses`, `endpoints_excluded`, `withheld_by_safety_guard`,
+`access_policy_undeclared`, `run_cancelled` and/or `endpoints_unreached`. See
 [Coverage and the run's signal](cli-reference.md#coverage-and-the-runs-signal) for
 what each cause means and how it is derived.
 

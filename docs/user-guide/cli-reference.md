@@ -1,10 +1,20 @@
 # CLI Reference
 
-The CLI is the interactive entry point to Spec Forge. It coordinates workspace
-setup, contract validation, static tracing, LLM-ready context extraction and API
-fuzzing. Every command listed here is typed at the REPL prompt; the two that also
-run straight from your shell (`specforge`, `specforge init`) are called out under
-[Commands run from your shell](#commands-run-from-your-shell).
+This page documents the core's **built-in REPL** — the surface the team drives
+the pipeline with: workspace setup, contract validation, static tracing,
+LLM-ready context extraction and API fuzzing. Every command listed here is typed
+at the REPL prompt; the two that also run straight from your shell (`specforge`,
+`specforge init`) are called out under
+[Commands run from your shell](#commands-run-from-your-shell). The same binary
+also serves the protocol with `specforge --serve`.
+
+!!! info "The shipped command-line tool is a separate client"
+    The command-line tool that ships to users, `specforge-cli`, lives in its own
+    repository: a thin JSON-RPC client that drives the core over stdio. Its user
+    guide lives there. The REPL documented here is the core's own testing
+    surface and speaks the pipeline directly. See the
+    [Core module](../modules/core/index.md) for the core and the protocol the
+    shipped client uses.
 
 !!! note
     New to the vocabulary? [Core Concepts](concepts.md) explains the workflow in plain words and the [Glossary](glossary.md) defines every term used below in one sentence.
@@ -925,14 +935,25 @@ corpus doesn't flood the close. A selection that compiles nothing at all never
 runs: it fails before a single request, as a **Nothing to Fuzz** panel naming
 every rejection.
 
-On top of the partition, a run earns a **signal**: `clean` unless one of three
-things degrades it — no request reached the target at all (every attempt was an
-availability, timeout or unsendable-request failure), a declared endpoint was
-excluded, or a targeted endpoint never received a request. `filtered` never
-degrades a run — narrowing the selection is the caller's own choice, not a gap.
-A degraded run never closes as a plain success and never claims "No crashes
-found"; an empty crash table says its evidence is degraded instead, and the
-close line and every excluded endpoint print as warnings.
+On top of the partition, a run earns a **signal**: `clean` unless something
+degrades it, in which case `signal_causes` names why, in render order. The
+vocabulary is closed:
+
+| `signal_cause` | The run is degraded because |
+| --- | --- |
+| `no_responses` | No request reached the target at all — every attempt was an availability, timeout or unsendable-request failure. |
+| `endpoints_excluded` | A declared endpoint was selected but the compiler rejected it. |
+| `withheld_by_safety_guard` | A targeted endpoint was held out of the run by the safety guard (a declared side effect). |
+| `access_policy_undeclared` | A targeted endpoint drew no requests because its access policy was not declared, so the run could not tell what to probe. |
+| `run_cancelled` | The run was cancelled before it finished, so its evidence is partial. |
+| `endpoints_unreached` | A targeted endpoint never received a request for a reason the rows above do not cover. |
+
+`filtered` never degrades a run — narrowing the selection is the caller's own
+choice, not a gap. A by-design public skip does not degrade a run either: it is
+complete evidence, not a gap. A degraded run never closes as a plain success and
+never claims "No crashes found"; an empty crash table says its evidence is
+degraded instead, and the close line and every excluded endpoint print as
+warnings.
 
 `inspect --run <id>` shows the same partition and signal for a saved run,
 between the header and the metrics — skipped for a replay, which never compiles
@@ -953,8 +974,8 @@ captures the document and nothing else.
 The envelope is the same shape for every command and every outcome:
 
 ```json
-{"schema_version": "1.10", "command": "fuzz", "status": "ok", "data": { ... }, "error": null, "warnings": []}
-{"schema_version": "1.10", "command": "fuzz", "status": "error", "data": null, "error": {"code": "...", "message": "..."}, "warnings": []}
+{"schema_version": "1.11", "command": "fuzz", "status": "ok", "data": { ... }, "error": null, "warnings": []}
+{"schema_version": "1.11", "command": "fuzz", "status": "error", "data": null, "error": {"code": "...", "message": "..."}, "warnings": []}
 ```
 
 `status` is `ok` or `error`, never both, and every key is present regardless

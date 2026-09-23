@@ -82,8 +82,9 @@ Field names of this family are stable: they are persisted as columns.
 | `Finding` | the discriminated union of `ConfirmedFinding`, `FlakyFinding`, `UnverifiedFinding` on `state` |
 | `ConfirmedFinding` | a settled reproducer: carries its `report` |
 | `FlakyFinding`, `UnverifiedFinding` | a settled group: its `signature` and how many raw `occurrences` it stands for |
-| `RunStats`, `EndpointStats`, `LatencyStats` | run, endpoint and latency counters |
+| `RunStats`, `EndpointStats`, `LatencyStats` | run, endpoint and latency counters — `EndpointStats.unprobed_reason` names why a targeted endpoint drew no requests |
 | `LoadStepStats` | one concurrency-ladder step on an endpoint's `load_profile`: its `concurrency`, measured `latency` and `degraded` verdict |
+| `UnprobedReason` | why a targeted endpoint that drew no requests was left unprobed: `declared_public` (a by-design public skip) or `access_undeclared` (no access policy declared) |
 | `CrashReport`, `InvariantViolation` | a confirmed finding's reproducer and the invariant it broke — its `response_body` has sensitive field values redacted to `***` by name |
 | `ViolatedRule` | the rule a `CrashReport` broke (`id` + `description`) — declared by the contract for a `semantic_property` / `access_control` finding, or intrinsic to the invariant for every other one |
 | `ExecutionTrace`, `TracedRequest`, `TruncationRecord` | the replayable record |

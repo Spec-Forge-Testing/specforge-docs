@@ -42,6 +42,12 @@ whose `held_back_by` names the flag that held it (empty for a probed endpoint),
 so the report, the storage row and the live summary all show which endpoints the
 run declined to touch and why.
 
+Symmetrically, a **targeted** endpoint that drew no requests records why in
+`EndpointStats.unprobed_reason`: `declared_public` for a by-design public skip
+(complete evidence, not a gap) or `access_undeclared` for a missing access
+policy. A silent endpoint is therefore never confused with one the run failed to
+reach.
+
 !!! note "Auth mode and a held producer"
     In `auth` mode, holding back an endpoint that produces the state another
     endpoint's owner-only check needs leaves that check with no producer, and the

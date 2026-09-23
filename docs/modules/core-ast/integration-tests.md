@@ -44,7 +44,7 @@ cd tests-repos/tests && ./run.sh core_ast -q
 ```
 
 It mounts the working copy read-only, so it always tests uncommitted changes. It
-enters through `specforge_cli.services` — `run_static_trace` and
+enters through `specforge_core.services` — `run_static_trace` and
 `extract_endpoint_contexts` — which means it exercises `contract_assembly` and
 `core_ast` chained, not `core_ast` alone.
 

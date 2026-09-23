@@ -93,7 +93,7 @@ flowchart LR
     RW --> Suite["tests/<br/><i>pytest, one folder per stage</i>"]
     EMB --> Suite
     POLY -->|"specs only, separate<br/>catalog/fixture"| Suite
-    Suite -->|"specforge_cli.services<br/>(never lib/ directly)"| Pipeline["Spec Forge pipeline"]
+    Suite -->|"specforge_core.services<br/>(never lib/ directly)"| Pipeline["Spec Forge pipeline"]
 ```
 
 ## Where to go next

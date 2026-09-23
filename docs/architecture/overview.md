@@ -48,11 +48,11 @@ flowchart TD
 
 ## Repository layout
 
-The repository is a monorepo: a central CLI (`core/`) plus standalone `lib/` packages, each
+The repository is a monorepo: the headless core (`core/`) plus standalone `lib/` packages, each
 managing its own dependencies, tests, and Docker setup.
 
 ```text
-core/                       # specforge CLI orchestrator (specforge_cli)
+core/                       # headless orchestrator (specforge_core): facade + catalog + stdio protocol server
 lib/
 ├── contracts/               # shared kernel: EndpointContract + the Spec Forge vocabulary
 ├── contract_assembly/        # OpenAPI ingestion + adaptation + fusion
@@ -67,7 +67,7 @@ docker-compose.yml           # monorepo orchestration (root entry point)
 
 | Module | Responsibility |
 | :--- | :--- |
-| `core/` | Interactive CLI/REPL (Typer, Rich, prompt_toolkit): navigation + command orchestration. |
+| `core/` | The headless orchestrator (`specforge_core`): owns the pipeline and exposes it as a catalog of operations a frontend calls. Two surfaces sit on one façade — the stdio [protocol](../modules/core/protocol/index.md) server the shipped client drives, and a transitional built-in REPL the team tests with. See the [Core module](../modules/core/index.md). |
 | `lib/contracts/` | Shared kernel (`specforge_contracts`): the canonical `EndpointContract` and the risk, attack, transition, semantic-property and access vocabulary every stage imports. |
 | `lib/contract_assembly/` | Validates OpenAPI 3.x (`prance`), translates Swagger 2.0 into it, flattens endpoints, fuses base schemas with LLM invariants. |
 | `lib/core_ast/` | Deterministic, stateless AST analysis (`tree-sitter`); locates routes/handlers/deps via `patterns.toml`. |

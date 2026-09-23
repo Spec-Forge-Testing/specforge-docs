@@ -4,7 +4,7 @@
    1. SISTEMA DE DESIGN TOKENS Y PALETAS (LIGHT & SLATE)
    ========================================================================== */
 
-/* Semantic identity shared with the CLI (specforge_cli/ui/theme.py, "default"
+/* Semantic identity shared with the CLI (specforge_core/ui/theme.py, "default"
    theme). Values are the CLI's actual theme tokens, not a hand-eyeballed
    approximation, so the docs site and a screenshot of the CLI read as the
    same product. Background/foreground neutrals have no CLI counterpart (a

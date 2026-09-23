@@ -128,6 +128,20 @@ nav:
       - Contributing & Testing: developer-guide/contributing.md
       - CLI Internals: developer-guide/cli-internals.md
       - Modules:
+          - Core:
+              - Overview: modules/core/index.md
+              - Reference: modules/core/reference.md
+              - Protocol:
+                  - Overview: modules/core/protocol/index.md
+                  - Handshake and versioning: modules/core/protocol/handshake.md
+                  - Events and cancellation: modules/core/protocol/events.md
+                  - Operations: modules/core/protocol/operations.md
+                  - Errors: modules/core/protocol/errors.md
+                  - Fixtures: modules/core/protocol/fixtures.md
+              - Decision records:
+                  - Overview: modules/core/adr/index.md
+                  - Core: modules/core/adr/core.md
+                  - Protocol: modules/core/adr/protocol.md
           - Core AST:
               - Overview: modules/core-ast/index.md
               - Reference: modules/core-ast/reference.md

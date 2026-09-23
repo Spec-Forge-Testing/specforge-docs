@@ -165,6 +165,7 @@ connection" would be hidden, non-thread-safe mutable state.
       | `starved_identities` | `str \| None` | The identity labels this endpoint's budget could not fund, as a JSON list; `NULL` when every declared identity was funded. Only modes that split budget by identity ever populate it. |
       | `undecided_rules` | `str \| None` | The ids of any declared rules the oracle evaluated here and could never decide, as a JSON list; `NULL` when none stayed undecidable. Only modes that account for them (`stateless`, `performance`) ever populate it. |
       | `held_back_by` | `str \| None` | The risk flag the safety guard used to keep this endpoint out of the run (`external_side_effects` or `write_operation`); `NULL` when the endpoint was probed. A held endpoint's row records zero `requests`. |
+      | `unprobed_reason` | `str \| None` | Why a targeted endpoint that drew no requests was left unprobed: `declared_public` (a by-design public skip, complete evidence) or `access_undeclared` (no access policy was declared, so the run could not tell what to probe); `NULL` when the endpoint was probed or held back for another reason. |
       | `load_profile` | `str \| None` | The concurrency-ladder steps a performance run measured at this endpoint, as a JSON list (`concurrency`, the step's `latency` distribution, and its `degraded` verdict); `NULL` when the run had no ladder. |
 
 ??? "`LatencyRecord` - An endpoint's **latency distribution**, in milliseconds."

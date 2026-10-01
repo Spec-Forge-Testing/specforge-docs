@@ -2126,3 +2126,47 @@ shared monitor now serves the replay, the stateful mode and the two sequential
 runners from one implementation. One boundary remains, by design: a target whose
 base URL answers while every endpoint is broken is still walked in full, because
 any answered result resets the streak.
+
+---
+
+## ADR-086 — Every dispatched endpoint gets one stats row, in every mode { #adr-086 }
+
+**Status:** accepted · `runtime/facade.py`, `runtime/findings/stats.py`
+
+### Context
+
+A runner records stats for the endpoints it sent requests to. An endpoint the
+facade dispatched but the run never reached — a stateful chain that never got
+there, a pass cut short — would have no row in
+`RunStats.by_endpoint`. A reader of the run could not tell "this endpoint was not
+part of the run" from "it was part of the run and nothing was sent", and every
+consumer downstream (the report, the stored rows) would have to rebuild that
+distinction from an input it no longer holds.
+
+### Decision
+
+**The facade seeds the missing rows, once, for every mode.** After the runner
+returns, `run` passes the result through `seed_dispatched_rows`, which adds an
+empty `EndpointStats` for every probed endpoint the runner left without a row and
+leaves every existing row untouched. The seeding happens before
+`record_safety_partition` folds in the endpoints the safety guard held back, so a
+held endpoint keeps its own row with its `held_back_by`, and a seeded row is
+always a dispatched one.
+
+### Rejected
+
+- **Each runner seeding its own rows.** One place per execution mode to forget
+  the rule, and a new mode would ship without it unless its author knew.
+- **The persistence layer inventing the missing rows.** The store would then
+  create producer data it never received, and an engine result read outside the
+  store would still be incomplete.
+
+### Consequences
+
+`stats.by_endpoint` covers every dispatched endpoint in every mode, so a
+zero-request row is a measured fact rather than a gap. The store keeps one stats
+row per run and endpoint (`UNIQUE (run_id, analysis_endpoint_id)`). A row can
+still exist for an endpoint the run was never given — one only a stateful
+transition reached — and the core records it with the
+[`reached_by_transition`](../../core/protocol/vocabularies.md#coverage)
+disposition.

@@ -358,11 +358,14 @@ response — populated by the same two modes and empty in the rest, turning a ru
 that could never be checked into the same kind of reported signal. Two more
 fields follow the same rule of saying out loud what did not happen or what was
 measured: `held_back_by` names the risk flag that kept the
-[safety guard](engine-internals.md#safety-guard) from probing the endpoint (empty
+[safety guard](engine-internals.md#safety-guard) from probing the endpoint (`None`
 for a probed one), and `load_profile` is a tuple of `LoadStepStats` — one per
 completed step of a performance run's
 [concurrency ladder](execution-modes.md#the-load-profile), empty in every other
-case.
+case. Last, `truncation` is the `EndpointTruncation` (a `reason` and an optional
+`detail`) that ended the endpoint's own pass; it is `None` when the pass ran to
+completion, and in the modes that do not explore endpoint by endpoint (`stateful`,
+`replay`).
 
 The lifecycle mechanics — one producer per counter, the flaky count measured in
 the shrinker rather than derived by subtraction — are the engine's finding

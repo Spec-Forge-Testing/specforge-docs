@@ -106,7 +106,7 @@ floor. Jobs run on Ubuntu with Python 3.11 unless the table says otherwise.
 | `core` | Ubuntu | 3.11 | `core` suite, with `contracts`, `contract_assembly`, `core_ast`, `specforge_engine` and `storage` installed | coverage ≥ 90 % |
 | `core_ast` | Ubuntu | 3.11 | `lib/core_ast` suite | coverage ≥ 75 % |
 | `specforge_engine` | Ubuntu | 3.11 | `mypy src/specforge_engine`, then the suite | mypy clean, coverage ≥ 75 % |
-| `semantic_inference` | Ubuntu | 3.11 | `pytest -m "not integration"` | tests pass, no coverage floor |
+| `semantic_inference` | Ubuntu | 3.11 | `pytest -m "not integration"` | coverage ≥ 75 % |
 | `contract_assembly` | Ubuntu | 3.11 | `lib/contract_assembly` suite | coverage ≥ 75 % |
 | `storage_engine` | Ubuntu | 3.11 | `lib/storage` suite | coverage ≥ 75 % |
 | `llm` | Ubuntu | 3.11 | `pytest -m "not integration"` | coverage ≥ 75 % |
@@ -121,7 +121,7 @@ The two Python 3.14 jobs back the leak gate. Both `core` and `storage` turn
 leaked resources into test errors: their `filterwarnings` lists
 `error::ResourceWarning` and `error::pytest.PytestUnraisableExceptionWarning`,
 and their dev extras require `pytest>=8.4`, which collects garbage at the end of
-the session so a leak found there still fails the run. As the workflow notes, an
+the session so a leak found there still fails the run. An
 unclosed SQLite connection only surfaces as a warning on Python 3.13 and later;
 on 3.11 the filter catches other unclosed resources but not connections, and the
 3.14 jobs are where a leaked connection fails CI.

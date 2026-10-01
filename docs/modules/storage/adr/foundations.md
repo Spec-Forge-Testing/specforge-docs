@@ -24,8 +24,8 @@ typed exception: a duplicate on a named table becomes `DuplicateRowError`, any
 other constraint failure `ConstraintViolationError`, a busy or locked database
 `DatabaseBusyError`, and everything else `DatabaseOperationError`. Each carries
 the table or the database path, and SQLite's error name. Opening the engine,
-every transaction scope and its commit are wrapped this way. Every disk call
-goes through one gateway that raises `ArtifactReadError` or
+every transaction scope and its commit are wrapped this way. Every disk call of
+the artifact store goes through one gateway that raises `ArtifactReadError` or
 `ArtifactWriteError`. A driver *misuse* error (`sqlite3.ProgrammingError`) stays
 untranslated: it is a bug, not a domain failure.
 

@@ -85,7 +85,7 @@ wins over the default when it is set:
 
 | Variable | Default | Created by |
 | --- | --- | --- |
-| `SPECFORGE_DATA_DIR` | see the precedence below | nobody: resolving the data directory never creates it |
+| `SPECFORGE_DATA_DIR` | see the precedence below | storage, when it opens the default database or saves an artifact under the default root; resolving it never creates it |
 | `CORETEST_DB_PATH` | `coretest.db` in the data directory | storage creates its parent directory |
 | `CORETEST_ARTIFACTS_ROOT` | `artifacts/` in the data directory | storage creates the per-entity directories under it when it writes ([layout](artifacts.md#layout)) |
 
@@ -106,7 +106,7 @@ persisted run, fuzz or replay, and writes every row inside it: the transaction
 belongs to core.
 
 Core imports storage at runtime through one dependency gateway; nothing else in
-core imports it outside type checking, and core never imports `sqlite3`. A
+core imports it outside type checking, and core's source never imports `sqlite3`. A
 storage failure while persisting a run reaches the user as core's
 `PersistenceError`.
 

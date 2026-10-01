@@ -56,7 +56,8 @@ detects **EOF on stdin** and exits on its own.
   `occurrences` is `represented_findings`. A missing fact is `null`, never `""`:
   the report's `held_back_by` and `unprobed_reason`; in `get_run`, an endpoint's
   `load_profile` is a list of steps (`[]` when no concurrency ladder ran) and a
-  crash's `transition_sequence` is `null` when no prior request built its state.
+  crash's `transition_sequence` is `null` for a crash a stateless run found (a
+  stateful crash keeps a list, `[]` on its first step), instead of `[]`.
   Added: a per-endpoint `truncation` (`{reason, detail}`) in `get_run` and the
   report; `run.oracle_scope`; coverage's `reached_by_transition` and
   `reached_by_transition_endpoints`. In `compare_runs`, each caveat carries

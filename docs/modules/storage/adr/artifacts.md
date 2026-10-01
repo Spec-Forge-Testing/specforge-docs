@@ -76,13 +76,13 @@ never a dangling row.
 ### Context
 
 An artifact path is the root, the entity, its id, a 64-character digest and the
-filename; on Windows that passes the 260-character limit of the classic API under
-an ordinary user profile. Disk calls spread across modules would each need the
+filename; under a long artifacts root that passes, on Windows, the 260-character
+limit of the classic API. Disk calls spread across modules would each need the
 fix, and each would translate `OSError` on its own.
 
 ### Decision
 
-One module performs every disk operation. On Windows it gives every path the
+One module performs every disk operation of the artifact store. On Windows it gives every path the
 extended-length prefix (`\\?\`, or `\\?\UNC\` for network shares) and strips it
 from what it returns. It turns every `OSError` into `ArtifactReadError` or
 `ArtifactWriteError`, naming the plain path; a batch removal instead reports

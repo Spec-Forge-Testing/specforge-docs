@@ -177,7 +177,8 @@ must set the scope itself; the store guarantees only that every run states one.
 ### Context
 
 The safety guard holds back routes a run must not exercise: a route flagged as a
-write or as having external side effects, in a mode that holds that flag. If
+write or as having external side effects, in a mode that holds that flag, or a
+follow-up outside the run whose method is not a safe one. If
 requests still reach one of them, the engine fails loud: it raises
 `SafetyGuardBreachError` naming the held routes that were reached and how many
 requests reached them, with the run's result attached and marked

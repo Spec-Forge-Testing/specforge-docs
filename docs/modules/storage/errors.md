@@ -2,8 +2,8 @@
 
 Storage answers in its own vocabulary. Every exception it defines derives from `StorageError`,
 and all 32 classes are exported from `storage` (and from `storage.exceptions`). A failure of
-the SQLite driver or of the disk is translated at the boundary into one of them, so a caller
-never handles `sqlite3` or `OSError` types ([ADR-075](adr/foundations.md#adr-075)).
+the SQLite driver or of the disk is translated at the boundary into one of them, so a domain
+failure never reaches a caller as a `sqlite3` or `OSError` type ([ADR-075](adr/foundations.md#adr-075)).
 
 Every class carries the attributes listed below, plus a readable message as its `str()`.
 
@@ -18,7 +18,7 @@ Every class carries the attributes listed below, plus a readable message as its 
 | `NestedTransactionError` | `StorageError` | `db_path` | `transaction()` or `ensure_can_begin_transaction()` while the same engine has a scope open on the same thread ([ADR-077](adr/foundations.md#adr-077)). The retention operations check it before any side effect. |
 | **Writes** | | | |
 | `PersistedRecordError` | `StorageError` | `record_type`, `assigned` | Any `create()` given a record that already carries a database-assigned field (`id`, `created_at`, `executed_at`). |
-| `ConstraintViolationError` | `StorageError` | `table`, `detail`, `error_name` | A statement or a commit that breaks a schema constraint and is not a duplicate. `table` is `None` when the violation is not tied to one INSERT, such as a foreign key failing at commit. |
+| `ConstraintViolationError` | `StorageError` | `table`, `detail`, `error_name` | A statement or a commit that breaks a schema constraint and is not a duplicate. `table` is `None` when the violation surfaced away from one INSERT: at commit, or in SQL run on the scope's connection. |
 | `DuplicateRowError` | `ConstraintViolationError` | inherited | An INSERT that breaks a UNIQUE or PRIMARY KEY constraint. |
 | `DuplicateRunError` | `DuplicateRowError` | `analysis_id`, `ordinal`, plus inherited | `uow.runs.create()` when the analysis already has a run with that ordinal. |
 | `IncompleteTruncationError` | `StorageError` | `truncation_reason`, `truncation_endpoint_id` | `uow.runs.create()` with only one of the truncation pair. |

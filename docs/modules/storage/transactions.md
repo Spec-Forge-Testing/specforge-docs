@@ -67,8 +67,9 @@ closes it when the scope ends.
 `get_connection()` returns a connection for callers that only read: the shared
 one for an in-memory engine, a fresh one for a file, which the caller closes.
 Failing to connect raises a storage error. SQL run on the returned connection
-raises the driver's own errors, not storage exceptions: it is the one place
-where `sqlite3` errors reach a caller
+raises the driver's own errors, not storage exceptions. With a driver misuse
+(`sqlite3.ProgrammingError`), it is the only place where `sqlite3` errors reach a
+caller
 ([ADR-075](adr/foundations.md#adr-075)).
 
 ## The Unit of Work

@@ -14,8 +14,8 @@ being true.
 | Gate | What it pins | Where |
 | --- | --- | --- |
 | **Schema and record parity** | for every table, the columns SQLite reports equal the columns derived from its record; a second test fails if a table has no mapping, or a mapping has no table | `tests/test_schema_parity.py` |
-| **Public API** | the exact, ordered exported names of `storage`, `storage.models` and `storage.artifacts`; every exception class in `storage.exceptions` is a public name; each re-export from `storage` is the same object as in its home package, not a copy | `tests/test_public_api.py` |
-| **Leaked resources** | an unclosed engine, connection or file fails the run | `filterwarnings` in `pyproject.toml` |
+| **Public API** | the exact, ordered exported names of `storage`, `storage.models` and `storage.artifacts`; every exception class in `storage.exceptions` is a public name; the records, vocabularies, artifact operations, exceptions and `get_artifacts_root` re-exported from `storage` are the same objects as in their home packages, not copies | `tests/test_public_api.py` |
+| **Leaked resources** | an unclosed engine, connection or file fails the run (an unclosed SQLite connection only from Python 3.13 on) | `filterwarnings` in `pyproject.toml` |
 | **Disk boundary** | only the [filesystem gateway](artifacts.md#filesystem-gateway) touches the disk | `tests/artifacts/test_disk_boundary_gate.py` |
 | **Windows long paths** | every artifact operation works on paths beyond 260 characters | `tests/artifacts/test_long_paths.py` |
 | **Isolated artifacts root** | no artifact test writes under the user's real artifacts root | `tests/artifacts/conftest.py` |
@@ -37,7 +37,8 @@ the [public API](index.md#public-api).
 ### Leaked resources
 
 pytest turns `ResourceWarning` and unraisable-exception warnings into errors, so
-an unclosed engine or file fails the run. The dev extras require pytest 8.4 or
+an unclosed engine or file fails the run. SQLite reports an unclosed connection
+only from Python 3.13 on, so that case passes on 3.11. The dev extras require pytest 8.4 or
 later, which collects garbage at the end of the session, so a leak found that
 late still fails.
 

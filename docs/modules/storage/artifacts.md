@@ -158,15 +158,15 @@ an exception, or returned to a caller are in the ordinary form, without it.
 
 ## Kinds { #kinds }
 
-Storage does not define artifact kinds: `kind` is free text, and storage only
-compares it when it deduplicates a save. [Core](../core/index.md) writes four:
+Storage does not define artifact kinds: `kind` is free text, and storage
+compares it only to deduplicate a save and to count artifacts of a kind. [Core](../core/index.md) writes four:
 
 | Kind | Level | Critical | What it holds |
 | --- | --- | --- | --- |
 | `execution_trace` | analysis | yes | the trace of requests the original run sent |
 | `replay_trace` | run | no | the trace a replay sent |
-| `report_json` | run | set by core | the run's JSON report |
-| `report_html` | run | set by core | the run's HTML report |
+| `report_json` | run | no | the run's JSON report |
+| `report_html` | run | no | the run's HTML report |
 
 ## Retention { #retention }
 

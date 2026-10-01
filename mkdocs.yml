@@ -169,6 +169,7 @@ nav:
           - Storage:
               - Overview: modules/storage/index.md
               - Data model: modules/storage/data-model.md
+              - Errors: modules/storage/errors.md
               - Decision records:
                   - Overview: modules/storage/adr/index.md
                   - Foundations: modules/storage/adr/foundations.md

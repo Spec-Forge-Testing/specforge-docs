@@ -48,7 +48,7 @@ flowchart TD
 | Unified → engine input | `core/` fuzz adapter (`endpoints_to_compiler_input`) | `compile_strategies` | [`CompilerInput` / `EndpointSpec`](../modules/specforge-engine/strategy-compiler.md) | the engine's `policy` layer validates each `EndpointSpec` |
 | Compile → run | `specforge_engine.compile_strategies` | `specforge_engine.run` | [`EngineInput`](../modules/specforge-engine/engine-internals.md) | `compile_strategies` (translation only; never re-validates) |
 | Run → result | `specforge_engine.run` | `core/` persistence | [`EngineRunResult`](../modules/specforge-engine/index.md#the-public-facade) (the `findings` union, the terminal `status`, and the [`ExecutionTrace`](../modules/specforge-engine/index.md#reproducibility)) | the engine emits it; the run's abort policy watches target-failure categories |
-| Result → storage | `core/` persistence service | `storage` repositories | [`RunRecord` + trace artifact](../modules/storage/data-model.md#data-models-dtos) | one transaction per composed write (project → analysis → run) |
+| Result → storage | `core/` persistence service | `storage` repositories | [`RunRecord` + trace artifact](../modules/storage/data-model.md#runs) | one transaction per composed write (project → analysis → run) |
 | Storage → replay | `storage` (recorded trace) | `specforge_engine` replay mode | [`ExecutionTrace`](../modules/specforge-engine/index.md#reproducibility) | replay checks the trace is replayable before sending, then compares recorded vs observed status per request |
 
 The hierarchy `storage` writes is **project → analysis → run**: an *analysis* is the replayable

@@ -169,7 +169,7 @@ what each cause means and how it is derived.
 
 `run.truncation` and `run.status`/`run.fidelity` read from the same columns
 `history` and `inspect --run <id>` already show; see the
-[data model](../modules/storage/data-model.md) for `RunRecord`'s full field list and
+[data model](../modules/storage/data-model.md#runs) for `RunRecord`'s full field list and
 the closed status vocabulary.
 
 ## Machine output: `--json-output`

@@ -23,8 +23,8 @@ it governs. A number missing here belongs to another module.
 
 | File | Area | Covers |
 | --- | --- | --- |
-| [core.md](core.md) | the headless core | Unprobed reasons, dependency gateways, the busy guard, cancelled-run evidence |
-| [protocol.md](protocol.md) | the wire | How fixtures are captured, how versions are matched |
+| [core.md](core.md) | the headless core | Unprobed reasons, dependency gateways, the busy guard, cancelled-run evidence, oracle scope, breached-run evidence |
+| [protocol.md](protocol.md) | the wire | How fixtures are captured, how versions are matched, one name and `null` for every reader |
 
 ## Full index
 
@@ -36,3 +36,6 @@ it governs. A number missing here belongs to another module.
 | [ADR-072](core.md#adr-072) | core | A cancelled run keeps and persists its evidence |
 | [ADR-073](protocol.md#adr-073) | protocol | Protocol fixtures are captured, not written |
 | [ADR-074](protocol.md#adr-074) | protocol | Protocol versioning by exact equality, not negotiation |
+| [ADR-085](protocol.md#adr-085) | protocol | Every reader of a run says the same thing under the same name |
+| [ADR-087](core.md#adr-087) | core | A run declares its oracle scope, and a comparison across scopes is inconclusive |
+| [ADR-088](core.md#adr-088) | core | A run that breached the safety guard is persisted with its evidence |

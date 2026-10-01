@@ -168,6 +168,8 @@ nav:
           - Contracts (shared kernel): modules/contracts/index.md
           - Storage:
               - Overview: modules/storage/index.md
+              - Transactions: modules/storage/transactions.md
+              - Repositories: modules/storage/repositories.md
               - Data model: modules/storage/data-model.md
               - Errors: modules/storage/errors.md
               - Decision records:

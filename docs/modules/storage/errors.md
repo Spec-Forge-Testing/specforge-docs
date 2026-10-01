@@ -81,7 +81,8 @@ Three things are deliberately left untranslated:
 ## Catching
 
 Catch `StorageError` once, at the boundary where your code meets storage: a composed write
-that fails anywhere rolls back as a whole, so there is nothing to clean up per step. Below
+that fails anywhere rolls back as a whole (see [transactions](transactions.md)), so there is
+nothing to clean up per step. Below
 that boundary, act only on the subclasses that change what a reader can show:
 
 | Catch | When it is actionable |

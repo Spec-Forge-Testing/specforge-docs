@@ -136,6 +136,7 @@ nav:
                   - Handshake and versioning: modules/core/protocol/handshake.md
                   - Events and cancellation: modules/core/protocol/events.md
                   - Operations: modules/core/protocol/operations.md
+                  - Result vocabularies: modules/core/protocol/vocabularies.md
                   - Errors: modules/core/protocol/errors.md
                   - Fixtures: modules/core/protocol/fixtures.md
               - Decision records:

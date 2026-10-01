@@ -47,7 +47,11 @@ contract must also be loaded — which implies a project).
 
 `run_pipeline` frames each stage with `stage_started` / `stage_finished` over
 `contract` / `static_analysis` / `inference` / `execution`, and a stage ends
-`completed` / `failed` / `skipped` / `stopped`.
+`completed` / `failed` / `skipped` / `stopped`. The execution stage's status
+follows the run: a run that breached the safety guard ends it `failed`, a
+cancelled one `stopped`. The pipeline's own status ranks a breach over a stop
+request, and a stop request over a failure (see
+[stage status](vocabularies.md#stage-status)).
 
 ## `results`
 

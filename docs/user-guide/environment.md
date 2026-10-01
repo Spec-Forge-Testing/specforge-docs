@@ -11,8 +11,11 @@ carry the same key, `.env.local` wins.
 | --- | --- | --- | --- |
 | `SPECFORGE_THEME` | shell | `default` | Selects the UI color theme at startup. Valid values: `default`, `mono`, `nord`, `dracula`, `solarized`, `matrix`. An unknown name falls back to `default`. You can also switch it live with the `theme` command. |
 | `SPECFORGE_SYSTEM_COMMANDS` | shell | enabled | Controls the `!` shell-escape. Set it to a falsy value (`0`, `false`, `no`, `off`, case-insensitive) to disable running system commands from the REPL — useful in CI. Any other value, or unset, leaves it enabled. |
-| `CORETEST_DB_PATH` | shell | `data/coretest.db` | Path to the SQLite database that stores projects, analyses and runs. |
-| `CORETEST_ARTIFACTS_ROOT` | shell | `data/artifacts` | Root folder for on-disk artifacts (reports and trace files). |
+| `SPECFORGE_DATA_DIR` | shell | `<repo>/data` in a source checkout, otherwise the platform's user data directory | The data directory, where the database and the artifacts live unless the two variables below point elsewhere. |
+| `CORETEST_DB_PATH` | shell | `coretest.db` in the data directory | Path to the SQLite database that stores projects, analyses and runs. Takes precedence over `SPECFORGE_DATA_DIR`. |
+| `CORETEST_ARTIFACTS_ROOT` | shell | `artifacts/` in the data directory | Root folder for on-disk artifacts (reports and trace files). Takes precedence over `SPECFORGE_DATA_DIR`. |
+
+See [where the data lives](../modules/storage/index.md#where-the-data-lives) for how the data directory is resolved.
 
 ## LLM configuration
 

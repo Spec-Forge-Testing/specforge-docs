@@ -36,9 +36,9 @@ The guard is off by **policy**, not by engine stability:
 `ExecutionConfig.allow_side_effects` (default `False`, set by the CLI's
 `--allow-side-effects`) lifts it and probes every endpoint.
 
-A held endpoint is not dropped from the accounting. `record_held_endpoints`
+A held endpoint is not dropped from the accounting. `record_safety_partition`
 folds each one into `RunStats.by_endpoint` as a zero-request `EndpointStats`
-whose `held_back_by` names the flag that held it (empty for a probed endpoint),
+whose `held_back_by` names the flag that held it (`None` for a probed endpoint),
 so the report, the storage row and the live summary all show which endpoints the
 run declined to touch and why.
 

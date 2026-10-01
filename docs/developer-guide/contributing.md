@@ -87,3 +87,59 @@ counting are needed.
 Semantic-inference integration tests are marked `@pytest.mark.integration` and do
 not run in GitHub Actions by default. Storage unit tests can use
 `StorageEngine(db_path=":memory:")` to share one in-memory database connection.
+
+## Continuous integration { #continuous-integration }
+
+GitHub Actions runs three workflows on every pull request to `main` and on every
+push to it. **Tests** (`tests.yml`) runs one job per module suite. **Lint**
+(`lint.yml`) runs `poe lint` once for the whole monorepo, on Ubuntu with Python
+3.11 and the pinned toolchain of `requirements-lint.txt`. **Protocol**
+(`protocol.yml`) validates the protocol fixtures against the envelope schema with
+`python protocol/validate.py`, also on Ubuntu with Python 3.11.
+
+Each test job installs its module with `pip install -e .[dev]` from the module
+directory, plus the sibling packages it imports, then runs pytest with a coverage
+floor. Jobs run on Ubuntu with Python 3.11 unless the table says otherwise.
+
+| Job | Runs on | Python | What it runs | Gate |
+|---|---|---|---|---|
+| `core` | Ubuntu | 3.11 | `core` suite, with `contracts`, `contract_assembly`, `core_ast`, `specforge_engine` and `storage` installed | coverage ≥ 90 % |
+| `core_ast` | Ubuntu | 3.11 | `lib/core_ast` suite | coverage ≥ 75 % |
+| `specforge_engine` | Ubuntu | 3.11 | `mypy src/specforge_engine`, then the suite | mypy clean, coverage ≥ 75 % |
+| `semantic_inference` | Ubuntu | 3.11 | `pytest -m "not integration"` | coverage ≥ 75 % |
+| `contract_assembly` | Ubuntu | 3.11 | `lib/contract_assembly` suite | coverage ≥ 75 % |
+| `storage_engine` | Ubuntu | 3.11 | `lib/storage` suite | coverage ≥ 75 % |
+| `llm` | Ubuntu | 3.11 | `pytest -m "not integration"` | coverage ≥ 75 % |
+| `storage_engine (windows)` | Windows | 3.11 | `lib/storage` suite | coverage ≥ 75 % |
+| `storage_engine (python 3.14)` | Ubuntu | 3.14 | `lib/storage` suite | coverage ≥ 75 % |
+| `core (python 3.14)` | Ubuntu | 3.14 | `core` suite | coverage ≥ 90 % |
+
+The Windows job exercises the artifact store's extended-length path handling,
+which is Windows-specific.
+
+The two Python 3.14 jobs back the leak gate. Both `core` and `storage` turn
+leaked resources into test errors: their `filterwarnings` lists
+`error::ResourceWarning` and `error::pytest.PytestUnraisableExceptionWarning`,
+and their dev extras require `pytest>=8.4`, which collects garbage at the end of
+the session so a leak found there still fails the run. An
+unclosed SQLite connection only surfaces as a warning on Python 3.13 and later;
+on 3.11 the filter catches other unclosed resources but not connections, and the
+3.14 jobs are where a leaked connection fails CI.
+
+Integration tests are not part of any job; see [Test scope](#test-scope).
+
+### Finding a leak
+
+The error is raised wherever the garbage collector finalizes the resource, which
+can be a later, unrelated test or the end of the session rather than the test
+that leaked it. To find the line that opened it, run the suspect file from the module
+directory with the warning downgraded to a report and allocation tracing on:
+
+```bash
+cd lib/storage   # or core
+python -X tracemalloc=10 -m pytest -W default::ResourceWarning tests/<path>/test_<area>.py
+```
+
+The run does not stop at the leak; pytest prints each `ResourceWarning` in its
+warnings summary with the allocation traceback of a leaked connection or file, up to
+ten frames deep, so the line that opened it is in the output.

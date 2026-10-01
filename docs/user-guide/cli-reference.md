@@ -665,10 +665,7 @@ unexpectedly.
     The run listing is where the model pays off: an **original** run (`●`) is
     visually distinct from a **replay** (`↺`), and a run whose counters would
     mislead if compared against another's carries a **not-comparable mark** with
-    its reason — `truncated` (it stopped early against its own limits, so its counters
-    are a budget prefix), `aborted` (a fault stopped it: the target stopped responding,
-    or a state link could not be honored), `reduced fidelity` (the replay ran against a
-    changed environment), or an unknown status vocabulary from an older database.
+    its reason (see the [comparability values](../modules/core/protocol/vocabularies.md#comparability)).
 
     `--status`, `--since <YYYY-MM-DD>` (UTC), `--endpoint <path>` ("runs that
     exercised this endpoint") and `--limit <n>` filter the run listing and require
@@ -854,10 +851,8 @@ unexpectedly.
     - **possibly resolved** — found only in `--before`, and nothing taints the
       comparison.
     - **inconclusive** — found only in `--before`, but a caveat taints
-      `--after` or the pair itself: a different engine version, a different
-      spec revision, or either run being `truncated`, `aborted` or of
-      **reduced fidelity** — the same not-comparable signal `history` and
-      `inspect` already show.
+      `--after` or the pair itself (see the
+      [comparison caveats](../modules/core/protocol/vocabularies.md#caveats)).
 
     A fresh appearance is never downgraded by a caveat — it is reported as
     **new** regardless — and the diff is never blocked by a caveat either: it
@@ -928,7 +923,10 @@ reference is a REPL command and has no `specforge <command>` form.
 `fuzz` accounts for every endpoint the spec declares, not only the ones that ran.
 Each falls into exactly one of three buckets: **targeted** (selected and
 compiled), **excluded** (selected, but the compiler rejected it, and says why),
-or **filtered** (never selected, by `--endpoint`/`--method`). The close line
+or **filtered** (never selected, by `--endpoint`/`--method`). A fourth
+disposition, **reached by transition**, counts the endpoints the spec never
+declared that a stateful transition reached; they are never part of the declared
+count. The close line
 names the partition — `Fuzzed 87 of 88 declared endpoint(s) (1 excluded)` — with
 the excluded endpoints and their reasons listed under it, capped so a large
 corpus doesn't flood the close. A selection that compiles nothing at all never
@@ -974,8 +972,8 @@ captures the document and nothing else.
 The envelope is the same shape for every command and every outcome:
 
 ```json
-{"schema_version": "1.11", "command": "fuzz", "status": "ok", "data": { ... }, "error": null, "warnings": []}
-{"schema_version": "1.11", "command": "fuzz", "status": "error", "data": null, "error": {"code": "...", "message": "..."}, "warnings": []}
+{"schema_version": "1.13", "command": "fuzz", "status": "ok", "data": { ... }, "error": null, "warnings": []}
+{"schema_version": "1.13", "command": "fuzz", "status": "error", "data": null, "error": {"code": "...", "message": "..."}, "warnings": []}
 ```
 
 `status` is `ok` or `error`, never both, and every key is present regardless

@@ -2,7 +2,8 @@
 
 Part of the [Core decision records](index.md). Decisions about the headless
 core: how a run explains an endpoint it did not probe, how optional libraries
-are owned, how the busy guard is scoped, and what a cancelled run keeps.
+are owned, how the busy guard is scoped, what a cancelled or a safety-breached
+run keeps, and how a run's oracle scope bounds a comparison.
 
 ---
 
@@ -124,3 +125,89 @@ Ctrl+C destroy evidence the user paid for.
 
 `inspect` and `report` show what a cancelled run reached; `compare` and the
 signal treat it as incomplete-but-real.
+
+---
+
+## ADR-087 — A run declares its oracle scope, and a comparison across scopes is inconclusive { #adr-087 }
+
+**Status:** accepted · `services/compare/rules.py`, `services/persistence/mapper.py`; engine `EngineRunResult.oracle_scope`
+
+### Context
+
+Not every run judges its responses with the same oracles. A replay re-sends a
+recorded trace and applies only the checks that need no contract, such as the
+server-error one. Comparing its defects against a run judged by the full
+contract would report as `possibly_resolved` every contract violation the replay
+simply did not look for.
+
+### Decision
+
+The engine result states which oracles judged the run: `oracle_scope` is
+`contract` unless the mode says otherwise, and the replay runner sets
+`contract_free`. The core copies it onto every run it persists, original or
+replay, and the run record requires it: the column has no default and the store
+rejects any value outside the two. `compare_runs` adds the pair caveat
+`oracle_scope_differs` when the two scopes differ; like every pair caveat, it
+turns a defect missing from the later run into `inconclusive` instead of
+`possibly_resolved`.
+
+### Rejected
+
+Inferring the scope from the run's origin, replay or original: it ties a fact
+about judging to a fact about provenance, and a mode that judges without the
+contract without being a replay would be misread. A nullable column, or one with
+a default: a write path that forgot the scope would record `contract` silently,
+and the comparison would trust it.
+
+### Consequences
+
+Every run carries its scope in `list_runs`, `get_run` and the report document
+(values in [`run.oracle_scope`](../protocol/vocabularies.md#oracle-scope)); a
+cross-scope comparison says so with its own
+[caveat](../protocol/vocabularies.md#caveats) instead of guessing. The engine
+keeps `contract` as its default, so a new mode that judges without the contract
+must set the scope itself; the store guarantees only that every run states one.
+
+---
+
+## ADR-088 — A run that breached the safety guard is persisted with its evidence { #adr-088 }
+
+**Status:** accepted · `services/fuzz/runner.py`, `controllers/execution.py`, `services/history/rules.py`
+
+### Context
+
+The safety guard holds back routes a run must not exercise: a route flagged as a
+write or as having external side effects, in a mode that holds that flag, or a
+follow-up outside the run whose method is not a safe one. If
+requests still reach one of them, the engine fails loud: it raises
+`SafetyGuardBreachError` naming the held routes that were reached and how many
+requests reached them, with the run's result attached and marked
+`safety_breached`. Treating that error as a failure would discard the run's
+findings, its stats and the proof of which held routes were hit — exactly what
+the user needs to see.
+
+### Decision
+
+The core catches the breach, takes the attached result and persists the run
+like any other, with the stored status `safety_breached`. The operation that ran
+it answers `status` `safety_breached`. Inside `run_pipeline`, the execution stage
+ends `failed` and the pipeline answers `safety_breached`: a breach outranks a
+cancellation, which outranks a failure. The run's comparability is
+`safety_breached`.
+
+### Rejected
+
+A failed, unpersisted run, which loses the evidence. Recording it as
+`completed`, which hides the breach behind a clean status. Storing it as
+`failed`: a failed run is by definition one that never reached persistence, so
+the stored vocabulary keeps `failed` out.
+
+### Consequences
+
+History, `inspect` and the report show the breach and what the run gathered;
+`compare_runs` treats the run as not comparable and names the reason. This is
+the sibling of [ADR-072](#adr-072): a run that stops abnormally keeps its
+evidence, and its status says why. The cost is one more terminal value every
+frontend branches on, in [`run.status`](../protocol/vocabularies.md#run-status),
+[operation status](../protocol/vocabularies.md#operation-status) and
+[comparability](../protocol/vocabularies.md#comparability).

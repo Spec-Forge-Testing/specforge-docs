@@ -38,18 +38,18 @@ which one framed the event.
 | `kind` | Class | Own fields | When |
 | --- | --- | --- | --- |
 | `started` | fact | `operation` (+ operation-specific fields) | An operation begins |
-| `finished` | fact | `operation`, `status`, and operation-specific fields | An operation ends |
+| `finished` | fact | `operation`, `status` (`completed`, `cancelled`, `failed` or `safety_breached`; see [operation status](vocabularies.md#operation-status)), and operation-specific fields | An operation ends |
 | `endpoint_started` | fact | `endpoint` (ref), `index`, `total` | An endpoint begins |
 | `phase_started` | fact | `endpoint` (ref), `phase` | A phase changes within the endpoint |
 | `tick` | state | `elapsed_s` always; other counters optional | Absolute counters, ≤10/s |
 | `finding` | fact | `endpoint` (ref), `status`, `invariant`, `phase` | A finding is confirmed |
 | `infra_failure` | fact | `endpoint` (ref), `reason`, `streak`, `limit` | A timeout or transport failure |
-| `target_down` | fact | `base_url`, `reason` | The liveness probe ruled the API down |
+| `target_down` | fact | `base_url`, `reason` | The run concluded the API is down: a liveness probe failed, or every circuit breaker opened; `reason` says which |
 | `truncated` | fact | `endpoint` (ref), `reason` | Cut short by budget |
 | `endpoint_resolved` | fact | `endpoint` (ref) | An endpoint's static analysis resolved |
 | `endpoint_failed` | fact | `endpoint`, `code`, `reason` | An endpoint's static analysis failed |
 | `stage_started` | fact | `stage` | A pipeline stage begins |
-| `stage_finished` | fact | `stage`, `status` | A pipeline stage ends |
+| `stage_finished` | fact | `stage`, `status` (`completed`, `failed`, `skipped` or `stopped`; for the execution stage it follows the run: `failed` for a breached run, `stopped` for a cancelled one; see [stage status](vocabularies.md#stage-status)) | A pipeline stage ends |
 
 `finding` speaks the report's own vocabulary — `endpoint`, `status`, `invariant`
 and `phase` are exactly what identifies a defect in the persisted report — so a

@@ -4,7 +4,7 @@
 refused `HANDSHAKE_REQUIRED`.
 
 ```json
-{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.1.3"}}
+{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.1.5"}}
 ```
 
 The response carries the protocol version, the server's identity, what this
@@ -12,7 +12,7 @@ build can do, and the whole operation catalog:
 
 ```json
 {"jsonrpc":"2.0","id":1,"result":{
-  "protocol_version":"0.1.3",
+  "protocol_version":"0.1.5",
   "server":{"name":"specforge-core","version":"…","frozen":false},
   "capabilities":{…},
   "catalog":{…}
@@ -48,6 +48,34 @@ detects **EOF on stdin** and exits on its own.
 
 ## Changelog
 
+- **0.1.5** — Every reader of a run says the same thing under the same name.
+  Breaking for a frontend that reads the renamed keys or relies on absences: an
+  analysis's `repo_hash` is `generated_against_repo_hash` in `list_analyses`,
+  `get_analysis` and `get_run`; in the report document an endpoint's
+  `crash_count` is `findings_confirmed` and an unconfirmed finding's
+  `occurrences` is `represented_findings`. A missing fact is `null`, never `""`:
+  the report's `held_back_by` and `unprobed_reason`; in `get_run`, an endpoint's
+  `load_profile` is a list of steps (`[]` when no concurrency ladder ran) and a
+  crash's `transition_sequence` is `null` for a crash a stateless run found (a
+  stateful crash keeps a list, `[]` on its first step), instead of `[]`.
+  Added: a per-endpoint `truncation` (`{reason, detail}`) in `get_run` and the
+  report; `run.oracle_scope`; coverage's `reached_by_transition` and
+  `reached_by_transition_endpoints`. In `compare_runs`, each caveat carries
+  `detail` beside `reason`, and `reason` is always a token of the
+  [result vocabularies](vocabularies.md#caveats), with `oracle_scope_differs`
+  and `safety_breached` new. A run that reached a route the safety guard held
+  back is stored as `safety_breached`; the operation and its `finished` event
+  answer `safety_breached`, and `run_pipeline`'s execution stage ends `failed`
+  (`stopped` when cancelled), live and in the reply. The report document is
+  `schema_version` 1.13.
+- **0.1.4** — Additive: nothing is removed or renamed, but `hello` must say
+  0.1.4. In `list_runs` and `get_run`, a run's `truncation` gains `detail` and
+  `target_down_verdict`; in `get_run`, each endpoint gains `by_category` and
+  `held_back_transitions`; in `get_run` and `get_finding`, an unconfirmed finding
+  gains `body_fingerprint` (`""` means the response had no body). The report
+  document is `schema_version` 1.12. `target_down`'s description names both ways
+  a run concludes the API is down: a failed liveness probe, or every circuit
+  breaker open.
 - **0.1.3** — `finding` catches up with what the engine knows while a run is in
   flight. Breaking for a frontend that reads `finding`: `finding_id` and
   `severity` are gone (neither has an honest source before a run is persisted),

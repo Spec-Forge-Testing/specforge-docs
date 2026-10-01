@@ -1,297 +1,298 @@
-# Storage Engine — Data model
+# Data model
 
-`lib/storage` is the persistence layer for the Spec Forge pipeline. It turns the
-tool into an auditable, centralized, traceable platform.
+Storage keeps its data in ten SQLite tables, declared in `schema.sql`, and exposes each one
+as a frozen pydantic record. A record's fields are exactly its table's columns, in order: the
+repository derives its column list from the record, and a test compares that list with the
+columns SQLite reports. So each table below documents the schema and the record at once.
 
-The engine manages a **SQLite** database inside the application directory
-(`llm-pbt-agent/data/coretest.db`) organized around the **project → analysis → run**
-hierarchy: an analysis is the replayable recipe (already-resolved contracts, a
-recorded execution trace), and each run is one execution of that recipe — either
-the original one, which generates and records it, or a later replay that resends it
-as-is.
-
-## Architecture (Repository pattern)
-
-1. **`StorageEngine` (`db.py`)** — its only job is connecting to SQLite, configuring
-   safety settings (e.g. enabling foreign keys), and initializing tables from the
-   plain `schema.sql` file.
-2. **Repositories (`repositories/`)** — one DAO per entity, fully encapsulating
-   parametrized SQL (`INSERT`, `SELECT`) to shield the database against injection.
-   They never commit on their own — the transaction owner does.
-3. **DTOs (`models.py`)** — everything entering or leaving the engine is validated
-   through immutable Pydantic models.
-4. **Domain exceptions (`exceptions.py`)** — any persistence failure raises a
-   handleable domain error (e.g. `RunNotFoundError`) instead of a raw SQLite driver
-   exception.
-
-### Schema evolution
-
-`schema.sql` is the single source of truth for the database shape and is edited in
-place — there is no migration mechanism. The schema is applied with
-`CREATE TABLE IF NOT EXISTS`, which never adds columns to an existing table, so the
-engine stamps a fingerprint of `schema.sql` into SQLite's `user_version` and refuses
-to open a file built from a different one (`SchemaMismatchError`). The refusal happens
-when the engine is constructed, before any run executes — never inside a persistence
-transaction after a run: **delete `data/coretest.db` and let the engine recreate it.**
-Local databases are disposable development artifacts.
-
-### Engine lifecycle
-
-`StorageEngine` closes deterministically: `close()` is idempotent, the engine is a
-context manager (`with StorageEngine(...) as engine:`), and a closed engine rejects
-any further use — memory- or file-backed alike — with a typed `EngineClosedError`
-instead of silently reconnecting.
-
-## Transactional boundary (Unit of Work)
-
-A composed write spans several tables — `project → analysis → analysis_endpoints →
-run → run_metrics → run_endpoint_stats → findings → artifact`. Persisting a run
-is one such write, and it must be **all-or-nothing**: a failure halfway through cannot
-leave a partial or orphaned analysis behind. `StorageEngine` provides that boundary as
-a transaction-scoped **Unit of Work**.
-
-`engine.transaction()` is a context manager (SQLAlchemy `engine.begin()` semantics) that
-owns **one** connection and **one** transaction, and yields a `UnitOfWork` whose
-repositories are already bound to it:
-
-```python
-with engine.transaction() as uow:
-    project = uow.projects.get_or_create(name="demo", repo_path="/repos/demo")
-    analysis_id = uow.analyses.create(project_id=project.id, ...)
-    run_id = uow.runs.create(analysis_id=analysis_id, ...)
-    uow.run_metrics.create(run_id=run_id, ...)
-    # ... every write shares the same connection
+```mermaid
+erDiagram
+    projects ||--o{ analyses : "groups"
+    analyses ||--o{ analysis_endpoints : "declares"
+    analysis_endpoints ||--o| analysis_endpoint_contracts : "enriched by"
+    analyses ||--o{ runs : "executed by"
+    runs ||--o| run_metrics : "totals"
+    runs ||--o{ run_endpoint_stats : "measures"
+    analysis_endpoints ||--o{ run_endpoint_stats : "measured in"
+    runs ||--o{ findings : "records"
+    analysis_endpoints |o--o{ findings : "located at"
+    runs ||--o{ run_producer_exclusions : "drops"
+    analyses |o--o{ artifacts : "recipe files"
+    runs |o--o{ artifacts : "run files"
 ```
 
-The `with` block *is* the transaction — there is no `uow.commit()`:
+Deleting a parent row deletes its children (`ON DELETE CASCADE`), with one exception: deleting
+an analysis endpoint keeps its findings and sets their `analysis_endpoint_id` to NULL
+(`ON DELETE SET NULL`). The schema and every connection turn on `PRAGMA foreign_keys`.
 
-- **Clean exit → commit.** Every write in the block is committed at once.
-- **Any exception → rollback.** The whole block is rolled back and the error re-raised.
-- **Connection lifecycle.** A file database gets a fresh connection that is **closed**
-  on exit (fixing a per-call leak); the shared `:memory:` connection is reused and
-  **never** closed.
+## Conventions
 
-Repositories bound to a `UnitOfWork` do not commit — the block decides. Every
-multi-table producer should write through this boundary.
+- **One record per table.** Frozen, rejects unknown fields, built from a row. The database assigns
+  `id`, `analyses.created_at` and `runs.executed_at`: a record passed to `create()` leaves them `None`.
+- **Structured data is JSON text.** A column holding a list or a map is `TEXT` with
+  serialized JSON, and its record field says so. Storage never parses it.
+- **A missing fact is NULL.** `run_endpoint_stats` never stores an empty JSON list or object.
+- **No secondary indexes.** Only those SQLite creates for primary keys and UNIQUE constraints.
+- **Booleans are integers.** `is_original`, `critical`, `compressed`: `0`/`1`, a `bool` in the record.
 
-The design also rejects the heavier alternatives on purpose: a full Fowler Unit of Work
-(identity map + change-tracking) is over-engineering for immediate `INSERT`s, a dual
-`engine | connection` constructor reintroduces a hidden mode, and an engine-held "active
-connection" would be hidden, non-thread-safe mutable state.
+## Tables
 
-## Data Models (DTOs)
+### `projects` — `ProjectRecord` { #projects }
 
-??? "`ProjectRecord` - **The root record**: which repository a set of analyses belongs to."
+The root of the hierarchy: the repository a set of analyses belongs to.
 
-      | Field | Type | Description |
-      |---|---|---|
-      | `id` | `int` | Auto-incrementing primary key. |
-      | `name` | `str` | Human-readable project name. |
-      | `repo_path` | `str` | Repository path on disk. |
+| Column | Type | Null | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `id` | INTEGER | no | — | Primary key, assigned by the database. |
+| `name` | TEXT | no | — | Human-readable project name. |
+| `repo_path` | TEXT | no | — | Filesystem path to the project's repository. |
 
-??? "`AnalysisRecord` - **The replayable recipe**: resolved contracts, strategy mode, and execution config."
+Constraints: `UNIQUE (name, repo_path)`.
 
-      | Field | Type | Description |
-      |---|---|---|
-      | `id` | `int` | Auto-incrementing primary key. |
-      | `project_id` | `int` | Foreign key to `ProjectRecord.id`. |
-      | `created_at` | `datetime` | When the analysis was created. |
-      | `label` | `str \| None` | Optional human-readable label. |
-      | `generated_against_repo_hash` | `str` | Hash of the repo the trace was generated against. |
-      | `strategy_mode` | `str` | Hypothesis strategy mode used to generate it. |
-      | `execution_mode` | `str` | How the trace was generated: `stateless`, `stateful`, `performance`, `resilience` or `auth`. |
-      | `execution_options` | `str \| None` | The effective options of that execution mode, serialized as JSON; `NULL` for a mode with no options. Every mode's options are stored here (previously only a stateful run stored its config). |
-      | `execution_config` | `str` | Execution config as JSON (headers already sanitized). |
-      | `engine_version` | `str \| None` | Engine version that produced the analysis (provenance only). |
+### `analyses` — `AnalysisRecord` { #analyses }
 
-??? "`AnalysisEndpointRecord` - A **filterable summary** of which endpoints an analysis targets."
+The replicable recipe a run executes: resolved contracts, strategy and execution configuration.
 
-      | Field | Type | Description |
-      |---|---|---|
-      | `id` | `int` | Auto-incrementing primary key. |
-      | `analysis_id` | `int` | Foreign key to `AnalysisRecord.id`. |
-      | `method` | `str` | HTTP method (e.g. `GET`, `POST`). |
-      | `path` | `str` | URL (e.g. `/api/v1/users`). |
+| Column | Type | Null | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `id` | INTEGER | no | — | Primary key, assigned by the database. |
+| `project_id` | INTEGER | no | — | The project (`projects.id`). |
+| `created_at` | DATETIME | yes | `CURRENT_TIMESTAMP` | When the analysis was created; set by the database. |
+| `label` | TEXT | yes | — | An optional human-readable label. |
+| `generated_against_repo_hash` | TEXT | no | — | Repository hash the analysis, and its recorded trace, was generated against. |
+| `strategy_mode` | TEXT | no | — | The strategy mode the trace was generated with. |
+| `execution_mode` | TEXT | no | — | How the trace was generated: `stateless`, `stateful`, `performance`, `resilience` or `auth`. Replay is never an analysis's mode: a replay re-sends an existing analysis's trace. |
+| `execution_options` | TEXT | yes | — | The execution mode's effective options as JSON; NULL for a mode without options. |
+| `execution_config` | TEXT | no | — | The execution configuration as JSON, headers already sanitized. |
+| `engine_version` | TEXT | yes | — | Engine version that produced the analysis; provenance only. |
+| `contracts_hash` | TEXT | yes | — | Hash of the produced contracts, ordered by (method, path); NULL when the analysis is schema-only. |
+| `producer` | TEXT | yes | — | JSON provenance of the contract producer; NULL when the analysis is schema-only. |
 
-??? "`RunRecord` - A **run**: one concrete execution of an analysis."
+Constraints: none beyond the foreign key; `execution_mode` is not CHECKed.
 
-      | Field | Type | Description |
-      |---|---|---|
-      | `id` | `int` | Auto-incrementing primary key. |
-      | `analysis_id` | `int` | Foreign key to `AnalysisRecord.id`. |
-      | `executed_at` | `datetime` | When the run started. |
-      | `duration_ms` | `int \| None` | Total run duration, in milliseconds. |
-      | `executed_against_repo_hash` | `str` | Hash of the repo it actually ran against. |
-      | `status` | `str` | Final run outcome, from a closed vocabulary: `completed`, `truncated` (it met its own limits) or `aborted` (a fault stopped it: the target stopped responding, or a state link could not be honored). `failed` is reserved — a run that raises is never persisted. |
-      | `ordinal` | `int` | Position of the run within its analysis (1 = original). |
-      | `is_original` | `bool` | Whether this run generated and recorded the trace. |
-      | `fidelity` | `str \| None` | Replay fidelity: `exact` / `reduced`, or `NULL` for an original run (only a replay has a fidelity to report). |
-      | `truncation_reason` | `str \| None` | Why the run was cut short (engine reason token); `NULL` when it completed. |
-      | `truncation_endpoint_id` | `str \| None` | Endpoint being explored when the run was cut short; `NULL` when it completed. |
+### `analysis_endpoints` — `AnalysisEndpointRecord` { #analysis_endpoints }
 
-      `truncation_reason` and `truncation_endpoint_id` are set together or not
-      at all — enforced both by a schema `CHECK` and by a typed
-      `IncompleteTruncationError` raised before the write.
+Every endpoint the analysis declared, plus every undeclared one a run reached: a filterable
+summary, since the concrete values probed live in the recorded trace.
 
-??? "`RunMetricsRecord` - Aggregate **stats for a run**."
+| Column | Type | Null | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `id` | INTEGER | no | — | Primary key, assigned by the database. |
+| `analysis_id` | INTEGER | no | — | The analysis (`analyses.id`). |
+| `method` | TEXT | no | — | HTTP method, e.g. `GET`. |
+| `path` | TEXT | no | — | URL path, e.g. `/api/v1/users`. |
+| `disposition` | TEXT | no | — | The partition the endpoint fell in: one of the [coverage dispositions](../core/protocol/vocabularies.md#coverage). |
+| `exclusion_reason` | TEXT | yes | — | Why the compiler rejected the endpoint; set exactly when `disposition` is `excluded`. |
 
-      *No coverage columns yet — the engine doesn't emit that data.*
+Constraints: `UNIQUE (analysis_id, method, path)`; `disposition` CHECK in the four
+dispositions; `exclusion_reason` [paired](#paired-columns) with `excluded`.
 
-      | Field | Type | Description |
-      |---|---|---|
-      | `run_id` | `int` | Foreign key (and primary key) to `RunRecord.id`. |
-      | `total_requests` | `int` | Requests built during the run — whether sent or refused before sending; shrink re-sends are counted in `requests_shrink` instead. |
-      | `findings_raw` | `int` | Violations found during exploration, before shrinking. |
-      | `findings_confirmed` | `int` | Representatives that still reproduced after shrinking. |
-      | `findings_unique` | `int` | Distinct defects, equal to the count of confirmed rows in `findings` for this run. |
-      | `findings_flaky` | `int` | Representatives that failed to reproduce. |
-      | `findings_collapsed` | `int` | Findings never shrunk: a representative of their signature stood for them. Zero for modes without a shrink phase. |
-      | `findings_unverified` | `int` | Findings never attempted: the run was cut before shrinking, or the strategy could not produce a candidate. `findings_raw == findings_confirmed + findings_flaky + findings_collapsed + findings_unverified`. Zero for modes without a shrink phase. |
-      | `requests_shrink` | `int` | Requests the shrinking phase put on the wire; not part of `total_requests`. Zero for modes without a shrink phase. |
-      | `by_phase` | `str \| None` | Request breakdown by phase, as JSON. |
-      | `by_category` | `str \| None` | Request breakdown by error category, as JSON. |
+### `analysis_endpoint_contracts` — `AnalysisEndpointContractRecord` { #analysis_endpoint_contracts }
 
-??? "`RunEndpointStatsRecord` - Per-endpoint **detail of a run's stats**."
+One row per endpoint enriched with a produced contract; a schema-only endpoint has none. It
+hangs off the endpoint, not the run, because the enriched contract is part of the recipe.
 
-      | Field | Type | Description |
-      |---|---|---|
-      | `id` | `int` | Auto-incrementing primary key. |
-      | `run_id` | `int` | Foreign key to `RunRecord.id`. |
-      | `analysis_endpoint_id` | `int` | Foreign key to `AnalysisEndpointRecord.id`. |
-      | `requests` | `int` | Requests sent to this endpoint during the run. |
-      | `findings_raw` | `int` | Violations found for this endpoint, before shrinking. |
-      | `findings_confirmed` | `int` | Materialized count of this endpoint's confirmed rows in `findings` (not a copy). |
-      | `latency` | `LatencyRecord` | The endpoint's latency distribution, nested from seven flat columns. |
-      | `starved_identities` | `str \| None` | The identity labels this endpoint's budget could not fund, as a JSON list; `NULL` when every declared identity was funded. Only modes that split budget by identity ever populate it. |
-      | `undecided_rules` | `str \| None` | The ids of any declared rules the oracle evaluated here and could never decide, as a JSON list; `NULL` when none stayed undecidable. Only modes that account for them (`stateless`, `performance`) ever populate it. |
-      | `held_back_by` | `str \| None` | The risk flag the safety guard used to keep this endpoint out of the run (`external_side_effects` or `write_operation`); `NULL` when the endpoint was probed. A held endpoint's row records zero `requests`. |
-      | `unprobed_reason` | `str \| None` | Why a targeted endpoint that drew no requests was left unprobed: `declared_public` (a by-design public skip, complete evidence) or `access_undeclared` (no access policy was declared, so the run could not tell what to probe); `NULL` when the endpoint was probed or held back for another reason. |
-      | `load_profile` | `str \| None` | The concurrency-ladder steps a performance run measured at this endpoint, as a JSON list (`concurrency`, the step's `latency` distribution, and its `degraded` verdict); `NULL` when the run had no ladder. |
+| Column | Type | Null | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `id` | INTEGER | no | — | Primary key, assigned by the database. |
+| `analysis_endpoint_id` | INTEGER | no | — | The endpoint (`analysis_endpoints.id`). |
+| `contract_json` | TEXT | no | — | Canonical JSON of the fused `EndpointContract`. |
+| `contract_sha256` | TEXT | no | — | SHA-256 of `contract_json`. |
+| `kernel_version` | TEXT | yes | — | Version of the contracts kernel (`specforge-contracts`) that shaped the contract. |
 
-??? "`LatencyRecord` - An endpoint's **latency distribution**, in milliseconds."
+Constraints: `UNIQUE (analysis_endpoint_id)`.
 
-      Stored as seven flat `latency_*` columns on `run_endpoint_stats` and re-nested
-      into this value object on read. The engine emits zeros rather than absence, so
-      the columns are `NOT NULL DEFAULT 0`: `count` is what tells "no samples timed"
-      apart from genuinely zero latencies. Percentiles are nearest-rank (always an
-      observed sample, never interpolated).
+### `runs` — `RunRecord` { #runs }
 
-      | Field | Type | Description |
-      |---|---|---|
-      | `count` | `int` | Number of latency samples timed for this endpoint. |
-      | `min_ms` / `max_ms` / `mean_ms` | `float` | Extremes and mean, in milliseconds. |
-      | `p50_ms` / `p95_ms` / `p99_ms` | `float` | Nearest-rank percentiles, in milliseconds. |
+One execution of an analysis. The original run generates and records the trace, with
+shrinking; a replay re-executes that trace without generating anything new.
 
-??? "`FindingRecord` - A single **finding** of a run, confirmed or not."
+| Column | Type | Null | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `id` | INTEGER | no | — | Primary key, assigned by the database. |
+| `analysis_id` | INTEGER | no | — | The analysis this run executes (`analyses.id`). |
+| `executed_at` | DATETIME | yes | `CURRENT_TIMESTAMP` | When the run started executing; set by the database. |
+| `duration_ms` | INTEGER | yes | — | Total run duration, in milliseconds. |
+| `executed_against_repo_hash` | TEXT | no | — | Repository hash the run was actually executed against. |
+| `status` | TEXT | no | — | The materialized [run outcome](../core/protocol/vocabularies.md#run-status). `safety_breached` is not a cut: it records no truncation of its own. |
+| `oracle_scope` | TEXT | no | — | [Which oracles](../core/protocol/vocabularies.md#oracle-scope) judged the responses: the contract's, or only those that need none. |
+| `ordinal` | INTEGER | no | — | Position of the run within its analysis; `1` is the original. |
+| `is_original` | INTEGER | no | `0` | `1` for the run that generated and recorded the trace. |
+| `fidelity` | TEXT | yes | — | Replay fidelity, `exact` or `reduced`; NULL for an original run. |
+| `truncation_reason` | TEXT | yes | — | Why the run was cut short (an engine reason token); NULL when it was not. |
+| `truncation_endpoint_id` | TEXT | yes | — | The endpoint being explored when the run was cut short; NULL when it was not. |
+| `truncation_detail` | TEXT | yes | — | What happened when the run was cut short. |
+| `target_down_verdict` | TEXT | yes | — | How the target was ruled down (an engine verdict token). |
 
-      One row per finding of any `state`, written in the same transaction as its
-      run. Only a confirmed finding carries a reproducer: `status_code`,
-      `minimal_payload`, `sanitized_headers` and `response_body` are `NULL` for a
-      flaky or unverified one. The record's validator rejects a confirmed row
-      missing any of those four fields — a confirmed finding without its
-      reproducer is a contradiction in terms.
+Constraints: `UNIQUE (analysis_id, ordinal)`; `status` and `oracle_scope` CHECK in their
+[closed vocabularies](#closed-vocabularies); the truncation columns are [paired](#paired-columns).
 
-      `history` and `compare` read confirmed findings only. The run reports and
-      `inspect` also surface the flaky and unverified rows, as unconfirmed
-      findings — the signature and how often it was seen, with no reproducer to
-      show. `FindingsRepository.count_by_state(run_id)` tallies a run's rows by
-      state, so the persisted findings can be cross-checked against the
-      `run_metrics` counters.
+### `run_metrics` — `RunMetricsRecord` { #run_metrics }
 
-      | Field | Type | Description |
-      |---|---|---|
-      | `id` | `int` | Auto-incrementing primary key. |
-      | `run_id` | `int` | Foreign key to `RunRecord.id`. |
-      | `analysis_endpoint_id` | `int \| None` | Foreign key to `AnalysisEndpointRecord.id`; `None` if the finding spans several endpoints (stateful). |
-      | `method` / `path` / `phase` | `str` | Identity of the request that triggered the finding, and its phase (valid/boundary/invalid/attack/mutation/semantic/transition). |
-      | `invariant_violated` | `str` | Which invariant was violated. |
-      | `state` | `str` | The finding's lifecycle outcome: `confirmed` / `flaky` / `unverified`. The engine owns the vocabulary; the column is free text. |
-      | `status_code` | `int \| None` | Status code of the failing response; `NULL` with no reproducer. |
-      | `minimal_payload` | `str \| None` | Minimal reproducible payload, as JSON; `NULL` with no reproducer. |
-      | `sanitized_headers` | `str \| None` | Headers as JSON, with secrets already redacted by the engine; `NULL` with no reproducer. |
-      | `response_body` | `str \| None` | Body of the failing response, with sensitive field values already redacted to `***` by the engine; `NULL` with no reproducer. |
-      | `stack_trace` | `str \| None` | Filled in later by the Auto-Fixer; the engine leaves it `None`. |
-      | `transition_sequence` | `str \| None` | Request chain as JSON, stateful findings only. |
-      | `represented_findings` | `int` | Raw findings this row stands for: itself, its unshrunk group mates and the duplicates it absorbed. Always 1 for stateful findings. |
-      | `identity_label` | `str \| None` | The identity the failing request was sent under; `None` when the run declared none. |
-      | `rule_id` | `str \| None` | The rule the finding broke: the business rule the contract declared for a `semantic_property` / `access_control` finding, or the invariant's own intrinsic rule for every other one. `None` only for a finding with no named rule. |
-      | `rule_description` | `str \| None` | Human-readable text for `rule_id`; `None` unless the finding is a confirmed crash that named a rule (a flaky/unverified finding stores the id only). |
+The aggregate counts of one run. Coverage is not stored here: a denominator is a `GROUP BY`
+over `analysis_endpoints` and `run_endpoint_stats`.
 
-??? "`ArtifactRecord` - A **recipe-level artifact** or a **report-level one**"
+| Column | Type | Null | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `run_id` | INTEGER | no | — | The run (`runs.id`), and the primary key: at most one row per run. |
+| `total_requests` | INTEGER | no | — | Requests the run attempted, including any that never left the client. |
+| `findings_raw` | INTEGER | no | — | Violations found during exploration, before shrinking. |
+| `findings_confirmed` | INTEGER | no | — | Findings that reproduced after shrinking. |
+| `findings_unique` | INTEGER | no | — | Distinct defects found; equal to the run's confirmed rows in `findings`. |
+| `findings_flaky` | INTEGER | no | — | Findings that did not reproduce after shrinking. |
+| `findings_collapsed` | INTEGER | no | `0` | Findings never shrunk because another with their signature was. |
+| `findings_unverified` | INTEGER | no | `0` | Findings never attempted: the run was cut before shrinking, or the strategy could not produce a candidate. |
+| `requests_shrink` | INTEGER | no | `0` | Requests the shrinking phase sent; not part of `total_requests`. |
+| `by_phase` | TEXT | yes | — | JSON breakdown of requests per phase. |
+| `by_category` | TEXT | yes | — | JSON breakdown of requests per error category. |
 
-      Belongs to exactly one of the two levels (analysis scope or run scope) — enforced
-      by a `CHECK` in the schema, not just by the repository.
+Constraints: none beyond the foreign key. The three defaulted counts are zero without a
+shrinking phase.
 
-      | Field | Type | Description |
-      |---|---|---|
-      | `id` | `int` | Auto-incrementing primary key. |
-      | `analysis_id` | `int \| None` | Set for analysis-level artifacts. |
-      | `run_id` | `int \| None` | Set for run-level artifacts. |
-      | `kind` | `str` | Artifact type: `execution_trace` at the analysis level; `report_json`/`report_html` at the run level (see [Run report](../../user-guide/reports.md)). |
-      | `path` | `str` | Path on disk. |
-      | `sha256` | `str` | Hash of the artifact's **logical** (uncompressed) content — the digest never changes when the file is compressed. |
-      | `size_bytes` | `int` | Size on disk, in bytes — a compressed artifact records its compressed size. |
-      | `critical` | `bool` | Whether losing it breaks reproducibility. `execution_trace` is critical; the report pair is not — both are derivable from the run's other persisted data. |
-      | `compressed` | `bool` | Whether it's stored gzipped on disk. Set by the retention pass, never by the producer — `save_artifact` always writes plain bytes. |
+### `run_endpoint_stats` — `RunEndpointStatsRecord` { #run_endpoint_stats }
 
-## On-disk artifact persistence (`artifacts/`)
+The per-endpoint detail of a run. The seven `latency_*` columns are the record's `latency`
+field, a [`LatencyRecord`](#value-objects), sampling only requests that reached the wire.
 
-Heavy artifacts (specs, reports) don't live inside SQLite: they're written as files, and the `artifacts` table only stores path, hash, and metadata. The `storage/artifacts/` package exposes a single public function, which takes the `UnitOfWork` so the index row joins the caller's transaction:
+| Column | Type | Null | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `id` | INTEGER | no | — | Primary key, assigned by the database. |
+| `run_id` | INTEGER | no | — | The run (`runs.id`). |
+| `analysis_endpoint_id` | INTEGER | no | — | The endpoint (`analysis_endpoints.id`). |
+| `requests` | INTEGER | no | — | Requests attempted against the endpoint, counted like `total_requests`. |
+| `examples_planned` | INTEGER | no | `0` | Examples the fuzzer planned for the endpoint, drawn or not; `requests` may exceed it. |
+| `findings_raw` | INTEGER | no | — | Violations found at the endpoint, before shrinking. |
+| `findings_confirmed` | INTEGER | no | `0` | Count of the endpoint's confirmed rows in `findings`. |
+| `latency_count` | INTEGER | no | `0` | `latency.count`: latency samples timed, so it can be lower than `requests`; `0` tells "nothing timed" apart from zero latencies. |
+| `latency_min_ms` | REAL | no | `0` | `latency.min_ms`: minimum latency, in milliseconds. |
+| `latency_max_ms` | REAL | no | `0` | `latency.max_ms`: maximum latency, in milliseconds. |
+| `latency_mean_ms` | REAL | no | `0` | `latency.mean_ms`: mean latency, in milliseconds. |
+| `latency_p50_ms` | REAL | no | `0` | `latency.p50_ms`: 50th percentile (nearest-rank). |
+| `latency_p95_ms` | REAL | no | `0` | `latency.p95_ms`: 95th percentile (nearest-rank). |
+| `latency_p99_ms` | REAL | no | `0` | `latency.p99_ms`: 99th percentile (nearest-rank). |
+| `starved_identities` | TEXT | yes | — | JSON list of the identity labels the budget could not fund here. |
+| `undecided_rules` | TEXT | yes | — | JSON list of the ids of declared rules evaluated here that the run could never decide. |
+| `held_back_by` | TEXT | yes | — | The risk flag that kept the safety guard from probing the endpoint; NULL when it was probed. |
+| `unprobed_reason` | TEXT | yes | — | Why the run's mode had nothing to probe here by design. |
+| `load_profile` | TEXT | yes | — | JSON list of the concurrency-ladder steps a performance run measured here. |
+| `by_category` | TEXT | yes | — | JSON object: error category → requests at this endpoint that ended in it. |
+| `held_back_transitions` | TEXT | yes | — | JSON object: follow-up endpoint id the safety guard kept from being sent → why. |
+| `truncation_reason` | TEXT | yes | — | Why this endpoint's own pass was cut short (an engine reason token); NULL when it ran to completion or the mode has no per-endpoint pass. |
+| `truncation_detail` | TEXT | yes | — | What happened when this endpoint's own pass was cut short. |
 
-```python
-from storage.artifacts import save_artifact
+Constraints: `UNIQUE (run_id, analysis_endpoint_id)`; `truncation_detail` only with a
+`truncation_reason`. A cancellation before the endpoint started is the run's cut, not its own.
 
-with engine.transaction() as uow:
-    record = save_artifact(
-        uow,
-        kind="report_html",
-        filename="report.html",
-        content=html_bytes,
-        run_id=run_id,  # or analysis_id= for recipe-level artifacts
-    )
-```
+### `findings` — `FindingRecord` { #findings }
 
-- **Two folders, not one**: `data/artifacts/analyses/<analysis_id>/` for recipe artifacts (`openapi.json`, `semantic_contract.json`, `generated_test.py` — written once) and `data/artifacts/runs/<run_id>/` for run artifacts (`report.json`, `report.html` — one per execution). The root is configurable via `CORETEST_ARTIFACTS_ROOT` to isolate tests.
-- **Exclusive level validated before touching disk**: passing both or neither of `analysis_id`/`run_id` raises `InvalidArtifactLevelError` without writing any file.
-- **Deduplication by hash**: if an artifact of the same level and `kind` with identical content (same SHA-256) already exists, the existing record is returned without rewriting the file or inserting a new row.
-- **Content-addressed on disk**: each file is written under a hash subdirectory (`.../<digest>/<filename>`), so a later save with different content under the same kind can never overwrite a previously recorded artifact's file.
-- **File first, row inside the transaction**: the file is written before the row is inserted. A rollback discards the row but may leave the file as an orphan — harmless, since the content-addressed path can never corrupt a valid artifact and the unreferenced file is dead weight `collect_orphans` reclaims.
+One row per finding, confirmed or not. The record refuses a `confirmed` row without its full
+reproducer: `status_code`, `minimal_payload`, `sanitized_headers` and `response_body`.
 
-Reading back goes through `load_artifact(record)`, which decodes the file first when the row is marked `compressed` and then verifies the **logical** bytes against the recorded SHA-256 **on every read** — this is what makes replaying a persisted recipe trustworthy: the bytes re-sent are provably the bytes recorded, compressed or not.
+| Column | Type | Null | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `id` | INTEGER | no | — | Primary key, assigned by the database. |
+| `run_id` | INTEGER | no | — | The run (`runs.id`). |
+| `analysis_endpoint_id` | INTEGER | yes | — | The endpoint (`analysis_endpoints.id`); NULL for a finding whose stateful chain spans several endpoints. |
+| `method` | TEXT | no | — | HTTP method, e.g. `GET`. |
+| `path` | TEXT | no | — | URL path, e.g. `/api/v1/users`. |
+| `phase` | TEXT | no | — | Generation phase: `valid`, `boundary`, `invalid`, `attack`, `mutation`, `semantic` or `transition`. |
+| `invariant_violated` | TEXT | no | — | The invariant the finding violated. |
+| `state` | TEXT | no | — | The finding's outcome: `confirmed`, `flaky` or `unverified`. |
+| `status_code` | INTEGER | yes | — | HTTP status code of the failing response. |
+| `minimal_payload` | TEXT | yes | — | JSON minimal reproducible payload, keyed by zone; NULL with no reproducer. |
+| `sanitized_headers` | TEXT | yes | — | JSON request headers, secrets already redacted by the engine; NULL with no reproducer. |
+| `response_body` | TEXT | yes | — | The failing response body; NULL with no reproducer. |
+| `stack_trace` | TEXT | yes | — | The stack trace the engine attached to a confirmed finding, when it had one. |
+| `transition_sequence` | TEXT | yes | — | JSON request chain that built a stateful finding's state; NULL otherwise. |
+| `represented_findings` | INTEGER | no | `1` | Raw findings this row stands for, itself included: its unshrunk group mates and the duplicates it absorbed. The record requires it. |
+| `identity_label` | TEXT | yes | — | The identity the failing request was sent under; NULL when the run declared none. |
+| `rule_id` | TEXT | yes | — | The rule the finding broke, declared by the contract or intrinsic to its invariant; NULL when the engine named none. |
+| `rule_description` | TEXT | yes | — | Human-readable text of `rule_id`. |
+| `body_fingerprint` | TEXT | yes | — | Shape, never values, of the response body behind an unconfirmed finding; `''` when there was no body, NULL for a confirmed finding. |
 
-```python
-from storage import load_artifact
+Constraints: `analysis_endpoint_id` is `ON DELETE SET NULL`. `phase` and `state` are free
+text: the engine owns those vocabularies, and storage does not CHECK them.
 
-content = load_artifact(record)  # logical bytes, verified against record.sha256
-```
+### `run_producer_exclusions` — `RunProducerExclusionRecord` { #run_producer_exclusions }
 
-- A file altered on disk raises `ArtifactIntegrityError`, carrying both the expected and the actual hash; a deleted file raises `ArtifactFileMissingError`; a compressed file that is no longer valid gzip raises `ArtifactDecompressionError`. No case is ever returned silently.
-- It takes no `UnitOfWork`: content is immutable once written, so the read needs no transaction.
+One row per endpoint whose produced contract was dropped during a run: the endpoint stayed
+targeted, schema-only. It is a fact about the run, not about the endpoint catalog.
 
-### Retention: compress, reclaim, collect
+| Column | Type | Null | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `id` | INTEGER | no | — | Primary key, assigned by the database. |
+| `run_id` | INTEGER | no | — | The run (`runs.id`). |
+| `method` | TEXT | no | — | HTTP method, e.g. `GET`. |
+| `path` | TEXT | no | — | URL path, e.g. `/api/v1/users`. |
+| `reason` | TEXT | no | — | Why the producer's contract was dropped for this endpoint. |
 
-An artifact's life past `save_artifact` is owned by three operations in `storage/artifacts/retention.py`, each opening its own transaction (never call them inside one), all obeying one ordering invariant: **a file may outlive its row; a row never outlives its file.** A leftover file is an inert orphan the next sweep collects; a row pointing at a missing file is where a replay fails, and no crash point in any of the three can produce one.
+Constraints: none beyond the foreign key.
 
-- **`compress_artifact(engine, record)`** stores the file gzipped without changing its address: the digest keeps addressing the logical bytes, the digest directory stays, only the filename gains `.gz`. The compressed file is written first, the row is repointed inside a transaction, and only then is the plain file removed — and only when no other row still names it. Artifacts below `MIN_COMPRESSIBLE_BYTES`, ones gzip would not shrink, and ones already compressed come back untouched.
-- **`reclaim_artifacts(engine, records)`** deletes a batch: every row drops in one transaction (each re-read first, so the outcome reports what the index held), and files are unlinked only after the commit, only when no live row still names them. A stale id aborts the whole batch with `ArtifactNotFoundError` and nothing unlinked.
-- **`collect_orphans(engine)`** sweeps the artifacts root for files no row names — what rollbacks, `ON DELETE CASCADE` and failed unlinks leave behind. It enumerates by whitelist (only `<analyses|runs>/<id>/<digest>/<file>`; anything else, symlinks included, is reported and never touched) and removes emptied digest directories. `scan_orphans(engine)` is its read-only half, for reporting without deleting.
+### `artifacts` — `ArtifactRecord` { #artifacts }
 
-The policy that decides *which* artifacts to compress or reclaim lives in the CLI (`prune` — see [CLI Reference](../../user-guide/cli-reference.md)); the storage layer owns only the mechanics and their ordering guarantees.
+The index of the files on disk: recipe files at the analysis level (the execution trace),
+report files at the run level. The file is written before its row ([ADR-082](adr/artifacts.md#adr-082)).
 
-## Testing
+| Column | Type | Null | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `id` | INTEGER | no | — | Primary key, assigned by the database. |
+| `analysis_id` | INTEGER | yes | — | The analysis (`analyses.id`), for an analysis-level artifact. |
+| `run_id` | INTEGER | yes | — | The run (`runs.id`), for a run-level artifact. |
+| `kind` | TEXT | no | — | Free-text artifact kind, e.g. `execution_trace` or `report_html`. |
+| `path` | TEXT | no | — | Filesystem path of the file. |
+| `sha256` | TEXT | no | — | SHA-256 of the logical, uncompressed content. |
+| `size_bytes` | INTEGER | no | — | Bytes on disk: the compressed size once compressed. |
+| `critical` | INTEGER | no | `0` | `1` when losing the artifact breaks reproducibility. |
+| `compressed` | INTEGER | no | `0` | `1` when the file is stored gzipped; set by retention, never by the producer. |
 
-The module has native support for **in-memory** databases for isolated testing:
-repositories can be injected with an isolated engine and share the same connection
-across a test. Prefer the context manager so no connection outlives the test:
+Constraints: exactly one of `analysis_id` and `run_id` is set ([paired](#paired-columns)).
 
-```python
-with StorageEngine(db_path=":memory:") as engine:
-    ...
-```
+## Value objects { #value-objects }
 
-Both this module's suite and its consumers turn leaked connections into errors
-(`filterwarnings` in `pyproject.toml`), so an unclosed engine is a red test, not a
-warning.
+| Record | Fields | Used for |
+| --- | --- | --- |
+| `LatencyRecord` | `count` (int, default `0`); `min_ms`, `max_ms`, `mean_ms`, `p50_ms`, `p95_ms`, `p99_ms` (float, default `0.0`) | An endpoint's latency distribution in milliseconds, percentiles by nearest rank; stored as the `latency_*` columns of `run_endpoint_stats`. |
+| `ProducedContractRecord` | `method`, `path`, `contract_json` | The read projection `uow.analysis_endpoint_contracts.list_by_analysis()` returns, ordered by (method, path); it has no id. |
+| `RunFilter` | `status`, `executed_since` (a date), `endpoint_path`, `limit` (at least 1) | Narrows `uow.runs.list_by_analysis()`. Every field is optional and additive: an exact status, runs executed on or after a UTC calendar date, runs with stats for an endpoint path, a cap on the count. |
 
-The Docker test command is in
-[Contributing & Testing](../../developer-guide/contributing.md#exceptions).
+The retention outcomes (`ReclaimOutcome`, `OrphanScan`, `CollectOutcome`) are described with
+[retention](artifacts.md#retention).
+
+## Closed vocabularies { #closed-vocabularies }
+
+Three columns accept only a closed set of values. Each set is exported from `storage` as a
+tuple and enforced twice: by a CHECK in the schema, and by the repository's `create()`, which
+raises a typed error before the INSERT ([ADR-080](adr/repositories.md#adr-080)).
+
+| Column | Tuple | Values | Rejected with |
+| --- | --- | --- | --- |
+| `runs.status` | `RUN_STATUSES` | `completed`, `truncated`, `aborted`, `cancelled`, `safety_breached` | `InvalidRunStatusError` |
+| `runs.oracle_scope` | `ORACLE_SCOPES` | `contract`, `contract_free` | `InvalidOracleScopeError` |
+| `analysis_endpoints.disposition` | `ENDPOINT_DISPOSITIONS` | `targeted`, `excluded`, `filtered`, `reached_by_transition` | `InvalidDispositionError` |
+
+What each value means to a reader: [run status](../core/protocol/vocabularies.md#run-status),
+[oracle scope](../core/protocol/vocabularies.md#oracle-scope), [coverage](../core/protocol/vocabularies.md#coverage).
+
+## Paired columns { #paired-columns }
+
+Some columns only make sense together. A CHECK keeps each pair consistent, and the writer checks
+it first so the caller gets a typed error naming the values ([ADR-079](adr/repositories.md#adr-079)).
+
+| Table | Rule | Rejected with |
+| --- | --- | --- |
+| `runs` | `truncation_reason` and `truncation_endpoint_id` are both set or both NULL. | `IncompleteTruncationError` |
+| `runs` | `truncation_detail` and `target_down_verdict` qualify a cut: set only with a `truncation_reason`. | `TruncationQualifierWithoutReasonError` |
+| `run_endpoint_stats` | `truncation_detail` is set only with a `truncation_reason`. | `TruncationQualifierWithoutReasonError` |
+| `analysis_endpoints` | `exclusion_reason` is set exactly when `disposition` is `excluded`. | `IncompleteExclusionError` |
+| `artifacts` | Exactly one of `analysis_id` and `run_id` is set. | `InvalidArtifactLevelError`, raised by `save_artifact` before any file is written |
+
+## Fingerprint { #fingerprint }
+
+`schema.sql` is applied with `CREATE TABLE IF NOT EXISTS`, which never adds a column to an
+existing table. So the engine stamps SQLite's `user_version` with a CRC32 of the schema text,
+read with line endings normalized so a CRLF and an LF checkout agree.
+
+Opening a file whose `user_version` differs from the fingerprint and that already has tables
+raises `SchemaMismatchError` with `db_path`, `expected_fingerprint` and `actual_fingerprint`;
+an empty file is stamped and created. There are no migrations: when the schema changes,
+delete the local database and let storage create it again ([ADR-076](adr/foundations.md#adr-076)).

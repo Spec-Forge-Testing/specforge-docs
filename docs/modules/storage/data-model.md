@@ -255,6 +255,9 @@ Constraints: exactly one of `analysis_id` and `run_id` is set ([paired](#paired-
 | `ProducedContractRecord` | `method`, `path`, `contract_json` | The read projection `uow.analysis_endpoint_contracts.list_by_analysis()` returns, ordered by (method, path); it has no id. |
 | `RunFilter` | `status`, `executed_since` (a date), `endpoint_path`, `limit` (at least 1) | Narrows `uow.runs.list_by_analysis()`. Every field is optional and additive: an exact status, runs executed on or after a UTC calendar date, runs with stats for an endpoint path, a cap on the count. |
 
+The retention outcomes (`ReclaimOutcome`, `OrphanScan`, `CollectOutcome`) are described with
+[retention](artifacts.md#retention).
+
 ## Closed vocabularies { #closed-vocabularies }
 
 Three columns accept only a closed set of values. Each set is exported from `storage` as a

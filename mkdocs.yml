@@ -171,12 +171,14 @@ nav:
               - Transactions: modules/storage/transactions.md
               - Repositories: modules/storage/repositories.md
               - Data model: modules/storage/data-model.md
+              - Artifacts and retention: modules/storage/artifacts.md
               - Errors: modules/storage/errors.md
               - Decision records:
                   - Overview: modules/storage/adr/index.md
                   - Foundations: modules/storage/adr/foundations.md
                   - Repositories: modules/storage/adr/repositories.md
                   - Artifacts: modules/storage/adr/artifacts.md
+              - Testing: modules/storage/testing.md
           - Semantic Inference:
               - Overview: modules/semantic-inference/index.md
               - LLM Router: modules/semantic-inference/llm-router.md

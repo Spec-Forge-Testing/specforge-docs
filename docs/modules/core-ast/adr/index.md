@@ -93,3 +93,4 @@ the file tells you what it governs.
 | [ADR-055](extractor.md#adr-055) | extractor | Elegir la definición dentro del archivo |
 | [ADR-056](packager.md#adr-056) | packager | La completitud tiene tres estados |
 | [ADR-057](tracer.md#adr-057) | tracer | El tipo del receptor elige el método, y se lee de más formas |
+| [ADR-058](tracer.md#adr-058) | tracer | Ninguna llamada calificada se descarta en silencio |

@@ -606,3 +606,67 @@ literal; alcanza porque casi siempre vienen de a pares.
 Medido sobre RealWorld: **+127 dependencias reales, 0 pérdidas, 0 falsas**
 —`go_gin` 78 → 154, `python_fastapi` 132 → 178, `php_laravel` 58 → 63—, cada
 una leída en el código.
+
+---
+
+## ADR-058 — Ninguna llamada calificada se descarta en silencio { #adr-058 }
+
+**Status:** accepted · `tracer/engine.py`, `import_analyzer/analyzers.py`, `tracer/call_detector.py`
+
+### Contexto
+
+Una llamada `x.m()` que ningún escalón de [ADR-053](#adr-053) resolvía caía en
+un `continue` pelado, y otra en un `return` cuando el tipo resolvía pero su
+archivo no: no quedaban en `unresolved_calls` ni en `external_calls`. El
+endpoint decía `complete` sin haberlas visto, que es el modo de fallo que
+[ADR-038](quality.md#adr-038) y [ADR-056](packager.md#adr-056) ya habían
+reconocido para el caso de cero llamadas. Lo que caía mezclaba ruido legítimo
+—`c.JSON`, `_.omit`— con código del repositorio —`follower.unfollow`,
+`articleModelValidator.Bind`— y nada los distinguía.
+
+### Decisión
+
+Se clasifica con una regla de mundo cerrado sobre el repositorio. Siguen
+existiendo solo dos categorías, las de [ADR-028](#adr-028):
+
+| Situación | Clasificación |
+|---|---|
+| El receptor se declaró con un tipo de un paquete importado de afuera (`c *gin.Context`) | `external` |
+| El tipo declarado del receptor es él mismo de una librería (`Repository<T>` de TypeORM) | `external` |
+| El método es del lenguaje (la tabla de [ADR-030](#adr-030)) | `external` |
+| El tipo del receptor existe en el repo y su archivo no define el método: es heredado | `external` |
+| Algún archivo del repo define el método | `unresolved`, con su calificador |
+| Ningún archivo del repo lo define | `external` |
+
+La tabla de símbolos —qué nombres define el repositorio— se llena a demanda y
+**solo clasifica**: saber que `unfollow` existe no dice cuál de sus
+definiciones es la llamada, y extraer por eso es lo que se revirtió por meter
+172 falsas.
+
+Lo que consume la lista mira el método y no el receptor: `CRITICAL_KEYWORDS`
+([ADR-037](quality.md#adr-037)) —un `auth_user.to_jwt` no es autenticación
+por el nombre de su variable— y la búsqueda de archivos del bundle de
+fallback.
+
+Para que la regla tenga con qué decidir hicieron falta dos lecturas más: el
+`require` de CommonJS es un import —en un servidor de Node no hay ningún
+`import`, y `_` no era una librería—, y el `->` de PHP separa los segmentos
+de una base igual que el `::`.
+
+### Consecuencias
+
+`completeness` dice la verdad en más endpoints, y por eso baja: una llamada
+del repo que no se pudo seguir lo vuelve `partial`. Un endpoint cuya única
+llamada queda sin resolver tiene ratio 0 y pasa a `fallback`; no pierde
+nada, porque no había cadena, y recibe el bundle de archivos donde vive lo
+que no se siguió.
+
+El primer intento no distinguía el tipo de librería: `Repository<T>`,
+`Collection` y el `PasswordHash` de argon2 fallaban al resolverse y la tabla
+de símbolos encontraba un `findOne` o un `verify_password` propios. En Rust
+eso además disparaba `CRITICAL_KEYWORDS` y el `fallback` forzado vaciaba la
+cadena de `POST /users/login`. Un tipo de librería termina `external`; nunca
+se adivina en el repo.
+
+La regla sigue apoyándose en una suposición de [ADR-028](#adr-028): un import
+local mal escrito y una librería son indistinguibles desde el fuente.

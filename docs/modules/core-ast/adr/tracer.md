@@ -670,3 +670,64 @@ se adivina en el repo.
 
 La regla sigue apoyándose en una suposición de [ADR-028](#adr-028): un import
 local mal escrito y una librería son indistinguibles desde el fuente.
+
+---
+
+## ADR-059 — Las declaraciones de tipo viajan en su propio bloque { #adr-059 }
+
+**Status:** accepted · `tracer/types.py`, `extractor/function.py`, `packager/xml.py`
+
+### Contexto
+
+En los 12 corpus de RealWorld el LLM no veía las reglas de validación de la
+petición. En 8 viven en una **declaración de tipo** —el struct con
+`binding:"required,min=4"`, el DTO con `@NotBlank`, el FormRequest con
+`rules()`— y al payload solo llegaba el nombre del tipo en la firma del
+handler. El contrato de `POST /articles` salió sin `minLength`, el motor
+mandó un título de tres letras y el target respondió 422.
+
+Extraer un tipo por nombre ya era posible ([ADR-021](ast-builder.md#adr-021)
+lo trata como una definición legítima); lo que no existía era un camino que lo
+pusiera en el payload.
+
+### Decisión
+
+- `extract_type` corta la declaración entera sobre `@definition.class`. En
+  Rust gana el `struct` o el `enum`: el `impl` lleva el mismo nombre y solo los
+  métodos.
+- Un recolector junta los tipos en orden de prioridad: los que el recorte del
+  handler **nombra**, leídos del árbol y no del texto —una palabra con
+  mayúscula en un mensaje de error no es un tipo—; los que la resolución
+  asignó a sus **receptores** ([ADR-057](#adr-057)); y **un nivel más** desde
+  los primeros, porque el serializer de Django nombra al modelo y el request de
+  Swift al tipo con los campos. Desde un servicio receptor no se expande: solo
+  traería sus colaboradores.
+- Cada tipo necesita un declarante único en el repositorio o un import local
+  que lo declare. Se salta lo que ya va como dependencia —el constructor de
+  ADR-021— y la clase que contiene al handler.
+- Presupuesto duro: 8 tipos, 120 líneas por tipo, 360 en total. Un tipo entra
+  entero o queda en `omitted_types` con su razón —`too_long`, `over_budget`,
+  `not_extractable`—, y el XML lo nombra como `<type … omitted="…"/>`.
+- **Fuera del ratio**: los tipos no son llamadas, así que no tocan
+  `completion_ratio`, el modo ni `completeness`.
+
+### Consecuencias
+
+La regla llega al payload en 10 de 12 corpus. En C# no, y es correcto: el
+validador lo descubre MediatR por inyección, y `Create`/`Command` tienen varios
+declarantes. En Koa tampoco: un esquema yup es un valor de módulo, no un tipo.
+
+El bloque trae también contexto que no es la petición: el servicio receptor
+de un controlador de Spring, la configuración que nombra una firma de FastAPI.
+El presupuesto lo acota, y casi siempre un servicio cae como `too_long`.
+
+`estimated_tokens` crece: el payload de `POST /articles` en Go pasó de unos
+600 tokens a unos 2 100.
+
+Una `interface` de TypeScript no se puede extraer —la consulta es compartida
+con JavaScript ([ADR-022](ast-builder.md#adr-022))—: queda como
+`not_extractable`.
+
+La etiqueta `<type filepath=…>` es nueva, y quien normalice rutas del
+`system_context` tiene que conocerla: la clave de caché de `core` la suma, y su
+test normaliza la salida real del packager.

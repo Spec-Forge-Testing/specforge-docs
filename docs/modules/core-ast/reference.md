@@ -329,7 +329,10 @@ cheap; `_is_excluded` filters case-insensitively.
 
 ### 5. `packager`
 Serializes data into an XML-tagged `system_context`. Wraps source code inside `CDATA`,
-sanitizes UTF-8 strings, and estimates tokens. Sets `is_partial_context = True` if mode
+sanitizes UTF-8 strings, and estimates tokens. The `<types>` block carries the
+declarations of the types the handler reads the request with — where the validation
+rules live — whole or named as `omitted` with a reason, and outside the completion
+ratio ([ADR-059](adr/tracer.md#adr-059)). Sets `is_partial_context = True` if mode
 is non-surgical or unresolved calls exist.
 
 ```xml
@@ -340,6 +343,10 @@ is non-surgical or unresolved calls exist.
   <dependencies>
     <dependency filepath="app/validate.py" name="validate"><![CDATA[ ... ]]></dependency>
   </dependencies>
+  <types>
+    <type filepath="app/schemas.py" name="OrderIn"><![CDATA[ ...the request type... ]]></type>
+    <type filepath="app/services.py" name="OrderService" omitted="too_long"/>
+  </types>
   <missing_context>
     <unresolved_call>charge_card</unresolved_call>
   </missing_context>

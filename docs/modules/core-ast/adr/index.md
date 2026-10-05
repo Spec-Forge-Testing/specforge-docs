@@ -87,3 +87,9 @@ the file tells you what it governs.
 | [ADR-049](locator.md#adr-049) | locator | A route declared as a constant is expanded before matching |
 | [ADR-050](locator.md#adr-050) | locator | The route table grows by form, and each form needs its guard |
 | [ADR-051](locator.md#adr-051) | locator | An identifier is not necessarily ASCII |
+| [ADR-052](tracer.md#adr-052) | tracer | El vocabulario de llamadas se amplía por evidencia |
+| [ADR-053](tracer.md#adr-053) | tracer | Del receptor a su tipo, y del tipo a su archivo |
+| [ADR-054](locator.md#adr-054) | locator | Cuando la ruta no alcanza, decide quién corrobora |
+| [ADR-055](extractor.md#adr-055) | extractor | Elegir la definición dentro del archivo |
+| [ADR-056](packager.md#adr-056) | packager | La completitud tiene tres estados |
+| [ADR-057](tracer.md#adr-057) | tracer | El tipo del receptor elige el método, y se lee de más formas |

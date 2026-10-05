@@ -542,3 +542,67 @@ dependencias metiendo 172 falsas.
 
 El archivo del tipo es el que se llama como él o, si ninguno, el único que lo
 declara: un archivo por tipo es convención de Swift y Java, no de Django.
+
+---
+
+## ADR-057 — El tipo del receptor elige el método, y se lee de más formas { #adr-057 }
+
+**Status:** accepted · `tracer/engine.py`, `extractor/function.py`, `cte/constants.py`
+
+### Contexto
+
+En Go el último escalón de [ADR-053](#adr-053) no funcionaba nunca, por dos
+huecos que se tapaban entre sí: el índice de tipos del repositorio tenía su
+propia lista de palabras clave —`class|struct|interface|object`— y no veía el
+`type X struct` de Go, y `func (s *T) Bind(` no contaba como definición de
+`Bind`. Arreglados los dos, apareció un tercero: `validators.go` define dos
+`Bind` y `serializers.go` siete `Response()`, todos sin argumentos, y
+[ADR-055](extractor.md#adr-055) solo desempata por ruta y por aridad. El
+endpoint de comentarios recibía el validador de artículos.
+
+Además, ningún lenguaje leía el tipo de una variable local sin anotar
+—`serializer := ArticleSerializer{...}`, `serializer = ArticleSerializer(...)`—,
+que es como un handler declara casi todo.
+
+### Decisión
+
+- **El índice de tipos sale de `[class_keywords]`**, la misma tabla que
+  [ADR-022](ast-builder.md#adr-022) ata a los `.scm`. No hay una tercera lista
+  que pueda divergir.
+- **El dueño desempata.** `extract_function` recibe `owner`: entre varios
+  homónimos gana el del tipo del receptor —el campo `receiver` en Go; el tipo
+  o el `impl` que envuelve la definición en el resto—. Uno sin dueño visible,
+  una función suelta, queda como segunda opción. **Solo desempata**: un
+  candidato único se acepta aunque su dueño sea otro, porque el tipo pudo salir
+  de la convención de nombres y ser el padre del real —`user` → `User`, y
+  `check_password` vive en `UserInDB(User)`—.
+- **Formas nuevas de declaración, por evidencia y como datos** en
+  `TYPED_DECLARATIONS`: el constructor en Go, Python, JS/TS/TSX, Rust y Ruby, y
+  la aserción de tipo de Go. La fábrica va aparte, en `FACTORY_DECLARATIONS`: la
+  forma solo dice de qué llamada sale el valor, y el tipo lo da el **retorno que
+  esa función declara**, leído del árbol. No se usa la convención `NewT` → `T`.
+  Un retorno que no nombra un solo tipo, como `Optional[X]`, no decide nada.
+- **Alcance léxico**: el tipo de un receptor se busca primero en la función y
+  después en el archivo.
+- **El ciclo se corta por definición** —ruta, línea y nombre— y no por
+  `ruta::nombre`: el segundo `Response` del archivo se daba por visitado sin
+  haberse recorrido. `visited_nodes` sigue en `ruta::nombre` porque es lo que
+  se publica como `processed_functions`.
+- En PHP el `$` no es parte del nombre del receptor (`VARIABLE_SIGILS`).
+
+### Consecuencias
+
+Ninguna forma decide sola: el tipo todavía tiene que resolver a un archivo del
+repositorio, con un único declarante o por un import local. Lo que esto
+agrega es **qué** tipo buscar, no una manera nueva de encontrarlo.
+
+Una forma de texto también puede equivocarse. La primera versión del
+constructor de Python leía `user=UserWithToken(...)` —un argumento con nombre
+en su propia línea— como la declaración de `user`, y `login` perdía
+`check_password`. Ahora esa forma exige estar fuera de todo paréntesis
+(`Sentencia`). La cuenta de paréntesis no distingue los que caen dentro de un
+literal; alcanza porque casi siempre vienen de a pares.
+
+Medido sobre RealWorld: **+127 dependencias reales, 0 pérdidas, 0 falsas**
+—`go_gin` 78 → 154, `python_fastapi` 132 → 178, `php_laravel` 58 → 63—, cada
+una leída en el código.

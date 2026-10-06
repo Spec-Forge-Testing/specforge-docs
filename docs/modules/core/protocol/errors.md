@@ -86,8 +86,10 @@ raise them. Together with the protocol-level codes, these are the complete set.
 | `UNSUPPORTED_SCHEMA` | The contract's schema version is not supported |
 | `NO_COMPILABLE_ENDPOINTS` | No endpoint could be compiled into a strategy |
 | `CONTRACT_PRODUCER_FAILED` | A contract producer could not honor an explicit request |
+| `INFERENCE_APPROVAL_REQUIRED` | A run has inferences to pay for while `inference.require_approval` is on, and its `producer.approval_token` is missing or stale; `data`: `reason` (`missing` or `stale`), `estimate` |
 | `EXECUTION_FAILED` | The run failed while executing |
 | `REPLAY_NOT_REPRODUCIBLE` | The recorded trace cannot be replayed against the target |
+| `SIDE_EFFECTS_CONSENT_REQUIRED` | A `replay` of a recording that needs [consent](operations.md#replay-consent) did not pass `allow_side_effects`; refused before any request is sent. `data`: `analysis_id`, `parameter` (`allow_side_effects`), `reason` (`recorded_with_side_effects` or `safety_breached`) |
 
 ### Results and retention
 

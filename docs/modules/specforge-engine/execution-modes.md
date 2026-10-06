@@ -167,9 +167,22 @@ sequenceDiagram
 `preserve_timing=True` selects the timed pacer, which waits until each
 request's recorded `sent_at_ms`; `False` selects the immediate pacer.
 
+### Consent to re-send { #consent-to-re-send }
+
+The [safety guard](engine-internals.md#safety-guard) lets a replay through: it
+re-sends what an earlier, guarded run sent. Two recordings carry requests the
+guard did not hold, so the core re-sends them only with the caller's consent,
+given again for this replay: one made with `allow_side_effects`, and one whose
+original run ended `safety_breached`. Without `allow_side_effects` on the
+`replay` call (`--allow-side-effects` on the CLI), the core refuses it with
+`SIDE_EFFECTS_CONSENT_REQUIRED` before any request is sent, naming which of the
+two applies. Consent is per run, never inherited from the recording; on any
+other recording the parameter is accepted and changes nothing, and it never
+alters the recorded configuration the engine replays under.
+
 ### Stopping on a dead target
 
-A replay no longer always ends `completed`. A `TargetLivenessMonitor` watches the
+A replay does not always end `completed`. A `TargetLivenessMonitor` watches the
 stream of results as they come back. A streak of target failures
 (`timeout` or `availability`) reaching `MAX_INFRA_FAILURES` (5) trips a single
 liveness probe — a `HEAD` to the base URL:
@@ -186,8 +199,7 @@ the truncation record travels in that trace. `assess_fidelity` compares only the
 prefix, so the fidelity level (`exact` or `reduced`) describes that prefix alone.
 Every recorded defect beyond the prefix was never re-sent, so the CLI rules it
 `inconclusive` — absence of evidence, like a request that got no response. The
-JSON report schema is unchanged: run status and truncation already flow through
-it.
+run status and the truncation reach the JSON report as for any other run.
 
 ## Performance
 
@@ -391,10 +403,19 @@ identities take part, read from `config.valid_identities`. A run with only inval
 identities has no valid pool and stops with `AccessIdentityError`.
 
 The package `runtime/runners/auth/` is split by the question each module answers:
-`plan.py` holds what a plan is (`Crossing`, `Provisioning`, `PlanContext`) and the
-request builders; `planners.py` holds one planner per policy behind
-`planner_for`; `preconditions.py` holds the checks that must pass before the first
-request; and `runner.py` is the only module that sends.
+
+| Module | Role |
+|---|---|
+| `runner.py` | `AuthRunner`: crosses the declared identities against each endpoint's declared access policy |
+| `crossing.py` | `EndpointCrosser`: crosses one endpoint — plans it, binds its owner resources, sends its crossings and judges them |
+| `plan.py` | the vocabulary of one endpoint's access plan, and the request builders that produce it; no Hypothesis |
+| `planners.py` | one planner per access policy: which bundles it needs, and which identities it crosses |
+| `payloads.py` | the Hypothesis draws of the valid payloads a plan crosses and provisions with |
+| `preconditions.py` | the run's producer index, and the precondition checked before anything is sent |
+| `chain.py` | orders the producers an owner resource needs, dependencies first, before anything is sent |
+| `provisioning.py` | the run's owner resources: one per bundle, provisioned once and reused by every consumer |
+| `producer_watch.py` | watches the provisioning's producer requests as the run watches its crossings |
+| `constants.py` | the constants the auth runner owns |
 
 ```mermaid
 sequenceDiagram

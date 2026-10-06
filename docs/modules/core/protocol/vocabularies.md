@@ -90,13 +90,33 @@ counts each one: in `get_run` under `coverage.counts`, in `list_analyses` and
 | Value | The endpoints that were... |
 | --- | --- |
 | `targeted` | Declared and fuzzed. |
-| `excluded` | Declared, and rejected by the compiler; `excluded_endpoints` lists each with its `reason`. |
+| `excluded` | Declared, and rejected by the compiler or [withheld](#producer-exclusion-disposition); `excluded_endpoints` lists each with its `reason`. |
 | `filtered` | Declared, and left out by the run's endpoint selection. |
 | `reached_by_transition` | Never declared, and reached only by a stateful transition; `reached_by_transition_endpoints` lists each as `{method, path}`. |
 
 `declared` is `targeted + excluded + filtered`: an endpoint reached by a
 transition is never counted as declared. The persistence layer stores these four
 values under a CHECK constraint.
+
+## `producer_exclusions[].disposition` { #producer-exclusion-disposition }
+
+What the run did with an endpoint whose produced contract it could not use. In
+`get_run` and the report document's `producer_exclusions`, beside `method`,
+`path` and `reason`.
+
+| Value | Meaning |
+| --- | --- |
+| `schema_only` | The endpoint stayed targeted and was fuzzed from its schema alone. |
+| `withheld` | Its contract declared a risk flag and could not be used, so it was never fuzzed as a target; the coverage also counts it `excluded`, with a `reason` starting `withheld:`. In a mode that does not hold its flag, transition probes and same-route siblings may still reach its route. |
+
+An endpoint is withheld only when the producer returned a contract and adopting
+it failed: an identity that does not match the endpoint, a fusion failure, or a
+construct the projection does not support. A failure before a validated contract
+exists (an inference error, an output that failed validation, the cost cap, an
+untraced endpoint) leaves it `schema_only`. The two lists answer different
+questions and share the `(method, path)` key: the coverage says where the
+endpoint ended up, `producer_exclusions` what failed in the producer. The
+persistence layer stores these two values under a CHECK constraint.
 
 ## Comparison caveats { #caveats }
 

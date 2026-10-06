@@ -10,9 +10,9 @@ defines how a message travels, the pages beside it define what the messages say.
 | This page | Transport, framing, the four message shapes, ordering, endpoint naming, payload policy |
 | [Handshake and versioning](handshake.md) | `hello`, capabilities, the catalog, versioning and the changelog |
 | [Events and cancellation](events.md) | The 13 event kinds, the progress token, state vs fact, `$/cancelRequest` |
-| [Operations](operations.md) | The 31 operations by family, what each requires and emits |
+| [Operations](operations.md) | The 32 operations by family, what each requires and emits |
 | [Result vocabularies](vocabularies.md) | The closed values a result field may take: run status, comparability, oracle scope, truncation, coverage, caveats, operation and stage status |
-| [Errors](errors.md) | The two codes per error and the 40 error codes |
+| [Errors](errors.md) | The two codes per error and the 42 error codes |
 | [Fixtures](fixtures.md) | Recorded sessions: how they are captured and how a client uses them |
 
 ## Transport and framing

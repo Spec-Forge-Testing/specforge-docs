@@ -138,7 +138,13 @@ engine. It loads and selects endpoints, optionally asks a **contract producer**
 for each endpoint's enriched contract, and hands everything to the engine. The
 producer's failures are handled by intent: a producer that cannot honor an
 explicit request aborts the run, while an inference producer that cannot enrich
-one endpoint soft-drops it rather than failing the whole run. When a targeted
+one endpoint soft-drops it rather than failing the whole run. A dropped endpoint
+is fuzzed from its schema alone, unless the contract the producer returned
+declared a risk flag and could not be used: then it is **withheld**, handed to
+the compiler as a `WithheldEndpoint` so its flag still vetoes its route, and
+never fuzzed as a target. `producer_exclusions` records which of the two
+happened as its [`disposition`](protocol/vocabularies.md#producer-exclusion-disposition).
+When a targeted
 endpoint draws no requests, the run records **why** as an `unprobed_reason`, so
 the report can tell a by-design skip from an endpoint it never reached. The run
 itself — its modes, budgets and oracles — belongs to the engine; see

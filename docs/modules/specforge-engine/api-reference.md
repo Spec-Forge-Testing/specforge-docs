@@ -57,7 +57,8 @@ invariant, `StatefulLinkError` when a state link cannot be honored.
 
 | Name | One line |
 |---|---|
-| `CompilerInput` | the endpoints plus a single global `strategy_mode` |
+| `CompilerInput` | the endpoints plus a single global `strategy_mode`, and the `withheld` ones |
+| `WithheldEndpoint` | an endpoint its caller keeps out of the run: `method`, `path_url`, `risk`, `reason`; compiled into an exclusion whose risk still vetoes its route |
 | `EndpointSpec` | one endpoint: identity, zones, content types, and its endpoint-level controls |
 | `RequestZones` | the four request zones of an `EndpointSpec`, one `ParamMap` per `Zone` |
 | `BaseStrategyContract` | per-value generation knobs, JSON Schema aliases |
@@ -76,7 +77,7 @@ Field names of this family are stable: they are persisted as columns.
 | Name | One line |
 |---|---|
 | `CompilationOutcome` | Result: `engine_input` + `exclusions` |
-| `EndpointExclusion` | one rejected endpoint with its `reason` |
+| `EndpointExclusion` | one rejected or withheld endpoint with its `reason` |
 | `EngineInput`, `CompiledExecutionEndpoint`, `CompiledEndpointStrategies` | the executable compile output |
 | `EngineRunResult` | `findings` + `status` + `stats` + `trace` + optional `fidelity` |
 | `Finding` | the discriminated union of `ConfirmedFinding`, `FlakyFinding`, `UnverifiedFinding` on `state` |

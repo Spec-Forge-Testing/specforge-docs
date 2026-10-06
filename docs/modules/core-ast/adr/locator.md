@@ -44,7 +44,7 @@ governing rule exists to prevent.
 
 ## ADR-002 — The repository scan is cached per repository, and what is cached is immutable { #adr-002 }
 
-**Status:** accepted · `locator/scanner.py` · closes [AI-132](https://linear.app/ai-pbt/issue/AI-132)
+**Status:** accepted · `locator/scanner.py`
 
 ### Context
 
@@ -261,7 +261,7 @@ in `patterns.toml` is therefore load-bearing, not cosmetic.
 
 ## ADR-010 — Following a router mount is two hops, and returns a scope { #adr-010 }
 
-**Status:** accepted · `locator/matcher.py` · closes [AI-213](https://linear.app/ai-pbt/issue/AI-213)
+**Status:** accepted · `locator/matcher.py`
 
 ### Context
 

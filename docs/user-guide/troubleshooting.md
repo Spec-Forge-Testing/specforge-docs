@@ -82,15 +82,18 @@ modes.
 
 **Fix.** Add `--mode performance`, or drop `--latency-sla-ms`.
 
-## An unsupported schema construct stops the run
+## An endpoint is excluded for an unsupported schema construct
 
-**Symptom.** *"Unsupported Schema Construct"* — the engine could not compile something in the
-spec, and the whole run stops there.
+**Symptom.** The run's coverage lists an endpoint as `excluded` with a reason that starts
+`unsupported schema construct in ...` (the location — a parameter, the request body, the declared
+responses — and what was rejected), and the run goes on without it. A spec where *no* endpoint
+can be compiled stops instead with *"No Compilable Endpoints"*.
 
-**Cause.** One endpoint's schema uses a construct the engine cannot yet generate inputs for.
+**Cause.** That endpoint's schema uses a construct the engine cannot yet generate inputs or
+oracles for, such as a Swagger 2 `type: file` inside a response schema.
 
-**Fix.** Fix the schema, or narrow the run to the endpoints you can test with `--endpoint` and
-`--method` so the offending one is left out.
+**Fix.** Fix the schema if the construct is a spec error, or leave the endpoint out: it is already
+excluded with its reason, and `--endpoint`/`--method` narrow the run further when you want to.
 
 ## `--mode auth` stops: no identity holds the required role
 

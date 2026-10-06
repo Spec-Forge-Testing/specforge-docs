@@ -63,7 +63,9 @@ exceptions:
 | `runs` | `truncation_detail` and `target_down_verdict` are null when there is no truncation reason | `TruncationQualifierWithoutReasonError` |
 | `analysis_endpoints` | `disposition` is in `ENDPOINT_DISPOSITIONS` | `InvalidDispositionError` |
 | `analysis_endpoints` | `exclusion_reason` is set exactly when the disposition is `excluded` | `IncompleteExclusionError` |
+| `run_endpoint_stats` | `held_back_by` and `held_back_via` are both set or both null | `IncompleteHoldError` |
 | `run_endpoint_stats` | `truncation_detail` is null when there is no truncation reason | `TruncationQualifierWithoutReasonError` |
+| `run_producer_exclusions` | `disposition` is in `PRODUCER_EXCLUSION_DISPOSITIONS` | `InvalidDispositionError` |
 
 `RunRepository.create` checks in the order of the table: status, then oracle
 scope, then the reason and endpoint pair, then the qualifiers. A second run with
@@ -122,14 +124,14 @@ the *Raises* column lists only the others.
 | | | `get_max_ordinal(analysis_id)` | `int`, 0 when the analysis has no runs | — |
 | `RunMetricsRepository` | `run_metrics` | `create(record)` | `None` | — |
 | | | `get_by_run_id(run_id)` | `RunMetricsRecord` | `RunMetricsNotFoundError` |
-| `RunEndpointStatsRepository` | `run_endpoint_stats` | `create(record)` | `int` | `TruncationQualifierWithoutReasonError` |
+| `RunEndpointStatsRepository` | `run_endpoint_stats` | `create(record)` | `int` | `IncompleteHoldError`, `TruncationQualifierWithoutReasonError` |
 | | | `get_by_id(run_endpoint_stats_id)` | `RunEndpointStatsRecord` | `RunEndpointStatsNotFoundError` |
 | | | `list_by_run(run_id)` | `list[RunEndpointStatsRecord]` | — |
 | `FindingsRepository` | `findings` | `create(record)` | `int` | — |
 | | | `get_by_id(finding_id)` | `FindingRecord` | `FindingNotFoundError` |
 | | | `list_by_run(run_id)` | `list[FindingRecord]`, every state | — |
 | | | `count_by_state(run_id)` | `dict[str, int]`; states with no findings are absent | — |
-| `RunProducerExclusionsRepository` | `producer_exclusions` | `create(record)` | `int` | — |
+| `RunProducerExclusionsRepository` | `producer_exclusions` | `create(record)` | `int` | `InvalidDispositionError` |
 | | | `list_by_run(run_id)` | `list[RunProducerExclusionRecord]` by id | — |
 | `ArtifactRepository` | `artifacts` | `create(record)` | `int` | — |
 | | | `get_by_id(artifact_id)` | `ArtifactRecord` | `ArtifactNotFoundError` |

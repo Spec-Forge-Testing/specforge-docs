@@ -173,6 +173,7 @@ field, a [`LatencyRecord`](#value-objects), sampling only requests that reached 
 | `starved_identities` | TEXT | yes | — | JSON list of the identity labels the budget could not fund here. |
 | `undecided_rules` | TEXT | yes | — | JSON list of the ids of declared rules evaluated here that the run could never decide. |
 | `held_back_by` | TEXT | yes | — | The risk flag that kept the safety guard from probing the endpoint; NULL when it was probed. |
+| `held_back_via` | TEXT | yes | — | The id of the endpoint whose risk flag held this one back, its own id when its own flag did; NULL exactly when `held_back_by` is. |
 | `unprobed_reason` | TEXT | yes | — | Why the run's mode had nothing to probe here by design. |
 | `load_profile` | TEXT | yes | — | JSON list of the concurrency-ladder steps a performance run measured here. |
 | `by_category` | TEXT | yes | — | JSON object: error category → requests at this endpoint that ended in it. |
@@ -181,7 +182,7 @@ field, a [`LatencyRecord`](#value-objects), sampling only requests that reached 
 | `truncation_detail` | TEXT | yes | — | What happened when this endpoint's own pass was cut short. |
 
 Constraints: `UNIQUE (run_id, analysis_endpoint_id)`; `truncation_detail` only with a
-`truncation_reason`. A cancellation before the endpoint started is the run's cut, not its own.
+`truncation_reason`; `held_back_by` and `held_back_via` [paired](#paired-columns). A cancellation before the endpoint started is the run's cut, not its own.
 
 ### `findings` — `FindingRecord` { #findings }
 
@@ -215,8 +216,10 @@ text: the engine owns those vocabularies, and storage does not CHECK them.
 
 ### `run_producer_exclusions` — `RunProducerExclusionRecord` { #run_producer_exclusions }
 
-One row per endpoint whose produced contract was dropped during a run: the endpoint stayed
-targeted, schema-only. It is a fact about the run, not about the endpoint catalog.
+One row per endpoint whose produced contract the run could not use: a `schema_only` one stayed
+targeted without its contract; a `withheld` one was never fuzzed as a target, because its contract
+declared a risk flag and could not be used. It is a fact about the run, not about the endpoint
+catalog.
 
 | Column | Type | Null | Default | Meaning |
 | --- | --- | --- | --- | --- |
@@ -225,8 +228,9 @@ targeted, schema-only. It is a fact about the run, not about the endpoint catalo
 | `method` | TEXT | no | — | HTTP method, e.g. `GET`. |
 | `path` | TEXT | no | — | URL path, e.g. `/api/v1/users`. |
 | `reason` | TEXT | no | — | Why the producer's contract was dropped for this endpoint. |
+| `disposition` | TEXT | no | — | What the run did with the endpoint: `schema_only` or `withheld`. |
 
-Constraints: none beyond the foreign key.
+Constraints: `disposition` CHECK in its [two values](#closed-vocabularies).
 
 ### `artifacts` — `ArtifactRecord` { #artifacts }
 
@@ -260,7 +264,7 @@ The retention outcomes (`ReclaimOutcome`, `OrphanScan`, `CollectOutcome`) are de
 
 ## Closed vocabularies { #closed-vocabularies }
 
-Three columns accept only a closed set of values. Each set is exported from `storage` as a
+Four columns accept only a closed set of values. Each set is exported from `storage` as a
 tuple and enforced twice: by a CHECK in the schema, and by the repository's `create()`, which
 raises a typed error before the INSERT ([ADR-080](adr/repositories.md#adr-080)).
 
@@ -269,9 +273,11 @@ raises a typed error before the INSERT ([ADR-080](adr/repositories.md#adr-080)).
 | `runs.status` | `RUN_STATUSES` | `completed`, `truncated`, `aborted`, `cancelled`, `safety_breached` | `InvalidRunStatusError` |
 | `runs.oracle_scope` | `ORACLE_SCOPES` | `contract`, `contract_free` | `InvalidOracleScopeError` |
 | `analysis_endpoints.disposition` | `ENDPOINT_DISPOSITIONS` | `targeted`, `excluded`, `filtered`, `reached_by_transition` | `InvalidDispositionError` |
+| `run_producer_exclusions.disposition` | `PRODUCER_EXCLUSION_DISPOSITIONS` | `schema_only`, `withheld` | `InvalidDispositionError` |
 
 What each value means to a reader: [run status](../core/protocol/vocabularies.md#run-status),
-[oracle scope](../core/protocol/vocabularies.md#oracle-scope), [coverage](../core/protocol/vocabularies.md#coverage).
+[oracle scope](../core/protocol/vocabularies.md#oracle-scope), [coverage](../core/protocol/vocabularies.md#coverage),
+[producer exclusion disposition](../core/protocol/vocabularies.md#producer-exclusion-disposition).
 
 ## Paired columns { #paired-columns }
 
@@ -283,6 +289,7 @@ it first so the caller gets a typed error naming the values ([ADR-079](adr/repos
 | `runs` | `truncation_reason` and `truncation_endpoint_id` are both set or both NULL. | `IncompleteTruncationError` |
 | `runs` | `truncation_detail` and `target_down_verdict` qualify a cut: set only with a `truncation_reason`. | `TruncationQualifierWithoutReasonError` |
 | `run_endpoint_stats` | `truncation_detail` is set only with a `truncation_reason`. | `TruncationQualifierWithoutReasonError` |
+| `run_endpoint_stats` | `held_back_by` and `held_back_via` are both set or both NULL. | `IncompleteHoldError` |
 | `analysis_endpoints` | `exclusion_reason` is set exactly when `disposition` is `excluded`. | `IncompleteExclusionError` |
 | `artifacts` | Exactly one of `analysis_id` and `run_id` is set. | `InvalidArtifactLevelError`, raised by `save_artifact` before any file is written |
 

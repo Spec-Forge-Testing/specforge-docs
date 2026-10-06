@@ -1,6 +1,6 @@
 # Operations
 
-`describe` publishes **31 operations in eight families**, derived from the
+`describe` publishes **32 operations in eight families**, derived from the
 core's own façade. Each operation declares what must be open before it is called
 (`requires`), whether it can be watched (`emits_progress`), and whether it can
 be stopped (`cancellable`). The tables below group them by family; the
@@ -41,6 +41,7 @@ contract must also be loaded — which implies a project).
 
 | Operation | `requires` | Events |
 | --- | --- | --- |
+| `estimate_inference` | contract | none; prices what inferring the selection's contracts would cost, per endpoint and in total, with an `approval_token`; calls no model |
 | `fuzz` | contract | emits progress and is cancellable |
 | `replay` | project | emits progress and is cancellable |
 | `run_pipeline` | none | composes the four stages; emits progress and is cancellable |
@@ -52,6 +53,17 @@ follows the run: a run that breached the safety guard ends it `failed`, a
 cancelled one `stopped`. The pipeline's own status ranks a breach over a stop
 request, and a stop request over a failure (see
 [stage status](vocabularies.md#stage-status)).
+
+### Replay consent { #replay-consent }
+
+`replay` takes an optional boolean `allow_side_effects` (default `false`). A
+recording made with `allow_side_effects`, or one whose original run ended
+`safety_breached`, is re-sent only when the call passes it: consent is given per
+replay, never inherited from the recording. Without it the call is refused with
+`SIDE_EFFECTS_CONSENT_REQUIRED` before any request is sent, and `data.reason`
+says which case applies (`recorded_with_side_effects` or `safety_breached`). On
+any other recording the parameter is accepted and does nothing. See
+[consent to re-send](../../specforge-engine/execution-modes.md#consent-to-re-send).
 
 ## `results`
 

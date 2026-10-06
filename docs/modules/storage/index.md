@@ -70,10 +70,10 @@ Import from the top-level `storage` package. It exports 71 names:
 | Engine (2) | `StorageEngine`, `UnitOfWork` | [Transactions](transactions.md) |
 | Artifact operations (7) | `save_artifact`, `load_artifact`, `compress_artifact`, `reclaim_artifacts`, `scan_orphans`, `collect_orphans`, `MIN_COMPRESSIBLE_BYTES` | [Artifacts](artifacts.md) |
 | Records and value objects (16) | `ProjectRecord`, `AnalysisRecord`, `AnalysisEndpointRecord`, `AnalysisEndpointContractRecord`, `ProducedContractRecord`, `RunRecord`, `RunFilter`, `RunMetricsRecord`, `RunEndpointStatsRecord`, `LatencyRecord`, `FindingRecord`, `RunProducerExclusionRecord`, `ArtifactRecord`, `ReclaimOutcome`, `OrphanScan`, `CollectOutcome` | [Data model](data-model.md); the last three in [retention](artifacts.md#retention) |
-| Vocabularies (3) | `RUN_STATUSES`, `ORACLE_SCOPES`, `ENDPOINT_DISPOSITIONS` | [Closed vocabularies](data-model.md#closed-vocabularies) |
+| Vocabularies (4) | `RUN_STATUSES`, `ORACLE_SCOPES`, `ENDPOINT_DISPOSITIONS`, `PRODUCER_EXCLUSION_DISPOSITIONS` | [Closed vocabularies](data-model.md#closed-vocabularies) |
 | Repositories (10) | `ProjectRepository`, `AnalysisRepository`, `AnalysisEndpointRepository`, `AnalysisEndpointContractRepository`, `RunRepository`, `RunMetricsRepository`, `RunEndpointStatsRepository`, `FindingsRepository`, `RunProducerExclusionsRepository`, `ArtifactRepository` | [Repositories](repositories.md#reference) |
 | Configuration (1) | `get_artifacts_root` | [Where the data lives](#where-the-data-lives) |
-| Exceptions (32) | `StorageError` and every subclass | [Errors](errors.md) |
+| Exceptions (33) | `StorageError` and every subclass | [Errors](errors.md) |
 
 `get_db_path` and `resolve_data_dir` are exported from `storage.config`, not
 from `storage`.

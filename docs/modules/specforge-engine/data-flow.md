@@ -50,7 +50,7 @@ The types that cross a stage line, all validated with `extra="forbid"`:
 
 | DTO | Direction | Notes |
 |---|---|---|
-| `CompilerInput` | in | endpoints plus a single global `strategy_mode` (never per-endpoint) |
+| `CompilerInput` | in | endpoints plus a single global `strategy_mode` (never per-endpoint), and the `withheld` endpoints the caller keeps out of the run |
 | `EndpointSpec` | in | one endpoint; its four request zones are a `RequestZones` value object |
 | `BaseStrategyContract` / `HackerStrategyContract` | in | per-value generation knobs (hacker is a pydantic subclass, dispatched by type) |
 | `ResponseContract`, `StateLinkContract` (+ `StateProduction` / `StateConsumption`) | in | expected responses, stateful links |
@@ -358,8 +358,9 @@ response — populated by the same two modes and empty in the rest, turning a ru
 that could never be checked into the same kind of reported signal. Two more
 fields follow the same rule of saying out loud what did not happen or what was
 measured: `held_back_by` names the risk flag that kept the
-[safety guard](engine-internals.md#safety-guard) from probing the endpoint (`None`
-for a probed one), and `load_profile` is a tuple of `LoadStepStats` — one per
+[safety guard](engine-internals.md#safety-guard) from probing the endpoint and
+`held_back_via` the endpoint id of the entry that raised it, its own id when its
+own flag did (both `None` for a probed one), and `load_profile` is a tuple of `LoadStepStats` — one per
 completed step of a performance run's
 [concurrency ladder](execution-modes.md#the-load-profile), empty in every other
 case. Last, `truncation` is the `EndpointTruncation` (a `reason` and an optional

@@ -28,19 +28,95 @@ would do real, irreversible harm:
 | `write_operation` | `performance`, `resilience` only | the load and malformed-transport batteries would hammer a mutating endpoint; the correctness modes still probe it |
 
 `replay` is exempt from both: it re-sends a recorded trace verbatim, never a
-fresh probe. `RiskFlag`'s declaration order is precedence —
-`external_side_effects` outranks `write_operation` — so an endpoint carrying
-both is held for the stronger, less reversible reason.
+fresh probe. Re-sending a recording made without the guard, or whose run breached it, needs the caller's
+consent again, which the core asks for before the engine runs (see
+[consent to re-send](execution-modes.md#consent-to-re-send)). `RiskFlag`'s
+declaration order is precedence — `external_side_effects` outranks
+`write_operation` — so an endpoint carrying both is held for the stronger, less
+reversible reason.
 
 The guard is off by **policy**, not by engine stability:
 `ExecutionConfig.allow_side_effects` (default `False`, set by the CLI's
 `--allow-side-effects`) lifts it and probes every endpoint.
 
+Every selected entry raises its vetoes, compiled or excluded alike. That
+includes an endpoint the caller keeps out of the run: `CompilerInput.withheld`
+takes `WithheldEndpoint`s (`method`, `path_url`, `risk`, a non-empty `reason`),
+and the compiler turns each into an exclusion that reaches `EngineInput.excluded`
+with its risk, so its flag still vetoes its route. An endpoint listed both in
+`endpoints` and in `withheld` fails `CompilerInput` validation.
+
+### A veto covers a route, however it is spelled { #route-vetoes }
+
+A flag the mode holds vetoes its endpoint's route as a **pattern**, not as the
+declared string. `RouteVetoes.of_selection` builds one `VetoedRoute` per route
+shape, and every compiled endpoint, follow-up and recorded row is compared by its
+shape. `route_shapes` reduces a method and a path to the route a path-decoding
+server dispatches them to:
+
+| Spelling | How the shape reads it |
+|---|---|
+| `HEAD` | as `GET`: servers answer it with the `GET` handler |
+| query, fragment | cut off |
+| case | folded |
+| empty segments (a trailing or doubled slash) | dropped |
+| percent-encoded unreserved characters, `%2F`, `%5C` | decoded, once and as a server that decodes twice does |
+| `\` | a segment separator, as `/` |
+| path parameters (`;v=1`) | dropped from each segment |
+| dot segments (`.`, `..`, encoded too) | resolved, both before and after merging repeated slashes |
+| a `..` that climbs above the base | matched by its tail, since the server resolves it from its own root |
+| `{name}` | one placeholder, so placeholder names never split a route |
+
+A path may yield more than one shape; it is covered when any of them is. A
+placeholder in a veto covers any one segment; a literal segment in a veto never
+covers a placeholder in the subject.
+
+**A literal the run declared wins over a vetoed template.** A subject whose exact
+route key (method and path as declared, case kept) is a selected entry is held
+only by a veto on one of its own shapes, as routers and OpenAPI rank a concrete
+route before a templated one. Any other spelling of it, `HEAD` or a trailing
+slash included, is not declared, so every veto covering it holds it.
+
+**Naming the hold.** Every covering veto holds; the name only picks the one the
+report shows: the most specific veto (the most segments that are not a bare
+placeholder), then the stronger flag, then the first entry in the run's
+selection. `RouteVetoes.of` returns a `RouteVeto` (`flag`, `via`): `via` is the
+endpoint id of the entry that raised the flag, the subject's own id when its own
+flag decided.
+
+**Follow-ups.** A declared transition whose follow-up a veto covers is held for
+that flag. A follow-up to a route outside the run's selection goes through only
+on a safe method (`GET`, `HEAD`, `OPTIONS`); any other is held as
+`unsafe_method_outside_run`. Only `stateful` probes transitions, so only it
+reports them, in the declaring endpoint's `EndpointStats.held_back_transitions`.
+
+!!! warning "What a veto does not foresee"
+    - A placeholder value filled in at run time that spells a vetoed literal or a
+      dot segment: the partition runs before any value exists.
+    - A declared path that is not canonical, and a server that decodes a path
+      more than twice.
+    - A router that matches in registration order and sends a declared literal to
+      a vetoed template's handler: the guard follows the contract. Flagging the
+      literal as well closes it.
+
+    The guard errs toward holding: a follow-up to an undeclared route that fits a
+    vetoed template is held even if the server has a handler of its own.
+    Declaring and selecting that route, or `allow_side_effects`, lets it through.
+
+### What the run records
+
 A held endpoint is not dropped from the accounting. `record_safety_partition`
 folds each one into `RunStats.by_endpoint` as a zero-request `EndpointStats`
-whose `held_back_by` names the flag that held it (`None` for a probed endpoint),
-so the report, the storage row and the live summary all show which endpoints the
-run declined to touch and why.
+whose `held_back_by` names the flag that held it and `held_back_via` the entry
+that raised it (both `None` for a probed endpoint; one is `None` exactly when the
+other is), so the report, the storage row and the live summary all show which
+endpoints the run declined to touch, why, and because of which entry.
+
+A row on a held route that drew requests anyway is a breach. It keeps its
+counters and carries the same two fields — on a route held only as an unsafe
+follow-up, `held_back_via` is the endpoint that declared the transition — and
+`record_safety_partition` raises `SafetyGuardBreachError`, carrying the result
+marked `safety_breached` so the run is kept with that evidence.
 
 Symmetrically, a **targeted** endpoint that drew no requests records why in
 `EndpointStats.unprobed_reason`: `declared_public` for a by-design public skip
@@ -49,11 +125,10 @@ policy. A silent endpoint is therefore never confused with one the run failed to
 reach.
 
 !!! note "Auth mode and a held producer"
-    In `auth` mode, holding back an endpoint that produces the state another
-    endpoint's owner-only check needs leaves that check with no producer, and the
-    run fails with a typed `AccessLinkError` naming the missing producer rather
-    than silently skipping the check. `--allow-side-effects` is the way to
-    complete such a run.
+    In `auth` mode, a producer the guard held back counts as missing: an
+    endpoint whose owner resource only that producer creates is left unprobed
+    with `unprobed_reason` `owner_producer_missing`, and the run goes on.
+    `--allow-side-effects` is the way to probe it.
 
 ## Run signals
 

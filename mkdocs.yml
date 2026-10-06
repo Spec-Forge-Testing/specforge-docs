@@ -78,6 +78,9 @@ markdown_extensions:
   - toc:
       permalink: true
 
+validation:
+  anchors: warn
+
 plugins:
   - search
   - redirects:

@@ -28,7 +28,7 @@ would do real, irreversible harm:
 | `write_operation` | `performance`, `resilience` only | the load and malformed-transport batteries would hammer a mutating endpoint; the correctness modes still probe it |
 
 `replay` is exempt from both: it re-sends a recorded trace verbatim, never a
-fresh probe. Re-sending a recording made without the guard needs the caller's
+fresh probe. Re-sending a recording made without the guard, or whose run breached it, needs the caller's
 consent again, which the core asks for before the engine runs (see
 [consent to re-send](execution-modes.md#consent-to-re-send)). `RiskFlag`'s
 declaration order is precedence — `external_side_effects` outranks

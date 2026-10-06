@@ -611,12 +611,15 @@ unexpectedly.
     run, so a schema-only endpoint is never silently dropped — the run always says
     which endpoints it could not enrich, and why.
 
-    Independently of the producer's own policy, a contract that fuses but does not
-    compile stops the run with an **Unsupported Schema Construct** panel: a hint on
-    a zone or field the endpoint does not declare, a `focus_fields` entry that names
-    no declared field under `--strategy hacker`, and a transition whose `bundle`
-    matches no deterministic capture — or more than one — each name the endpoint and
-    the offending entry.
+    A contract that fuses but does not compile — a hint on a zone or field the
+    endpoint does not declare, a `focus_fields` entry that names no declared field
+    under `--strategy hacker`, a transition whose `bundle` matches no deterministic
+    capture or more than one — follows the producer's own policy: under `drop` the
+    endpoint keeps its schema alone and is listed in `producer_exclusions`; under
+    `abort` the run stops with an **Unsupported Schema Construct** panel naming the
+    endpoint and the offending entry. An endpoint whose *own* schema cannot be
+    projected is never produced at all: it is excluded with its reason and the rest
+    of the spec runs.
 
     The produced contracts are not persisted with the analysis: the run's trace is
     recorded and replayable as usual, but the enriched recipe itself is not stored.

@@ -11,8 +11,8 @@ also serves the protocol with `specforge --serve`.
 !!! info "The shipped command-line tool is a separate client"
     The command-line tool that ships to users, `specforge-cli`, lives in its own
     repository: a thin JSON-RPC client that drives the core over stdio. Its user
-    guide lives there. The REPL documented here is the core's own testing
-    surface and speaks the pipeline directly. See the
+    guide is [Spec Forge CLI](specforge-cli.md). The REPL documented here is the
+    core's own testing surface and speaks the pipeline directly. See the
     [Core module](../modules/core/index.md) for the core and the protocol the
     shipped client uses.
 

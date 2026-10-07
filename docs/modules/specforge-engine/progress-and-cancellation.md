@@ -105,7 +105,9 @@ A cancelled run returns a complete, honest `EngineRunResult`:
   which confirms each defect as it goes, keeps the reports it had already settled;
   a defect it was still confirming when the mark landed is reported **flaky**,
   because the state machine's replay of it no longer sends — the same fact under
-  the name that mode has for it.
+  the name that mode has for it. The sequence minimizer's re-sends pass the same
+  gate: a cancelled minimization stops and reports the reproducer it had already
+  verified, and a budget-cut failure not yet verified is flaky.
 - The shared HTTP client is closed on the way out, cancelled or not.
 
 The engine **persists nothing** — a cancelled result is returned to the caller,
@@ -233,7 +235,7 @@ concurrent requests folds into a single `tick`, and at thousands of requests a
 second a per-request event would carry nothing the counter does not already hold.
 The stateless runner also ticks once per shrink attempt, so the counter keeps
 moving while findings are being minimised. A stateful run ticks on every executed
-step and every transition probe, on top of its per-pass tick, so a long sequence's
+step, every transition probe and every request the sequence minimizer re-sends, on top of its per-pass tick, so a long sequence's
 counter tracks work instead of freezing between passes; and replay ticks once per
 replayed request. In every case the underlying advance is bounded by the emitter:
 `MIN_TICK_INTERVAL_S` collapses ticks inside its window, so neither a fast replay

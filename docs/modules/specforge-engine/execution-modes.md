@@ -96,7 +96,10 @@ down (`TruncationReason.TARGET_DOWN`).
 ## Stateful
 
 Drive sequences of linked operations as a dynamically built
-`RuleBasedStateMachine`; shrink the **sequence** on a new violation.
+`RuleBasedStateMachine`. On a new violation, Hypothesis shrinks the failing
+step's **payload**; the engine then minimizes the **sequence** to the steps that
+step needs, by re-sending recorded requests. Both shrinks are capped at
+`STATEFUL_SHRINK_REQUEST_BUDGET` wire requests per finding.
 
 ```mermaid
 sequenceDiagram
@@ -105,20 +108,43 @@ sequenceDiagram
     participant MB as machine_builder
     participant HS as run_state_machine_as_test
     participant Rule as execute_rule_step
-    participant Cls as classify_pass_outcome
+    participant Cls as run_pass
+    participant Min as settle_outcome
+    participant WR as WireResender
 
     SR->>Sup: fuzz_sequence(endpoints, config, StatefulOptions)
     loop supervisor loop
-        Sup->>MB: build_state_machine(live, collector)
+        Sup->>MB: build_state_machine(live, deps)
         MB-->>Sup: StatefulFlowMachine
-        Sup->>HS: run_state_machine_as_test(machine)
-        HS->>Rule: draw + execute + evaluate_transition
-        Rule-->>HS: raise StatefulViolationError (shrink) | transition
-        HS-->>Sup: violation | flaky | exhausted
-        Sup->>Cls: classify_pass_outcome(exc) → PassOutcome
+        Sup->>Cls: run_pass(machine, settings)
+        Cls->>HS: phases explicit, generate, shrink
+        HS->>Rule: draw + guard_shrink_budget + send + check + probe
+        Rule-->>HS: raise StatefulViolationError | ShrinkBudgetSpentError | step
+        HS-->>Cls: violation | flaky | exhausted | budget cut
+        Cls-->>Sup: MachineOutcome (honor_budget_cut applied)
+        Sup->>Min: settle_outcome(outcome, resender, budget)
+        Min->>WR: re-send data slice, then candidate deletions
+        WR-->>Min: fresh results, or None if a send is blocked
+        Min-->>Sup: PassOutcome (Reported with the verified, minimal sequence)
     end
     Sup-->>SR: StatefulExplorationOutcome
 ```
+
+The machine runs Hypothesis's `explicit`, `generate` and `shrink` phases only.
+Hypothesis's `explain` phase is left out: it re-runs the whole machine against the
+target hundreds of times only to annotate Hypothesis's printed report, which the
+engine never reads.
+
+A pass that ends on a violation is **settled** before the supervisor reacts to it.
+The sequence minimizer keeps the steps the violating step depends on through
+bundle values, deletes every other step it can, and verifies each candidate by
+re-sending the recorded requests verbatim. The reported `transition_sequence` is
+therefore one that reproduced on the wire, and it holds only the steps the
+violation needs. When the shrink budget cut a pass short, its best failure is
+re-sent once to verify it before it is reported; one that does not reproduce is a
+flaky finding. The mechanism is laid out in
+[Engine internals](engine-internals.md#shrinking-and-minimizing-a-stateful-finding)
+and the choice in [ADR-089](adr/engine.md#adr-089).
 
 A stateful run that reaches `max_distinct_bugs` stops; each found defect is
 suppressed before the next pass. A flaky pass outcome becomes a flaky finding,

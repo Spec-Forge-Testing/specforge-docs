@@ -106,3 +106,4 @@ Assembly's.
 | [ADR-067](compiler.md#adr-067) | strategy_compiler | A header's text alphabet is narrowed at generation by zone, derived from what the wire carries, and an incompatible pattern falls back rather than excluding the endpoint |
 | [ADR-068](engine.md#adr-068) | engine | The sequential runners detect a dead target between endpoints through a shared per-batch watch, and the monitor can abandon a probe in flight |
 | [ADR-086](engine.md#adr-086) | engine | Every dispatched endpoint gets one stats row, in every mode |
+| [ADR-089](engine.md#adr-089) | engine | The stateful shrink is budgeted, skips Hypothesis's explain phase, and the engine minimizes the sequence by replaying recorded requests |

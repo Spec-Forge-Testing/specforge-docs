@@ -123,7 +123,7 @@ registry, never a branch.
 | Mode | What it does |
 |---|---|
 | `STATELESS` | fuzz each endpoint independently; shrink each failure to a minimal reproducer |
-| `STATEFUL` | drive sequences of linked operations as a state machine; shrink the sequence |
+| `STATEFUL` | drive sequences of linked operations as a state machine; shrink the failing payload, then minimize the sequence to the steps it needs |
 | `REPLAY` | re-send a recorded trace verbatim and report how faithfully the API behaved |
 | `PERFORMANCE` | fuzz under a scaled load with a latency-SLA oracle active |
 | `RESILIENCE` | send chaos-shaped requests (oversized, slow, malformed) and watch for degradation |

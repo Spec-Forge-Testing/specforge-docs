@@ -2170,3 +2170,97 @@ still exist for an endpoint the run was never given — one only a stateful
 transition reached — and the core records it with the
 [`reached_by_transition`](../../core/protocol/vocabularies.md#coverage)
 disposition.
+
+---
+
+## ADR-089 — The stateful shrink is budgeted, skips Hypothesis's explain phase, and the engine minimizes the sequence by replaying recorded requests { #adr-089 }
+
+**Status:** accepted · `constants.py`, `runtime/harness/settings.py`, `runtime/fuzzers/stateful/minimizer.py`, `runtime/fuzzers/stateful/resend.py`, `runtime/fuzzers/stateful/collector.py`, `runtime/fuzzers/stateful/outcome.py`, `runtime/fuzzers/stateful/violation.py`, `runtime/fuzzers/stateful/supervisor.py`
+
+### Context
+
+Left to Hypothesis with its default phases, reducing a stateful finding against a
+real target costs far more than the exploration that found the defect. Measured on
+a RealWorld API, one finding takes 50 to 80 seconds and 6 000 to 10 000 shrink
+requests, for three separate reasons.
+
+- Hypothesis's **`explain` phase** re-runs the whole machine against the target
+  hundreds of times per finding, about 87 % of the shrink's cost, only to annotate
+  the failure report Hypothesis prints. The engine never reads that report.
+- Hypothesis's **shrink** reduces the failing step's payload well (a path
+  parameter down to a single `"/"`, with live bundles and the target's real state
+  behind it), but in no measured run does it shorten the **step sequence**. It
+  minimizes its own choice sequence, not the engine's steps, and can even settle on
+  a sequence longer than the first one that failed. The reported sequences carry
+  six to ten steps where one is needed.
+- Nothing **bounds** the shrink. Its cost depends on how long Hypothesis keeps
+  exploring after its last improvement — measured at several hundred requests of
+  tail that change nothing.
+
+### Decision
+
+**The machine runs the `explicit`, `generate` and `shrink` phases only.**
+`stateful_settings` sets them, derived from the exploration phases plus `shrink`.
+Dropping `explain` changes no finding.
+
+**Hypothesis keeps the payload shrink, under a request budget.**
+`STATEFUL_SHRINK_REQUEST_BUDGET` (1 000) caps the wire requests one pass's shrink
+may spend. The collector counts shrink re-sends per pass and keeps the pass's
+**witness**: the best failure seen, ranked by the canonical size of the violating
+step's payload and then by sequence length, a violation over a link error. Once
+the budget is spent and a witness exists, the next send raises
+`ShrinkBudgetSpentError` before the wire. Hypothesis may end such a pass through
+its own determinism check instead of through that signal, so the collector's
+record decides the verdict: `honor_budget_cut` keeps a verified `Reported` or a
+`LinkBroken` and turns any other ending of a cut pass into
+`ShrinkCutShort(witness)`, a sibling of `PassOutcome` under `MachineOutcome`.
+
+**The engine minimizes the sequence by replaying recorded requests.** After a pass,
+`settle_outcome` runs the sequence minimizer, under the same budget again: a
+backward data slice over bundle values (a producer a kept step consumed stays; a
+transition probe keeps its trigger), then greedy deletion of the remaining steps
+to a fixed point. Each candidate is verified by `WireResender`, which re-sends the
+recorded requests verbatim through the same gate and ledger as the rules — the
+engine's record-and-replay model of reproducibility. A replay reproduces when it
+answers with the same status and the violation's `recheck` reports the same
+invariant under the same rule id. A `ShrinkCutShort` witness is re-sent once to
+verify it before it is minimized; one that does not reproduce is `Flaky`.
+
+`SHRINK_REQUEST_BUDGET` (500) stays the stateless shrink's budget. A stateless
+attempt is one request; a stateful attempt re-sends a whole sequence, so the
+stateful budget is its own, larger constant.
+
+### Rejected
+
+- **Dropping Hypothesis's shrink entirely.** It is what minimizes the payload, with
+  bundle values injected and the target in the state the sequence built.
+  Re-implementing that for a stateful step means pinning every injected field and
+  replaying the prefix before each candidate.
+- **Budgeting Hypothesis's shrink alone.** That bounds the cost but leaves the
+  sequence as long as Hypothesis found it, padded with steps the defect does not
+  need.
+- **A time budget.** Elapsed time depends on the target's latency, so the same run
+  would shrink differently on a slower day. A request budget is deterministic and is
+  measured by the counter that already exists, `requests_shrink`.
+- **Deleting steps freely, without the data slice.** A verbatim re-send carries the
+  original ids, and the resources the original run created still exist on the
+  target. Deleting the step that created a resource, or the request that triggers a
+  transition probe, would still "reproduce", and the report would show a sequence
+  that is not the defect.
+- **Patching Hypothesis's module-level shrink limits.** Mutating a library's global
+  constants from the engine is hidden, process-wide state that a Hypothesis upgrade
+  can silently change.
+
+### Consequences
+
+On the same RealWorld target, a finding costs at most 1 000 shrink requests plus a
+verifying re-send and finishes in a few seconds, an order of magnitude below the
+default phases, and its `transition_sequence` holds only the steps the violation needs. The
+reported reproducer is always one that reproduced on the wire: a deletion that
+breaks reproduction is undone, and a budget-cut finding is either verified or
+flaky, never reported unverified and never lost. The wire format does not change.
+`CrashReport.minimal_payload` is the smallest payload the shrink reached within its
+budget, not an absolute minimum. `StatefulViolationError` carries `recheck`, and
+`ExecutedStep` records the `BundleBinding`s it consumed and produced, so the
+minimizer judges and slices from the sequence alone. Reproduction is judged against
+the target as the run left it, the same definition replay mode uses.

@@ -142,12 +142,13 @@ over `analysis_endpoints` and `run_endpoint_stats`.
 | `findings_flaky` | INTEGER | no | — | Findings that did not reproduce after shrinking. |
 | `findings_collapsed` | INTEGER | no | `0` | Findings never shrunk because another with their signature was. |
 | `findings_unverified` | INTEGER | no | `0` | Findings never attempted: the run was cut before shrinking, or the strategy could not produce a candidate. |
-| `requests_shrink` | INTEGER | no | `0` | Requests the shrinking phase sent; not part of `total_requests`. |
+| `requests_shrink` | INTEGER | no | `0` | Requests sent while shrinking (in a stateful run, also while minimizing the sequence); not part of `total_requests`. |
 | `by_phase` | TEXT | yes | — | JSON breakdown of requests per phase. |
 | `by_category` | TEXT | yes | — | JSON breakdown of requests per error category. |
 
-Constraints: none beyond the foreign key. The three defaulted counts are zero without a
-shrinking phase.
+Constraints: none beyond the foreign key. The three defaulted counts are zero in a mode
+that never shrinks; a stateful run, which shrinks inside each pass, records its
+`requests_shrink` but leaves the other two at zero.
 
 ### `run_endpoint_stats` — `RunEndpointStatsRecord` { #run_endpoint_stats }
 

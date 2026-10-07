@@ -305,8 +305,9 @@ unexpectedly.
       before shrinking started, or the strategy could not produce a candidate to
       try) → flaky → unique after de-duplication.
       `raw == confirmed + flaky + collapsed + unverified` always holds. A stateful
-      run has no separate shrink phase, so its report shows neither shrink requests
-      nor collapsed or unverified findings.
+      run shrinks each finding inside the pass that found it rather than in a
+      separate phase, so its report shows no collapsed or unverified findings; its
+      shrink requests still appear once a finding was minimized.
     - **Category breakdown** — requests grouped by outcome, labeled in plain
       English: successful response, 4xx client error, 5xx server error, contract
       violation, request timed out, target unreachable, and `unsendable request

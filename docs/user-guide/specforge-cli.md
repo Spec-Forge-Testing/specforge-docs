@@ -72,6 +72,20 @@ the core, in both forms — the message names the parameter and, for an enum,
 every admissible value. Everything else (does the project exist, is the
 contract loaded) is the core's call alone; the CLI never second-guesses it.
 
+## Interactive niceties
+
+The REPL prompt completes as you type, in order: the operation name first, then
+`<parameter>=` for one of that operation's parameters, then — for an `enum`
+parameter — the admissible values after the `=`. All of it is derived from the
+catalog, so a parameter the core adds later completes without a CLI release.
+
+The REPL's history (`.specforge/shell_history`) never stores a credential in
+plain text: a `set_credential ... value=...` line has its `value=` argument
+stripped before it's written, and any `user:pass@host` userinfo embedded in a
+URL (e.g. a `--base-url` or `base_url=` with inline credentials) is redacted to
+`user:***@host`. Nothing is scrubbed from what the core itself logs or
+persists — this only protects the local history file.
+
 ### Argv-only flags
 
 These three are never part of any operation — they describe how *you* want

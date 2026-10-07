@@ -11,8 +11,8 @@ also serves the protocol with `specforge --serve`.
 !!! info "The shipped command-line tool is a separate client"
     The command-line tool that ships to users, `specforge-cli`, lives in its own
     repository: a thin JSON-RPC client that drives the core over stdio. Its user
-    guide lives there. The REPL documented here is the core's own testing
-    surface and speaks the pipeline directly. See the
+    guide is [Spec Forge CLI](specforge-cli.md). The REPL documented here is the
+    core's own testing surface and speaks the pipeline directly. See the
     [Core module](../modules/core/index.md) for the core and the protocol the
     shipped client uses.
 
@@ -357,6 +357,44 @@ unexpectedly.
       `performance`). These are the same ids `report.json` carries per endpoint in
       `undecided_rules` (see [Run report](reports.md)).
 
+    A worked example, with the dense parts of the report annotated below it:
+
+    ```text
+    SpecForge ❯ fuzz -f openapi.yaml --base-url http://localhost:8000
+
+    Run summary
+      Requests: 1,204   Shrink requests: 340   Elapsed: 8.1s
+      Raw: 20  Confirmed: 6  Collapsed: 12  Unverified: 0  Flaky: 2  Unique: 6
+
+    Crashes — 6 unique crashes: 4 × 5xx server error (500), 2 × wrong Content-Type (401)
+    ┌────────┬───────────────┬─────────┬─────────────┬──────────────────────┬────────┬────────────┬──────────┬─────────────────────┐
+    │ Method │ Endpoint      │ Phase   │ Prior steps │ Invariant             │ Status │ Represents │ Identity │ Payload             │
+    ├────────┼───────────────┼─────────┼─────────────┼──────────────────────┼────────┼────────────┼──────────┼─────────────────────┤
+    │ POST   │ /transfer     │ invalid │ —           │ 5xx server error     │ 500    │ 9          │ alice    │ {"amount": -1}      │
+    │ GET    │ /accounts/{id}│ invalid │ —           │ wrong Content-Type   │ 401    │ 3          │ —        │ id=99999999         │
+    └────────┴───────────────┴─────────┴─────────────┴──────────────────────┴────────┴────────────┴──────────┴─────────────────────┘
+    ```
+
+    Reading it:
+
+    - **Run summary** — `Raw == Confirmed + Flaky + Collapsed + Unverified` always
+      (6 + 2 + 12 + 0 = 20 here): `Raw` is every finding the run saw before
+      de-duplication, `Unique` (6) is what's left after it — a `Collapsed` finding
+      shares its symptom with a `Confirmed` one, so it doesn't add to `Unique`.
+      `Unique` is the number worth reading first.
+    - **Phase** — which generation phase produced the request (`valid`, `boundary`,
+      `invalid`, or `attack`/`mutation` under `--strategy hacker`).
+    - **Prior steps** — `—` for a stateless finding; a number for a stateful one,
+      meaning "this many requests ran first to set up the state that triggered it"
+      — the cue to open `inspect --crash <id>` for the full sequence.
+    - **Represents** — how many of the 41 raw findings this one minimal reproducer
+      stands for after shrinking; present only in stateless runs.
+    - **Identity** — which declared `--identities` label the request was sent
+      under; a dash means no identity was recorded for that crash (e.g. the run
+      had none declared).
+    - **Payload** — the smallest input that still reproduces the crash, already
+      shrunk; this is what you'd replay by hand to confirm it.
+
     A run the target's liveness probe found dead is cut **before** shrinking, so
     its findings were collected but never confirmed. The report never calls that a
     clean run: it shows the **Unverified** count instead of the usual "No crashes
@@ -691,7 +729,18 @@ unexpectedly.
 
     `--run <id>` renders one run in full: a **header** with its
     context (project, analysis, ordinal, origin, execution time, duration, status —
-    plus, when the run was cut short, **why and where** — fidelity and the
+    plus, when the run was cut short, **why and where**, one of:
+
+    | Reason | The run was cut short because |
+    | --- | --- |
+    | `infrastructure_abort` | The target stopped answering (connection refused, repeated timeouts). |
+    | `target_down` | The liveness probe found the target dead before shrinking could start. |
+    | `state_link_abort` | A stateful sequence's declared hand-off between requests could not be honored. |
+    | `deadline_exceeded` | The endpoint's per-endpoint time budget (`--deadline-ms`) ran out. |
+
+    — see [Run report](reports.md) and
+    [Result vocabularies](../modules/core/protocol/vocabularies.md) for the full
+    envelope these ride in — fidelity and the
     comparability mark); its declared-endpoint **coverage** and **signal** (see
     *[Coverage and the run's signal](#coverage-and-the-runs-signal)* — skipped for
     a replay); the **metrics** funnel (requests, raw → confirmed → unique
@@ -736,6 +785,38 @@ unexpectedly.
     the endpoint, the invariant, the status (or *not recorded*) and the identity —
     with no payload, headers or body. An id that matches no finding still errors as
     before. The two flags are mutually exclusive.
+
+    A worked example:
+
+    ```text
+    SpecForge ❯ inspect --crash 12
+
+    Crash #12 — POST /transfer — 5xx server error (500)
+    Identity: alice
+
+    Payload
+      body.amount: -1
+
+    Headers
+      Authorization: Bearer ***
+
+    Response body
+      {"error": "InternalServerError", "trace_id": "..."}
+
+    Business rule: BR-07 — transfer amount must be positive
+    ```
+
+    - **Identity** — the `--identities` label the request was sent under; absent
+      when the run declared none.
+    - **Payload** — broken down by zone (here, a `body` field); this is the
+      minimal reproducer, already shrunk.
+    - **Headers** — only the headers the request actually sent, with credential
+      values already redacted to `***`.
+    - **Response body** — what the API answered with; `password`/`token`/`secret`
+      fields inside it are redacted the same way.
+    - **Business rule / Rule** — a business-rule or access-control crash names the
+      contract's own rule id and description (as here); any other invariant shows
+      a **Rule** row instead, spelling out the requirement itself.
 
     Payload values keep the spelling they travelled the wire with (`null` and
     `true`, not Python's `None` and `True`), so anything copied out of the CLI is
@@ -858,6 +939,32 @@ unexpectedly.
       `--after` or the pair itself (see the
       [comparison caveats](../modules/core/protocol/vocabularies.md#caveats)).
 
+    A worked example:
+
+    ```text
+    SpecForge ❯ compare --before 3 --after 7
+
+    ┌────────┬──────────────┬─────────┬───────────────────┬────────┬──────────┬─────────────────────┬──────────┐
+    │ Method │ Endpoint     │ Phase   │ Invariant          │ Status │ Identity │ Verdict             │ Occ. b→a │
+    ├────────┼──────────────┼─────────┼───────────────────┼────────┼──────────┼─────────────────────┼──────────┤
+    │ POST   │ /transfer    │ invalid │ 5xx server error  │ 500    │ alice    │ persisted           │ 9 → 4    │
+    │ GET    │ /accounts/{id}│ invalid│ wrong Content-Type │ 401    │ —        │ possibly resolved   │ 3 → 0    │
+    │ POST   │ /transfer    │ attack  │ sql_injection      │ 500    │ bob      │ new                 │ 0 → 2    │
+    └────────┴──────────────┴─────────┴───────────────────┴────────┴──────────┴─────────────────────┴──────────┘
+    ```
+
+    - **Method / Endpoint / Invariant / Status / Identity** — five of the six
+      terms a pairing is matched on (the sixth, the minimal payload, is shown
+      separately as each side's counterexample instead).
+    - **Phase** — the later side's phase (`--after`), falling back to the
+      earlier one when it only appears in `--before`; not part of the pairing key.
+    - **Verdict** — `persisted` (both runs), `possibly resolved` (only
+      `--before`, no caveat), `new` (only `--after`), or `inconclusive` (only
+      `--before`, but a caveat taints the comparison — see
+      [comparison caveats](../modules/core/protocol/vocabularies.md#caveats)).
+    - **Occ. b→a** — how many times this exact symptom was seen on each side;
+      a count, never averaged into a single representative.
+
     A fresh appearance is never downgraded by a caveat — it is reported as
     **new** regardless — and the diff is never blocked by a caveat either: it
     is still produced, with every reason listed in a "Not directly comparable"
@@ -908,6 +1015,20 @@ unexpectedly.
     database, not the artifact store — and `history --project` shows a
     **Replayable** column derived from the trace's presence, so a consented
     trace deletion is visible the moment it happens.
+
+### Debug
+
+??? "`dummy_pass`, `dummy_fail` — UI demo commands"
+
+    ```text
+    SpecForge ❯ dummy_pass
+    SpecForge ❯ dummy_fail
+    ```
+
+    Neither command touches the pipeline: `dummy_pass` runs two spinners and closes
+    with a success message, `dummy_fail` runs one spinner and closes with a sample
+    error panel. They exist to exercise the Rich UI (spinners, success/error
+    rendering) during development, take no flags, and persist nothing.
 
 ## Commands run from your shell
 

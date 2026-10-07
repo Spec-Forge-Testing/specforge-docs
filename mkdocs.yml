@@ -119,6 +119,7 @@ nav:
       - Running with Docker: user-guide/docker.md
       - Core Concepts: user-guide/concepts.md
       - Glossary: user-guide/glossary.md
+      - Spec Forge CLI: user-guide/specforge-cli.md
       - CLI Reference: user-guide/cli-reference.md
       - Run Report: user-guide/reports.md
       - Example Walkthrough: user-guide/example-walkthrough.md

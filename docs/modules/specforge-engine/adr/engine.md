@@ -2199,7 +2199,7 @@ requests, for three separate reasons.
 
 ### Decision
 
-**The machine runs the `explicit`, `generate` and `shrink` phases only.**
+**The machine runs the `explicit`, `generate` and `shrink` phases only, and so does the stateless shrink search (`shrink_settings`).**
 `stateful_settings` sets them, derived from the exploration phases plus `shrink`.
 Dropping `explain` changes no finding.
 

@@ -267,7 +267,7 @@ health checks suppressed.
 | Preset | For | Also sets |
 |---|---|---|
 | `exploration_settings(max_examples)` | one endpoint-phase pass | phases restricted to `explicit` + `generate` |
-| `shrink_settings()` | one finding's minimization | `max_examples=SHRINK_REQUEST_BUDGET` (one request per attempt) |
+| `shrink_settings()` | one finding's minimization | `max_examples=SHRINK_REQUEST_BUDGET` (one request per attempt), phases `explicit` + `generate` + `shrink` (no `explain`) |
 | `stateful_settings(options, reserved_steps)` | one state-machine pass | phases `explicit` + `generate` + `shrink` (no `explain`), `stateful_step_count`, `report_multiple_bugs=False` |
 
 `identity_strategy(identities)` is `st.sampled_from` over the declared

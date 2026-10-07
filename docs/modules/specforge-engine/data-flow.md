@@ -318,12 +318,14 @@ declared, or the requirement the invariant enforces on its own — reduced to it
 `id` and `description`. Findings are grouped by
 `FindingSignature` (endpoint, phase, invariant, status, identity label, rule id,
 body fingerprint) into `FindingGroup`s, then shrunk into `CrashReport`s. A
-`CrashReport` carries the `minimal_payload` keyed by zone, the
+`CrashReport` carries the `minimal_payload` keyed by zone (the smallest payload
+the shrink reached within its request budget, not an absolute minimum), the
 `invariant_violated`, an optional `rule` (the `ViolatedRule` the response broke,
 with a `rule_id` shortcut to its id), `sanitized_headers`, the `identity_label`,
 the `status_code` and `response_body` (with sensitive field values redacted by
 name to `***`), an optional `stack_trace`, the
-`transition_sequence` for stateful findings, and `represented_findings` — how
+`transition_sequence` for stateful findings (the steps before the violating one,
+minimized to those it needs and verified on the wire), and `represented_findings` — how
 many raw findings it stands for, adjusted through `standing_for`.
 
 `RunStats` is the aggregated counter set of one run. Its three maps are
@@ -340,7 +342,7 @@ producer:
 | `findings_flaky` | attempted during shrinking and did not reproduce |
 | `findings_collapsed` | not shrunk because a faithful representative of their signature stands for them |
 | `findings_unverified` | never attempted: the run was cut before shrinking, or no candidate could be produced |
-| `requests_shrink` | requests the shrinking phase put on the wire; not part of `total_requests` |
+| `requests_shrink` | requests the shrinking phase put on the wire (in a stateful run, Hypothesis's shrink re-sends plus the sequence minimizer's); not part of `total_requests` |
 
 `EndpointStats` mirrors the per-endpoint subset (`requests`,
 `examples_planned`, `findings_raw`, `findings_confirmed`) plus a `LatencyStats`
@@ -383,9 +385,11 @@ summed unverified occurrences are `findings_unverified`; `findings_collapsed`
 stays a counter only, since a collapsed finding is a duplicate a confirmed
 reproducer already stands for ([ADR-044](adr/engine.md#adr-044)).
 
-A stateful run has no separate shrinking phase, so it reaches its flaky findings
-differently: a sequence step whose violation does not reproduce when the
-supervisor replays it becomes a `FlakyFinding`, keyed by the same
+A stateful run shrinks inside each pass rather than in a separate phase over
+grouped findings, so it reaches its flaky findings differently: a sequence step
+whose violation does not reproduce when it is replayed — by Hypothesis's own
+final replay, or by the engine's verifying re-send of a pass the shrink budget cut
+short — becomes a `FlakyFinding`, keyed by the same
 `FindingSignature` and counting its `occurrences`. `build_stateful_stats` sums
 those into `findings_flaky` (plus the flaky events that recovered no violation to
 sign), and `reconcile_flaky_with_confirmed` drops any flaky finding whose

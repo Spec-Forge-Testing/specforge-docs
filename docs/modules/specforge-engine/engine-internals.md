@@ -267,8 +267,8 @@ health checks suppressed.
 | Preset | For | Also sets |
 |---|---|---|
 | `exploration_settings(max_examples)` | one endpoint-phase pass | phases restricted to `explicit` + `generate` |
-| `shrink_settings()` | one finding's minimization | a fixed shrink example cap |
-| `stateful_settings(options, reserved_steps)` | one state-machine pass | `stateful_step_count`, `report_multiple_bugs=False` |
+| `shrink_settings()` | one finding's minimization | `max_examples=SHRINK_REQUEST_BUDGET` (one request per attempt), phases `explicit` + `generate` + `shrink` (no `explain`) |
+| `stateful_settings(options, reserved_steps)` | one state-machine pass | phases `explicit` + `generate` + `shrink` (no `explain`), `stateful_step_count`, `report_multiple_bugs=False` |
 
 `identity_strategy(identities)` is `st.sampled_from` over the declared
 identities — the one place a run draws which caller a request is sent under.
@@ -685,13 +685,19 @@ operated on again, and declares **transition invariants** — a follow-up probe
 whose observed status must fall in an expected set, and whose body must reflect
 the request's `echoed_fields`. A response that breaks its endpoint's own
 invariant, or a transition probe that breaks its own, raises a
-`StatefulViolationError` — the engine's one control-flow exception — which is
-also the signal Hypothesis shrinks the *sequence* on.
+`StatefulViolationError`, the signal Hypothesis shrinks on. The error carries the
+violating `ExecutedStep`, the observed violations, the sequence that led to it,
+and `recheck` — the oracle that judged the step, kept so a re-sent response can be
+judged the same way. Each `ExecutedStep` records the `BundleBinding`s it
+`consumed` and `produced`, so the sequence says which step fed which.
 
 A **supervisor** runs passes until the machine stops finding anything new. Each
-pass is classified into a closed union of `PassOutcome` — `Reported`,
-`LinkBroken`, `Exhausted`, `Flaky`, `Completed` — in one small function that
-isolates the single `try`/`except` ([ADR-038](adr/engine.md#adr-038)):
+pass ends in a closed union, isolated in one small function around the single
+`try`/`except` ([ADR-038](adr/engine.md#adr-038)). `run_pass` returns a
+`MachineOutcome`: a `PassOutcome` — `Reported`, `LinkBroken`, `Exhausted`,
+`Flaky`, `Completed` — or its sibling `ShrinkCutShort`, a pass whose shrink spent
+its budget. `settle_outcome` turns that into a `PassOutcome` on the wire (below),
+and the supervisor reacts to it:
 
 - `Reported` appends a minimized crash report and **suppresses** that defect's
   signature, so the next pass looks past it; the run keeps going until
@@ -708,7 +714,71 @@ isolates the single `try`/`except` ([ADR-038](adr/engine.md#adr-038)):
   bundle is non-empty, and bundles fill from the target's own responses, so
   Hypothesis can draw a different set of eligible rules when it replays a failing
   sequence. That pass counts as "could not reproduce" — the same fact as a flaky
-  violation — and the run moves on to the next pass.
+  violation — and the run moves on to the next pass. A budget-cut pass whose best
+  failure does not reproduce when re-sent lands here too.
+
+### Shrinking and minimizing a stateful finding
+
+A stateful finding is reduced in two parts, each by the tool that is good at it,
+and each capped at `STATEFUL_SHRINK_REQUEST_BUDGET` (1 000) wire requests per pass
+([ADR-089](adr/engine.md#adr-089)).
+
+**Hypothesis shrinks the payload.** Its shrink re-runs the machine with smaller
+choices, with live bundles and the target's real state behind every step, and
+that is how a violating payload reaches its smallest form. It does not shorten the
+step sequence in practice: it minimizes its own choice sequence, not the engine's
+steps. The machine runs without Hypothesis's `explain` phase, which would re-run it
+hundreds of times only to annotate a printed report.
+
+**The budget cuts that shrink before the wire.** From the first failure of a pass
+the collector counts shrink re-sends and offers every failure to the pass's
+**witness**, the best one seen: a violation outranks a link error, and between
+violations the smaller canonical payload of the violating step wins, then the
+shorter sequence. Both send sites — a rule step and a transition probe — call
+`guard_shrink_budget` before the wire; once the pass's count reaches the budget
+and a witness is in hand, it raises `ShrinkBudgetSpentError(witness)`. A pass with
+no witness is never cut. Hypothesis may end a cut pass through its own determinism
+check rather than through that signal, so the collector's record decides:
+`honor_budget_cut` keeps a `Reported` or a `LinkBroken`, and turns any other ending
+of a cut pass into `ShrinkCutShort(witness)` (`LinkBroken` when the witness is a
+link error).
+
+**The engine minimizes the sequence.** `settle_outcome` runs the sequence
+minimizer (`minimizer.py`) on a `Reported` and on a `ShrinkCutShort`; every other
+outcome passes through.
+
+1. `data_slice` keeps, transitively, every step that produced a bundle value a
+   kept step consumed, and for a transition probe the nearest earlier step that
+   moved the value the probe re-reads (its trigger). The violating step is always
+   kept.
+2. If the slice leaves steps out, it is re-sent alone; when it reproduces, it is
+   the reproducer.
+3. A `ShrinkCutShort` witness that the slice did not settle is re-sent whole, once,
+   whatever the budget has left. If it does not reproduce, the outcome is
+   `Flaky(witness)`, never an unverified report.
+4. Otherwise each step outside the slice is dropped in turn, keeping every drop
+   that still reproduces, in passes until one drops nothing.
+
+Every attempt goes through `WireResender`, which re-sends each step's recorded
+`RequestBlueprint` verbatim — no regeneration, no bundle re-capture — through the
+same send gate, collector and progress tick as a rule step. A send the gate
+blocks stops the search. A re-send reproduces when its last response has the
+original status code and `recheck` reports the same invariant under the same rule
+id. The reproducer is rebuilt from the fresh results of the re-send that
+reproduced, so the report shows the responses the minimal sequence actually got;
+a deletion that breaks reproduction is undone. An attempt that would overrun the
+budget is not made, and the search ends with the best verified reproducer. A
+`Reported` that no attempt reproduces keeps its original sequence, which
+Hypothesis's own final replay already verified.
+
+The slice is what makes verbatim re-sending safe to delete against. A re-sent
+request carries the original ids, and the resources the original run created still
+exist on the target, so an unconstrained deletion would drop the step that created
+a resource, or the `DELETE` that triggers a transition probe, and still
+"reproduce". Keeping the slice rules that out by construction.
+
+All of these re-sends are shrink traffic: they are counted in `requests_shrink`
+and recorded in the stateful trace, never in the explored results.
 
 Two guards decide whether the next step may be sent, both answered by the
 collector's single `is_send_blocked(endpoint_id)`. A per-endpoint
@@ -752,7 +822,9 @@ runner announces the verdict the outcome carries rather than assuming one
 ## Trace and replay
 
 `runtime/trace/` records **only what a run put on the wire**, in send order —
-the recipe for reproducing it. Shrinking requests are absent by construction.
+the recipe for reproducing it. A stateless run's shrinking requests are absent by
+construction; a stateful run's shrink re-sends and minimizer replays did reach the
+wire in sequence, so its trace holds them, and `requests_shrink` counts them apart.
 Each `TracedRequest` is an observed fact: credentials are *omitted* rather than
 redacted (only the config header names are kept), a URL's `user:pass@` is
 stripped and flagged with `omitted_url_userinfo`, the raw `path_params` sent

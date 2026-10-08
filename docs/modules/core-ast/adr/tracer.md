@@ -542,3 +542,192 @@ dependencias metiendo 172 falsas.
 
 El archivo del tipo es el que se llama como él o, si ninguno, el único que lo
 declara: un archivo por tipo es convención de Swift y Java, no de Django.
+
+---
+
+## ADR-057 — El tipo del receptor elige el método, y se lee de más formas { #adr-057 }
+
+**Status:** accepted · `tracer/engine.py`, `extractor/function.py`, `cte/constants.py`
+
+### Contexto
+
+En Go el último escalón de [ADR-053](#adr-053) no funcionaba nunca, por dos
+huecos que se tapaban entre sí: el índice de tipos del repositorio tenía su
+propia lista de palabras clave —`class|struct|interface|object`— y no veía el
+`type X struct` de Go, y `func (s *T) Bind(` no contaba como definición de
+`Bind`. Arreglados los dos, apareció un tercero: `validators.go` define dos
+`Bind` y `serializers.go` siete `Response()`, todos sin argumentos, y
+[ADR-055](extractor.md#adr-055) solo desempata por ruta y por aridad. El
+endpoint de comentarios recibía el validador de artículos.
+
+Además, ningún lenguaje leía el tipo de una variable local sin anotar
+—`serializer := ArticleSerializer{...}`, `serializer = ArticleSerializer(...)`—,
+que es como un handler declara casi todo.
+
+### Decisión
+
+- **El índice de tipos sale de `[class_keywords]`**, la misma tabla que
+  [ADR-022](ast-builder.md#adr-022) ata a los `.scm`. No hay una tercera lista
+  que pueda divergir.
+- **El dueño desempata.** `extract_function` recibe `owner`: entre varios
+  homónimos gana el del tipo del receptor —el campo `receiver` en Go; el tipo
+  o el `impl` que envuelve la definición en el resto—. Uno sin dueño visible,
+  una función suelta, queda como segunda opción. **Solo desempata**: un
+  candidato único se acepta aunque su dueño sea otro, porque el tipo pudo salir
+  de la convención de nombres y ser el padre del real —`user` → `User`, y
+  `check_password` vive en `UserInDB(User)`—.
+- **Formas nuevas de declaración, por evidencia y como datos** en
+  `TYPED_DECLARATIONS`: el constructor en Go, Python, JS/TS/TSX, Rust y Ruby, y
+  la aserción de tipo de Go. La fábrica va aparte, en `FACTORY_DECLARATIONS`: la
+  forma solo dice de qué llamada sale el valor, y el tipo lo da el **retorno que
+  esa función declara**, leído del árbol. No se usa la convención `NewT` → `T`.
+  Un retorno que no nombra un solo tipo, como `Optional[X]`, no decide nada.
+- **Alcance léxico**: el tipo de un receptor se busca primero en la función y
+  después en el archivo.
+- **El ciclo se corta por definición** —ruta, línea y nombre— y no por
+  `ruta::nombre`: el segundo `Response` del archivo se daba por visitado sin
+  haberse recorrido. `visited_nodes` sigue en `ruta::nombre` porque es lo que
+  se publica como `processed_functions`.
+- En PHP el `$` no es parte del nombre del receptor (`VARIABLE_SIGILS`).
+
+### Consecuencias
+
+Ninguna forma decide sola: el tipo todavía tiene que resolver a un archivo del
+repositorio, con un único declarante o por un import local. Lo que esto
+agrega es **qué** tipo buscar, no una manera nueva de encontrarlo.
+
+Una forma de texto también puede equivocarse. La primera versión del
+constructor de Python leía `user=UserWithToken(...)` —un argumento con nombre
+en su propia línea— como la declaración de `user`, y `login` perdía
+`check_password`. Ahora esa forma exige estar fuera de todo paréntesis
+(`Sentencia`). La cuenta de paréntesis no distingue los que caen dentro de un
+literal; alcanza porque casi siempre vienen de a pares.
+
+Medido sobre RealWorld: **+127 dependencias reales, 0 pérdidas, 0 falsas**
+—`go_gin` 78 → 154, `python_fastapi` 132 → 178, `php_laravel` 58 → 63—, cada
+una leída en el código.
+
+---
+
+## ADR-058 — Ninguna llamada calificada se descarta en silencio { #adr-058 }
+
+**Status:** accepted · `tracer/engine.py`, `import_analyzer/analyzers.py`, `tracer/call_detector.py`
+
+### Contexto
+
+Una llamada `x.m()` que ningún escalón de [ADR-053](#adr-053) resolvía caía en
+un `continue` pelado, y otra en un `return` cuando el tipo resolvía pero su
+archivo no: no quedaban en `unresolved_calls` ni en `external_calls`. El
+endpoint decía `complete` sin haberlas visto, que es el modo de fallo que
+[ADR-038](quality.md#adr-038) y [ADR-056](packager.md#adr-056) ya habían
+reconocido para el caso de cero llamadas. Lo que caía mezclaba ruido legítimo
+—`c.JSON`, `_.omit`— con código del repositorio —`follower.unfollow`,
+`articleModelValidator.Bind`— y nada los distinguía.
+
+### Decisión
+
+Se clasifica con una regla de mundo cerrado sobre el repositorio. Siguen
+existiendo solo dos categorías, las de [ADR-028](#adr-028):
+
+| Situación | Clasificación |
+|---|---|
+| El receptor se declaró con un tipo de un paquete importado de afuera (`c *gin.Context`) | `external` |
+| El tipo declarado del receptor es él mismo de una librería (`Repository<T>` de TypeORM) | `external` |
+| El método es del lenguaje (la tabla de [ADR-030](#adr-030)) | `external` |
+| El tipo del receptor existe en el repo y su archivo no define el método: es heredado | `external` |
+| Algún archivo del repo define el método | `unresolved`, con su calificador |
+| Ningún archivo del repo lo define | `external` |
+
+La tabla de símbolos —qué nombres define el repositorio— se llena a demanda y
+**solo clasifica**: saber que `unfollow` existe no dice cuál de sus
+definiciones es la llamada, y extraer por eso es lo que se revirtió por meter
+172 falsas.
+
+Lo que consume la lista mira el método y no el receptor: `CRITICAL_KEYWORDS`
+([ADR-037](quality.md#adr-037)) —un `auth_user.to_jwt` no es autenticación
+por el nombre de su variable— y la búsqueda de archivos del bundle de
+fallback.
+
+Para que la regla tenga con qué decidir hicieron falta dos lecturas más: el
+`require` de CommonJS es un import —en un servidor de Node no hay ningún
+`import`, y `_` no era una librería—, y el `->` de PHP separa los segmentos
+de una base igual que el `::`.
+
+### Consecuencias
+
+`completeness` dice la verdad en más endpoints, y por eso baja: una llamada
+del repo que no se pudo seguir lo vuelve `partial`. Un endpoint cuya única
+llamada queda sin resolver tiene ratio 0 y pasa a `fallback`; no pierde
+nada, porque no había cadena, y recibe el bundle de archivos donde vive lo
+que no se siguió.
+
+El primer intento no distinguía el tipo de librería: `Repository<T>`,
+`Collection` y el `PasswordHash` de argon2 fallaban al resolverse y la tabla
+de símbolos encontraba un `findOne` o un `verify_password` propios. En Rust
+eso además disparaba `CRITICAL_KEYWORDS` y el `fallback` forzado vaciaba la
+cadena de `POST /users/login`. Un tipo de librería termina `external`; nunca
+se adivina en el repo.
+
+La regla sigue apoyándose en una suposición de [ADR-028](#adr-028): un import
+local mal escrito y una librería son indistinguibles desde el fuente.
+
+---
+
+## ADR-059 — Las declaraciones de tipo viajan en su propio bloque { #adr-059 }
+
+**Status:** accepted · `tracer/types.py`, `extractor/function.py`, `packager/xml.py`
+
+### Contexto
+
+En los 12 corpus de RealWorld el LLM no veía las reglas de validación de la
+petición. En 8 viven en una **declaración de tipo** —el struct con
+`binding:"required,min=4"`, el DTO con `@NotBlank`, el FormRequest con
+`rules()`— y al payload solo llegaba el nombre del tipo en la firma del
+handler. El contrato de `POST /articles` salió sin `minLength`, el motor
+mandó un título de tres letras y el target respondió 422.
+
+Extraer un tipo por nombre ya era posible ([ADR-021](ast-builder.md#adr-021)
+lo trata como una definición legítima); lo que no existía era un camino que lo
+pusiera en el payload.
+
+### Decisión
+
+- `extract_type` corta la declaración entera sobre `@definition.class`. En
+  Rust gana el `struct` o el `enum`: el `impl` lleva el mismo nombre y solo los
+  métodos.
+- Un recolector junta los tipos en orden de prioridad: los que el recorte del
+  handler **nombra**, leídos del árbol y no del texto —una palabra con
+  mayúscula en un mensaje de error no es un tipo—; los que la resolución
+  asignó a sus **receptores** ([ADR-057](#adr-057)); y **un nivel más** desde
+  los primeros, porque el serializer de Django nombra al modelo y el request de
+  Swift al tipo con los campos. Desde un servicio receptor no se expande: solo
+  traería sus colaboradores.
+- Cada tipo necesita un declarante único en el repositorio o un import local
+  que lo declare. Se salta lo que ya va como dependencia —el constructor de
+  ADR-021— y la clase que contiene al handler.
+- Presupuesto duro: 8 tipos, 120 líneas por tipo, 360 en total. Un tipo entra
+  entero o queda en `omitted_types` con su razón —`too_long`, `over_budget`,
+  `not_extractable`—, y el XML lo nombra como `<type … omitted="…"/>`.
+- **Fuera del ratio**: los tipos no son llamadas, así que no tocan
+  `completion_ratio`, el modo ni `completeness`.
+
+### Consecuencias
+
+La regla llega al payload en 10 de 12 corpus. En C# no, y es correcto: el
+validador lo descubre MediatR por inyección, y `Create`/`Command` tienen varios
+declarantes. En Koa tampoco: un esquema yup es un valor de módulo, no un tipo.
+
+El bloque trae también contexto que no es la petición: el servicio receptor
+de un controlador de Spring, la configuración que nombra una firma de FastAPI.
+El presupuesto lo acota, y casi siempre un servicio cae como `too_long`.
+
+`estimated_tokens` crece: el payload de `POST /articles` en Go pasó de unos
+600 tokens a unos 2 100.
+
+Una `interface` de TypeScript no se puede extraer —la consulta es compartida
+con JavaScript ([ADR-022](ast-builder.md#adr-022))—: queda como
+`not_extractable`.
+
+La etiqueta `<type filepath=…>` es nueva, y quien normalice rutas del
+`system_context` tiene que conocerla: la clave de caché de `core` la suma, y su
+test normaliza la salida real del packager.

@@ -219,11 +219,20 @@ explicitly imported or defined locally in the same file, so a user's own `map`
 or `sum` still gets traced.
 
 **Cross-language qualified-call resolution.** A qualified call (`obj.method()`)
-is only traced when its base is an import that already resolved to a file
-**inside** `repo_root`. That single rule is what makes `self.compute()` or
-`svc.charge()` — where the base is a parameter or a local variable, not an
-import — drop out without a special case, and it's why the tracer never
-chases the language's own stdlib or a third-party library.
+is only traced when its base resolves to something **inside** `repo_root`: an
+import that resolved there, or a receiver whose type is declared in the
+repository ([ADR-053](adr/tracer.md#adr-053), [ADR-057](adr/tracer.md#adr-057)).
+That is why the tracer never chases the language's own stdlib or a third-party
+library.
+
+A call that nothing resolves is never dropped silently: it is classified
+([ADR-058](adr/tracer.md#adr-058)). It is **external** when its receiver was
+declared with a library type (`c *gin.Context`), when the method belongs to the
+language, when the receiver's type lives in the repository but its file does not
+define the method (inherited from a framework base class), or when no file of the
+repository defines that method at all. It is **unresolved**, kept with its
+qualifier (`follower.unfollow`), when some file of the repository defines the
+method but the receiver's type cannot be known.
 
 The twelve grammars express one idea — a call, with or without a base — in
 nine different shapes, so resolution goes through tables of node types and
@@ -320,7 +329,10 @@ cheap; `_is_excluded` filters case-insensitively.
 
 ### 5. `packager`
 Serializes data into an XML-tagged `system_context`. Wraps source code inside `CDATA`,
-sanitizes UTF-8 strings, and estimates tokens. Sets `is_partial_context = True` if mode
+sanitizes UTF-8 strings, and estimates tokens. The `<types>` block carries the
+declarations of the types the handler reads the request with — where the validation
+rules live — whole or named as `omitted` with a reason, and outside the completion
+ratio ([ADR-059](adr/tracer.md#adr-059)). Sets `is_partial_context = True` if mode
 is non-surgical or unresolved calls exist.
 
 ```xml
@@ -331,6 +343,10 @@ is non-surgical or unresolved calls exist.
   <dependencies>
     <dependency filepath="app/validate.py" name="validate"><![CDATA[ ... ]]></dependency>
   </dependencies>
+  <types>
+    <type filepath="app/schemas.py" name="OrderIn"><![CDATA[ ...the request type... ]]></type>
+    <type filepath="app/services.py" name="OrderService" omitted="too_long"/>
+  </types>
   <missing_context>
     <unresolved_call>charge_card</unresolved_call>
   </missing_context>

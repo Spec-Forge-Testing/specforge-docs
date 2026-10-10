@@ -135,6 +135,8 @@ nav:
           - Core:
               - Overview: modules/core/index.md
               - Reference: modules/core/reference.md
+              - Configuration: modules/core/configuration.md
+              - Inference: modules/core/inference.md
               - Protocol:
                   - Overview: modules/core/protocol/index.md
                   - Handshake and versioning: modules/core/protocol/handshake.md
@@ -147,6 +149,7 @@ nav:
                   - Overview: modules/core/adr/index.md
                   - Core: modules/core/adr/core.md
                   - Protocol: modules/core/adr/protocol.md
+                  - Inference: modules/core/adr/inference.md
           - Core AST:
               - Overview: modules/core-ast/index.md
               - Reference: modules/core-ast/reference.md

@@ -43,7 +43,7 @@ Each folder answers one question; nothing skips a layer.
 | `adapters/` | how does a message get in? | The only layer that knows a transport exists. `stdio/` carries NDJSON framing, the JSON-RPC envelope, the handshake, the dispatcher, and the server with its worker pool and live-cancellation registry. |
 | `facade/` | what can a frontend call? | Signatures only, delegating to controllers — the readable list of the surface, like a routes file. Every module here is a **family**. |
 | `controllers/` | what does each operation do? | One thin function per operation; **never calls another controller** — shared work lives in a service both reach. |
-| `services/` | how is it done? | All the logic, no rendering. Self-contained subsystems (`fuzz/`, `history/`, `compare/`, `retention/`, `diagnostics/`, `pipeline/`, `contract/`, `analysis/`, `deps/`). The only layer that imports `storage`. |
+| `services/` | how is it done? | All the logic, no rendering. Self-contained subsystems: `analysis/`, `catalog/`, `compare/`, `config/`, `contract/`, `coverage/`, `deps/`, `diagnostics/`, `fuzz/`, `history/`, `identities/`, `persistence/`, `pipeline/`, `replay/`, `report/`, `retention/`, `shell/`, `workspace/`. The only layer that imports `storage`. |
 | `schemas/` | what comes in? | Deliberately inert input objects. |
 | `models/` | what goes out? | Response DTOs and the projections that build them. Never input. |
 | `errors/` | how does it fail, and how does the protocol say so? | One class per failure, each carrying **both** codes the protocol needs. |
@@ -58,9 +58,11 @@ its own; every project shares **one central store** (a project has no database
 of its own). Opening a project loads its settings, its parsed and numbered
 contract, and its store connection; switching replaces all of it.
 
-Two levels of readiness gate the operations. `Precondition.PROJECT` means a
-project must be open; `Precondition.CONTRACT` means a contract must also be
-loaded (and implies `PROJECT`). Each operation publishes which it needs.
+Three levels of readiness gate the operations, each implying the one before.
+`Precondition.PROJECT` means a project must be open; `Precondition.CONTRACT`
+means a contract must also be loaded; `Precondition.ANALYSIS` means an
+`analyze_endpoints` must also have run in the same session.
+`Precondition.NONE` needs nothing. Each operation publishes which it needs.
 
 ## The operation catalog
 
@@ -122,13 +124,17 @@ The package targets Python 3.11+. Installation and the test suite are in
 ```bash
 specforge                      # the interactive REPL (the team's testing surface)
 specforge --serve              # serve the protocol until EOF or `shutdown`
-specforge --protocol-version   # 0.1.5
+specforge --protocol-version   # 0.1.12
 ```
 
 ## Read more
 
 - [Reference](reference.md) — the layers, the catalog derivation, the gateways
   and the doctor in depth.
+- [Configuration](configuration.md) — every option, its layers and how a run
+  reads them.
+- [Inference](inference.md) — how a run produces its contracts with a model:
+  adoption, the cache, approval and the spend cap.
 - [Protocol](protocol/index.md) — the wire the shipped client drives the core
   over: framing, envelopes, events, errors, operations and fixtures.
 - [Decision records](adr/index.md) — why the core is shaped this way.

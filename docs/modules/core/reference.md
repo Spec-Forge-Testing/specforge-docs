@@ -58,7 +58,9 @@ signature and docstring:
   supplies and the catalog hides;
 - `emits_progress` is true when the function accepts `progress`;
 - `cancellable` is true when it accepts `cancel`;
-- `requires` is whatever `@requires` recorded, defaulting to `Precondition.NONE`.
+- `requires` is whatever `@requires` recorded, defaulting to `Precondition.NONE`;
+- `destructive` is true when the function carries `@destructive`, the tag for an
+  operation that deletes or rewrites what cannot be undone.
 
 Because there is no hand-written second list, the catalog cannot drift from the
 code. `describe` publishes it, and the handshake embeds the same catalog.
@@ -72,6 +74,7 @@ An operation declares the readiness it needs. The set is closed:
 | `NONE` | Callable with nothing open. |
 | `PROJECT` | A project must be open. |
 | `CONTRACT` | A contract must be loaded — which implies a project. |
+| `ANALYSIS` | An `analyze_endpoints` must have run in the same session — which implies a contract. Without it, the call is refused `NO_STATIC_ANALYSIS`. |
 
 ## The session
 
@@ -113,6 +116,11 @@ under `services/deps/`.
   message is carried through verbatim, any other exception is named by its type.
 - Gateways are leaves of the import graph and answer once per process, so a
   library installed while the core is running is only seen after a restart.
+- Five gateways import their library as soon as their module is imported. The
+  `ai` gateway loads on first use instead — the first inference, estimate or
+  `diagnose` — once, under a lock, and keeps that answer for the life of the
+  process. The LLM stack it pulls in is a heavy import that most sessions never
+  need, so the core starts without paying for it.
 
 Single ownership is not a convention but a test: a suite walks the AST of `src/`
 and fails if any library is imported outside its gateway, with its few named
@@ -146,7 +154,10 @@ never fuzzed as a target. `producer_exclusions` records which of the two
 happened as its [`disposition`](protocol/vocabularies.md#producer-exclusion-disposition).
 When a targeted
 endpoint draws no requests, the run records **why** as an `unprobed_reason`, so
-the report can tell a by-design skip from an endpoint it never reached. The run
+the report can tell a by-design skip from an endpoint it never reached. How the
+inference producer builds its requests, adopts what comes back, answers from its
+cache, holds its spend to an approved estimate and a cap, reports each contract
+and stops on a cancellation is in [Inference](inference.md). The run
 itself — its modes, budgets and oracles — belongs to the engine; see
 [Execution modes](../specforge-engine/execution-modes.md).
 

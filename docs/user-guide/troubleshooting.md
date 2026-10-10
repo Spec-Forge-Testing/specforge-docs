@@ -136,12 +136,51 @@ trace additionally requires `--include-traces` — `--yes` alone never removes a
 
 ## The LLM is not configured
 
-**Symptom.** `doctor` flags the LLM configuration, or the inference step is skipped.
+**Symptom.** A run with the inference producer fails with `CONTRACT_PRODUCER_FAILED` before it
+starts: `fuzz` answers it before its `started` event, and `run_pipeline` fails its `inference`
+stage with it. The error's `data.source` is `inference engine` and `data.detail` names what is
+missing, such as *"LLM_MODEL is required"* or *"LLM provider credentials missing: &lt;model&gt; needs
+&lt;key&gt;"*. `estimate_inference` refuses with the same code. The doctor flags the *LLM env
+file*, *LLM model* or *LLM credentials* check as a warning.
 
-**Cause.** No model or provider credential is set.
+**Cause.** One of these:
 
-**Fix.** Configure a model and its API key as described in [LLM Providers](llm-providers.md).
-Fuzzing straight from the spec does not need an LLM; only the business-rule inference does.
+- the LLM packages (`lib/llm`, `lib/semantic_inference`) are not installed;
+- no model is set: neither `LLM_MODEL` nor `llm.primary_model` in `specforge.toml`;
+- a model of the chain (`LLM_MODEL` or one of `LLM_FALLBACK_MODELS`) has no key for its provider.
+  Every model of the chain needs one, not only the first.
+
+No model is called and nothing is spent: the configuration is checked when the producer is
+built.
+
+**Fix.** Configure a model and a key for every model of its chain, as described in
+[LLM Providers](llm-providers.md), then run the doctor again: its credential check names each
+model that still lacks a key. Fuzzing straight from the spec does not need an LLM; only the
+inference producer does.
+
+## An endpoint's code cannot be read: `UNSUPPORTED_LANGUAGE`
+
+**Symptom.** Static analysis of an endpoint fails with `UNSUPPORTED_LANGUAGE` (an
+`endpoint_failed` event in `analyze_endpoints`), and with the inference producer the endpoint
+cannot be traced, so it runs from its schema alone; `estimate_inference` lists it under
+`untraced`.
+
+**Cause.** The handler is written in a language whose grammar is not installed. Python,
+JavaScript, TypeScript and Go are always available; Java, C#, Ruby, PHP, Rust, Kotlin and Swift
+come with the `golden-path` extra of `lib/core_ast`. A file in any other language is outside what
+static analysis reads.
+
+**Fix.** Install the extra and restart Spec Forge:
+
+```bash
+pip install -e "lib/core_ast[golden-path]"
+```
+
+The [Docker image](docker.md#the-core-image) already includes it. With the grammar installed,
+finding the controller still depends on the framework. Measured on four endpoints of the same
+sample API in each stack, Ruby on Rails resolved all four, Java on Spring one and C# on ASP.NET
+two; the others fail with `CONTROLLER_NOT_FOUND` and run schema-only under the inference
+producer.
 
 ## Windows and CI notes
 

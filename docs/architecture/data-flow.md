@@ -20,7 +20,7 @@ flowchart TD
 
     ED --> SI["semantic_inference"]
     PAY --> SI
-    SI -->|"generate_endpoint_contract"| EC["EndpointContract<br/>(kernel, LLM invariants)"]
+    SI -->|"SemanticInferenceEngine.generate_contract"| EC["EndpointContract<br/>(kernel, LLM invariants)"]
 
     ED --> FUSE["contract_assembly.fuse_contract"]
     EC --> FUSE
@@ -43,7 +43,7 @@ flowchart TD
 | :--- | :--- | :--- | :--- | :--- |
 | Spec → endpoints | `contract_assembly.parse_contract` → `ASTAdapter` | `semantic_inference`, `fuse_contract` | [`EndpointDefinition`](../modules/contract-assembly/index.md) | `parse_contract` (OpenAPI 3.x / Swagger 2.0 validated on ingest) |
 | Source → handler context | `core_ast` payload builders | `semantic_inference` | [`LLMPayload`](../modules/core-ast/index.md#public-api-re-exports) | `core_ast` stages (typed DTO per stage) |
-| Context → invariants | `semantic_inference.generate_endpoint_contract` | `fuse_contract` | [`EndpointContract`](../modules/contracts/index.md#the-model) | `semantic_inference` validates the raw LLM output as `SemanticEndpointContract` (`extra="forbid"`) before converting it to the kernel contract |
+| Context → invariants | `SemanticInferenceEngine.generate_contract` (`semantic_inference`) | `fuse_contract` | [`EndpointContract`](../modules/contracts/index.md#the-model) | the raw LLM output is validated directly as the kernel `EndpointContract` (`extra="forbid"`), with the routing identity bound from the request |
 | Base + invariants → unified | `contract_assembly.fuse_contract` | `core/` fuzz adapter | [`UnifiedEndpointContract`](../modules/contract-assembly/index.md) | `fuse_contract` (identity from the OpenAPI base, invariants merged in) |
 | Unified → engine input | `core/` fuzz adapter (`endpoints_to_compiler_input`) | `compile_strategies` | [`CompilerInput` / `EndpointSpec`](../modules/specforge-engine/strategy-compiler.md) | the engine's `policy` layer validates each `EndpointSpec` |
 | Compile → run | `specforge_engine.compile_strategies` | `specforge_engine.run` | [`EngineInput`](../modules/specforge-engine/engine-internals.md) | `compile_strategies` (translation only; never re-validates) |
@@ -61,9 +61,10 @@ Some things stay on one side of a boundary by design — a rule that keeps the d
 acyclic and one-directional.
 
 - **Raw LLM output never becomes a contract unchecked.** `semantic_inference` is the only place
-  model output is validated: it is parsed into a strict model (`extra="forbid"`, so a hallucinated
-  key fails loudly) and only then converted to the kernel `EndpointContract`. No downstream stage
-  ever sees an unvalidated LLM response.
+  model output is validated: `SemanticInferenceEngine.generate_contract` asks `lib/llm` for a
+  structured completion whose response model is the kernel `EndpointContract` itself
+  (`extra="forbid"`, so a hallucinated key fails validation and the model is asked again). No
+  downstream stage ever sees an unvalidated LLM response.
 - **The execution engine never sees OpenAPI or the LLM's output.** `specforge_engine` consumes
   `EngineInput` alone. The OpenAPI shape is resolved away in ingestion, and the LLM's contribution
   reaches the engine only as constraints already merged into `UnifiedEndpointContract` and then

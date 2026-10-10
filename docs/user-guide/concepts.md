@@ -93,6 +93,16 @@ flowchart TD
   **replay** re-sends that recorded trace verbatim.
 - **Artifacts** are the files a run leaves on disk: its reports and the trace file.
 
+When a run infers contracts with an LLM, two more things are kept:
+
+- The **contract cache**: every inferred contract, stored apart from any run, keyed by
+  everything that shaped its prompt. A later run on the same code and spec reuses it instead
+  of calling the model again; changing the code, the spec or the prompt infers it afresh.
+- The run's **inference cost**: what its inferences were estimated to cost before it ran and
+  what they really cost, in tokens and US dollars, with how many contracts the cache answered
+  and how long producing them took. The [run report](reports.md#the-reportjson-schema) shows
+  them.
+
 Reproducibility here is by *record and replay*, not by a random seed: the original run writes
 down every request it sent, and reproducing means re-sending that exact list.
 

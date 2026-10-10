@@ -39,4 +39,11 @@ name, that name follows in `code font`.
 | **Producer contract** | An extra per-endpoint contract you supply (`--contracts`) that enriches the run beyond the OpenAPI schema. |
 | **State link** | A data dependency between operations derived from the spec, letting a stateful sequence carry a value from one request into the next. |
 | **Handler** | The function in your source code that serves an endpoint. |
-| **Coverage of declared endpoints** | Which endpoints a run actually tested and which it left out (targeted, excluded or filtered). |
+| **Coverage of declared endpoints** | Which endpoints a run actually tested and which it left out (targeted, excluded or filtered), plus those the spec never declared that only a stateful transition reached (`reached_by_transition`). |
+| **Inference producer** | The contract producer that asks an LLM for each endpoint's contract, from its spec entry and its traced source code (`producer.kind` `inference`). |
+| **Agent profile** | The lens the LLM infers a contract through: `qa` for a `default` strategy run, `security` for a `hacker` one, which also asks for attack payloads. |
+| **Contract cache** | The inferred contracts kept in storage, keyed by everything that shaped the prompt, so a later run reuses them without calling the model (`run.contract_cache`). |
+| **Cost estimate** | What a run's inferences would cost, priced before any model is called (`estimate_inference`). |
+| **Approval token** | The token an estimate returns; a run that has inferences to pay for passes it to show those exact inferences were approved (`producer.approval_token`). |
+| **Cost cap** | A spending limit in US dollars: no inference starts once the run's spend would pass it, and the endpoints left over run schema-only (`producer.max_cost_usd`). |
+| **Withheld endpoint** | An endpoint whose produced contract declared a risk flag but could not be used, so it is never fuzzed as a target (`disposition` `withheld`). |

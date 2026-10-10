@@ -43,7 +43,17 @@ its metrics, endpoint stats and crashes stay queryable through `history` and
 
 `ReportDocument` is a frozen, `extra="forbid"` Pydantic model: a pure function
 of a run's persisted data, never a live object. It carries a `schema_version`
-("1.13" today), bumped when the shape changes in a way a reader cannot ignore.
+("1.17" today), bumped when the shape changes in a way a reader cannot ignore.
+1.17 is additive over 1.16: `run` gains `production_duration_ms`, how long
+producing the run's contracts took, tracing and pricing included; `null` without a
+producer and always for a replay. `run.duration_ms` stays the engine run alone.
+1.16 is additive over 1.15: each `endpoints[]` entry gains `held_back_via`, the
+endpoint whose risk flag held this one back. Within 1.16, `unprobed_reason` gained
+four values, `signal_causes` gained `access_preconditions_unmet`, and a stateful
+run's request counters left out its shrinking re-sends, which `requests_shrink`
+counts.
+1.15 is additive over 1.14: `run` gains `inference_cost`, `{estimated, actual}`.
+1.14 is additive over 1.13: `run` gains `contract_cache`, `{hits, misses}`.
 1.13 is not additive over 1.12. Two keys take the names the run's other readers
 already use: an endpoint's `crash_count` is `findings_confirmed`, and an
 unconfirmed finding's `occurrences` is `represented_findings`. An endpoint's
@@ -101,14 +111,43 @@ rule the finding broke, when an oracle named one.
 | `tool` | Which tool produced the document (`name`), and the engine version that ran the analyzed API. |
 | `project` | The analyzed project's name. |
 | `analysis` | The recipe the run executed: id, label, strategy mode, execution mode (`stateless`, `stateful`, `performance`, `resilience`, `auth`), and the repo hash it was generated against. |
-| `run` | The run's own identity and outcome: id, ordinal, origin (original/replay), `executed_at`, duration, [`status`](../modules/core/protocol/vocabularies.md#run-status), [`oracle_scope`](../modules/core/protocol/vocabularies.md#oracle-scope) - which oracles judged its responses - `fidelity`, its [comparability mark](../modules/core/protocol/vocabularies.md#comparability), `signal`/`signal_causes` (see below), and - when the run was cut short - `truncation` (`reason`, `endpoint_id`, `detail` and `target_down_verdict`), otherwise `null`. |
-| `metrics` | The finding funnel and request counters, `null` when a run recorded none. |
-| `endpoints` | One entry per endpoint touched: requests, `examples_planned`, raw findings, confirmed findings (`findings_confirmed`), its latency distribution, `starved_identities` - the labels of any declared identities the endpoint's budget could not fund, empty unless the run split budget by identity and ran short of it - and `undecided_rules` - the ids of any declared rules the oracle evaluated here and could never decide (a rule left undetermined on every response, e.g. a numeric rule on a header declared `integer`), empty unless the run's mode accounts for them (`stateless`, `performance`) and some rule stayed undecidable - and `held_back_by` - why the safety guard kept this endpoint out of the run (`external_side_effects`, `write_operation`, or `unsafe_method_outside_run` for a follow-up outside the run), `null` when it was probed - and `held_back_via` - the id of the endpoint whose risk flag held this one back (its own id when its own flag did; for a follow-up held outside the run, the endpoint that declared the transition), `null` exactly when `held_back_by` is. A held endpoint's entry carries zero requests unless the run breached the guard - and `load_profile` - the per-step latency a performance run's concurrency ladder measured here (`concurrency`, the step's `latency` distribution, and whether that step `degraded`), empty unless the run used a ladder - and `unprobed_reason` - why a targeted endpoint that drew no requests was left unprobed (`declared_public` for a by-design public skip, `access_undeclared` for a missing access policy), `null` when the endpoint was probed or held back for another reason. The HTML report shows this reason, or the safety guard's hold, in a **Not probed** column; a hold names the other endpoint (`via ...`) only when another endpoint's flag decided it. It also carries `truncation` - why this endpoint's own pass was cut short (`{reason, detail}`, see [the reasons](../modules/core/protocol/vocabularies.md#truncation-reason)), `null` when it ran to completion - `by_category` - the requests per outcome category - and `held_back_transitions` - each follow-up endpoint the safety guard kept from being sent after this one, mapped to why. |
+| `run` | The run's own identity and outcome: id, ordinal, origin (original/replay), `executed_at`, duration, [`status`](../modules/core/protocol/vocabularies.md#run-status), [`oracle_scope`](../modules/core/protocol/vocabularies.md#oracle-scope) - which oracles judged its responses - `fidelity`, its [comparability mark](../modules/core/protocol/vocabularies.md#comparability), `signal`/`signal_causes` (see below), and - when the run was cut short - `truncation` (`reason`, `endpoint_id`, `detail` and `target_down_verdict`), otherwise `null`. It always carries `production_duration_ms`, `contract_cache` and `inference_cost`, which are `null` without a contract producer (see [The run's inference](#the-runs-inference)). |
+| `metrics` | The finding funnel and request counters, `null` when a run recorded none. `total_requests` counts the requests the run built to explore the API; `requests_shrink` counts, apart, the requests shrinking put on the wire to reduce failures to their minimal form, in stateless and stateful runs alike, so the two never overlap. A liveness probe, the request a stateless run re-sends after a streak of server errors to check the target is still up, counts in neither. |
+| `endpoints` | One entry per endpoint touched: requests, `examples_planned`, raw findings, confirmed findings (`findings_confirmed`), its latency distribution, `starved_identities` - the labels of any declared identities the endpoint's budget could not fund, empty unless the run split budget by identity and ran short of it - and `undecided_rules` - the ids of any declared rules the oracle evaluated here and could never decide (a rule left undetermined on every response, e.g. a numeric rule on a header declared `integer`), empty unless the run's mode accounts for them (`stateless`, `performance`) and some rule stayed undecidable - and `held_back_by` - why the safety guard kept this endpoint out of the run (`external_side_effects`, `write_operation`, or `unsafe_method_outside_run` for a follow-up outside the run), `null` when it was probed - and `held_back_via` - the id of the endpoint whose risk flag held this one back (its own id when its own flag did; for a follow-up held outside the run, the endpoint that declared the transition), `null` exactly when `held_back_by` is. A held endpoint's entry carries zero requests unless the run breached the guard - and `load_profile` - the per-step latency a performance run's concurrency ladder measured here (`concurrency`, the step's `latency` distribution, and whether that step `degraded`), empty unless the run used a ladder - and `unprobed_reason` - why an `auth` run crossed nothing at a targeted endpoint (see [Unprobed endpoints](#unprobed-endpoints)), `null` when the endpoint was probed or held back for another reason. The HTML report shows this reason, or the safety guard's hold, in a **Not probed** column; a hold names the other endpoint (`via ...`) only when another endpoint's flag decided it. It also carries `truncation` - why this endpoint's own pass was cut short (`{reason, detail}`, see [the reasons](../modules/core/protocol/vocabularies.md#truncation-reason)), `null` when it ran to completion - `by_category` - the requests per outcome category - and `held_back_transitions` - each follow-up endpoint the safety guard kept from being sent after this one, mapped to why. |
 | `coverage` | The [endpoint dispositions](../modules/core/protocol/vocabularies.md#coverage) behind the run - `declared`/`targeted`/`excluded`/`filtered`/`reached_by_transition`/`exercised` counts plus `excluded_endpoints` (method, path, reason; a withheld endpoint's reason starts `withheld:`) and `reached_by_transition_endpoints` (`method`, `path`), the endpoints the spec never declared that a stateful transition reached, never counted in `declared` - `null` for a replay, which never compiles. |
 | `producer_exclusions` | One entry (`method`, `path`, `reason`, `disposition`) per endpoint whose contract the inference producer could not deliver or the run could not use - see [`fuzz`'s contract producer](cli-reference.md). The [`disposition`](../modules/core/protocol/vocabularies.md#producer-exclusion-disposition) says what became of it: `schema_only`, fuzzed from its schema alone, or `withheld`, never fuzzed as a target because its contract declared a risk flag and could not be used. Empty when no producer ran, when the fixture producer ran (it aborts rather than drop), or when nothing was dropped. |
 | `defects` | One entry per crash, ordered most-severe-first (the same order the live crash tables render): identity, reproducer and what the run observed - the same shape `inspect --crash <id>` and `compare` project a crash through. Every crash carries `rule_id` and `rule_description`: the business rule the contract declared for a business-rule or access-control finding, or the rule the invariant enforces on its own for every other one. |
 | `unconfirmed_findings` | One entry per finding the run saw but never confirmed as a crash - see below. Empty for a replay. |
 | `replay` | What only a replay knows - fidelity, divergences and a verdict per recorded defect - `null` for an original run. |
+
+### The run's inference
+
+Three `run` fields describe how the run's contracts were produced. Each is `null`
+when it does not apply, never `0`: a `0` is a real measurement.
+
+| Field | Shape | `null` when |
+| --- | --- | --- |
+| `production_duration_ms` | How long producing the contracts took, tracing and pricing included. | the run had no producer, and always for a replay |
+| `contract_cache` | `{hits, misses}`: how many contracts the contract cache reused and how many were inferred. | the run had no cache, and always for a replay |
+| `inference_cost` | `{estimated, actual}`, each `{input_tokens, output_tokens, cost_usd}`: what the inferences were estimated to cost before the run, and what they cost, failed inferences included. | the run had no inference producer, and always for a replay |
+
+Inside `inference_cost`, `cost_usd` is `null` when the model has no known price,
+or when a failed inference's cost is unknown; it is never reported as `0` for
+either. A run the cache answered whole carries real zeros.
+
+### Unprobed endpoints
+
+`endpoints[].unprobed_reason` says why an `auth` run crossed nothing at a targeted
+endpoint:
+
+| Value | Meaning |
+| --- | --- |
+| `declared_public` | The access policy is public: there is nothing to cross. |
+| `access_undeclared` | The contract declares no access policy. |
+| `owner_producer_missing` | Nothing in the run produces the owner's resource or one it depends on; a producer the safety guard held back counts as missing. |
+| `owner_chain_cyclic` | The owner's resource depends on itself through its producers. |
+| `owner_resource_unprovisioned` | Every attempt to create the owner's resource failed, or its producer has no payload; the attempts are in the trace. |
+| `required_role_unheld` | No declared identity holds the required role. |
 
 ### Endpoints that degrade under load
 
@@ -189,7 +228,10 @@ the id there is dropped, since it would only repeat the invariant name.
 compilation-time fact a replay never produces, so trustworthiness there is
 read from `fidelity` instead); `run.signal_causes` lists why when degraded, in
 render order - `no_responses`, `endpoints_excluded`, `withheld_by_safety_guard`,
-`access_policy_undeclared`, `run_cancelled` and/or `endpoints_unreached`. See
+`access_policy_undeclared`, `access_preconditions_unmet` (an `auth` run left a
+targeted endpoint with an access policy unprobed for one of the `owner_*` or
+`required_role_unheld` reasons above), `run_cancelled` and/or
+`endpoints_unreached`. See
 [Coverage and the run's signal](cli-reference.md#coverage-and-the-runs-signal) for
 what each cause means and how it is derived.
 

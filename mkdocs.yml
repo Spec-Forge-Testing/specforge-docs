@@ -182,6 +182,12 @@ nav:
                   - Repositories: modules/storage/adr/repositories.md
                   - Artifacts: modules/storage/adr/artifacts.md
               - Testing: modules/storage/testing.md
+          - LLM:
+              - Overview: modules/llm/index.md
+              - Reference: modules/llm/reference.md
+              - Decision records:
+                  - Overview: modules/llm/adr/index.md
+                  - LLM client: modules/llm/adr/llm.md
           - Semantic Inference:
               - Overview: modules/semantic-inference/index.md
               - LLM Router: modules/semantic-inference/llm-router.md

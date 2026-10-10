@@ -85,7 +85,7 @@ Field names of this family are stable: they are persisted as columns.
 | `FlakyFinding`, `UnverifiedFinding` | a settled group: its `signature` and how many raw `occurrences` it stands for |
 | `RunStats`, `EndpointStats`, `LatencyStats` | run, endpoint and latency counters — `EndpointStats.unprobed_reason` names why a targeted endpoint drew no requests |
 | `LoadStepStats` | one concurrency-ladder step on an endpoint's `load_profile`: its `concurrency`, measured `latency` and `degraded` verdict |
-| `UnprobedReason` | why a targeted endpoint that drew no requests was left unprobed: `declared_public` (a by-design public skip) or `access_undeclared` (no access policy declared) |
+| `UnprobedReason` | why the auth mode crossed nothing at a targeted endpoint: `declared_public` or `access_undeclared` (by design), `owner_producer_missing`, `owner_chain_cyclic`, `owner_resource_unprovisioned` or `required_role_unheld` (a precondition the run could not meet) — each one in [Execution modes](execution-modes.md#auth) |
 | `CrashReport`, `InvariantViolation` | a confirmed finding's reproducer and the invariant it broke — its `response_body` has sensitive field values redacted to `***` by name |
 | `ViolatedRule` | the rule a `CrashReport` broke (`id` + `description`) — declared by the contract for a `semantic_property` / `access_control` finding, or intrinsic to the invariant for every other one |
 | `ExecutionTrace`, `TracedRequest`, `TruncationRecord` | the replayable record |
@@ -163,9 +163,8 @@ kernel's from `specforge_contracts`.
 | `PolicyError` | boundary validation failed |
 | `StrategyCompilationError` | a contract cannot become a strategy |
 | `EngineError` | an execution invariant was violated |
-| `AccessLinkError` | the auth runner cannot honor an `owner_only` endpoint's producer link — its bundle has no producer in the run, or provisioning the owner resource broke the producer's own contract (`endpoint_id`, `bundle`) |
-| `AccessRoleError` | the auth runner cannot cross a `role_only` endpoint: no declared identity holds its required role; raised before the first request, its message naming the roles the run did declare (`endpoint_id`, `required_role`) |
 | `AccessIdentityError` | the auth runner has no valid declared identity to run against; raised before the first request |
+| `AccessUncrossableError` | an auth run had access policies to cross and crossed none of them; `unprobed` maps each such endpoint to its `UnprobedReason`. Not raised for a run cut short. The runner and its modules (`chain.py`, `provisioning.py`, `producer_watch.py`, …) are mapped in [Execution modes](execution-modes.md#auth) |
 | `ConcurrencyLadderError` | a performance run's concurrency ladder cannot be honored — a step exceeds `max_concurrency`, or an endpoint funds no valid examples to measure a baseline (`endpoint_id`); raised before the first request |
 
 All descend from `SpecforgeEngineError`, never from `ValueError`

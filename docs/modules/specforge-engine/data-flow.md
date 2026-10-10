@@ -420,9 +420,9 @@ SpecforgeEngineError
 │   └── EndpointCompilationError     # …for a specific endpoint (carries endpoint_id + the reason)
 └── EngineError                      # an execution invariant was violated
     ├── StatefulLinkError            # a state link could not be honored (carries partial_exploration)
-    ├── AccessLinkError              # an owner_only endpoint's producer link cannot be honored
-    ├── AccessRoleError              # no valid identity holds a role_only endpoint's required role
     ├── AccessIdentityError          # the auth runner has no valid identity to run against
+    ├── AccessUncrossableError       # an auth run crossed none of the access policies it had to cross
+    ├── SafetyGuardBreachError       # a route the safety guard held back was reached (carries the result)
     └── ConcurrencyLadderError       # a performance run's concurrency ladder cannot be honored
 ```
 

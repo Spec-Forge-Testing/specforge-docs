@@ -30,14 +30,22 @@ has a file.
 | `shape` | The client lines are unchanged, the event kinds match the scenario's declared shape, every line validates, and every reply and event keeps the skeleton the core answers today — counts Hypothesis is free to vary. |
 | `none` | Not reproducible by the harness; the entry carries the reason. |
 
-The twelve scenarios: a short operation; a long one with events; a long one with
-no token (so not a single event); a cancellation mid-run; domain errors; a
+The thirteen scenarios: a short operation; a long one with events; a long one
+with no token (so not a single event); a cancellation mid-run; domain errors; a
 rejected project switch; the `analyze_endpoints` events; the four `run_pipeline`
 stages; a build where the engine **does** raise `infra_failure` and
-`target_down` (kept `none` — the harness cannot reproduce it cheaply); typed
-parameters with a paginated result and a refused enum; a deadline-truncated run;
-and an analysis over a repository with no controllers. The last three exist so
-that **no event `kind` in the schema goes unexercised**.
+`target_down` (kept `none` — the harness cannot reproduce it cheaply); a `fuzz`
+with a fixture producer, whose `contract_*` events all precede the engine's,
+with typed parameters, a paginated result and a refused enum; a
+deadline-truncated run; an analysis over a repository with no controllers; and
+`13-contract-production`, a `fuzz` whose fixture contract the core cannot
+project, so `contract_failed` (`aborted`) arrives before the engine and the run
+fails `CONTRACT_PRODUCER_FAILED`. The last three exist so that **no event `kind`
+in the schema goes unexercised**.
+
+No fixture records `estimate_inference` or the approval flow: an estimate
+carries a model's price, which no placeholder can hold still, so the core's own
+tests cover that flow.
 
 ## The invalid fixtures are derived, not written
 

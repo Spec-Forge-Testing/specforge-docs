@@ -840,7 +840,7 @@ another oracle has a rule to name.
 
 ## ADR-050 — Access control is declared by the producer and checked by a dormant oracle woken by the auth runner { #adr-050 }
 
-**Status:** accepted · Extends [ADR-049](#adr-049) · `specforge_contracts/access.py`, `models/runtime/access.py`, `runtime/oracles/access_control.py`, `runtime/oracles/precedence.py`, `runtime/runners/auth/`, `models/execution_mode.py`
+**Status:** accepted · Superseded in part by [ADR-102](#adr-102) · Extends [ADR-049](#adr-049) · `specforge_contracts/access.py`, `models/runtime/access.py`, `runtime/oracles/access_control.py`, `runtime/oracles/precedence.py`, `runtime/runners/auth/`, `models/execution_mode.py`
 
 ### Context
 
@@ -990,7 +990,7 @@ socket is opened. No new flag or mode appears — the mode is still
 
 ## ADR-053 — Role-restricted access is a fourth kernel policy, crossed against the roles the user's identities declare { #adr-053 }
 
-**Status:** accepted · Extends [ADR-050](#adr-050) · `specforge_contracts/access.py`, `models/runtime/execution.py`, `models/runtime/access.py`, `runtime/runners/auth/`, `runtime/oracles/access_control.py`, `exceptions.py`
+**Status:** accepted · Superseded in part by [ADR-102](#adr-102) · Extends [ADR-050](#adr-050) · `specforge_contracts/access.py`, `models/runtime/execution.py`, `models/runtime/access.py`, `runtime/runners/auth/`, `runtime/oracles/access_control.py`, `exceptions.py`
 
 ### Context
 
@@ -1439,7 +1439,7 @@ account for them, carries an empty list and pays nothing.
 
 ## ADR-058 — Endpoints with declared side effects are held back by a safety guard, not fuzzed { #adr-058 }
 
-**Status:** accepted · `runtime/safety_guard.py`, `runtime/__init__.py`, `models/runtime/execution.py`, `models/runtime/stats.py`
+**Status:** accepted · Superseded in part by [ADR-102](#adr-102) · `runtime/safety_guard.py`, `runtime/__init__.py`, `models/runtime/execution.py`, `models/runtime/stats.py`
 
 ### Context
 
@@ -1615,7 +1615,7 @@ there, and runs unchanged over `http://`.
 
 ## ADR-060 — A crash report's response body is redacted by field name, and a confirmed finding's identity is fixed where it is confirmed { #adr-060 }
 
-**Status:** accepted · `runtime/findings/redaction.py`, `runtime/findings/constants.py`, `runtime/findings/materializer.py`, `runtime/fuzzers/stateful/supervisor.py`, `runtime/findings/assembler.py`, `models/runtime/results.py`
+**Status:** accepted · Superseded in part by [ADR-103](#adr-103) · `runtime/findings/redaction.py`, `runtime/findings/constants.py`, `runtime/findings/materializer.py`, `runtime/fuzzers/stateful/supervisor.py`, `runtime/findings/assembler.py`, `models/runtime/results.py`
 
 ### Context
 
@@ -2264,3 +2264,133 @@ budget, not an absolute minimum. `StatefulViolationError` carries `recheck`, and
 `ExecutedStep` records the `BundleBinding`s it consumed and produced, so the
 minimizer judges and slices from the sequence alone. Reproduction is judged against
 the target as the run left it, the same definition replay mode uses.
+
+---
+
+## ADR-102 — The auth run degrades per endpoint, and fails only when it crossed nothing { #adr-102 }
+
+**Status:** accepted · Supersedes in part [ADR-050](#adr-050), [ADR-053](#adr-053), [ADR-058](#adr-058) · `exceptions.py`, `models/runtime/stats.py`, `runtime/runners/auth/runner.py`, `runtime/runners/auth/crossing.py`, `runtime/runners/auth/planners.py`, `runtime/runners/auth/chain.py`, `runtime/runners/auth/provisioning.py`, `runtime/runners/auth/producer_watch.py`, `runtime/runners/auth/constants.py`
+
+### Context
+
+An auth run crosses many endpoints, and each one brings its own precondition: an
+owner resource the run has to create, sometimes through other resources the
+creating endpoint consumes, or a role some declared identity has to hold. Against
+a real API one of them is routinely out of reach — the only producer of a
+resource is held back by the safety guard, a creation endpoint refuses the
+payload it is sent, the producers of two bundles consume each other, or the
+identity file spells no holder for a role.
+
+Stopping the whole run on the first such endpoint discards the evidence every
+other endpoint would have produced, and the user fixes one cause per run.
+Skipping the endpoint silently is worse: the report would count a gap as
+coverage.
+
+### Decision
+
+**Every access precondition is judged per endpoint.** A precondition the run
+cannot meet leaves that endpoint unprobed with a typed `UnprobedReason` in its
+`EndpointStats` row — `owner_producer_missing`, `owner_chain_cyclic`,
+`owner_resource_unprovisioned` or `required_role_unheld`, beside the by-design
+`declared_public` and `access_undeclared` — and the run moves on to the next
+endpoint.
+
+**Owner resources are provisioned once per bundle per run, through their chain.**
+`plan_bundle_chain` orders the producers a bundle needs, dependencies first,
+trying each candidate producer until one closes; a chain that comes back on
+itself in every candidate is `owner_chain_cyclic`, and a bundle nothing produces
+is `owner_producer_missing`. `OwnerResourceRegistry` provisions each link under
+the owner, stores the value for every later consumer and remembers a failure so
+no other consumer re-sends it. A bundle gets up to `PROVISIONING_ATTEMPTS` (5)
+distinct payloads, drawn from a seed fresh for each run, the simplest one last; a
+producer whose qualifying response lacks its declared field ends the attempts at
+once. A crossing that yields a finding evicts the bundles it used, and the next
+consumer provisions them again from a new draw. `ProducerWatch` records every
+producer result and feeds the run-wide `TargetWatch`, so provisioning stops on a
+dead target or a cancellation like the crossings do.
+
+**Two conditions fail the run.** No valid identity is declared
+(`AccessIdentityError`, before the first request): nothing can be crossed
+anywhere. And, after the walk, the run had access policies to cross and crossed
+none of them (`AccessUncrossableError`, carrying each such endpoint and its
+reason). A run cut short by cancellation or a dead target does not raise it.
+
+### Rejected
+
+- **Failing fast on each precondition, one exception per cause.** One
+  misconfigured endpoint hides the evidence of all the others, and an API with
+  one unreachable producer could never be audited without editing its contracts.
+- **A single provisioning attempt with the minimal payload.** A creation endpoint
+  that refuses one payload — a duplicate value, a value a business rule rejects —
+  often accepts another.
+- **A fixed provisioning seed.** Every run, and every re-provisioning within one,
+  would send the same payloads, and a target that refused them once refuses them
+  again.
+- **A per-consumer owner resource.** It multiplies the producer requests by the
+  number of consumers and fills the target with resources no crossing needs.
+
+### Consequences
+
+A report shows which endpoints were crossed and, for every other targeted
+endpoint, why it was not, so a gap is never read as coverage. The run fails only
+when it produced no access evidence at all. Provisioning costs at most
+`PROVISIONING_ATTEMPTS` producer requests per bundle per round, and those
+requests are counted and recorded in the trace like any other. The auth runner
+raises two exceptions, `AccessIdentityError` and `AccessUncrossableError`.
+
+---
+
+## ADR-103 — Findings redact the built-in sensitive names whatever the contract declares, and erase the credentials a request sent by value { #adr-103 }
+
+**Status:** accepted · Supersedes in part [ADR-060](#adr-060) · `runtime/findings/redaction.py`, `runtime/findings/constants.py`, `runtime/findings/materializer.py`, `runtime/findings/grouper.py`
+
+### Context
+
+Redaction by field name covers a credential that sits under a credential-bearing
+name. Two cases escape it. A contract that declares no `sensitive_fields` —
+nothing obliges a contract to declare them — would leave a `password` in the
+request payload a report keeps. And a target does not always echo a credential
+under such a name: an error page quotes the `Authorization` header it rejected, a
+5xx dumps the request it failed on, a field called `detail` carries the session
+cookie. Name matching cannot see those, and a text body also feeds the finding's
+signature, so the credential would reach the signature as well.
+
+### Decision
+
+**The built-in names apply to the request payload whatever the contract
+declares.** `sanitize_payload` always redacts `SENSITIVE_BODY_FIELDS`; the
+contract's `sensitive_fields` add to that list, never replace it.
+
+**The credentials a request actually sent are erased by value.**
+`credential_values_of` takes the values of the credential headers the request
+carried — the identity's headers and `ExecutionConfig.headers`, as merged for
+that request — and `scrub_credential_values` replaces every occurrence with `***`
+in each string of `minimal_payload` and `response_body`, at any depth. Each value
+contributes its derived forms: the token after the scheme, each cookie's value,
+the decoded `user:password` of a Basic credential and its password, and every
+form with `/` written `\/` as a JSON encoder may write it. Forms are matched
+longest first, and a form shorter than `MIN_SECRET_LENGTH` (8) is skipped.
+
+**The signature is taken from the scrubbed text.** A text response body is
+scrubbed the same way before it is fingerprinted, so a signature never carries a
+credential.
+
+### Rejected
+
+- **Trusting the contract's declaration alone.** The declaration is input, and a
+  missing one would turn into a leaked password; the built-in list costs nothing
+  when the contract already names the field.
+- **Matching the raw header value only.** A target echoes the bare token, the
+  decoded Basic pair or a JSON-escaped form far more often than the full
+  `Bearer …` header line.
+- **Erasing values of any length.** A short credential value is a common
+  substring, and erasing it would mangle the very body a report exists to show.
+- **Recognizing secrets by shape.** The same reasons as in
+  [ADR-060](#adr-060): it misses unexpected formats and erases innocent values.
+
+### Consequences
+
+A credential the run sent does not leave the engine in a finding, even when the
+target echoes it in free text under an unrelated name. A credential shorter than
+`MIN_SECRET_LENGTH` echoed outside a sensitive name stays visible; the trace is
+untouched, because replay re-sends it byte for byte.

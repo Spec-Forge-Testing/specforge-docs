@@ -112,11 +112,50 @@ What the run did with an endpoint whose produced contract it could not use. In
 An endpoint is withheld only when the producer returned a contract and adopting
 it failed: an identity that does not match the endpoint, a fusion failure, or a
 construct the projection does not support. A failure before a validated contract
-exists (an inference error, an output that failed validation, the cost cap, an
-untraced endpoint) leaves it `schema_only`. The two lists answer different
-questions and share the `(method, path)` key: the coverage says where the
-endpoint ended up, `producer_exclusions` what failed in the producer. The
-persistence layer stores these two values under a CHECK constraint.
+exists (an inference error, an output that failed validation, a vanished cache
+entry, the cost cap, an untraced endpoint) leaves it `schema_only`. The two
+lists answer different questions and share the `(method, path)` key: the
+coverage says where the endpoint ended up, `producer_exclusions` what failed in
+the producer. The persistence layer stores these two values under a CHECK
+constraint.
+
+## `endpoints[].unprobed_reason` { #unprobed-reason }
+
+Why the `auth` mode crossed nothing at a targeted endpoint: by design, or for an
+access precondition the run could not meet. In `get_run` and the report
+document's `endpoints`; `null` when the endpoint was probed.
+
+| Value | Meaning |
+| --- | --- |
+| `declared_public` | The access policy is public: there is nothing to cross. |
+| `access_undeclared` | The contract declares no access policy. |
+| `owner_producer_missing` | Nothing in the run produces the owner's resource or one it depends on. A producer the safety guard held back counts as missing, and needs `allow_side_effects`. |
+| `owner_chain_cyclic` | The owner's resource depends on itself through its producers, in every candidate. |
+| `owner_resource_unprovisioned` | Every attempt to create the owner's resource failed, or its producer has no payload; the attempts are in the trace. |
+| `required_role_unheld` | No declared identity holds the required role. |
+
+The last four are access preconditions the run could not meet; each one makes
+the run's signal `degraded` with [`access_preconditions_unmet`](#signal-causes).
+
+## `run.signal_causes` { #signal-causes }
+
+Why a run's `signal` is `degraded`, in the order they render. In `get_run` and
+the report document's `run`, beside `signal` (`clean` or `degraded`); `[]` when
+the signal is not `degraded`.
+
+| Value | Meaning |
+| --- | --- |
+| `no_responses` | No request reached the target: every attempt was an availability, timeout or unsendable-request failure. |
+| `endpoints_excluded` | One or more declared endpoints were excluded from this run. |
+| `withheld_by_safety_guard` | The safety guard held back one or more targeted endpoints, so they were never probed. |
+| `access_policy_undeclared` | One or more targeted endpoints declare no access policy, so the `auth` run verified nothing there. |
+| `access_preconditions_unmet` | One or more targeted endpoints had an access policy the run could not cross: no producer, no role holder, or no resource it could create; each one's [`unprobed_reason`](#unprobed-reason) says which. |
+| `run_cancelled` | The run was cancelled before it reached every targeted endpoint. |
+| `endpoints_unreached` | One or more targeted endpoints never received a request. |
+
+The signal and its causes are derived from the run's facts, both for the report
+a run answers with and when a stored run is read, so the persistence layer
+keeps no column for them.
 
 ## Comparison caveats { #caveats }
 
@@ -135,7 +174,7 @@ Branch on `reason`, show `detail`.
 | `oracle_scope_differs` | `pair` | Different oracles judged the two runs. |
 | `replay` | `after` | The later run is a replay: it records verdicts per recorded request, not crashes. |
 | `replay_report_not_indexed` | `after` | The replay's report was never recorded. |
-| `replay_report_missing` | `after` | The replay's report is no longer on disk. |
+| `replay_report_missing` | `after` | The replay's report is missing from disk. |
 | `replay_report_corrupt` | `after` | The replay's stored report fails its integrity check. |
 | `replay_report_unreadable` | `after` | The replay's report file cannot be opened. |
 | `replay_report_undecodable` | `after` | The replay's report carries no verdicts this build can decode. |

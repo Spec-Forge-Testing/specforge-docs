@@ -1,9 +1,9 @@
 # Environment Variables
 
 Every environment variable Spec Forge reads, what it does, and where it is read from. Two
-sources are used: your **shell** (the process environment) and the module-local
-**`.env.local`** file (`lib/semantic_inference/.env.local`, used for LLM settings). Where both
-carry the same key, `.env.local` wins.
+sources are used: your **shell** (the process environment) and, for the LLM settings only, the
+**env file** `lib/llm/.env.local` (or the file `LLM_ENV_FILE` names). Where both carry the same
+key, the shell wins.
 
 ## Interface and behaviour
 
@@ -19,23 +19,30 @@ See [where the data lives](../modules/storage/index.md#where-the-data-lives) for
 
 ## LLM configuration
 
-These are read from `.env.local` or the shell (`.env.local` wins). Only the business-rule
-inference step needs them; fuzzing straight from the spec does not. See
-[LLM Providers](llm-providers.md) for the full setup.
+These are read from the shell or the env file, the shell first. Only a run with the inference
+producer needs them; fuzzing straight from the spec does not. The `llm.*` options of a project's
+`specforge.toml` take precedence over both. See [LLM Providers](llm-providers.md) for the full
+setup.
 
 | Variable | Default | What it does |
 | --- | --- | --- |
-| `LLM_MODEL` | — | The model to use, e.g. `gemini/gemini-2.5-flash`. |
+| `LLM_ENV_FILE` | — | Path of the env file to read instead of `lib/llm/.env.local`. Shell only: it is read once, when the LLM package is first imported. |
+| `LLM_MODEL` | — | The model to use, in LiteLLM's `provider/model` form, e.g. `gemini/gemini-2.5-flash`. Required. |
 | `LLM_FALLBACK_MODELS` | none | Comma-separated models tried in order if the primary fails. |
-| `LLM_MAX_RETRIES` | `2` | How many times to retry a failed model call. |
-| `LLM_TIMEOUT_SECONDS` | `30` | Per-call timeout, in seconds. |
-| `ANTHROPIC_API_KEY` | — | Credential for Anthropic models. |
-| `GEMINI_API_KEY` / `GOOGLE_API_KEY` | — | Credential for Google Gemini / Vertex AI models. |
-| `OPENAI_API_KEY` | — | Credential for OpenAI models. |
-| `MISTRAL_API_KEY` | — | Credential for Mistral models. |
-| `GROQ_API_KEY` | — | Credential for Groq models. |
+| `LLM_MAX_RETRIES` | `2` | How many times one model is retried before the next one is tried. |
+| `LLM_TIMEOUT_SECONDS` | `30` | Timeout of one attempt, in seconds. |
+| `LLM_RETRY_BACKOFF_BASE_SECONDS` | `0.5` | Base, in seconds, of the exponential wait between retries. |
+| `LLM_CALL_BUDGET_SECONDS` | `120` | Total seconds one call may spend across its retries and fallbacks. Must be at least `LLM_TIMEOUT_SECONDS`. |
+| `ANTHROPIC_API_KEY` | — | Credential for `anthropic/` models. |
+| `GEMINI_API_KEY` / `GOOGLE_API_KEY` | — | Credential for `gemini/` models; either one serves. |
+| `GOOGLE_API_KEY` | — | Credential for `vertex_ai/` models. |
+| `OPENAI_API_KEY` | — | Credential for `openai/` models. |
+| `MISTRAL_API_KEY` | — | Credential for `mistral/` models. |
+| `GROQ_API_KEY` | — | Credential for `groq/` models. |
 
-Only the key matching your `LLM_MODEL`'s provider is required.
+Every model of the chain needs its provider's key: `LLM_MODEL` and each model in
+`LLM_FALLBACK_MODELS`. A missing key for any of them stops the run before any model is
+called.
 
 ## Developer-only
 

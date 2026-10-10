@@ -147,7 +147,8 @@ flaky finding. The mechanism is laid out in
 and the choice in [ADR-089](adr/engine.md#adr-089).
 
 A stateful run that reaches `max_distinct_bugs` stops; each found defect is
-suppressed before the next pass. A flaky pass outcome becomes a flaky finding,
+suppressed before the next pass. With the default of `1`, one violating sequence
+ends the run. A flaky pass outcome becomes a flaky finding,
 counted in `findings_flaky` by occurrence and folded away when a confirmed report
 already covers its signature ([ADR-047](adr/engine.md#adr-047)). When a state
 link cannot be honored the run raises `StatefulLinkError` carrying the partial
@@ -404,17 +405,27 @@ that as a valid empty plan, not an error, and telling the user the mode had
 nothing to check is the caller's job.
 
 For every targeted endpoint the run crossed nothing against, the engine folds a
-typed reason into `EndpointStats.unprobed_reason` — `declared_public` when the
-endpoint was `public` (nothing to cross, complete evidence) or `access_undeclared`
-when it declared no access policy (so the run could not tell what to probe). That
-lets a downstream reader distinguish a by-design skip, which does not degrade the
-run, from a missing declaration, which does.
+typed reason into `EndpointStats.unprobed_reason` (`UnprobedReason`):
 
-The run **fails fast before any request** on three conditions, checked in this
-order: no **valid** identity is declared (`AccessIdentityError`); a `role_only`
-endpoint requires a role no valid identity holds (`AccessRoleError`, naming the
-endpoint, the required role and the roles the run did declare); or an `owner_only`
-endpoint names a bundle no endpoint in the run produces (`AccessLinkError`). For
+| Value | The endpoint was left unprobed because |
+|---|---|
+| `declared_public` | its policy is `public`: nothing to cross, complete evidence |
+| `access_undeclared` | it declares no access policy, so the run could not tell what to probe |
+| `owner_producer_missing` | nothing in the run produces the owner's bundle or one its chain needs; a producer the safety guard held back counts as missing |
+| `owner_chain_cyclic` | every candidate chain of producers for the owner's bundle comes back on itself |
+| `owner_resource_unprovisioned` | every attempt to create the owner's resource failed, or its producer has no payload |
+| `required_role_unheld` | no valid identity holds the `role_only` endpoint's required role |
+
+The first two are by-design skips; the other four are access preconditions the
+run could not meet. Either way the endpoint is recorded and the run moves on to
+the next one.
+
+The run **fails fast before any request** on one condition only: no **valid**
+identity is declared (`AccessIdentityError`). Everything else degrades per
+endpoint. The run fails afterwards, with `AccessUncrossableError` carrying the
+unprobed endpoints and their reasons, only when it had access policies to cross
+and crossed none of them; a run cut short by cancellation or a dead target does
+not raise it ([ADR-102](adr/engine.md#adr-102)). For
 an `owner_only` endpoint the owner is always the first valid identity
 (`config.valid_identities[0]`); a `role_only` endpoint privileges every valid
 identity whose `role` equals its `required_role`, wherever it sits in the list.
@@ -453,11 +464,11 @@ sequenceDiagram
     participant Or as check_response (access_control)
     participant Fnd as findings
 
-    AR->>Pre: require_identities · require_roles · index_producers · require_producers
+    AR->>Pre: require_identities · index_producers
     loop per endpoint (planner_for its access)
         alt owner_only
-            AR->>Orch: provision the owner resource (first identity)
-            AR->>Cap: capture(response, production) → owner value | AccessLinkError
+            AR->>Orch: provision the bundle chain, dependencies first (first identity)
+            AR->>Cap: capture(response, production) → owner value | unprobed_reason
             AR->>Pl: write the value into the consuming zone/field
             AR->>Orch: re-send under every other identity, and anonymously
         else role_only
@@ -500,12 +511,23 @@ report its legitimate 2xx as a bypass of a correctly guarded endpoint. Declaring
 an identity with exactly the required role fixes the run
 ([ADR-053](adr/engine.md#adr-053)).
 
-Provisioning is where an `owner_only` run can abort: if producing the owner
-resource returns a status that captures nothing, or a 2xx whose declared field
-is null, the producer broke its own contract and the runner raises
-`AccessLinkError` naming the endpoint and the bundle rather than crossing a
-resource it never established. Findings are **materialized without shrinking** —
-a cross-identity read is already its own minimal reproducer.
+Provisioning is where an `owner_only` endpoint can be left unprobed. The owner
+resource is provisioned **once per bundle per run** and reused by every endpoint
+that consumes it; it is provisioned again only after a crossing that needed it
+produced a finding. When the owner's producer itself consumes other bundles,
+`plan_bundle_chain` orders the producers dependencies first and provisions each
+link of the chain in turn; a chain that comes back on itself in every candidate
+leaves the endpoint `owner_chain_cyclic`. Each bundle gets up to
+`PROVISIONING_ATTEMPTS` (5) attempts with distinct payloads, drawn from a seed
+fresh for each run, the simplest payload last. A status that captures nothing, or
+a value no path segment can carry, moves on to the next payload; a qualifying
+status whose declared field is null or missing means the producer broke its own
+contract and ends the attempts. When no attempt yields a value the endpoint is
+`owner_resource_unprovisioned`; the attempts are in the trace. Producer requests
+feed the run-wide `TargetWatch` through `ProducerWatch`, like the crossings do, so
+a dead target or a cancellation stops provisioning too. Findings are
+**materialized without shrinking** — a cross-identity read is already its own
+minimal reproducer.
 
 ### Stopping on a dead target
 

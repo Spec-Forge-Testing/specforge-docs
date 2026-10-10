@@ -120,9 +120,11 @@ marked `safety_breached` so the run is kept with that evidence.
 
 Symmetrically, a **targeted** endpoint that drew no requests records why in
 `EndpointStats.unprobed_reason`: `declared_public` for a by-design public skip
-(complete evidence, not a gap) or `access_undeclared` for a missing access
-policy. A silent endpoint is therefore never confused with one the run failed to
-reach.
+(complete evidence, not a gap), `access_undeclared` for a missing access policy,
+or one of the four access preconditions the auth run could not meet
+(`owner_producer_missing`, `owner_chain_cyclic`, `owner_resource_unprovisioned`,
+`required_role_unheld`; see [Execution modes](execution-modes.md#auth)). A silent
+endpoint is therefore never confused with one the run failed to reach.
 
 !!! note "Auth mode and a held producer"
     In `auth` mode, a producer the guard held back counts as missing: an
@@ -555,8 +557,10 @@ group → shrink → materialize → dedupe → assemble → stats.
   failure looks like from the outside: endpoint, phase, primary violation,
   status code, identity label, the `rule_id` of the rule the finding broke, and a
   *fingerprint of the body's shape* — never its values (an object becomes its keys
-  mapped to JSON type names; free text is lowercased with digit runs masked). Every
-  finding now names a rule, so the id is always present; for an intrinsic invariant
+  mapped to JSON type names; free text is lowercased with digit runs masked, after
+  the values of the credentials the request sent are erased from it, so a signature
+  never carries an echoed credential). Every
+  finding names a rule, so the id is always present; for an intrinsic invariant
   it is constant (the invariant's own value), so it adds nothing new to identity,
   and for a `semantic_property` or `access_control` finding it is the declared
   rule's id, so two different business rules broken on one endpoint are two
@@ -572,7 +576,8 @@ group → shrink → materialize → dedupe → assemble → stats.
   `CrashReport`, from a `FindingFacts` — the source-agnostic subject of a report
   — plus the request and result. Redaction happens here and nowhere else: request
   headers (`Authorization`, `Cookie`, `X-Api-Key` and the config header names) and
-  the declared sensitive payload fields are replaced with `***`, and the
+  the sensitive payload fields — the built-in names below, whatever the contract
+  declares, plus the declared ones — are replaced with `***`, and the
   `response_body` is redacted by field name at any depth of a JSON body — objects
   and arrays of objects alike. The response names come from two sources: a built-in
   table of credential-bearing names (`password`, `token`, `access_token`, `secret`,
@@ -583,9 +588,17 @@ group → shrink → materialize → dedupe → assemble → stats.
   `accessToken`, `access-token` and `access_token` all match; there is no suffix or
   substring matching and no shape heuristic, so `next_page_token` and a
   JWT-looking string in an unrelated field are left alone. Non-JSON text bodies,
-  scalars and `None` pass through unchanged, and the input body is never mutated —
-  the signature and the trace still see the raw body
+  scalars and `None` pass through name redaction unchanged, and the input body is
+  never mutated — the trace keeps the raw body
   ([ADR-060](adr/engine.md#adr-060)).
+  A second pass erases by **value**: the credentials the request actually sent —
+  the identity's headers and `ExecutionConfig.headers` — are replaced with `***`
+  wherever they appear in a string of `minimal_payload` or `response_body`, at any
+  depth. Each value is matched in its derived forms too: the token after the
+  scheme, each cookie's value, the decoded `user:password` of a Basic credential
+  and its password, and every form with `/` written `\/`. A form shorter than
+  `MIN_SECRET_LENGTH` (8) is left alone, so a short value does not mangle a body
+  ([ADR-103](adr/engine.md#adr-103)).
   `materialize_report` is the no-shrink path, used by the modes that never
   minimize ([ADR-037](adr/engine.md#adr-037)).
 - **Dedupe.** `dedupe_crash_reports` keeps one report per `ReportKey` — method,
@@ -650,7 +663,9 @@ resend the moment an abort streak needs adjudicating
 ([ADR-035](adr/engine.md#adr-035)). A run of consecutive 5xx on one endpoint is
 adjudicated the same way: past `MAX_CONSECUTIVE_SERVER_ERRORS`, the known-good
 request is resent off-budget; if it answers, the 500s are genuine findings, and
-if it does not, the run cuts `TARGET_DOWN`. A dead target can confirm nothing, so
+if it does not, the run cuts `TARGET_DOWN`. Neither probe — the resent
+known-good request nor the `HEAD` to the base URL behind an abort streak — is
+counted in the run's request totals or recorded in the trace. A dead target can confirm nothing, so
 its raw findings are counted `unverified` — one `UnverifiedFinding` per
 signature — rather than spending requests rediscovering the target is down.
 

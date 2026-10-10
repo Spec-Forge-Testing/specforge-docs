@@ -2,7 +2,8 @@
 
 Part of the [Core decision records](index.md). Decisions about the
 core↔frontend wire: how the recorded fixtures stay honest, how versions are
-matched, and how every reader of a run names and omits the same facts.
+matched, how every reader of a run names and omits the same facts, and how a
+session ends.
 
 ---
 
@@ -39,7 +40,7 @@ cannot reproduce.
 
 ## ADR-074 — Protocol versioning by exact equality, not negotiation { #adr-074 }
 
-**Status:** accepted · `adapters/stdio/handshake.py`, `utils/constants.py`
+**Status:** accepted · Superseded by [ADR-094](#adr-094) · `adapters/stdio/handshake.py`, `utils/constants.py`
 
 ### Context
 
@@ -107,3 +108,88 @@ it. The price of one name across readers is that changing a name is a breaking
 change for all of them at once, recorded as such in the
 [handshake changelog](../protocol/handshake.md) and in the report document's
 `schema_version`.
+
+---
+
+## ADR-094 — Version negotiation within the series, from a floor { #adr-094 }
+
+**Status:** accepted · Supersedes [ADR-074](#adr-074) · `adapters/stdio/protocol_version.py`, `adapters/stdio/server.py`, `utils/constants.py`
+
+### Context
+
+The shipped frontend is a separate program with its own releases, and the
+protocol grows far more often by addition — an operation, an optional
+parameter, a result field, an event kind, an error code — than by breaking
+change. Under exact equality every addition would refuse every frontend built
+against the version before it, although a frontend that ignores keys it does
+not know reads an additive reply correctly. Equality on `major.minor` alone is
+not safe either: one version inside the `0.1` series renamed keys, and a
+client older than it would read the renamed keys as absent.
+
+### Decision
+
+The core serves any client of its own `major.minor` whose patch lies between a
+declared floor and its own, comparing each part as a number. It always answers
+with its own version; the frontend ignores the keys it does not know. An
+additive change bumps the patch; a breaking change — a rename, a removal, a
+type change, a parameter made required — bumps the minor. The floor is `0.1.5`,
+the version that renamed keys inside the series, and returns to `.0` whenever
+the minor moves. Anything outside the range, or a version that is not
+`major.minor.patch`, is refused `PROTOCOL_VERSION_MISMATCH` carrying
+`expected`, `oldest` and `received`.
+
+### Rejected
+
+Exact equality, which turns every addition into a refusal for every frontend
+already released. Per-feature capability negotiation, or answering in the
+client's older shape: the core would keep one serializer alive per version it
+serves. Serving the whole series with no floor, which would hand a client older
+than a rename keys it cannot find.
+
+### Consequences
+
+A frontend and the core release independently within a series. The core never
+emits an older shape: an older client receives keys it ignores. A breaking
+change has to move the minor, cutting off every older client at once, and the
+floor is one constant (`PROTOCOL_OLDEST_SERVED_VERSION`) kept beside the
+version. See [Handshake and versioning](../protocol/handshake.md#versioning).
+
+---
+
+## ADR-095 — `shutdown` drains: cancel, wait, answer last, exit { #adr-095 }
+
+**Status:** accepted · `adapters/stdio/server.py`
+
+### Context
+
+A frontend ending a session needs one signal that it may drop the pipe. Work
+still running at that moment has two bad endings: killed mid-way, it never
+answers and never persists what it gathered; waited on to completion, a long
+`fuzz` holds the exit for minutes. A frontend can also vanish without a word,
+and the core has to end the same way then.
+
+### Decision
+
+`shutdown` cancels every operation still running, exactly as a
+`$/cancelRequest` would, so each answers on its own — a cancelled run keeps and
+persists its evidence ([ADR-072](core.md#adr-072)). The core waits for every one
+to settle, then answers `{"ok": true}` and exits without reading another line.
+EOF on stdin cancels and waits the same way before the core exits. An operation
+that is not cancellable runs to its end before `ok`.
+
+### Rejected
+
+Exiting on `shutdown` at once, which loses the answers and the persistence of
+everything in flight. Waiting for every operation to finish on its own, which
+makes the exit as long as the longest run. Answering `ok` first and draining
+afterwards, which tells the frontend to drop the pipe while answers are still
+on their way.
+
+### Consequences
+
+The answer to `shutdown` is always the last line of a session, after every
+cancelled operation's own reply. The exit takes as long as the slowest
+operation that cannot be cancelled, or the slowest inference still in flight.
+A script piped into the core keeps stdin open until its answers have arrived:
+closing it early cancels what has not finished. See
+[Lifecycle](../protocol/handshake.md#lifecycle).

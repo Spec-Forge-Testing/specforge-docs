@@ -14,7 +14,8 @@ pip install -e core poethepoet ruff
 poe setup-hooks
 ```
 
-`poe` drives the repo-wide tasks (`poe test`, `poe dev`, `poe demo`); `ruff` is
+`poe` drives the repo-wide tasks (`poe test`, `poe serve`, `poe demo`, `poe docker-smoke`; see
+[Running with Docker](../user-guide/docker.md)); `ruff` is
 the linter every module suite expects.
 
 ## Test the repository

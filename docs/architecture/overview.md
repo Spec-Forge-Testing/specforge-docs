@@ -57,9 +57,11 @@ lib/
 ├── contracts/               # shared kernel: EndpointContract + the Spec Forge vocabulary
 ├── contract_assembly/        # OpenAPI ingestion + adaptation + fusion
 ├── core_ast/                # tree-sitter static analysis
-├── semantic_inference/      # LLM router + inference
+├── llm/                     # LLM router: settings, retries, fallbacks, cost estimation
+├── semantic_inference/      # contract inference: agent profiles + prompts
 ├── specforge_engine/     # policy + strategy compiler + engine (six execution modes)
 └── storage/                 # SQLite persistence
+protocol/                    # the core-frontend protocol: envelope schema + recorded fixtures
 docker-compose.yml           # monorepo orchestration (root entry point)
 ```
 
@@ -71,7 +73,8 @@ docker-compose.yml           # monorepo orchestration (root entry point)
 | `lib/contracts/` | Shared kernel (`specforge_contracts`): the canonical `EndpointContract` and the risk, attack, transition, semantic-property and access vocabulary every stage imports. |
 | `lib/contract_assembly/` | Validates OpenAPI 3.x (`prance`), translates Swagger 2.0 into it, flattens endpoints, fuses base schemas with LLM invariants. |
 | `lib/core_ast/` | Deterministic, stateless AST analysis (`tree-sitter`); locates routes/handlers/deps via `patterns.toml`. |
-| `lib/semantic_inference/` | Provider-agnostic LLM interface (`LiteLLM`): retries, fallbacks, invariant inference. |
+| `lib/llm/` | Provider-agnostic LLM interface (`LiteLLM`): settings, the router's retries and fallbacks, offline cost estimation. See the [LLM module](../modules/llm/index.md). |
+| `lib/semantic_inference/` | Contract inference: renders an agent profile's prompt from an endpoint's spec and traced code, and asks `lib/llm` for the kernel `EndpointContract`. |
 | `lib/specforge_engine/` | Compiles contracts to Hypothesis strategies; runs the six execution modes over async HTTP (`httpx`): stateless, stateful, performance, resilience, replay, auth. |
 | `lib/storage/` | SQLite layer (Repository pattern, Pydantic DTOs) + on-disk artifact persistence with hash dedup. |
 

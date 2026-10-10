@@ -107,3 +107,5 @@ Assembly's.
 | [ADR-068](engine.md#adr-068) | engine | The sequential runners detect a dead target between endpoints through a shared per-batch watch, and the monitor can abandon a probe in flight |
 | [ADR-086](engine.md#adr-086) | engine | Every dispatched endpoint gets one stats row, in every mode |
 | [ADR-089](engine.md#adr-089) | engine | The stateful shrink is budgeted, skips Hypothesis's explain phase, and the engine minimizes the sequence by replaying recorded requests |
+| [ADR-102](engine.md#adr-102) | engine | The auth run degrades per endpoint, and fails only when it crossed nothing |
+| [ADR-103](engine.md#adr-103) | engine | Findings redact the built-in sensitive names whatever the contract declares, and erase the credentials a request sent by value |

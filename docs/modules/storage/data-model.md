@@ -1,9 +1,13 @@
 # Data model
 
-Storage keeps its data in ten SQLite tables, declared in `schema.sql`, and exposes each one
+Storage keeps its data in eleven SQLite tables, declared in `schema.sql`, and exposes each one
 as a frozen pydantic record. A record's fields are exactly its table's columns, in order: the
 repository derives its column list from the record, and a test compares that list with the
 columns SQLite reports. So each table below documents the schema and the record at once.
+
+Ten tables form the project → analysis → run hierarchy drawn below. The eleventh,
+[`inferred_contracts`](#inferred_contracts), stands outside it: the cache of the contracts
+the inference producer already paid for, keyed by what determines the prompt.
 
 ```mermaid
 erDiagram
@@ -23,12 +27,14 @@ erDiagram
 
 Deleting a parent row deletes its children (`ON DELETE CASCADE`), with one exception: deleting
 an analysis endpoint keeps its findings and sets their `analysis_endpoint_id` to NULL
-(`ON DELETE SET NULL`). The schema and every connection turn on `PRAGMA foreign_keys`.
+(`ON DELETE SET NULL`). The schema and every connection turn on `PRAGMA foreign_keys`. No
+foreign key reaches `inferred_contracts`, so no delete in the hierarchy touches it.
 
 ## Conventions
 
 - **One record per table.** Frozen, rejects unknown fields, built from a row. The database assigns
-  `id`, `analyses.created_at` and `runs.executed_at`: a record passed to `create()` leaves them `None`.
+  `id`, `analyses.created_at`, `runs.executed_at` and `inferred_contracts.created_at`: a record
+  passed to `create()` or `put()` leaves them `None`.
 - **Structured data is JSON text.** A column holding a list or a map is `TEXT` with
   serialized JSON, and its record field says so. Storage never parses it.
 - **A missing fact is NULL.** `run_endpoint_stats` never stores an empty JSON list or object.
@@ -112,7 +118,8 @@ shrinking; a replay re-executes that trace without generating anything new.
 | `id` | INTEGER | no | — | Primary key, assigned by the database. |
 | `analysis_id` | INTEGER | no | — | The analysis this run executes (`analyses.id`). |
 | `executed_at` | DATETIME | yes | `CURRENT_TIMESTAMP` | When the run started executing; set by the database. |
-| `duration_ms` | INTEGER | yes | — | Total run duration, in milliseconds. |
+| `duration_ms` | INTEGER | yes | — | How long the engine ran, in milliseconds; producing the contracts is not included. |
+| `production_duration_ms` | INTEGER | yes | — | How long producing the run's contracts took before the engine ran, tracing and pricing included, in milliseconds; NULL when the run had no producer, and always for a replay. |
 | `executed_against_repo_hash` | TEXT | no | — | Repository hash the run was actually executed against. |
 | `status` | TEXT | no | — | The materialized [run outcome](../core/protocol/vocabularies.md#run-status). `safety_breached` is not a cut: it records no truncation of its own. |
 | `oracle_scope` | TEXT | no | — | [Which oracles](../core/protocol/vocabularies.md#oracle-scope) judged the responses: the contract's, or only those that need none. |
@@ -123,9 +130,28 @@ shrinking; a replay re-executes that trace without generating anything new.
 | `truncation_endpoint_id` | TEXT | yes | — | The endpoint being explored when the run was cut short; NULL when it was not. |
 | `truncation_detail` | TEXT | yes | — | What happened when the run was cut short. |
 | `target_down_verdict` | TEXT | yes | — | How the target was ruled down (an engine verdict token). |
+| `contract_cache_hits` | INTEGER | yes | — | Endpoints whose contract the [inferred-contract cache](#inferred_contracts) reused; NULL when the run used no cache. |
+| `contract_cache_misses` | INTEGER | yes | — | Endpoints whose contract the run inferred anew; NULL when the run used no cache. |
+| `inference_estimated_input_tokens` | INTEGER | yes | — | Input tokens the estimate expected for the inferences the run had to pay for; NULL when the run had no inference producer. |
+| `inference_estimated_output_tokens` | INTEGER | yes | — | Output tokens the estimate expected; NULL when the run had no inference producer. |
+| `inference_estimated_cost_usd` | REAL | yes | — | The estimate's cost, in US dollars; NULL when the run had no inference producer or the model is unpriced. |
+| `inference_input_tokens` | INTEGER | yes | — | Input tokens the run's inferences really consumed; NULL when the run had no inference producer. |
+| `inference_output_tokens` | INTEGER | yes | — | Output tokens the run's inferences really produced; NULL when the run had no inference producer. |
+| `inference_cost_usd` | REAL | yes | — | What the run's inferences really cost, in US dollars; NULL when the run had no inference producer or the model is unpriced. |
 
 Constraints: `UNIQUE (analysis_id, ordinal)`; `status` and `oracle_scope` CHECK in their
 [closed vocabularies](#closed-vocabularies); the truncation columns are [paired](#paired-columns).
+
+The cache and inference columns follow one null policy: NULL means the run had no producer to
+report, or no price, never a zero. A run with no inference producer (a fixture producer, no
+producer, and always a replay) leaves all six `inference_*` columns NULL. A run whose contracts
+all came from the cache stores zeros: a real spend of nothing. An unpriced model leaves its
+cost NULL while its token counts stay set. The schema alone enforces these columns, with no
+check in `create()`; a write that breaks one fails as `ConstraintViolationError`:
+
+- `contract_cache_hits` and `contract_cache_misses` are both set or both NULL, and not negative.
+- The four `inference_*` token counts are all set or all NULL, and not negative.
+- A cost is set only next to the token counts, and is not negative.
 
 ### `run_metrics` — `RunMetricsRecord` { #run_metrics }
 
@@ -175,7 +201,7 @@ field, a [`LatencyRecord`](#value-objects), sampling only requests that reached 
 | `undecided_rules` | TEXT | yes | — | JSON list of the ids of declared rules evaluated here that the run could never decide. |
 | `held_back_by` | TEXT | yes | — | The risk flag that kept the safety guard from probing the endpoint; NULL when it was probed. |
 | `held_back_via` | TEXT | yes | — | The id of the endpoint whose risk flag held this one back, its own id when its own flag did; NULL exactly when `held_back_by` is. |
-| `unprobed_reason` | TEXT | yes | — | Why the run's mode had nothing to probe here by design. |
+| `unprobed_reason` | TEXT | yes | — | Why the run sent nothing here: by the mode's design, or because an access precondition could not be met (one of the [`unprobed_reason` values](../core/protocol/vocabularies.md#unprobed-reason)). |
 | `load_profile` | TEXT | yes | — | JSON list of the concurrency-ladder steps a performance run measured here. |
 | `by_category` | TEXT | yes | — | JSON object: error category → requests at this endpoint that ended in it. |
 | `held_back_transitions` | TEXT | yes | — | JSON object: follow-up endpoint id the safety guard kept from being sent → why. |
@@ -251,6 +277,38 @@ report files at the run level. The file is written before its row ([ADR-082](adr
 | `compressed` | INTEGER | no | `0` | `1` when the file is stored gzipped; set by retention, never by the producer. |
 
 Constraints: exactly one of `analysis_id` and `run_id` is set ([paired](#paired-columns)).
+
+### `inferred_contracts` — `InferredContractRecord` { #inferred_contracts }
+
+The cache of LLM-inferred endpoint contracts: one row per prompt input, kept as the inference
+returned it, before it is fused over the OpenAPI base. A later inference over unchanged code
+reuses the row instead of calling the model again. The key is content, so the table is global
+to the store: the same handler in two projects shares its entry.
+
+| Column | Type | Null | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `id` | INTEGER | no | — | Primary key, assigned by the database; a replaced entry gets a new one. |
+| `cache_key` | TEXT | no | — | Content key of everything that shapes the prompt (core builds it as a SHA-256 digest of the endpoint, its code context, the agent profile, the kernel version and the prompt identity); the lookup key. |
+| `method` | TEXT | no | — | HTTP method, e.g. `GET`. |
+| `path_url` | TEXT | no | — | URL path, e.g. `/api/v1/users`. |
+| `agent_profile` | TEXT | no | — | The agent profile the inference ran under. |
+| `primary_model` | TEXT | no | — | The model the inference asked first. |
+| `answering_model` | TEXT | yes | — | The model that actually answered; NULL when unreported. |
+| `kernel_version` | TEXT | yes | — | Version of the contracts kernel (`specforge-contracts`) that shaped the contract. |
+| `prompt_fingerprint` | TEXT | no | — | Serialized JSON identity of the prompt the contract answers; it is part of what `cache_key` digests. |
+| `contract_json` | TEXT | no | — | JSON of the inferred `EndpointContract`. |
+| `input_tokens` | INTEGER | no | — | Prompt tokens the inference consumed. |
+| `output_tokens` | INTEGER | no | — | Completion tokens the inference produced. |
+| `cost_usd` | REAL | yes | — | Cost of the inference, in US dollars; NULL when the model is unpriced. |
+| `created_at` | DATETIME | yes | `CURRENT_TIMESTAMP` | When the inference behind this row ran; set by the database. |
+
+Constraints: `UNIQUE (cache_key)`; token counts and `cost_usd` not negative (CHECK). No
+foreign key in or out: deleting a project, an analysis or a run never touches the table, and
+neither does retention. `InferredContractsRepository.put()` writes by replacement: an entry
+under the same `cache_key` is deleted and a new row inserted, with a new `id` and a new
+`created_at` ([put replaces](repositories.md#put-replaces)). How the key is built and when an
+entry is reused is the caller's rule: the rows come from core's inference contract producer,
+which replaces an entry on a refresh, or when the current kernel cannot parse it.
 
 ## Value objects { #value-objects }
 

@@ -4,8 +4,13 @@
 
 - Python 3.11+ for the CLI. `specforge-contracts` supports Python 3.10+.
 - Docker and Docker Compose only for the [containerized workflow](docker.md).
-- An LLM provider key only if you run semantic inference directly — no CLI
-  command needs one today. See [LLM Providers](llm-providers.md).
+- An LLM model and its provider key only for a run with the inference producer, which infers
+  each endpoint's contract from its source code; fuzzing from the spec alone needs none. That
+  producer also needs `lib/llm` and `lib/semantic_inference` installed. See
+  [LLM Providers](llm-providers.md).
+- To read source code in Java, C#, Ruby, PHP, Rust, Kotlin or Swift, the `golden-path` extra of
+  `lib/core_ast`: `pip install -e "lib/core_ast[golden-path]"`. Python, JavaScript, TypeScript
+  and Go need nothing extra.
 
 ## Quick start
 

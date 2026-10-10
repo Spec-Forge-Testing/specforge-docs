@@ -104,6 +104,7 @@ plugins:
         modules/custom-schemathesis/engine-implementation.md: modules/specforge-engine/engine-internals.md
         modules/custom-schemathesis/reference.md: modules/specforge-engine/api-reference.md
         modules/custom-schemathesis/replay.md: modules/specforge-engine/execution-modes.md
+        modules/semantic-inference/llm-router.md: modules/llm/reference.md
         modules/custom-schemathesis/stateful-fuzzing.md: modules/specforge-engine/execution-modes.md
         modules/custom-schemathesis/strategy-compiler-internals.md: modules/specforge-engine/strategy-compiler.md
         modules/contract-engine/index.md: modules/contract-assembly/index.md
@@ -134,6 +135,8 @@ nav:
           - Core:
               - Overview: modules/core/index.md
               - Reference: modules/core/reference.md
+              - Configuration: modules/core/configuration.md
+              - Inference: modules/core/inference.md
               - Protocol:
                   - Overview: modules/core/protocol/index.md
                   - Handshake and versioning: modules/core/protocol/handshake.md
@@ -146,6 +149,7 @@ nav:
                   - Overview: modules/core/adr/index.md
                   - Core: modules/core/adr/core.md
                   - Protocol: modules/core/adr/protocol.md
+                  - Inference: modules/core/adr/inference.md
           - Core AST:
               - Overview: modules/core-ast/index.md
               - Reference: modules/core-ast/reference.md
@@ -182,9 +186,19 @@ nav:
                   - Repositories: modules/storage/adr/repositories.md
                   - Artifacts: modules/storage/adr/artifacts.md
               - Testing: modules/storage/testing.md
+          - LLM:
+              - Overview: modules/llm/index.md
+              - Reference: modules/llm/reference.md
+              - Decision records:
+                  - Overview: modules/llm/adr/index.md
+                  - LLM client: modules/llm/adr/llm.md
           - Semantic Inference:
               - Overview: modules/semantic-inference/index.md
-              - LLM Router: modules/semantic-inference/llm-router.md
+              - Prompts: modules/semantic-inference/prompts.md
+              - Inference engine: modules/semantic-inference/inference-engine.md
+              - Decision records:
+                  - Overview: modules/semantic-inference/adr/index.md
+                  - Prompts: modules/semantic-inference/adr/prompts.md
           - Spec Forge Engine:
               - Overview: modules/specforge-engine/index.md
               - Architecture: modules/specforge-engine/architecture.md

@@ -1,6 +1,6 @@
 # Repositories
 
-Each of the ten tables has one repository, a Data Access Object that holds all of
+Each of the eleven tables has one repository, a Data Access Object that holds all of
 that table's SQL. Every repository takes a `sqlite3.Connection`; in practice you
 get them from a `UnitOfWork` (see [transactions](transactions.md)), so they write
 inside the caller's scope.
@@ -24,6 +24,7 @@ fields those are depends on the table:
 | `analyses` | `id`, `created_at` |
 | `runs` | `id`, `executed_at` |
 | `run_metrics` | none: its key is the `run_id` you pass |
+| `inferred_contracts` | `id`, `created_at` |
 | every other table | `id` |
 
 `PersistedRecordError` carries the record's type name as `record_type` and the
@@ -33,7 +34,8 @@ offending fields as `assigned`. Since `run_metrics` assigns nothing, its
 `create()` returns the new row's id. The exception is `RunMetricsRepository.create`,
 which returns `None`, because the row's key is the run id you passed. Projects
 have no `create()` at all: `get_or_create(record)` returns the stored
-`ProjectRecord` ([below](#get-or-create)).
+`ProjectRecord` ([below](#get-or-create)). Inferred contracts have no `create()`
+either: `put(record)` stores by replacement ([below](#put-replaces)).
 
 ## How a repository is built
 
@@ -96,10 +98,21 @@ up by `(name, repo_path)`. When there is no match, it inserts with
 loses a race to register the same project gets the winner's row
 ([ADR-081](adr/repositories.md#adr-081)).
 
+## Inferred contracts: put replaces { #put-replaces }
+
+`InferredContractsRepository.put(record)` checks the record is transient, then
+writes with `INSERT OR REPLACE`: an entry under the same `cache_key` is deleted
+and a new row inserted, with a new `id` and a new `created_at`. So a duplicate key
+never raises `DuplicateRowError`; `created_at` is the time of the latest
+inference under the key, not of the first one. `find_by_key(cache_key)` returns the
+entry, or `None` when there is none. The table is described in the
+[data model](data-model.md#inferred_contracts).
+
 ## Reference { #reference }
 
-Every `create()` can also raise the three errors of [the contract](#the-contract);
-the *Raises* column lists only the others.
+Every `create()` can also raise the three errors of [the contract](#the-contract),
+and `put()` all of them but `DuplicateRowError`; the *Raises* column lists only the
+others.
 
 | Repository | `UnitOfWork` property | Method | Returns | Raises |
 |---|---|---|---|---|
@@ -141,6 +154,8 @@ the *Raises* column lists only the others.
 | | | `count_by_analysis(kind, analysis_ids)` | `dict[int, int]` of analysis-level artifacts of that kind; none maps to 0 | — |
 | | | `mark_compressed(artifact_id, *, path, size_bytes)` | `None` | `ArtifactNotFoundError` when no row matched |
 | | | `delete(artifact_id)` | `None`; the file on disk is the caller's to remove | `ArtifactNotFoundError` when no row matched |
+| `InferredContractsRepository` | `inferred_contracts` | `put(record)` | `int`, the new row's id | — |
+| | | `find_by_key(cache_key)` | `InferredContractRecord`, or `None` | — |
 
 `RunFilter` narrows `RunRepository.list_by_analysis`. Every field is optional,
 and the ones you set combine:

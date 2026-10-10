@@ -9,9 +9,9 @@ defines how a message travels, the pages beside it define what the messages say.
 | --- | --- |
 | This page | Transport, framing, the four message shapes, ordering, endpoint naming, payload policy |
 | [Handshake and versioning](handshake.md) | `hello`, capabilities, the catalog, versioning and the changelog |
-| [Events and cancellation](events.md) | The 13 event kinds, the progress token, state vs fact, `$/cancelRequest` |
-| [Operations](operations.md) | The 32 operations by family, what each requires and emits |
-| [Result vocabularies](vocabularies.md) | The closed values a result field may take: run status, comparability, oracle scope, truncation, coverage, caveats, operation and stage status |
+| [Events and cancellation](events.md) | The 16 event kinds, the progress token, state vs fact, contract production, `$/cancelRequest` |
+| [Operations](operations.md) | The 32 operations by family, what each requires, emits and destroys |
+| [Result vocabularies](vocabularies.md) | The twelve closed vocabularies a result field may take: run status, comparability, oracle scope, truncation reason, target-down verdict, coverage, producer-exclusion disposition, unprobed reason, signal causes, caveats, operation and stage status |
 | [Errors](errors.md) | The two codes per error and the 42 error codes |
 | [Fixtures](fixtures.md) | Recorded sessions: how they are captured and how a client uses them |
 
@@ -94,10 +94,17 @@ the core in deterministic order and is never renumbered when filtering.
 | Above it | **Id + pagination** — the large result stays on the core, the message carries an id and a summary, the frontend requests the parts it will show |
 | Large artifacts | **File path** — the core writes the file and sends its path; zero copies through the pipe |
 
-The file handoff has a fixed shape:
+The one result handed over as a file is `get_llm_payload`'s `LlmPayload`, whose
+`delivery` says how the content travels: `inline` carries it in `content`;
+`file` carries it in `file`, written by the core, when the encoded context is
+above `capabilities.payload.inline_max_bytes` (1 048 576 bytes in this core) or
+the caller named a `destination`:
 
 ```json
-{"path":"/…/payload.xml","bytes":184320,"media_type":"application/xml"}
+{"ref":{"number":2,"id":"POST:/transfer"},"delivery":"file","estimated_tokens":9120,
+ "is_partial_context":false,"size_bytes":184320,"content":null,
+ "file":{"ref":{"number":2,"id":"POST:/transfer"},"path":"/…/payload.xml","size_bytes":184320,
+         "estimated_tokens":9120,"is_partial_context":false}}
 ```
 
 This is only valid because both processes are local and share a disk — part of

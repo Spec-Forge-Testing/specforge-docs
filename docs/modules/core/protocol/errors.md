@@ -38,13 +38,34 @@ Nine codes ride the JSON-RPC integers directly:
 | -32602 | `INVALID_PARAMS` | Missing parameter, wrong type, out-of-range enum, repeated token |
 | -32603 | `INTERNAL_ERROR` | Unforeseen failure; the traceback goes to stderr |
 | -32000 | `HANDSHAKE_REQUIRED` | An operation before `hello` |
-| -32000 | `PROTOCOL_VERSION_MISMATCH` | `data`: `expected`, `received` |
+| -32000 | `PROTOCOL_VERSION_MISMATCH` | `data`: `expected` (the core's version), `oldest` (the floor it serves from), `received`; see [versioning](handshake.md#versioning) |
 | -32000 | `NO_ACTIVE_PROJECT` | The operation needs an open project and there is none |
 | -32000 | `PROJECT_SWITCH_REJECTED` | `data`: `operations`, the list of what is still alive |
 
 The −32000…−32099 range is the "server error" range the standard leaves
-implementation-defined; every domain error below rides that same integer and
-adds its own `data.code`.
+implementation-defined. A domain error below rides `-32000` and adds its own
+`data.code`, except five that refuse the request's parameters as given and so
+ride `-32602`, the integer of `INVALID_PARAMS`:
+
+| `data.code` | Why it is a parameter refusal |
+| --- | --- |
+| `UNKNOWN_CONFIG_KEY` | The key named is not an option |
+| `CONFIG_READ_ONLY` | The key named cannot be written |
+| `INFERENCE_APPROVAL_REQUIRED` | The `producer.approval_token` is missing or stale |
+| `SIDE_EFFECTS_CONSENT_REQUIRED` | The call lacks `allow_side_effects` |
+| `PRUNE_PLAN_STALE` | The plan passed differs from what is stored |
+
+A frontend branches on `data.code` either way; the integer only tells a generic
+JSON-RPC client which class of failure it is.
+
+### `INVALID_PARAMS` from configuration { #config-invalid-params }
+
+A configuration value of the wrong type or outside its range is refused
+`INVALID_PARAMS` with `data`: `key` (the option), `expected` (its type or
+range), and `reason`. When the value came from the project's `specforge.toml`
+rather than the request, `data` also carries `source: "specforge.toml"`. That
+check runs on `get_config`, `set_config`, `fuzz`, `run_pipeline` and `replay`;
+`reset_config` never checks, and is the way out of a bad file value.
 
 ## The domain codes
 
@@ -73,7 +94,7 @@ raise them. Together with the protocol-level codes, these are the complete set.
 
 | `data.code` | When |
 | --- | --- |
-| `NO_STATIC_ANALYSIS` | No static analysis has been run for this project |
+| `NO_STATIC_ANALYSIS` | An operation that `requires` `analysis` was called before any `analyze_endpoints` in this session |
 | `ENDPOINT_NOT_ANALYZED` | The endpoint has no static analysis yet |
 | `ENDPOINT_ANALYSIS_FAILED` | Static analysis of the endpoint failed |
 
@@ -86,7 +107,7 @@ raise them. Together with the protocol-level codes, these are the complete set.
 | `UNSUPPORTED_SCHEMA` | The contract's schema version is not supported |
 | `NO_COMPILABLE_ENDPOINTS` | No endpoint could be compiled into a strategy |
 | `CONTRACT_PRODUCER_FAILED` | A contract producer could not honor an explicit request |
-| `INFERENCE_APPROVAL_REQUIRED` | A run has inferences to pay for while `inference.require_approval` is on, and its `producer.approval_token` is missing or stale; `data`: `reason` (`missing` or `stale`), `estimate` |
+| `INFERENCE_APPROVAL_REQUIRED` | A run has inferences to pay for while `inference.require_approval` is on, and its `producer.approval_token` is missing or stale; `data`: `reason` (`missing` or `stale`), `estimate` (as [`estimate_inference`](operations.md#estimate-inference) answers it). Refused before any inference; in `run_pipeline` it fails the `inference` stage with the same code and `data` |
 | `EXECUTION_FAILED` | The run failed while executing |
 | `REPLAY_NOT_REPRODUCIBLE` | The recorded trace cannot be replayed against the target |
 | `SIDE_EFFECTS_CONSENT_REQUIRED` | A `replay` of a recording that needs [consent](operations.md#replay-consent) did not pass `allow_side_effects`; refused before any request is sent. `data`: `analysis_id`, `parameter` (`allow_side_effects`), `reason` (`recorded_with_side_effects` or `safety_breached`) |
@@ -101,7 +122,7 @@ raise them. Together with the protocol-level codes, these are the complete set.
 | `FINDING_NOT_FOUND` | The requested finding does not exist |
 | `RESULTS_READ_FAILED` | Reading stored results failed |
 | `PRUNE_FAILED` | Building a prune plan failed |
-| `PRUNE_PLAN_STALE` | The prune plan no longer matches what is stored |
+| `PRUNE_PLAN_STALE` | The prune plan differs from what is stored |
 | `PRUNE_APPLY_FAILED` | Applying a prune plan failed |
 
 ### Config and environment

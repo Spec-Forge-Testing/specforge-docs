@@ -3,7 +3,8 @@
 Part of the [Core decision records](index.md). Decisions about the headless
 core: how a run explains an endpoint it did not probe, how optional libraries
 are owned, how the busy guard is scoped, what a cancelled or a safety-breached
-run keeps, and how a run's oracle scope bounds a comparison.
+run keeps, how a run's oracle scope bounds a comparison, how the engine options
+resolve, and when the inference gateway loads.
 
 ---
 
@@ -40,7 +41,7 @@ carried forward, never reconstructed.
 
 ## ADR-070 — One importer per optional library: the dependency gateways { #adr-070 }
 
-**Status:** accepted · `services/deps/`
+**Status:** accepted · Superseded in part by [ADR-097](#adr-097) · `services/deps/`
 
 ### Context
 
@@ -102,7 +103,7 @@ themselves.
 
 ## ADR-072 — A cancelled run keeps and persists its evidence { #adr-072 }
 
-**Status:** accepted · `services/history/rules.py`, `domain/cancellation.py`
+**Status:** accepted · Superseded in part by [ADR-101](inference.md#adr-101) · `services/history/rules.py`, `domain/cancellation.py`
 
 ### Context
 
@@ -211,3 +212,84 @@ evidence, and its status says why. The cost is one more terminal value every
 frontend branches on, in [`run.status`](../protocol/vocabularies.md#run-status),
 [operation status](../protocol/vocabularies.md#operation-status) and
 [comparability](../protocol/vocabularies.md#comparability).
+
+---
+
+## ADR-096 — Engine options resolve request over project over default, and credentials never ride them { #adr-096 }
+
+**Status:** accepted · `services/config/definitions.py`, `services/config/service.py`, `services/config/credentials.py`, `services/config/runtime.py`, `controllers/execution/plan.py`
+
+### Context
+
+A project fixes its engine settings in `specforge.toml`, and a single call may
+want a different timeout or concurrency for one run. Both reach the same engine,
+so a run needs one rule for which value wins. A value in the file is typed by
+hand, and nothing guarantees it is of the option's type or inside its range;
+read as written, a bad one surfaces deep in the engine as an unrelated error. A
+header map applied to every request is also the easiest place to paste a token,
+and a run records the headers it sent.
+
+### Decision
+
+A run resolves each `engine.*` option once, before anything is produced: the
+request's own `timeout_s` and `max_concurrency` when given, else the project's
+`specforge.toml`, else the code default; `max_retries`, `backoff_base` and
+`headers` come from the file or the default. The file's values are checked by
+the same coercion as a value in a call, on every operation that reads them, and a
+failure is `INVALID_PARAMS` naming the key and `source: "specforge.toml"`.
+`set_config` refuses `null` and checks the merged file before writing it;
+`reset_config` never checks, so a broken file always has a way out.
+`engine.headers` refuses a credential header by name, and a recording keeps
+header names only; `replay` re-reads the values from the project it runs in.
+Credentials go through the identities file.
+
+### Rejected
+
+Letting the file win over the request, which makes a one-off run impossible
+without editing the project. Reading the file as written and failing in the
+engine, which reports the wrong cause far from the bad key. Accepting credential
+headers and redacting them on the way out, which keeps a secret in the project
+file and in every recording that names it.
+
+### Consequences
+
+One precedence for every run, published on every `get_config` row as its
+`layer`. A bad project file is refused at the first operation that reads it, with
+the key and the reason. A replay of a recording made under other headers sends
+the current project's values. See [Configuration](../configuration.md).
+
+---
+
+## ADR-097 — The `ai` gateway loads on first use, once, with a single owner { #adr-097 }
+
+**Status:** accepted · Supersedes in part [ADR-070](#adr-070) · `services/deps/ai.py`
+
+### Context
+
+The gateways import their library when their module is imported, so the core's
+start pays for all six. The semantic inference package pulls in the LLM stack,
+a heavy import, and most sessions — opening a project, fuzzing from
+the spec, reading results — never infer. Importing it on demand inside each
+caller would bring back the scattered `try/except` imports the gateways exist to
+remove.
+
+### Decision
+
+The `ai` gateway stays the only importer of the package, but loads it on the
+first call to its `api()`, under a lock, and caches the answer — present or
+absent with its reason — for the life of the process. Every caller still asks
+the gateway; nobody else imports the package.
+
+### Rejected
+
+Keeping the import at module load, which makes every start pay for a library
+most sessions never use. Per-call imports in each service that needs it, which
+splits ownership again. A background warm-up after start, which spends the same
+time and adds a race with the first caller.
+
+### Consequences
+
+The core starts without the LLM stack. The first inference, estimate or
+`diagnose` pays for the import once. The answer is still cached per process, so
+the doctor's "installed but not yet loaded" verdict keeps its meaning after that
+first use.

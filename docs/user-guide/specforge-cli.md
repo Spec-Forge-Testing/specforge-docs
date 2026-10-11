@@ -36,6 +36,15 @@ has not installed that console script, e.g.:
 export SPECFORGE_CORE_COMMAND="python -m specforge_core --serve"
 ```
 
+| Variable | What it sets | Default |
+| --- | --- | --- |
+| `SPECFORGE_CORE_COMMAND` | The command that launches the core. | `specforge --serve` |
+| `SPECFORGE_STARTUP_TIMEOUT` | Seconds to wait for the core's handshake. A cold start can take longer than the default; raise it rather than retrying. | `15` |
+
+Leaving the REPL (`exit`, Ctrl-D, or a closed terminal) cancels whatever is still
+running and waits for the core to answer before closing, so a run cut short keeps
+what it had produced.
+
 ## Two ways to write a call
 
 **Inside the REPL**, a line is `<operation> [key=value ...]`:
@@ -48,6 +57,16 @@ specforge ❯ fuzz base_url=http://localhost:8000 execution=stateful
 Each value is parsed as JSON when it looks like JSON (`42`, `true`,
 `{"a":1}`), and as a plain string otherwise — so quoting is only needed for a
 string that happens to look like a number or a keyword.
+
+A value with spaces goes in quotes right after the `=`. Double quotes are taken
+literally, so a Windows path needs no escaping; single quotes are read like an
+unquoted value, which is how a JSON object with spaces is quoted. An object or
+array can also span spaces unquoted:
+
+```text
+specforge ❯ open_project path="C:\Users\Ana Perez\my-api"
+specforge ❯ fuzz base_url=http://localhost:8000 load={"latency_sla_ms": 500}
+```
 
 **From your shell**, a flag is `--<name-with-dashes> <value>`, derived from the
 same parameter name with underscores turned to dashes:
@@ -66,6 +85,10 @@ specforge fuzz --base-url http://localhost:8000 \
   --producer '{"kind": "fixture", "contracts_dir": "contracts/"}'
 ```
 
+A path flag you type in the shell is resolved against the directory you ran the
+command from, including a path inside a JSON flag (`producer.source_repo`). The
+core would otherwise read a relative path from the project root.
+
 A required parameter you omit, an enum value outside the declared list, or an
 integer outside its declared range is caught **before** the request reaches
 the core, in both forms — the message names the parameter and, for an enum,
@@ -80,47 +103,79 @@ parameter — the admissible values after the `=`. All of it is derived from the
 catalog, so a parameter the core adds later completes without a CLI release.
 
 The REPL's history (`.specforge/shell_history`) never stores a credential in
-plain text: a `set_credential ... value=...` line has its `value=` argument
-stripped before it's written, and any `user:pass@host` userinfo embedded in a
-URL (e.g. a `--base-url` or `base_url=` with inline credentials) is redacted to
-`user:***@host`. Nothing is scrubbed from what the core itself logs or
-persists — this only protects the local history file.
+plain text. A line that mentions `headers` (the option where an `Authorization`
+header would go) is not written to the file at all, though the up arrow still
+recalls it during the session. Any `user:pass@host` userinfo embedded in a URL
+(e.g. a `base_url=` with inline credentials) is redacted to `user:***@host`.
+Nothing is scrubbed from what the core itself logs or persists, and a secret
+passed as a shell argument stays in your shell's own history: this only protects
+the REPL's history file.
 
 ### Argv-only flags
 
-These three are never part of any operation — they describe how *you* want
-the result delivered, so every operation accepts them alike and the catalog
-never lists them:
+These are never part of any operation — they describe how *you* want the call
+run and its result delivered, so every operation accepts them alike and the
+catalog never lists them:
 
 | Flag | Effect |
 | --- | --- |
+| `--project PATH` | Opens the project at `PATH` before the operation. Needed by any operation that `requires` a project or a contract, since a one-shot call starts with nothing open. |
+| `--contract PATH` | Loads the contract at `PATH` once the project is open, for a project that declares none. Needs `--project`. |
+| `--yes` | Answers yes to confirmations up front. See [Asking before it matters](#asking-before-it-matters) for what it does not cover. |
 | `--json-output` | The raw result as one JSON object on real stdout — no banner, no progress, no human render share that stream. A domain error renders to stderr as usual and stdout stays empty, so a script can always `> file.json` unconditionally. Long operations subscribe to no progress token at all in this mode. |
-| `--ci` | No color (sets `NO_COLOR` before anything renders); exits `1` if the operation's own result carries findings (`fuzz`, `replay`, `run_pipeline`) **or** if the operation itself failed — exits `0` on a clean run. Combine with `--json-output` to get a script-friendly result and a pipeline-friendly exit code at once. |
+| `--ci` | No color (sets `NO_COLOR` before anything renders); exits `1` if the operation's own result carries findings (`fuzz`, `replay`, `run_pipeline`), if the operation itself failed, **or** if a run did not finish with status `completed` (`cancelled`, `failed`, `safety_breached`, or a report with no status). Exits `0` on a clean run. Combine with `--json-output` to get a script-friendly result and a pipeline-friendly exit code at once. |
 | `--junit-xml PATH` | Also writes the result as JUnit XML at `PATH`, alongside whatever else rendered — one `<testsuite>` per endpoint, one `<testcase>` per defect (or a single passing one if the endpoint had none). Only `fuzz`/`replay`/`run_pipeline` results produce anything; anything else writes an empty `<testsuites/>`. |
 
 ```bash
-specforge fuzz --base-url http://localhost:8000 --ci --junit-xml report.xml
-echo $?   # 1 if fuzz found anything, or if it couldn't run at all
+specforge fuzz --project ./my-api --contract ./my-api/openapi.yaml \
+  --base-url http://localhost:8000 --ci --junit-xml report.xml
+echo $?   # 1 if fuzz found anything, or if it didn't complete
 ```
 
 With no arguments at all, `specforge` opens the REPL regardless of any of
 these — they only apply once an operation name is given.
+
+Ctrl-C during a one-shot call asks the core to cancel and still prints what the
+run had produced; a second Ctrl-C stops waiting.
+
+## Asking before it matters
+
+Some calls stop to ask first. In the REPL the question is asked with `approve`.
+
+| What | When it asks | Answering up front |
+| --- | --- | --- |
+| Destructive operations (`apply_fix_plan`, `apply_prune_plan`) | Before they are sent. | `--yes` |
+| A run that would pay for LLM inference | The core refuses and returns its estimate (contracts to infer, tokens, cost). The CLI shows it, asks, and resends with the approval token. | `--yes`, but only with `producer.max_cost_usd` set; without a cap it stops with exit `2`. |
+| A replay that could change the target | The CLI explains why (recorded with side effects, or its run reached routes the safety guard held back) and asks. | `--allow-side-effects`. `--yes` does not cover it, and `--no-allow-side-effects` is never overridden. |
+
+In the REPL, a call that needs approval shows its estimate or reason and waits:
+type `approve` to ask and resend it, or carry on with any other line to drop it.
+
+`--json-output`, `--ci` and a call with no terminal never wait for an answer:
+without `--yes` they stop with exit `2`, and in `--json-output` mode the estimate
+goes to stderr so stdout stays clean. Git Bash (mintty) does not present itself
+to Python as a terminal, so there a one-shot call never asks: use PowerShell or
+`winpty`, or pass `--yes`.
 
 ## Exit codes (argv form)
 
 | Code | Meaning |
 | --- | --- |
 | `0` | The operation completed, and (under `--ci`) found nothing. |
-| `1` | A domain or protocol error, or (under `--ci` only) a clean completion that still found something. |
-| `2` | A usage error caught before the request was sent: an unknown operation, a missing required flag, a value outside an enum, or JSON that failed to parse in an object-typed flag. |
+| `1` | A domain or protocol error, a confirmation you answered no to (or an estimate that kept changing), or (under `--ci` only) a finding or a run that did not complete. |
+| `2` | A usage error caught before the request was sent: an unknown operation, a missing required flag (`--project` included), a value outside an enum, JSON that failed to parse, or a confirmation nobody could give. |
+| `130` | Interrupted with Ctrl-C (also with `--ci`), or ended by `SIGTERM`/`SIGHUP` (`128` plus the signal number). |
 
 ## Operations
 
-`describe` publishes 31 operations across eight families. `requires` says
+`describe` publishes 32 operations across eight families. `requires` says
 what must already be true for the call to succeed: `none`, `project` (a
-project must be open — see [`open_project`](#open_project)) or `contract` (a
+project must be open — see [`open_project`](#open_project)), `contract` (a
 contract must also be loaded — see [`load_contract`](#load_contract), which
-implies a project). The full `requires`/events summary, independent of the
+implies a project) or `analysis` (an [`analyze_endpoints`](#analyze_endpoints)
+run earlier in the same session, which implies a contract). A one-shot call
+cannot have an earlier call, so the operations that require an analysis are
+refused before anything is sent: use the REPL for them. The full `requires`/events summary, independent of the
 CLI, lives in [Operations](../modules/core/protocol/operations.md); the
 values an operation's result can take (`run.status`, `comparability`, replay
 verdicts, …) are enumerated once in
@@ -146,7 +201,6 @@ specforge ❯ open_project path=/home/dev/my-api
 
 root: /home/dev/my-api
 contract: not loaded
-analysis: not run
 ```
 
 A project with no `specforge.toml` opens with no contract loaded (`contract:
@@ -174,6 +228,12 @@ wrote).
 | --- | --- | --- | --- |
 | `--path` | path | no | the current directory |
 | `--overwrite` / `--no-overwrite` | boolean | no | `false` |
+| `--name` | string | no | the directory's name |
+| `--openapi-spec` | path | no | the first of `openapi.yaml`, `openapi.yml`, `openapi.json` found, else `openapi.yaml` |
+| `--base-url` | string | no | `http://localhost:8000` |
+
+Giving `--name`, `--openapi-spec` or `--base-url` for a project whose
+`specforge.toml` already exists needs `--overwrite`.
 
 ### Contract
 
@@ -261,11 +321,12 @@ under `--json-output` — see [Argv-only flags](#argv-only-flags)).
 #### `get_static_analysis`
 
 The current analysis, without tracing anything again. No parameters.
-Requires a contract.
+Requires an analysis.
 
 #### `get_endpoint_static_analysis`
 
 The handler's code, its dependency chain and its metrics, for one endpoint.
+Requires an analysis.
 
 | Flag | Type | Required | Default |
 | --- | --- | --- | --- |
@@ -275,7 +336,7 @@ The handler's code, its dependency chain and its metrics, for one endpoint.
 
 The endpoint's XML context the inference pipeline would send an LLM — inline
 when it fits the handshake's declared `inline_max_bytes`, written to disk and
-named otherwise (always, if `--destination` is given).
+named otherwise (always, if `--destination` is given). Requires an analysis.
 
 | Flag | Type | Required | Default |
 | --- | --- | --- | --- |
@@ -304,7 +365,7 @@ contract; needs a target to send requests to (the project's own configured
 | `--strategy` | enum: `default`, `hacker` | no | `default` | |
 | `--load` | object | no | — | `{latency_sla_ms, concurrency_steps[], degradation_tolerance}` |
 | `--allow-side-effects` / `--no-allow-side-effects` | boolean | no | `false` | Lifts the guard that holds back probes on endpoints the contract marks as writing |
-| `--producer` | object | no | schema-only | `{kind: "fixture"|"inference", contracts_dir, source_repo}` |
+| `--producer` | object | no | schema-only | `{kind: "fixture"|"inference", contracts_dir, source_repo, refresh, approval_token, max_cost_usd}`; the last three are for `inference` only |
 | `--save` / `--no-save` | boolean | no | `true` | |
 | `--project-name` | string | no | — | Overrides the name the run is stored under |
 
@@ -331,6 +392,21 @@ Emits progress and is cancellable. See
 each `--execution` value actually does, and
 [Run Report](reports.md) for the document's full shape.
 
+A run with `kind: "inference"` pays for LLM calls, so it asks first; see
+[Asking before it matters](#asking-before-it-matters).
+
+#### `estimate_inference`
+
+What inferring the selected endpoints' contracts would cost, without calling
+any model. Takes the same selection flags as `fuzz` (`--target`, `--endpoint`,
+`--method`, `--strategy`) and a required `--producer` of `kind: "inference"`.
+Requires a contract.
+
+```bash
+specforge estimate_inference --project ./my-api --contract ./my-api/openapi.yaml \
+  --producer '{"kind": "inference", "source_repo": "./my-api"}'
+```
+
 #### `replay`
 
 Re-sends an analysis's recorded recipe and rules on the defects it found —
@@ -342,6 +418,7 @@ the verbatim requests, not a fresh generation.
 | `--preserve-timing` / `--no-preserve-timing` | boolean | no | `true` |
 | `--identities-path` | path | no | — |
 | `--base-url` | string | no | the recorded target | Restores credentials the recipe never persisted — does **not** retarget |
+| `--allow-side-effects` / `--no-allow-side-effects` | boolean | no | `false` | Consent to re-send a recording made with side effects allowed, or one whose run reached routes the safety guard held back |
 | `--save` / `--no-save` | boolean | no | `true` |
 
 Emits progress and is cancellable. Requires a project (not a contract — the
@@ -359,6 +436,7 @@ Takes the union of `fuzz`'s flags, plus:
 | Flag | Type | Required | Default |
 | --- | --- | --- | --- |
 | `--analyze` / `--no-analyze` | boolean | no | `true` |
+| `--repo-root` | path | no | `producer.source_repo` if given, else the project root |
 
 ```bash
 specforge run_pipeline --base-url http://localhost:8000 \
@@ -470,7 +548,8 @@ same flags, plus the plan it commits to:
 | `--plan-token` | string | yes |
 
 A stale plan (the store changed since `prune_runs` proposed it) is refused
-rather than applied against data it never saw.
+rather than applied against data it never saw. Destructive: it asks for
+confirmation before it is sent.
 
 ### Config
 
@@ -521,7 +600,8 @@ never arbitrary input, and never a remedy you didn't ask for.
 | --- | --- | --- |
 | `--components` | string, repeated | yes |
 
-Emits progress (each install streams as it runs).
+Emits progress (each install streams as it runs). Destructive: it asks for
+confirmation before it is sent.
 
 ### Catalog
 

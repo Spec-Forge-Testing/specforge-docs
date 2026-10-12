@@ -40,6 +40,7 @@ export SPECFORGE_CORE_COMMAND="python -m specforge_core --serve"
 | --- | --- | --- |
 | `SPECFORGE_CORE_COMMAND` | The command that launches the core. | `specforge --serve` |
 | `SPECFORGE_STARTUP_TIMEOUT` | Seconds to wait for the core's handshake. A cold start can take longer than the default; raise it rather than retrying. | `15` |
+| `SPECFORGE_SYSTEM_COMMANDS` | Set to `0`, `false`, `no` or `off` (case-insensitive) to disable the REPL's `!` system-command escape. Anything else, or unset, leaves it enabled. | enabled |
 
 Leaving the REPL (`exit`, Ctrl-D, or a closed terminal) cancels whatever is still
 running and waits for the core to answer before closing, so a run cut short keeps
@@ -110,6 +111,56 @@ recalls it during the session. Any `user:pass@host` userinfo embedded in a URL
 Nothing is scrubbed from what the core itself logs or persists, and a secret
 passed as a shell argument stays in your shell's own history: this only protects
 the REPL's history file.
+
+### System commands with `!`
+
+Prefix a REPL line with `!` to run it as a system command without leaving the
+session:
+
+```text
+SpecForge ❯ !git status
+SpecForge ❯ !pytest -q
+```
+
+The escape is explicit on purpose: a line without `!` is always an operation call,
+so a typo in an operation name never turns into an accidental system call. A `!`
+line never reaches the core; the CLI runs it locally.
+
+- **Streaming output.** `stdout` is shown as the command runs and `stderr` in the
+  error colour, so a long command shows progress. A non-zero exit code is reported.
+- **Working directory.** Commands run in the directory the CLI was started in. `!cd
+  <dir>` moves the session there, so the commands that follow run in the new
+  directory; `!cd` with no argument prints the current one. A directory that does
+  not exist is reported and the session stays where it was. `!cd` does not change how
+  operations resolve a relative path: the core anchors those to the project root.
+- **Output encoding.** Output is read as UTF-8 and, if it isn't valid UTF-8, in the
+  console's own codepage, so native Windows tools (`help`, `ping`) show their accents
+  correctly.
+- **The prompt stays free.** The command runs off the prompt, like any operation,
+  so you can keep typing while it runs.
+- **Failures don't end the session.** A missing program, an unparsable line (such
+  as an unbalanced quote) or a failing command is reported and the REPL carries on.
+- **Disabling it.** Set `SPECFORGE_SYSTEM_COMMANDS=0` (or `false`, `no`, `off`) to
+  turn the escape off, for example in a shared or non-interactive environment.
+  `!` then answers that system commands are disabled.
+
+A command is a single program run **without a shell**: no pipes, redirection or
+shell built-ins such as `dir` or `ls` (`cd` is the exception, handled by the CLI
+itself), and no interactive programs (its stdin is closed, so
+`vim` or `git rebase -i` will not work). The `!` escape exists only in the REPL; the
+argv form (`specforge <operation> ...`) runs your shell's own commands anyway.
+
+When a program isn't found, the error suggests running it through a shell, which is
+how to use a built-in:
+
+```text
+SpecForge ❯ !dir
+✗  Command not found: dir
+   │ It may be a shell built-in, and `!` runs programs directly, without a shell.
+   │ Try: !powershell -c "dir"
+```
+
+On Linux and macOS the suggestion is `!sh -c "..."`.
 
 ### Argv-only flags
 

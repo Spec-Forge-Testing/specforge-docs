@@ -128,8 +128,14 @@ line never reaches the core; the CLI runs it locally.
 
 - **Streaming output.** `stdout` is shown as the command runs and `stderr` in the
   error colour, so a long command shows progress. A non-zero exit code is reported.
-- **Working directory.** The command runs in the directory the CLI was started in.
-  There is no `cd` built-in, and a `!cd` only affects its own short-lived process.
+- **Working directory.** Commands run in the directory the CLI was started in. `!cd
+  <dir>` moves the session there, so the commands that follow run in the new
+  directory; `!cd` with no argument prints the current one. A directory that does
+  not exist is reported and the session stays where it was. `!cd` does not change how
+  operations resolve a relative path: the core anchors those to the project root.
+- **Output encoding.** Output is read as UTF-8 and, if it isn't valid UTF-8, in the
+  console's own codepage, so native Windows tools (`help`, `ping`) show their accents
+  correctly.
 - **The prompt stays free.** The command runs off the prompt, like any operation,
   so you can keep typing while it runs.
 - **Failures don't end the session.** A missing program, an unparsable line (such
@@ -139,9 +145,22 @@ line never reaches the core; the CLI runs it locally.
   `!` then answers that system commands are disabled.
 
 A command is a single program run **without a shell**: no pipes, redirection or
-shell built-ins such as `dir`, and no interactive programs (its stdin is closed, so
+shell built-ins such as `dir` or `ls` (`cd` is the exception, handled by the CLI
+itself), and no interactive programs (its stdin is closed, so
 `vim` or `git rebase -i` will not work). The `!` escape exists only in the REPL; the
 argv form (`specforge <operation> ...`) runs your shell's own commands anyway.
+
+When a program isn't found, the error suggests running it through a shell, which is
+how to use a built-in:
+
+```text
+SpecForge ❯ !dir
+✗  Command not found: dir
+   │ It may be a shell built-in, and `!` runs programs directly, without a shell.
+   │ Try: !powershell -c "dir"
+```
+
+On Linux and macOS the suggestion is `!sh -c "..."`.
 
 ### Argv-only flags
 

@@ -102,7 +102,7 @@
    2. ESTRUCTURA GLOBAL Y LAYOUT CENTRAL
    ========================================================================== */
 .md-main__inner {
-  margin-top: 0.5rem;
+  margin-top: 0;
 }
 
 /* Márgenes laterales, como Claude Docs: la grilla de Material trae un tope fijo
@@ -189,29 +189,34 @@
 .md-sidebar__scrollwrap {
   scrollbar-gutter: stable;
   overflow-x: hidden;
+  /* En reposo la barra es invisible. Firefox: sin barra (none). */
+  scrollbar-width: none;
+}
+
+/* WebKit (Chrome/Edge/Safari): barra de ancho 0 en reposo, para que no asome ni
+   el canal. Reaparece al pasar el mouse o al enfocar algo dentro del sidebar. */
+.md-sidebar__scrollwrap::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.md-sidebar__scrollwrap::-webkit-scrollbar-thumb {
+  background-color: var(--border-subtle);
+  border-radius: 99px;
+}
+
+/* La barra solo aparece con hover o focus dentro del sidebar; en reposo
+   desaparece por completo, como en Claude Docs. */
+.md-sidebar__scrollwrap:hover,
+.md-sidebar__scrollwrap:focus-within {
   scrollbar-width: thin;
   scrollbar-color: var(--border-subtle) transparent;
 }
 
-.md-sidebar__scrollwrap::-webkit-scrollbar {
+.md-sidebar__scrollwrap:hover::-webkit-scrollbar,
+.md-sidebar__scrollwrap:focus-within::-webkit-scrollbar {
   width: 0.3rem;
   height: 0.3rem;
-}
-
-.md-sidebar__scrollwrap::-webkit-scrollbar-thumb {
-  background-color: transparent;
-  border-radius: 99px;
-  transition: background-color 0.2s ease;
-}
-
-/* El thumb solo se tiñe cuando el puntero está sobre el sidebar: en reposo la
-   barra desaparece, como en Claude Docs. */
-.md-sidebar__scrollwrap:hover {
-  scrollbar-color: var(--border-subtle) transparent;
-}
-
-.md-sidebar__scrollwrap:hover::-webkit-scrollbar-thumb {
-  background-color: var(--border-subtle);
 }
 
 /* ==========================================================================
@@ -408,6 +413,7 @@
 .md-nav__link--active {
   color: var(--text-bright);
   font-weight: 600;
+  color: var(--accent-color);
   background-color: var(--bg-chip-active);
 }
 
@@ -416,18 +422,214 @@
 }
 
 /* Table of Contents (Sidebar Derecho) */
-.md-sidebar--secondary .md-nav__link {
-  border-radius: 99px;
-  font-size: 0.7rem;
-  padding: 0.3rem 0.75rem;
-  margin-bottom: 0.15rem;
+/* Material mete `padding-left: .6rem` en el <ul> del ToC, que se sumaba al
+   inset del link y dejaba las entradas de primer nivel corridas 0.6rem a la
+   derecha del icono de listado. Anulamos ese padding SOLO en la lista raíz
+   (data-md-component="toc"), para que el único inset de los h2 sea el del link
+   (2rem). Las sublistas anidadas (h3, h4...) sí llevan indentación propia, más
+   abajo. */
+.md-sidebar--secondary .md-nav--secondary > .md-nav__list[data-md-component="toc"] {
+  padding-left: 0;
 }
 
-.md-sidebar--secondary .md-nav__link--active {
-  background-color: transparent;
-  border: 1px solid var(--accent-color);
+/* Indentación por nivel: cada sublista (un <nav><ul> dentro de un item) corre
+   sus entradas un escalón a la derecha respecto del padre, para que los
+   subheaders se distingan de sus headers (como en Claude Docs). */
+.md-sidebar--secondary .md-nav--secondary .md-nav__item .md-nav .md-nav__list {
+  padding-left: 0.9rem;
+}
+
+/* Table of Contents (Sidebar Derecho) — sin cajas: ni fondo, ni borde, ni
+   píldora. Solo el texto cambia de color. Los links arrancan en 2rem para
+   alinearse con el icono/texto del título (el gutter de la izquierda es para la
+   píldora del chevron que cuelga). */
+.md-sidebar--secondary .md-nav__link {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  font-size: 0.65rem;
+  line-height: 1.25;
+  padding: 0.08rem 0 0.08rem 2.2rem;
+  margin-bottom: 0;
+  color: var(--text-muted);
+  transition: color 0.15s ease;
+}
+
+/* Hover: solo acerca el texto al color "bright" (más blanco en oscuro, más
+   negro en claro). Nada de fondo. Anulamos el hover de píldora que hereda del
+   nav izquierdo. */
+.md-sidebar--secondary .md-nav__link:hover {
+  background: transparent;
   color: var(--text-bright);
+}
+
+/* Link activo (la sección donde estás al scrollear): se pinta del violeta de
+   marca (accent), sin fondo ni borde. */
+.md-sidebar--secondary .md-nav__link--active {
+  background: transparent;
+  border: none;
+  color: var(--accent-color);
   font-weight: 600;
+}
+
+/* --------------------------------------------------------------------------
+   ToC colapsable ("On this page"), como Claude Docs
+   --------------------------------------------------------------------------
+   El título del ToC es una fila: [píldora toggle: chevron + icono de listado]
+   seguida del rótulo "Table of contents" (clickeable, scrollea arriba). Al
+   colapsar, extra.js pone `body.sf-toc-collapsed`: se oculta la columna del
+   ToC, el contenido recupera el ancho, y la misma píldora reaparece pegada al
+   borde derecho (.sf-toc-reopen) con el chevron apuntando a la izquierda. */
+/* El título es una fila en una sola línea. Reservamos a la izquierda el ancho
+   de la píldora del chevron (que se posiciona en absoluto, ver abajo); el
+   contenido en flujo es [icono de listado] + "Table of contents". Así la
+   píldora "cuelga" a la izquierda y los links del ToC quedan alineados con el
+   icono/texto, como en Claude Docs. */
+.md-nav--secondary > .md-nav__title {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  overflow: visible;
+  padding-left: 2rem;
+  padding-right: 0;
+}
+
+/* El icono de listado abre el rótulo como su prefijo. */
+.md-nav--secondary > .md-nav__title .sf-toc-list-icon {
+  margin-left: 0;
+}
+
+/* La píldora del chevron se saca del flujo y se ancla a la izquierda del
+   título, dentro del gutter reservado por el padding-left. */
+.md-nav--secondary > .md-nav__title .sf-toc-toggle {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* La píldora es más alta que la línea de texto del título y, al estar éste
+   pegado al tope del scrollwrap (sticky top:0), asomaba por arriba y el
+   `overflow-y` del scrollwrap la recortaba. Un pequeño respiro arriba la deja
+   entrar completa. */
+@media screen and (min-width: 76.25em) {
+  .md-sidebar--secondary .md-sidebar__inner {
+    padding-top: 0.5rem;
+  }
+}
+
+/* La píldora de toggle (solo chevron) y la de reabrir (chevron + listado)
+   comparten estilo: borde sutil, fondo de tarjeta. */
+.sf-toc-toggle,
+.sf-toc-reopen {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  flex-shrink: 0;
+  height: 1.6rem;
+  padding: 0 0.35rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 99px;
+  background-color: var(--bg-card);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.sf-toc-toggle:hover,
+.sf-toc-reopen:hover {
+  color: var(--text-bright);
+  border-color: var(--accent-color);
+}
+
+.sf-toc-chevron {
+  display: inline-flex;
+  align-items: center;
+}
+
+.sf-toc-chevron svg {
+  width: 0.95rem;
+  height: 0.95rem;
+  fill: currentColor;
+}
+
+/* Icono de "listado": prefijo del texto del rótulo (abierto) y dentro de la
+   píldora de reabrir (colapsado). Hereda el color del texto que lo rodea. */
+.sf-toc-list-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+}
+
+.sf-toc-list-icon svg {
+  width: 0.95rem;
+  height: 0.95rem;
+  fill: currentColor;
+}
+
+/* El rótulo "Table of contents" (texto + icono de listado) scrollea al inicio:
+   cursor de puntero y un leve realce al pasar el mouse, sin caja. */
+.sf-toc-title--clickable {
+  cursor: pointer;
+}
+
+.sf-toc-title--clickable:hover,
+.sf-toc-title--clickable:hover .sf-toc-list-icon {
+  color: var(--text-bright);
+}
+
+/* Estado colapsado: solo en desktop (en móvil el ToC vive dentro del drawer y
+   no tiene columna propia que recuperar). */
+@media screen and (min-width: 76.25em) {
+  /* Ocultamos la columna del ToC y le devolvemos el ancho al contenido. */
+  body.sf-toc-collapsed .md-sidebar--secondary {
+    display: none;
+  }
+
+  /* Material limita el contenido con margin-right cuando hay ToC; al colapsar
+     ya no hace falta. El ancho de la columna lo ensanchamos para que el texto
+     respire en el espacio liberado. */
+  body.sf-toc-collapsed .md-content {
+    max-width: calc(var(--sf-content-max-width) + 12.5rem);
+  }
+}
+
+/* Píldora para reabrir el ToC: misma que el toggle pero pegada al borde
+   derecho, visible solo en colapsado (desktop). Entra con una transición de
+   opacidad y desplazamiento desde la derecha. */
+.sf-toc-reopen {
+  position: fixed;
+  top: 4.4rem;
+  right: 0.9rem;
+  z-index: 5;
+  opacity: 0;
+  transform: translateX(1rem);
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease, color 0.15s ease,
+    background-color 0.15s ease, border-color 0.15s ease;
+}
+
+@media screen and (min-width: 76.25em) {
+  body.sf-toc-collapsed .sf-toc-reopen {
+    opacity: 1;
+    transform: translateX(0);
+    pointer-events: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sf-toc-reopen {
+    transition: opacity 0.2s ease;
+    transform: none;
+  }
+  body.sf-toc-collapsed .sf-toc-reopen {
+    transform: none;
+  }
 }
 
 /* Botón "scroll to top". Material tiene el suyo (`.md-top`), un fly-in centrado

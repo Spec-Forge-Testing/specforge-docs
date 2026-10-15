@@ -20,7 +20,7 @@
   /* Colores de Superficie — lienzo claro y plano, sin tinte */
   --bg-main: #fafafa;
   --bg-card: #f4f4f5;          /* Superficies leves (búsqueda, botones de footer) */
-  --bg-code: transparent;      /* Bloques de código: sin caja, ver §6 */
+  --bg-code: #f4f4f5;          /* Bloques de código: caja elevada sutil, ver §6 */
   --bg-chip-active: #ede9fe;   /* Píldora activa del sidebar (violeta muy tenue) */
 
   /* Tipografía — el cuerpo es "muted" por defecto, el brillo se reserva */
@@ -51,7 +51,20 @@
 
   --md-grid-max-width: 1760px;
   --md-code-bg-color: var(--bg-code);
-  --md-code-fg-color: var(--text-main);
+  --md-code-fg-color: var(--text-bright);
+
+  /* Paleta de resaltado de sintaxis (modo claro), cohesiva con la marca:
+     keywords/flags en azul, strings en ámbar, funciones en violeta. */
+  --md-code-hl-keyword-color: #2563eb;
+  --md-code-hl-function-color: #9333ea;
+  --md-code-hl-string-color: #b45309;
+  --md-code-hl-number-color: #0e7490;
+  --md-code-hl-constant-color: #7c3aed;
+  --md-code-hl-special-color: #be123c;
+  --md-code-hl-name-color: var(--text-bright);
+  --md-code-hl-operator-color: var(--text-muted);
+  --md-code-hl-punctuation-color: var(--text-muted);
+  --md-code-hl-comment-color: var(--text-muted);
 
   /* Ancho de la columna de contenido (compartido con el footer prev/next) */
   --sf-content-max-width: 54rem;
@@ -67,7 +80,7 @@
   /* Colores de Superficie */
   --bg-main: #111111;
   --bg-card: #1a1a1a;          /* Superficies leves (búsqueda, botones de footer) */
-  --bg-code: transparent;      /* Bloques de código: sin caja, ver §6 */
+  --bg-code: #18181b;          /* Bloques de código: caja elevada sutil, ver §6 */
   --bg-chip-active: #2a1f3d;   /* Píldora activa del sidebar (violeta muy tenue) */
 
   /* Tipografía */
@@ -98,6 +111,20 @@
 
   --md-code-bg-color: var(--bg-code);
   --md-code-fg-color: var(--text-bright);
+
+  /* Paleta de resaltado de sintaxis (modo oscuro), más luminosa para contrastar
+     con el fondo del bloque: keywords/flags en azul, strings en ámbar,
+     funciones en violeta. */
+  --md-code-hl-keyword-color: #7aa2ff;
+  --md-code-hl-function-color: #c792ea;
+  --md-code-hl-string-color: #e5a66a;
+  --md-code-hl-number-color: #56b6c2;
+  --md-code-hl-constant-color: #b48eff;
+  --md-code-hl-special-color: #ff7a93;
+  --md-code-hl-name-color: var(--text-bright);
+  --md-code-hl-operator-color: var(--text-muted);
+  --md-code-hl-punctuation-color: var(--text-muted);
+  --md-code-hl-comment-color: var(--text-muted);
 }
 
 /* ==========================================================================
@@ -919,26 +946,25 @@
 /* ==========================================================================
    6. BLOQUES DE CÓDIGO SINTÁCTICO — estilo "left-rail" de la CLI
    ========================================================================== */
-/* La CLI dejó de envolver la salida en `rich.Panel`; el equivalente web es
-   perder la caja (fondo + sombra + esquinas) y marcar el bloque con un solo
-   borde izquierdo, como una franja de terminal. */
+/* Cajas estilo Claude Docs: fondo elevado sutil, borde fino, esquinas
+   redondeadas. El botón de copiar vive arriba a la derecha. */
 .md-typeset .highlight {
-  background: transparent;
-  border-radius: 0;
-  border: none;
+  position: relative;
+  background-color: var(--bg-code);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
   box-shadow: none;
-  margin: 1em 0;
+  margin: 1.2em 0;
   overflow: hidden;
 }
 
 .md-typeset div.highlight > pre,
 .md-typeset pre {
-  background-color: var(--bg-code);
+  background-color: transparent;
   border: none;
-  border-left: 2px solid var(--border-subtle);
   border-radius: 0;
   margin: 0;
-  padding: 0.8rem 0 0.8rem 1.25rem;
+  padding: 0.85rem 1rem;
   overflow-x: auto;
 }
 
@@ -947,9 +973,76 @@
   padding: 0;
   border: none;
   font-family: var(--md-font-code);
-  font-size: 0.7rem;
-  line-height: 1.5;
+  font-size: 0.7rem; /* ~14px */
+  line-height: 1.6;
   color: var(--text-bright);
+}
+
+/* Deja sitio a la derecha para que el texto largo no quede bajo el botón de
+   copiar. */
+.md-typeset .highlight > pre > code,
+.md-typeset .highlighttable .code pre > code {
+  padding-right: 2rem;
+}
+
+/* El contenedor del botón (.md-code__nav) traía un fondo + border-radius +
+   padding (var(--md-code-bg-color--lighter)) que era el recuadro gris que
+   rodeaba al icono. Lo hacemos transparente para que el icono quede plano,
+   como la referencia. */
+.md-typeset .md-code__nav,
+.md-typeset .highlight:hover > .md-code__nav {
+  background: transparent !important;
+  background-color: transparent !important;
+  border-radius: 0;
+  padding: 0;
+  /* Fijo arriba a la derecha, centrado sobre la PRIMERA línea del código
+     (no sobre el bloque entero). Así el botón queda en la misma posición
+     tenga el bloque una línea o muchas. El centro de la primera línea cae en
+     padding-top (0.85rem) + media línea (0.7rem × 1.6 / 2 ≈ 0.56rem); el icono
+     mide 1.1rem, así que top = 1.41 − 0.55 ≈ 0.86rem. */
+  top: 1.4rem !important;
+  right: 0.6rem;
+  bottom: auto !important;
+  transform: translateY(-50%);
+}
+
+/* Botón de copiar. Esta versión de Material usa `.md-code__button` (no
+   `.md-clipboard`): un <button> cuyo chrome nativo (borde/fondo del
+   user-agent) dibujaba el recuadro feo. Lo reseteamos a un icono plano, tenue
+   en reposo y realzado solo en el color en hover/focus — como la referencia. */
+.md-typeset .md-code__nav .md-code__button,
+.md-typeset .md-code__button,
+.md-typeset .md-code__button:hover,
+.md-typeset .md-code__button:focus,
+.md-typeset .md-code__button:active,
+.md-typeset .md-code__button:focus-visible {
+  background: none !important;
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.md-typeset .md-code__button {
+  color: var(--text-muted);
+  width: 1.1rem;
+  height: 1.1rem;
+  padding: 0;
+  border-radius: 0;
+  transition: color 0.15s ease;
+}
+
+.md-typeset .md-code__button:hover,
+.md-typeset .md-code__button:focus,
+.md-typeset .md-code__button--active {
+  color: var(--text-bright) !important;
+}
+
+.md-typeset .md-code__button::after {
+  width: 1rem;
+  height: 1rem;
 }
 
 /* Tablas de números de línea */
@@ -963,6 +1056,10 @@
   background: transparent;
 }
 
+.md-typeset .highlighttable .code {
+  overflow: hidden;
+}
+
 .md-typeset .linenodiv,
 .md-typeset .linenos {
   background: transparent;
@@ -973,7 +1070,7 @@
 }
 
 .md-typeset .linenodiv pre {
-  padding: 0.8rem 0 0.8rem 1rem;
+  padding: 0.85rem 0 0.85rem 1rem;
   color: var(--text-muted);
   border-left: none;
 }

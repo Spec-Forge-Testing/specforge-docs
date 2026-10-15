@@ -34,6 +34,7 @@
   --success-color: #059669;    /* CLI light SUCCESS */
   --warning-color: #d97706;    /* CLI light WARNING */
   --error-color: #e11d48;      /* CLI light ERROR */
+  --info-color: #2563eb;       /* Azul para avisos note/info (como Claude) */
   --border-subtle: #e4e4e7;    /* CLI light BORDER */
   --border-footer: #eeeeee;    /* CLI dark BORDER FOOTER */
 
@@ -80,6 +81,7 @@
   --success-color: #10b981;    /* CLI SUCCESS */
   --warning-color: #f59e0b;    /* CLI WARNING */
   --error-color: #f43f5e;      /* CLI ERROR */
+  --info-color: #5d87ff;       /* Azul para avisos note/info (como Claude) */
   --border-subtle: #3f3f46;    /* CLI BORDER */
   --border-footer: #242424;    /* CLI dark BORDER FOOTER */
 
@@ -805,7 +807,7 @@
    ========================================================================== */
 .md-typeset {
   font-family: var(--md-font-sans);
-  font-size: 0.8rem; /* ~16px (root 20px) */
+  font-size: 0.75rem; /* ~15px (root 20px) */
   line-height: 1.6;
   color: var(--text-main);
 }
@@ -824,7 +826,7 @@
 
 /* Encabezados Jerarquizados */
 .md-typeset h1 {
-  font-size: 1.65rem;
+  font-size: 1.55rem;
   font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--text-bright);
@@ -832,7 +834,7 @@
 }
 
 .md-typeset h2 {
-  font-size: 1.3rem;
+  font-size: 1.25rem;
   font-weight: 700;
   letter-spacing: -0.015em;
   color: var(--text-bright);
@@ -841,22 +843,28 @@
 }
 
 .md-typeset h3 {
-  font-size: 1.05rem;
+  font-size: 1rem;
   font-weight: 600;
   color: var(--text-bright);
   margin-top: 1.3em;
 }
 
 /* Enlaces */
+/* Enlaces en el cuerpo: mismo color que el texto fuerte (no accent), siempre
+   subrayados. En hover el subrayado se engrosa (no cambia el color). */
 .md-typeset a {
-  color: var(--brand-color);
-  text-decoration: none;
-  font-weight: 500;
-  transition: color 0.15s ease, text-decoration 0.15s ease;
+  color: var(--text-bright);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.15em;
+  font-weight: 600;
+  transition: text-decoration-thickness 0.15s ease;
 }
 
 .md-typeset a:hover {
+  color: var(--text-bright);
   text-decoration: underline;
+  text-decoration-thickness: 2px;
 }
 
 .md-typeset h1 a,
@@ -973,57 +981,128 @@
 /* ==========================================================================
    7. AVISOS (ADMONITIONS / DETAILS) — estilo "left-rail", sin caja
    ========================================================================== */
-/* Mismo tratamiento que el código (§6): sin fondo ni sombra, un borde
-   izquierdo que toma el color semántico del tipo de aviso — el mismo mapeo
-   que los tokens de la CLI (accent/success/warning/error, theme.py). */
+/* Cajas estilo Claude Docs: fondo tenue del color semántico, borde completo del
+   mismo color, esquinas redondeadas. Cada aviso usa una variable --sf-adm que
+   define su color de acento; el default (note/info) es el azul de la CLI. El
+   icono y el título toman ese mismo color. */
 .md-typeset .admonition {
-  background: color-mix(in srgb, var(--accent-color) 8%, transparent);
-  border-radius: 0 6px 6px 0;
-  border: none;
-  border-left: 2px solid var(--accent-color);
+  --sf-adm: var(--brand-color); /* default/note: violeta (brand) */
+  /* Dos columnas: una franja fija a la izquierda para el icono y el resto para
+     el contenido (título + cuerpo). El padding-left reserva esa franja; el
+     icono se ancla ahí (ver más abajo). Así, cuando el texto hace wrap, todas
+     las líneas quedan alineadas contra el icono, como en Claude Docs. */
+  position: relative;
+  background: color-mix(in srgb, var(--sf-adm) 10%, var(--bg-main));
+  border: 1px solid color-mix(in srgb, var(--sf-adm) 45%, transparent);
+  border-radius: 10px;
   box-shadow: none;
-  padding: 0.6rem 1rem;
+  padding: 0.7rem 1rem 0.7rem 2.5rem;
   margin: 1.5em 0;
+  font-size: 0.7rem; /* ~14px: título y cuerpo del aviso, mismo tamaño */
 }
 
-/* Material colorea el título por tipo con selectores de mayor especificidad
-   (p. ej. `.admonition.info > .admonition-title`) que ganarían sobre esta
-   regla sin !important, dejando una franja de color detrás del texto. */
+/* Material fija un `border-color` propio por tipo (p. ej. info → #00b8d4) con
+   especificidad (0,2,0) que le ganaba a la regla base y dejaba el borde de un
+   color distinto al icono/título. Forzamos que TODO el borde salga de nuestro
+   --sf-adm, con un selector de la misma especificidad que carga después. */
+.md-typeset .admonition.info,
+.md-typeset .admonition.note,
+.md-typeset .admonition.abstract,
+.md-typeset .admonition.tip,
+.md-typeset .admonition.success,
+.md-typeset .admonition.hint,
+.md-typeset .admonition.warning,
+.md-typeset .admonition.caution,
+.md-typeset .admonition.attention,
+.md-typeset .admonition.danger,
+.md-typeset .admonition.failure,
+.md-typeset .admonition.error,
+.md-typeset .admonition.bug,
+.md-typeset .admonition.question,
+.md-typeset .admonition.example,
+.md-typeset .admonition.quote {
+  border-color: color-mix(in srgb, var(--sf-adm) 45%, transparent);
+}
+
+/* Título del aviso: etiqueta en el color del aviso, en negrita y del MISMO
+   tamaño que el cuerpo (1em). Sin padding-left propio: la columna del icono la
+   da el padding de la caja. `position: static` para que el icono (::before) se
+   ancle a la caja, no al título. */
 .md-typeset .admonition-title {
+  position: static;
   background-color: transparent !important;
   box-shadow: none !important;
-  font-family: var(--md-font-code);
-  font-weight: 600;
-  font-size: 0.75rem;
-  padding: 0 0 0.4rem !important;
-  margin-left: 0 !important;
-  margin-right: 0 !important;
-  color: var(--text-bright);
+  border: none !important; /* Material deja un border-left de .2rem que desalineaba */
+  font-family: var(--md-font-sans);
+  font-weight: 700;
+  font-size: 1em;
+  padding: 0 !important;
+  margin: 0 0 0.35em !important;
+  color: var(--sf-adm);
+  line-height: 1.5;
 }
 
+/* Cuando el aviso es de una sola línea de título (sin cuerpo), sin margen. */
+.md-typeset .admonition-title:only-child {
+  margin-bottom: 0 !important;
+}
+
+/* El cuerpo del aviso: sin margen arriba del primer elemento ni debajo del
+   último, para que la caja quede ajustada. */
+.md-typeset .admonition > :first-child:not(.admonition-title),
+.md-typeset .admonition-title + * {
+  margin-top: 0;
+}
+
+.md-typeset .admonition > :last-child {
+  margin-bottom: 0 !important;
+}
+
+/* El icono de Material (un mask SVG en ::before) se recolorea al color del
+   aviso y se ancla a la COLUMNA izquierda de la caja (no al título), alineado
+   con la primera línea del contenido. */
 .md-typeset .admonition-title::before {
-  display: none !important;
+  display: block !important;
+  position: absolute;
+  left: 0.85rem !important;
+  top: 0.85rem !important;
+  width: 1rem !important;
+  height: 1rem !important;
+  background-color: var(--sf-adm) !important;
+  content: "";
 }
 
-/* Nota/info: azul (CLI accent). Tip/success: verde. Warning: ámbar.
-   Danger/failure/error: rojo — la franja izquierda es la única señal de tipo. */
+/* Mapeo de color por tipo. note/default: violeta (brand). info/abstract: azul.
+   tip/success/hint: verde. warning/caution/attention: ámbar.
+   danger/failure/error/bug: rojo. question/example/quote: marca (violeta). */
+.md-typeset .admonition.info,
+.md-typeset .admonition.abstract {
+  --sf-adm: var(--info-color);
+}
+
 .md-typeset .admonition.tip,
-.md-typeset .admonition.success {
-  border-left-color: var(--success-color);
-  background: color-mix(in srgb, var(--success-color) 8%, transparent);
+.md-typeset .admonition.success,
+.md-typeset .admonition.hint {
+  --sf-adm: var(--success-color);
 }
 
 .md-typeset .admonition.warning,
-.md-typeset .admonition.caution {
-  border-left-color: var(--warning-color);
-  background: color-mix(in srgb, var(--warning-color) 8%, transparent);
+.md-typeset .admonition.caution,
+.md-typeset .admonition.attention {
+  --sf-adm: var(--warning-color);
 }
 
 .md-typeset .admonition.danger,
 .md-typeset .admonition.failure,
-.md-typeset .admonition.error {
-  border-left-color: var(--error-color);
-  background: color-mix(in srgb, var(--error-color) 8%, transparent);
+.md-typeset .admonition.error,
+.md-typeset .admonition.bug {
+  --sf-adm: var(--error-color);
+}
+
+.md-typeset .admonition.question,
+.md-typeset .admonition.example,
+.md-typeset .admonition.quote {
+  --sf-adm: var(--brand-color);
 }
 
 /* ==========================================================================
@@ -1121,39 +1200,88 @@
 }
 
 /* ==========================================================================
-   DESPLEGABLES MkDOCS
-   ========================================================================== */
+   DESPLEGABLES MkDOCS (details) — SIN caja, estilo liviano
+   ==========================================================================
+   A diferencia de los avisos (§7), los <details> no van en caja: muchas juntas
+   se veían pesadas. Volvemos al estilo liviano, con un separador sutil abajo, y
+   ponemos la flecha de expandir/colapsar a la IZQUIERDA del título, en el lugar
+   donde Material dibujaba el icono de lápiz. */
 .md-typeset details {
+  background: transparent !important;
   background-color: transparent !important;
   border: none !important;
-  border-bottom: 1px solid var(--border-subtle) !important; /* Línea divisora sutil */
+  border-bottom: 1px solid var(--border-subtle) !important;
   border-radius: 0 !important;
-  margin: 0 !important;
   box-shadow: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  font-size: inherit; /* no heredar el 0.7rem de las cajas de aviso */
 }
 
-.md-typeset details summary {
-  padding: 0.75rem 0.25rem !important;
+.md-typeset details > summary {
+  position: relative;
+  cursor: pointer;
+  list-style: none;
+  background: transparent !important;
   background-color: transparent !important;
-  font-weight: 500;
+  padding: 0.6rem 0.25rem 0.6rem 1.6rem !important;
+  margin: 0 !important;
+  font-family: var(--md-font-sans);
+  font-weight: 600;
+  font-size: 0.75rem; /* = tamaño del cuerpo */
+  color: var(--text-bright);
+  line-height: 1.5;
 }
 
-.md-typeset details summary:hover {
-  background-color: color-mix(in srgb, var(--text-bright) 4%, transparent) !important;
+.md-typeset details > summary:hover {
+  color: var(--accent-color);
 }
 
-.md-typeset details[open] {
-  padding-bottom: 0.75rem !important;
-}
-
-/* Ocultar el ícono del lápiz en los desplegables */
-.md-typeset details summary::before {
+/* El icono de lápiz (::before) de Material: fuera. */
+.md-typeset details > summary::before {
   display: none !important;
 }
 
-/* Ajustar el espacio izquierdo donde estaba el ícono */
-.md-typeset details summary {
-  padding-left: 0.5rem !important;
+/* La flecha de expandir/colapsar (::after) pasa a la IZQUIERDA, donde estaba el
+   lápiz. Cerrada apunta a la derecha (►); al abrir rota a abajo (▼). */
+.md-typeset details > summary::after {
+  position: absolute;
+  left: 0.2rem !important;
+  right: auto !important;
+  top: 50% !important;
+  transform: translateY(-50%);
+  width: 1rem !important;
+  height: 1rem !important;
+  background-color: var(--text-muted) !important;
+}
+
+.md-typeset details[open] > summary::after {
+  transform: translateY(-50%) rotate(90deg);
+}
+
+/* Desplegable abierto: todo el contenido se indenta con un padding-left, y el
+   summary se "devuelve" al borde con un margen negativo para que la flecha
+   quede a la izquierda del todo. Así bullets, párrafos y bloques de código
+   quedan todos sangrados por igual bajo el título — se lee como "parte de"
+   este desplegable. Un borde izquierdo sutil refuerza la pertenencia. */
+.md-typeset details[open] {
+  padding: 0 0 0.7rem 1.6rem !important;
+}
+
+.md-typeset details[open] > summary {
+  margin-left: -1.6rem !important;
+}
+
+.md-typeset details[open] > :not(summary) {
+  margin-left: 0;
+}
+
+.md-typeset details > summary + :not(summary) {
+  margin-top: 0.6rem;
+}
+
+.md-typeset details > :last-child {
+  margin-bottom: 0 !important;
 }
 
 /* ==========================================================================

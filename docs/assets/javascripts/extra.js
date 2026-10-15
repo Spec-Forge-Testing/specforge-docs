@@ -153,7 +153,44 @@ function setupTocToggle() {
   setTocCollapsed(tocIsCollapsed());
 }
 
+// Eyebrow/kicker sobre el H1, como Claude Docs: el nombre del grupo del nav
+// izquierdo al que pertenece la página (p. ej. "GETTING STARTED"), en pequeño,
+// mayúsculas y color accent. Se inyecta justo antes del primer H1 del contenido.
+function setupH1Eyebrow() {
+  const content = document.querySelector(".md-content__inner");
+  if (!content) return;
+
+  const h1 = content.querySelector("h1");
+  if (!h1) return;
+
+  // Grupo de primer nivel activo en el nav izquierdo.
+  const activeSection = document.querySelector(
+    ".md-nav--primary > .md-nav__list > .md-nav__item--section.md-nav__item--active > .md-nav__link .md-ellipsis, " +
+      ".md-nav--primary > .md-nav__list > .md-nav__item--active.md-nav__item--section > .md-nav__link .md-ellipsis"
+  );
+  const label = activeSection ? activeSection.textContent.trim() : "";
+
+  const existing = content.querySelector(".sf-eyebrow");
+
+  // Sin grupo (o el título del H1 coincide con el grupo): sin eyebrow.
+  if (!label || label.toLowerCase() === h1.textContent.trim().toLowerCase()) {
+    if (existing) existing.remove();
+    return;
+  }
+
+  if (existing) {
+    existing.textContent = label;
+    return;
+  }
+
+  const eyebrow = document.createElement("p");
+  eyebrow.className = "sf-eyebrow";
+  eyebrow.textContent = label;
+  h1.parentNode.insertBefore(eyebrow, h1);
+}
+
 document$.subscribe(() => {
   setupScrollTopButton();
   setupTocToggle();
+  setupH1Eyebrow();
 });

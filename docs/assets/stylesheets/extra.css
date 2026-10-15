@@ -805,34 +805,46 @@
    ========================================================================== */
 .md-typeset {
   font-family: var(--md-font-sans);
-  font-size: 0.75rem;
-  line-height: 1.55;
+  font-size: 0.8rem; /* ~16px (root 20px) */
+  line-height: 1.6;
   color: var(--text-main);
+}
+
+/* Eyebrow/kicker sobre el H1 (lo inyecta extra.js): el grupo del nav izquierdo
+   al que pertenece la página, en pequeño, mayúsculas y color accent. */
+.md-typeset .sf-eyebrow {
+  margin: 0 0 0.4em;
+  font-family: var(--md-font-sans);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-color);
 }
 
 /* Encabezados Jerarquizados */
 .md-typeset h1 {
-  font-size: 1.45rem;
+  font-size: 1.65rem;
   font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--text-bright);
-  margin-bottom: 0.8em;
+  margin-bottom: 0.6em;
 }
 
 .md-typeset h2 {
-  font-size: 1.2rem;
+  font-size: 1.3rem;
   font-weight: 700;
   letter-spacing: -0.015em;
   color: var(--text-bright);
-  margin-top: 1.6em;
+  margin-top: 1.8em;
   margin-bottom: 0.6em;
 }
 
 .md-typeset h3 {
-  font-size: 1rem;
+  font-size: 1.05rem;
   font-weight: 600;
   color: var(--text-bright);
-  margin-top: 1.2em;
+  margin-top: 1.3em;
 }
 
 /* Enlaces */

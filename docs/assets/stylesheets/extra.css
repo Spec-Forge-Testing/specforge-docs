@@ -30,7 +30,7 @@
 
   /* Marca — tokens reales del tema "default" claro de la CLI */
   --brand-color: #9333ea;      /* CLI light PROMPT (violeta) */
-  --accent-color: #2563eb;     /* CLI light ACCENT (azul) */
+  --accent-color: #7b4aa6;     /* CLI light ACCENT */
   --success-color: #059669;    /* CLI light SUCCESS */
   --warning-color: #d97706;    /* CLI light WARNING */
   --error-color: #e11d48;      /* CLI light ERROR */
@@ -47,12 +47,17 @@
   --md-typeset-color--warning: var(--warning-color);
   --md-typeset-color--error: var(--error-color);
 
-  --md-grid-max-width: 90rem;
+  --md-grid-max-width: 1760px;
   --md-code-bg-color: var(--bg-code);
   --md-code-fg-color: var(--text-main);
 
   /* Ancho de la columna de contenido (compartido con el footer prev/next) */
-  --sf-content-max-width: 68rem;
+  --sf-content-max-width: 54rem;
+
+  /* Padding lateral único para toda la cáscara (header + sidebars + contenido),
+     de modo que el logo del header, el primer link del nav izquierdo y el
+     cuerpo arranquen todos sobre la misma línea vertical. Como Claude Docs. */
+  --sf-gutter: 1.6rem;
 }
 
 /* MODO OSCURO (SLATE) — el lienzo de la CLI: negro puro, sin tinte azul/violeta */
@@ -66,11 +71,11 @@
   /* Tipografía */
   --text-main: #a1a1aa;        /* Texto de cuerpo (CLI 'muted') */
   --text-muted: #737373;       /* Texto terciario / etiquetas */
-  --text-bright: #e5e5e5;      /* Encabezados y títulos */
+  --text-bright: #cbcbcb;      /* Encabezados y títulos */
 
   /* Marca — tokens reales del tema "default" de la CLI (theme.py::_DEFAULT) */
   --brand-color: #a855f7;      /* CLI PROMPT (violeta) */
-  --accent-color: #5d87ff;     /* CLI ACCENT (azul) */
+  --accent-color: #9b65ca;     /* CLI ACCENT */
   --success-color: #10b981;    /* CLI SUCCESS */
   --warning-color: #f59e0b;    /* CLI WARNING */
   --error-color: #f43f5e;      /* CLI ERROR */
@@ -98,9 +103,60 @@
   margin-top: 0.5rem;
 }
 
-/* Ancho máximo de la columna de contenido */
-.md-content {
-  max-width: var(--sf-content-max-width);
+/* Márgenes laterales, como Claude Docs: la grilla de Material trae un tope fijo
+   en rem que dejaba ~150px vacíos a cada lado en pantallas anchas. Usamos un
+   gutter único (--sf-gutter) para que el header y el nav izquierdo compartan el
+   mismo borde izquierdo, y el mismo aire a izquierda y derecha. */
+.md-grid {
+  max-width: var(--md-grid-max-width);
+}
+
+/* El inner del header y del cuerpo arrancan en el mismo gutter. */
+.md-header__inner,
+.md-main__inner {
+  padding-inline: var(--sf-gutter);
+}
+
+/* El sidebar izquierdo arranca pegado al gutter (sin su padding propio de
+   Material) para alinear su primer link con el logo del header. El scrollwrap
+   mantiene un respiro a la derecha para el scrollbar. */
+.md-sidebar--primary {
+  padding-inline-start: 0;
+}
+
+/* El contenido ya no suma margen extra: el gutter del inner alcanza. */
+.md-content__inner {
+  margin-inline: 0;
+}
+
+/* Alineación del nav izquierdo con el logo del header (línea amarilla del
+   diseño). Material apila dos insets a la izquierda que no queremos:
+     1. `.md-nav--primary .md-nav__list { padding-left: .6rem }` en el <ul>, y
+     2. `.md-nav__item--section > .md-nav { margin-left: -.6rem }` que anida las
+        sublistas corridas respecto de su encabezado de grupo.
+   Los anulamos a ambos. El único inset del texto pasa a ser el padding del
+   propio link (0.6rem), de modo que encabezados de grupo y links de página
+   comparten un solo borde izquierdo, alineado con el icono del logo
+   (gutter + margin + padding del .md-logo). */
+@media screen and (min-width: 76.25em) {
+  /* Material anula el padding del <ul> con un selector que incluye [dir=ltr]
+     (especificidad 0,3,0). Igualamos esa especificidad con .md-sidebar--primary
+     + el child combinator para ganarle por orden de cascada. */
+  .md-sidebar--primary .md-nav--primary > .md-nav__list,
+  .md-sidebar--primary .md-nav--primary .md-nav__item--section > .md-nav > .md-nav__list {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .md-nav--primary .md-nav__item--section > .md-nav,
+  .md-nav--primary .md-nav__item--nested > .md-nav {
+    margin-inline: 0;
+  }
+
+  /* Un único inset de texto, igual para encabezados de grupo y links. */
+  .md-sidebar--primary .md-nav__link {
+    padding-inline: 0.6rem;
+  }
 }
 
 /* Ancho compacto para Sidebars — solo en desktop. Por debajo del breakpoint de
@@ -135,13 +191,76 @@
   box-shadow: none;
 }
 
+/* Header un poco más alto que el 2.4rem por defecto de Material, para darle
+   más aire a la barra superior. */
+.md-header__inner {
+  min-height: 3.2rem;
+}
+
 .md-header__title {
   color: var(--text-bright);
   font-weight: 700;
 }
 
+/* Menos separación entre el logo y el título. Material fija `margin-left: 1rem`
+   con un selector `[dir=ltr] .md-header__title` (especificidad 0,2,0); lo
+   igualamos con .md-header para ganarle por orden de cascada. */
+.md-header .md-header__title {
+  margin-left: 0.3rem;
+}
+
 .md-header__button {
   color: var(--text-main);
+}
+
+/* Material reserva un ancho fijo (11.7rem) para el bloque de GitHub, más ancho
+   que su contenido (icono + "GitHub"). Eso dejaba el link alineado a la
+   izquierda de esa caja y un hueco vacío a su derecha, antes del margen. Lo
+   dejamos ajustarse al contenido para que quede pegado al borde derecho. */
+.md-header__source {
+  width: auto;
+  max-width: none;
+  margin-left: 1rem;
+}
+
+/* El link de GitHub como una fila flex compacta: icono + "GitHub" juntos y
+   centrados verticalmente. Material maqueta el nombre del repo con un truco de
+   `padding-left: 2rem` + `margin-left: -2rem` (para superponerlo al icono) que,
+   con nuestro width:auto, dejaba el texto corrido y recortado a "Gi...".
+   Deshacemos ese truco. */
+.md-header__source .md-source {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.md-header__source .md-source__icon {
+  width: auto;
+  height: auto;
+}
+
+.md-header__source .md-source__icon svg {
+  margin: 0;
+}
+
+.md-header__source .md-source__repository {
+  max-width: none;
+  overflow: visible;
+  margin-left: 0;
+  padding-left: 0;
+}
+
+/* Reordenamos el grupo derecho con flexbox (sin tocar el HTML): el toggle
+   dark/light pasa a ser el último elemento, a la derecha del botón de GitHub.
+   Material no fija `order`, así que basta con subir el del toggle. */
+.md-header__option[data-md-component="palette"] {
+  order: 10;
+  margin-left: 0.4rem;
+}
+
+/* El toggle, ahora último, queda a ras del gutter derecho. */
+.md-header__inner > .md-header__option[data-md-component="palette"] {
+  margin-right: 0;
 }
 
 /* Buscador Estilo Cápsula */
@@ -182,6 +301,58 @@
 .md-nav--secondary .md-nav__title {
   box-shadow: none;
   background-color: var(--bg-main);
+}
+
+/* En desktop, el título del nav izquierdo ("Spec Forge Docs" + logo) es
+   redundante con el header de arriba. Lo ocultamos y recuperamos el espacio
+   superior. En móvil el drawer sí lo necesita (es la cabecera del cajón), así
+   que esta regla vive solo dentro del breakpoint de desktop (ver más abajo). */
+@media screen and (min-width: 76.25em) {
+  .md-sidebar--primary .md-nav--primary > .md-nav__title {
+    display: none;
+  }
+
+  /* Con el título oculto, el `padding: 1.2rem 0` que Material pone en
+     .md-sidebar dejaba un hueco muerto arriba del primer grupo. Lo achicamos
+     para que la navegación arranque cerca del borde superior, como Claude. */
+  .md-sidebar--primary {
+    padding-top: 0.2rem;
+  }
+
+  /* El scrollwrap también suma su propio padding-top; lo neutralizamos en
+     desktop para no reintroducir el hueco. */
+  .md-sidebar--primary .md-sidebar__scrollwrap {
+    padding-top: 0;
+  }
+}
+
+/* Encabezados de grupo del sidebar izquierdo ("Getting started", "Core
+   concepts", ...). Con navigation.sections, cada grupo es un
+   .md-nav__item--section cuyo label es la cabecera. Lo marcamos como un
+   verdadero header: casi blanco y en negrita, para que no se confunda con los
+   links de página. */
+.md-nav__item--section > .md-nav__link,
+.md-nav__item--section > .md-nav__link[for],
+.md-nav__item--section > label.md-nav__link {
+  color: var(--text-bright);
+  font-weight: 700;
+  font-size: 0.75rem;
+  margin-top: 1.1rem;
+  margin-bottom: 0.2rem;
+  cursor: default;
+  opacity: 1;
+}
+
+/* El label de sección no es un link navegable (es solo un rótulo), así que no
+   le damos el hover de píldora que sí reciben los links de página. */
+.md-nav__item--section > .md-nav__link:hover {
+  background-color: transparent;
+  color: var(--text-bright);
+}
+
+/* El primer grupo no necesita el margen superior extra. */
+.md-nav--primary > .md-nav__list > .md-nav__item--section:first-child > .md-nav__link {
+  margin-top: 0.2rem;
 }
 
 /* Enlaces de navegación general */

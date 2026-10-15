@@ -126,9 +126,23 @@
   padding-inline-start: 0;
 }
 
-/* El contenido ya no suma margen extra: el gutter del inner alcanza. */
+/* El contenido ya no suma margen extra: el gutter del inner alcanza. Anulamos
+   el `margin: 0 .8rem` base de Material para que el cuerpo arranque exactamente
+   en el gutter del header, en todos los anchos. */
 .md-content__inner {
   margin-inline: 0;
+}
+
+/* En móvil/tablet el gutter grande de desktop deja demasiado aire y, peor, el
+   header quedaba con más padding lateral que el cuerpo (el cuerpo sumaba el
+   `margin: 0 .8rem` de Material). Reducimos el gutter y mantenemos header y
+   cuerpo sobre la misma línea. */
+@media screen and (max-width: 76.234375em) {
+  :root,
+  [data-md-color-scheme="default"],
+  [data-md-color-scheme="slate"] {
+    --sf-gutter: 0.8rem;
+  }
 }
 
 /* Alineación del nav izquierdo con el logo del header (línea amarilla del
@@ -393,6 +407,76 @@
   margin-top: 0.2rem;
 }
 
+/* --- Drawer móvil (< 76.25em) ----------------------------------------------
+   Al abrir el menú hamburguesa, Material pinta la cabecera del cajón con el
+   violeta de marca y reserva una franja alta (5.6rem) para un logo grande. Como
+   la barra de arriba ya muestra el logo + "Spec Forge Docs", esa cabecera es
+   redundante: la achicamos a una banda baja con fondo neutro (sin violeta ni
+   hueco muerto) que solo aloja la flecha de volver. */
+@media screen and (max-width: 76.234375em) {
+  /* La cabecera del cajón (botón-drawer): fondo algo más destacado que el resto
+     del cajón, altura mínima, sin el violeta. El selector incluye [for=__drawer]
+     para ganarle en especificidad a la regla de Material que la pintaba de
+     marca. */
+  .md-nav--primary .md-nav__title[for="__drawer"] {
+    height: auto;
+    min-height: 3rem;
+    padding: 0.75rem 0.9rem;
+    background-color: var(--bg-chip-active);
+    color: var(--text-bright);
+    font-size: 0.95rem;
+    font-weight: 800;
+    box-shadow: none;
+    border-bottom: 1px solid var(--border-subtle);
+    line-height: 1.5;
+  }
+
+  /* Ocultamos el logo grande del cajón (la barra de arriba ya lo muestra); así
+     desaparece el bloque violeta y el espacio vacío. La flecha de volver
+     (.md-nav__icon) se reposiciona al centro vertical de la banda. */
+  .md-nav--primary .md-nav__title[for="__drawer"] .md-logo {
+    display: none;
+  }
+
+  .md-nav--primary .md-nav__title[for="__drawer"] .md-nav__icon {
+    top: 50%;
+    transform: translateY(-50%);
+    margin: 0;
+  }
+
+  /* Barra de GitHub dentro del cajón: superficie neutra en vez del azul fuerte. */
+  .md-nav--primary .md-nav__source {
+    background-color: var(--bg-card);
+    color: var(--text-main);
+  }
+
+  /* Separadores entre ítems del cajón, más sutiles. */
+  .md-nav--primary .md-nav__item {
+    border-color: var(--border-subtle);
+  }
+
+  /* Encabezados de grupo del cajón: bastante más livianos que el título "Spec
+     Forge Docs", para que se note la jerarquía. Y uniformamos el espaciado
+     vertical: en desktop les pusimos margin-top/bottom distintos (y un
+     first-child especial) que en el cajón dejaban unos grupos con más aire que
+     otros. Acá el separador de cada .md-nav__item ya da el ritmo, así que
+     anulamos esos márgenes. */
+  .md-nav__item--section > .md-nav__link,
+  .md-nav__item--section > .md-nav__link[for],
+  .md-nav__item--section > label.md-nav__link {
+    font-weight: 500;
+    font-size: 0.8rem;
+    margin-top: 0;
+    margin-bottom: 0;
+  }
+
+  /* Anula el first-child especial de desktop para que todos los grupos midan
+     igual arriba. */
+  .md-nav--primary > .md-nav__list > .md-nav__item--section:first-child > .md-nav__link {
+    margin-top: 0;
+  }
+}
+
 /* Enlaces de navegación general */
 .md-nav__link {
   font-size: 0.7rem;
@@ -521,6 +605,22 @@
   }
 }
 
+/* --- ToC en móvil/tablet (< 76.25em) ---------------------------------------
+   Debajo del breakpoint el ToC no es una columna propia: Material lo renderiza
+   en el flujo del contenido. La función de colapsar no aplica (no hay columna
+   que recuperar) y la píldora del chevron, posicionada en absoluto, se recorta
+   contra el borde. Ocultamos el toggle y volvemos el título y los links a su
+   layout normal, sin el gutter de la píldora. */
+@media screen and (max-width: 76.234375em) {
+  /* En este rango el ToC inline de Material queda incómodo y nuestra píldora se
+     rompe. Lo ocultamos por completo y dejamos el contenido a ancho pleno. El
+     `:not([hidden])` de Material tiene que perder, de ahí el selector doble. */
+  .md-sidebar--secondary,
+  .md-sidebar--secondary:not([hidden]) {
+    display: none;
+  }
+}
+
 /* La píldora de toggle (solo chevron) y la de reabrir (chevron + listado)
    comparten estilo: borde sutil, fondo de tarjeta. */
 .sf-toc-toggle,
@@ -563,7 +663,7 @@
 .sf-toc-list-icon {
   display: inline-flex;
   align-items: center;
-  color: var(--text-muted);
+  color: var(--text-bright);
 }
 
 .sf-toc-list-icon svg {

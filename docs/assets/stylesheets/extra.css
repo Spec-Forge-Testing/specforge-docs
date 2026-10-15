@@ -35,6 +35,7 @@
   --warning-color: #d97706;    /* CLI light WARNING */
   --error-color: #e11d48;      /* CLI light ERROR */
   --border-subtle: #e4e4e7;    /* CLI light BORDER */
+  --border-footer: #eeeeee;    /* CLI dark BORDER FOOTER */
 
   /* Mapeo con variables nativas de MkDocs */
   --md-default-bg-color: var(--bg-main);
@@ -80,6 +81,7 @@
   --warning-color: #f59e0b;    /* CLI WARNING */
   --error-color: #f43f5e;      /* CLI ERROR */
   --border-subtle: #3f3f46;    /* CLI BORDER */
+  --border-footer: #242424;    /* CLI dark BORDER FOOTER */
 
   /* Mapeo con variables nativas de MkDocs */
   --md-default-bg-color: var(--bg-main);
@@ -170,15 +172,46 @@
   .md-sidebar--secondary {
     width: 12.5rem;
   }
+
+  /* Ambos sidebars son sticky, pegados justo debajo del header más alto
+     (3.2rem). Material fijaba `top: 2.4rem`, que con el header nuevo dejaba los
+     primeros items tapados. NO forzamos `height`: Material calcula el alto del
+     sticky dinámicamente; fijarlo a 100vh dejaba el sidebar más alto que una
+     página corta y aparecía un bloque de fondo muerto abajo. */
+  .md-sidebar {
+    top: 3.2rem;
+  }
 }
 
-/* Reserva siempre el espacio del scrollbar nativo en los sidebars, para que
-   el ancho del contenido (y la línea divisoria inferior) no salte entre
-   páginas con y sin scroll. */
+/* Scrollbar sutil en los sidebars (como Claude): fina, tenue, y que use el
+   color de borde del tema. Sin la caja de scroll pesada que mostraba el doble
+   scroll feo del diagnóstico original. */
 .md-sidebar__scrollwrap {
   scrollbar-gutter: stable;
   overflow-x: hidden;
-  padding-top: 0.4rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-subtle) transparent;
+}
+
+.md-sidebar__scrollwrap::-webkit-scrollbar {
+  width: 0.3rem;
+  height: 0.3rem;
+}
+
+.md-sidebar__scrollwrap::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 99px;
+  transition: background-color 0.2s ease;
+}
+
+/* El thumb solo se tiñe cuando el puntero está sobre el sidebar: en reposo la
+   barra desaparece, como en Claude Docs. */
+.md-sidebar__scrollwrap:hover {
+  scrollbar-color: var(--border-subtle) transparent;
+}
+
+.md-sidebar__scrollwrap:hover::-webkit-scrollbar-thumb {
+  background-color: var(--border-subtle);
 }
 
 /* ==========================================================================
@@ -395,27 +428,6 @@
   border: 1px solid var(--accent-color);
   color: var(--text-bright);
   font-weight: 600;
-}
-
-/* Material estira `.md-nav__list` con `flex: 1` para llenar el alto del
-   sidebar; eso empuja nuestra línea divisoria al fondo del contenedor cuando la
-   lista es corta. Se cancela el stretch para que la línea quede pegada al
-   último link real. */
-.md-sidebar--primary .md-nav--primary > .md-nav__list,
-.md-sidebar--secondary .md-nav--secondary > .md-nav__list {
-  flex: initial;
-}
-
-/* Línea divisoria inferior en los sidebars. El ancho real (igual al link más
-   largo, nunca el ancho fijo de la columna) lo calcula y setea
-   docs/javascripts/extra.js vía --sf-divider-width; el list en sí queda
-   intacto para no romper el truncado con ellipsis de los links largos. */
-.sf-nav-divider {
-  height: 1px;
-  width: 100%;
-  max-width: 12rem;
-  margin: 1rem 0 0;
-  background-color: var(--border-subtle);
 }
 
 /* Botón "scroll to top". Material tiene el suyo (`.md-top`), un fly-in centrado
@@ -707,15 +719,14 @@
   background: transparent;
   border: none;
   box-shadow: none;
-  margin-top: 1rem;
 }
 
 .md-footer__inner.md-grid {
-  max-width: var(--sf-content-max-width);
-  margin: 1rem auto 0;
+  max-width: 100%;
+  margin: 0 auto 0;
   padding: 1.5rem 1.5rem 0;
   gap: 1rem;
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--border-footer);
 }
 
 .md-footer__link {

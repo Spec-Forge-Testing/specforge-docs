@@ -10,6 +10,7 @@ theme:
   favicon: assets/imgs/hex-mark.svg
   
   features:
+    - navigation.sections
     - navigation.instant
     - navigation.instant.progress
     - navigation.tracking
@@ -48,7 +49,15 @@ theme:
     repo: fontawesome/brands/github
 
 extra_css:
-  - assets/stylesheets/extra.css
+  - assets/stylesheets/01-tokens.css
+  - assets/stylesheets/02-layout.css
+  - assets/stylesheets/03-header.css
+  - assets/stylesheets/04-nav.css
+  - assets/stylesheets/05-toc.css
+  - assets/stylesheets/06-typography.css
+  - assets/stylesheets/07-code-blocks.css
+  - assets/stylesheets/08-admonitions.css
+  - assets/stylesheets/09-components.css
 
 extra_javascript:
   - assets/javascripts/extra.js
@@ -114,113 +123,117 @@ plugins:
         developer-guide/cli-internals.md: modules/core/index.md
 
 nav:
-  - Overview: index.md
-  - User Guide:
+  - Getting started:
+      - Overview: index.md
       - Installation & Quick Start: user-guide/installation.md
       - Running with Docker: user-guide/docker.md
+  - Core concepts:
       - Core Concepts: user-guide/concepts.md
       - Glossary: user-guide/glossary.md
+  - Using Spec Forge:
       - Spec Forge CLI: user-guide/specforge-cli.md
       - CLI Reference: user-guide/cli-reference.md
       - Run Report: user-guide/reports.md
       - Example Walkthrough: user-guide/example-walkthrough.md
-      - Troubleshooting: user-guide/troubleshooting.md
+  - Configuration:
       - LLM Providers: user-guide/llm-providers.md
       - Environment Variables: user-guide/environment.md
+  - Help:
+      - Troubleshooting: user-guide/troubleshooting.md
   - Architecture:
       - Overview: architecture/overview.md
       - Data Flow: architecture/data-flow.md
   - Developer Guide:
       - Contributing & Testing: developer-guide/contributing.md
-      - Modules:
-          - Core:
-              - Overview: modules/core/index.md
-              - Reference: modules/core/reference.md
-              - Configuration: modules/core/configuration.md
-              - Inference: modules/core/inference.md
-              - Protocol:
-                  - Overview: modules/core/protocol/index.md
-                  - Handshake and versioning: modules/core/protocol/handshake.md
-                  - Events and cancellation: modules/core/protocol/events.md
-                  - Operations: modules/core/protocol/operations.md
-                  - Result vocabularies: modules/core/protocol/vocabularies.md
-                  - Errors: modules/core/protocol/errors.md
-                  - Fixtures: modules/core/protocol/fixtures.md
-              - Decision records:
-                  - Overview: modules/core/adr/index.md
-                  - Core: modules/core/adr/core.md
-                  - Protocol: modules/core/adr/protocol.md
-                  - Inference: modules/core/adr/inference.md
-          - Core AST:
-              - Overview: modules/core-ast/index.md
-              - Reference: modules/core-ast/reference.md
-              - API Reference: modules/core-ast/api-reference.md
-              - Decision records:
-                  - Overview: modules/core-ast/adr/index.md
-                  - Locator: modules/core-ast/adr/locator.md
-                  - AST builder: modules/core-ast/adr/ast-builder.md
-                  - Extractor: modules/core-ast/adr/extractor.md
-                  - Tracer: modules/core-ast/adr/tracer.md
-                  - Quality: modules/core-ast/adr/quality.md
-                  - Packager: modules/core-ast/adr/packager.md
-                  - API: modules/core-ast/adr/api.md
-                  - Foundations: modules/core-ast/adr/foundations.md
-              - Integration Tests: modules/core-ast/integration-tests.md
-          - Contract Assembly:
-              - Overview: modules/contract-assembly/index.md
-              - Reference: modules/contract-assembly/reference.md
-              - Decision records:
-                  - Overview: modules/contract-assembly/adr/index.md
-                  - Foundations: modules/contract-assembly/adr/foundations.md
-                  - Ingestion: modules/contract-assembly/adr/ingestion.md
-          - Contracts (shared kernel): modules/contracts/index.md
-          - Storage:
-              - Overview: modules/storage/index.md
-              - Transactions: modules/storage/transactions.md
-              - Repositories: modules/storage/repositories.md
-              - Data model: modules/storage/data-model.md
-              - Artifacts and retention: modules/storage/artifacts.md
-              - Errors: modules/storage/errors.md
-              - Decision records:
-                  - Overview: modules/storage/adr/index.md
-                  - Foundations: modules/storage/adr/foundations.md
-                  - Repositories: modules/storage/adr/repositories.md
-                  - Artifacts: modules/storage/adr/artifacts.md
-              - Testing: modules/storage/testing.md
-          - LLM:
-              - Overview: modules/llm/index.md
-              - Reference: modules/llm/reference.md
-              - Decision records:
-                  - Overview: modules/llm/adr/index.md
-                  - LLM client: modules/llm/adr/llm.md
-          - Semantic Inference:
-              - Overview: modules/semantic-inference/index.md
-              - Prompts: modules/semantic-inference/prompts.md
-              - Inference engine: modules/semantic-inference/inference-engine.md
-              - Decision records:
-                  - Overview: modules/semantic-inference/adr/index.md
-                  - Prompts: modules/semantic-inference/adr/prompts.md
-          - Spec Forge Engine:
-              - Overview: modules/specforge-engine/index.md
-              - Architecture: modules/specforge-engine/architecture.md
-              - Data flow: modules/specforge-engine/data-flow.md
-              - Strategy compiler: modules/specforge-engine/strategy-compiler.md
-              - Engine internals: modules/specforge-engine/engine-internals.md
-              - Execution modes: modules/specforge-engine/execution-modes.md
-              - Progress and cancellation: modules/specforge-engine/progress-and-cancellation.md
-              - Extension guide: modules/specforge-engine/extension-guide.md
-              - API Reference: modules/specforge-engine/api-reference.md
-              - Decision records:
-                  - Overview: modules/specforge-engine/adr/index.md
-                  - Foundations: modules/specforge-engine/adr/foundations.md
-                  - Models: modules/specforge-engine/adr/models.md
-                  - Public API: modules/specforge-engine/adr/api.md
-                  - Strategy compiler: modules/specforge-engine/adr/compiler.md
-                  - Engine: modules/specforge-engine/adr/engine.md
-              - Testing: modules/specforge-engine/testing.md
-      - Test Corpora:
-          - Overview: testing/index.md
-          - RealWorld corpus: testing/real-world.md
-          - EMB corpus: testing/emb.md
-          - Polyglot corpus: testing/polyglot.md
-          - Integration suite: testing/suite.md
+      - Core:
+          - Overview: modules/core/index.md
+          - Reference: modules/core/reference.md
+          - Configuration: modules/core/configuration.md
+          - Inference: modules/core/inference.md
+          - Protocol:
+              - Overview: modules/core/protocol/index.md
+              - Handshake and versioning: modules/core/protocol/handshake.md
+              - Events and cancellation: modules/core/protocol/events.md
+              - Operations: modules/core/protocol/operations.md
+              - Result vocabularies: modules/core/protocol/vocabularies.md
+              - Errors: modules/core/protocol/errors.md
+              - Fixtures: modules/core/protocol/fixtures.md
+          - Decision records:
+              - Overview: modules/core/adr/index.md
+              - Core: modules/core/adr/core.md
+              - Protocol: modules/core/adr/protocol.md
+              - Inference: modules/core/adr/inference.md
+      - Core AST:
+          - Overview: modules/core-ast/index.md
+          - Reference: modules/core-ast/reference.md
+          - API Reference: modules/core-ast/api-reference.md
+          - Integration Tests: modules/core-ast/integration-tests.md
+          - Decision records:
+              - Overview: modules/core-ast/adr/index.md
+              - Locator: modules/core-ast/adr/locator.md
+              - AST builder: modules/core-ast/adr/ast-builder.md
+              - Extractor: modules/core-ast/adr/extractor.md
+              - Tracer: modules/core-ast/adr/tracer.md
+              - Quality: modules/core-ast/adr/quality.md
+              - Packager: modules/core-ast/adr/packager.md
+              - API: modules/core-ast/adr/api.md
+              - Foundations: modules/core-ast/adr/foundations.md
+      - Contract Assembly:
+          - Overview: modules/contract-assembly/index.md
+          - Reference: modules/contract-assembly/reference.md
+          - Decision records:
+              - Overview: modules/contract-assembly/adr/index.md
+              - Foundations: modules/contract-assembly/adr/foundations.md
+              - Ingestion: modules/contract-assembly/adr/ingestion.md
+      - Contracts (shared kernel):
+          - Overview: modules/contracts/index.md
+      - Storage:
+          - Overview: modules/storage/index.md
+          - Transactions: modules/storage/transactions.md
+          - Repositories: modules/storage/repositories.md
+          - Data model: modules/storage/data-model.md
+          - Artifacts and retention: modules/storage/artifacts.md
+          - Errors: modules/storage/errors.md
+          - Testing: modules/storage/testing.md
+          - Decision records:
+              - Overview: modules/storage/adr/index.md
+              - Foundations: modules/storage/adr/foundations.md
+              - Repositories: modules/storage/adr/repositories.md
+              - Artifacts: modules/storage/adr/artifacts.md
+      - LLM:
+          - Overview: modules/llm/index.md
+          - Reference: modules/llm/reference.md
+          - Decision records:
+              - Overview: modules/llm/adr/index.md
+              - LLM client: modules/llm/adr/llm.md
+      - Semantic Inference:
+          - Overview: modules/semantic-inference/index.md
+          - Prompts: modules/semantic-inference/prompts.md
+          - Inference engine: modules/semantic-inference/inference-engine.md
+          - Decision records:
+              - Overview: modules/semantic-inference/adr/index.md
+              - Prompts: modules/semantic-inference/adr/prompts.md
+      - Spec Forge Engine:
+          - Overview: modules/specforge-engine/index.md
+          - Architecture: modules/specforge-engine/architecture.md
+          - Data flow: modules/specforge-engine/data-flow.md
+          - Strategy compiler: modules/specforge-engine/strategy-compiler.md
+          - Engine internals: modules/specforge-engine/engine-internals.md
+          - Execution modes: modules/specforge-engine/execution-modes.md
+          - Progress and cancellation: modules/specforge-engine/progress-and-cancellation.md
+          - Extension guide: modules/specforge-engine/extension-guide.md
+          - API Reference: modules/specforge-engine/api-reference.md
+          - Testing: modules/specforge-engine/testing.md
+          - Decision records:
+              - Overview: modules/specforge-engine/adr/index.md
+              - Foundations: modules/specforge-engine/adr/foundations.md
+              - Models: modules/specforge-engine/adr/models.md
+              - Public API: modules/specforge-engine/adr/api.md
+              - Strategy compiler: modules/specforge-engine/adr/compiler.md
+              - Engine: modules/specforge-engine/adr/engine.md
+  - Test corpora:
+      - Overview: testing/index.md
+      - RealWorld corpus: testing/real-world.md
+      - EMB corpus: testing/emb.md
+      - Polyglot corpus: testing/polyglot.md
+      - Integration suite: testing/suite.md

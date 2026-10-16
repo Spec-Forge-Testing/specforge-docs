@@ -1,0 +1,170 @@
+/* ==========================================================================
+   FOOTER — tarjetas prev/next y créditos
+   ========================================================================== */
+.md-footer {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.md-footer__inner.md-grid {
+  max-width: 100%;
+  margin: 0 auto 0;
+  padding: 1.5rem 1.5rem 0;
+  gap: 1rem;
+  border-top: 1px solid var(--border-footer);
+}
+
+.md-footer__link {
+  flex: 1 1 0;
+  max-width: none;
+  margin: 0;
+  padding: 0.9rem 1.1rem;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  color: inherit;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.md-footer__link:hover,
+.md-footer__link:focus {
+  color: inherit;
+  text-decoration: none;
+  transform: translateY(-2px);
+  border-color: var(--accent-color);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+}
+
+/* Si solo existe "next" (primera página), que quede pegado a la derecha. */
+.md-footer__link--next {
+  margin-left: auto;
+}
+
+.md-footer__button.md-icon svg {
+  fill: var(--text-muted);
+}
+
+.md-footer__direction {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.md-footer__title .md-ellipsis {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-bright);
+}
+
+/* Sub-footer / meta ("Made with MkDocs"). Material le pone un fondo gris
+   (--md-footer-bg-color--dark) que choca en modo claro; lo pasamos al fondo del
+   tema para que combine con el resto del footer. */
+.md-footer-meta {
+  max-width: 100%;
+  margin-top: 1.5rem;
+  padding: 0.5rem 0;
+  background-color: transparent;
+}
+
+.md-footer-meta__inner {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 0;
+}
+
+.md-copyright {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* El texto resaltado del copyright y el link usan `--md-footer-fg-color--light`
+   (gris pensado para fondo oscuro), invisible sobre nuestro fondo claro. Lo
+   forzamos a los colores del tema. Los selectores igualan/superan la
+   especificidad de Material (`html .md-footer-meta.md-typeset a`). */
+.md-copyright,
+.md-copyright__highlight {
+  color: var(--text-muted);
+}
+
+html .md-footer-meta.md-typeset .md-copyright a {
+  color: var(--text-muted);
+  font-weight: 600;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+html .md-footer-meta.md-typeset .md-copyright a:hover {
+  color: var(--accent-color);
+}
+
+/* ==========================================================================
+   TARJETAS DE GRID (portada — "Start here")
+   --------------------------------------------------------------------------
+   Sin caja, sin borde izquierdo y sin la línea (hr) bajo el título: solo el
+   título (icono + texto) y su lista de enlaces, con aire entre bloques.
+   ========================================================================== */
+.md-typeset .grid.cards > ul > li {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
+}
+
+.md-typeset .grid.cards > ul > li:hover {
+  box-shadow: none;
+}
+
+.md-typeset .grid.cards > ul > li > hr {
+  display: none;
+}
+
+/* Título de cada card (el __texto en negrita__): como un subtítulo. */
+.md-typeset .grid.cards > ul > li > p:first-child {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-bright);
+  margin: 0 0 0.6rem;
+}
+
+.md-typeset .grid.cards > ul > li > p:first-child .twemoji,
+.md-typeset .grid.cards > ul > li > p:first-child svg {
+  vertical-align: -0.15em;
+  margin-right: 0.3rem;
+}
+
+/* Portada: una sola columna apilada, con separación entre las dos secciones. */
+.md-typeset .grid.cards.sf-start-here {
+  grid-template-columns: 1fr;
+  gap: 2rem;
+}
+
+/* Los enlaces de las cards de "Start here" van en accent (puntos de entrada). */
+.md-typeset .grid.cards.sf-start-here a,
+.md-typeset .grid.cards.sf-start-here a:hover {
+  color: var(--accent-color);
+}
+
+/* ==========================================================================
+   DIAGRAMAS MERMAID
+   --------------------------------------------------------------------------
+   El SVG se renderiza a su tamaño natural y desborda la columna. Lo acotamos al
+   contenedor y lo centramos, con un tope de alto razonable.
+   ========================================================================== */
+.md-typeset .mermaid {
+  display: flex;
+  justify-content: center;
+  margin: 1.5em 0;
+}
+
+.md-typeset .mermaid svg {
+  max-width: 100%;
+  height: auto;
+  max-height: 26rem;
+}

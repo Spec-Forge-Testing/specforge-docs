@@ -1,0 +1,202 @@
+/* ==========================================================================
+   AVISOS (ADMONITIONS) — cajas de color por tipo
+   --------------------------------------------------------------------------
+   Fondo tenue del color semántico, borde completo del mismo color, esquinas
+   redondeadas. Cada aviso usa --sf-adm como su color de acento; el icono y el
+   título lo toman. Layout de dos columnas: una franja fija a la izquierda para
+   el icono (padding-left) y el resto para el contenido, de modo que al hacer
+   wrap todas las líneas quedan alineadas contra el icono.
+   ========================================================================== */
+.md-typeset .admonition {
+  --sf-adm: var(--brand-color); /* default/note: violeta */
+  position: relative;
+  background: color-mix(in srgb, var(--sf-adm) 10%, var(--bg-main));
+  border: 1px solid color-mix(in srgb, var(--sf-adm) 45%, transparent);
+  border-radius: 10px;
+  box-shadow: none;
+  padding: 0.7rem 1rem 0.7rem 2.5rem;
+  margin: 1.5em 0;
+  font-size: 0.7rem; /* ~14px: título y cuerpo, mismo tamaño */
+}
+
+/* Material fija un border-color propio por tipo (p. ej. info → #00b8d4) con
+   especificidad (0,2,0) que ganaba a la regla base. Forzamos que todo el borde
+   salga de --sf-adm. */
+.md-typeset .admonition.info,
+.md-typeset .admonition.note,
+.md-typeset .admonition.abstract,
+.md-typeset .admonition.tip,
+.md-typeset .admonition.success,
+.md-typeset .admonition.hint,
+.md-typeset .admonition.warning,
+.md-typeset .admonition.caution,
+.md-typeset .admonition.attention,
+.md-typeset .admonition.danger,
+.md-typeset .admonition.failure,
+.md-typeset .admonition.error,
+.md-typeset .admonition.bug,
+.md-typeset .admonition.question,
+.md-typeset .admonition.example,
+.md-typeset .admonition.quote {
+  border-color: color-mix(in srgb, var(--sf-adm) 45%, transparent);
+}
+
+/* Título: etiqueta en el color del aviso, en negrita y del mismo tamaño que el
+   cuerpo (1em). position:static para que el icono (::before) se ancle a la
+   caja, no al título. */
+.md-typeset .admonition-title {
+  position: static;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  border: none !important; /* Material deja un border-left de .2rem que desalineaba */
+  font-family: var(--md-font-sans);
+  font-weight: 700;
+  font-size: 1em;
+  padding: 0 !important;
+  margin: 0 0 0.35em !important;
+  color: var(--sf-adm);
+  line-height: 1.5;
+}
+
+.md-typeset .admonition-title:only-child {
+  margin-bottom: 0 !important;
+}
+
+/* Cuerpo: sin margen muerto arriba del primero ni debajo del último. */
+.md-typeset .admonition > :first-child:not(.admonition-title),
+.md-typeset .admonition-title + * {
+  margin-top: 0;
+}
+
+.md-typeset .admonition > :last-child {
+  margin-bottom: 0 !important;
+}
+
+/* Icono: el ::before de Material (mask SVG) recoloreado y anclado a la columna
+   izquierda de la caja, alineado con la primera línea. */
+.md-typeset .admonition-title::before {
+  display: block !important;
+  position: absolute;
+  left: 0.85rem !important;
+  top: 0.85rem !important;
+  width: 1rem !important;
+  height: 1rem !important;
+  background-color: var(--sf-adm) !important;
+  content: "";
+}
+
+/* Mapeo de color por tipo. note/default: violeta. info/abstract: azul.
+   tip/success/hint: verde. warning/caution/attention: ámbar.
+   danger/failure/error/bug: rojo. question/example/quote: violeta de marca. */
+.md-typeset .admonition.info,
+.md-typeset .admonition.abstract {
+  --sf-adm: var(--info-color);
+}
+
+.md-typeset .admonition.tip,
+.md-typeset .admonition.success,
+.md-typeset .admonition.hint {
+  --sf-adm: var(--success-color);
+}
+
+.md-typeset .admonition.warning,
+.md-typeset .admonition.caution,
+.md-typeset .admonition.attention {
+  --sf-adm: var(--warning-color);
+}
+
+.md-typeset .admonition.danger,
+.md-typeset .admonition.failure,
+.md-typeset .admonition.error,
+.md-typeset .admonition.bug {
+  --sf-adm: var(--error-color);
+}
+
+.md-typeset .admonition.question,
+.md-typeset .admonition.example,
+.md-typeset .admonition.quote {
+  --sf-adm: var(--brand-color);
+}
+
+/* ==========================================================================
+   DESPLEGABLES (details) — sin caja, estilo liviano
+   --------------------------------------------------------------------------
+   A diferencia de los avisos, los <details> no van en caja (muchas juntas se
+   veían pesadas): separador sutil abajo, y la flecha de expandir/colapsar a la
+   izquierda del título, donde Material dibujaba el icono de lápiz.
+   ========================================================================== */
+.md-typeset details {
+  background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  border-bottom: 1px solid var(--border-subtle) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  font-size: inherit; /* no heredar el 0.7rem de las cajas de aviso */
+}
+
+.md-typeset details > summary {
+  position: relative;
+  cursor: pointer;
+  list-style: none;
+  background: transparent !important;
+  background-color: transparent !important;
+  padding: 0.6rem 0.25rem 0.6rem 1.6rem !important;
+  margin: 0 !important;
+  font-family: var(--md-font-sans);
+  font-weight: 600;
+  font-size: 0.75rem; /* = tamaño del cuerpo */
+  color: var(--text-bright);
+  line-height: 1.5;
+}
+
+.md-typeset details > summary:hover {
+  color: var(--accent-color);
+}
+
+/* El icono de lápiz (::before) de Material: fuera. */
+.md-typeset details > summary::before {
+  display: none !important;
+}
+
+/* La flecha (::after) a la izquierda: cerrada apunta a la derecha (►); al abrir
+   rota a abajo (▼). */
+.md-typeset details > summary::after {
+  position: absolute;
+  left: 0.2rem !important;
+  right: auto !important;
+  top: 50% !important;
+  transform: translateY(-50%);
+  width: 1rem !important;
+  height: 1rem !important;
+  background-color: var(--text-muted) !important;
+}
+
+.md-typeset details[open] > summary::after {
+  transform: translateY(-50%) rotate(90deg);
+}
+
+/* Abierto: el contenido se indenta con padding-left y el summary se "devuelve"
+   al borde con margen negativo, de modo que bullets, párrafos y código quedan
+   sangrados por igual bajo el título. */
+.md-typeset details[open] {
+  padding: 0 0 0.7rem 1.6rem !important;
+}
+
+.md-typeset details[open] > summary {
+  margin-left: -1.6rem !important;
+}
+
+.md-typeset details[open] > :not(summary) {
+  margin-left: 0;
+}
+
+.md-typeset details > summary + :not(summary) {
+  margin-top: 0.6rem;
+}
+
+.md-typeset details > :last-child {
+  margin-bottom: 0 !important;
+}

@@ -1,0 +1,117 @@
+/* ==========================================================================
+   LAYOUT GLOBAL — grilla, gutter lateral y alineación de columnas
+   ========================================================================== */
+.md-main__inner {
+  margin-top: 0;
+}
+
+/* La grilla de Material trae un tope fijo en rem que dejaba ~150px vacíos a
+   cada lado en pantallas anchas. Un gutter único (--sf-gutter) alinea header,
+   nav y cuerpo sobre el mismo borde, con el mismo aire a ambos lados. */
+.md-grid {
+  max-width: var(--md-grid-max-width);
+}
+
+.md-header__inner,
+.md-main__inner {
+  padding-inline: var(--sf-gutter);
+}
+
+/* El sidebar izquierdo arranca pegado al gutter (sin su padding propio) para
+   alinear su primer link con el logo del header. */
+.md-sidebar--primary {
+  padding-inline-start: 0;
+}
+
+/* El contenido no suma margen extra: anula el `margin: 0 .8rem` base de
+   Material para arrancar exactamente en el gutter del header. */
+.md-content__inner {
+  margin-inline: 0;
+}
+
+/* En móvil/tablet el gutter grande deja demasiado aire y el header quedaba con
+   más padding que el cuerpo. Reducimos el gutter en ese rango. */
+@media screen and (max-width: 76.234375em) {
+  :root,
+  [data-md-color-scheme="default"],
+  [data-md-color-scheme="slate"] {
+    --sf-gutter: 0.8rem;
+  }
+}
+
+/* Alineación del nav izquierdo con el logo del header. Material apila dos
+   insets a la izquierda:
+     1. `.md-nav--primary .md-nav__list { padding-left: .6rem }` en el <ul>, y
+     2. `.md-nav__item--section > .md-nav { margin-left: -.6rem }` en sublistas.
+   Los anulamos: el único inset del texto pasa a ser el padding del link, de
+   modo que encabezados de grupo y links comparten un borde izquierdo alineado
+   con el icono del logo. */
+@media screen and (min-width: 76.25em) {
+  /* Material anula el padding del <ul> con un selector con [dir=ltr]
+     (especificidad 0,3,0). Igualamos con .md-sidebar--primary para ganar por
+     orden de cascada. */
+  .md-sidebar--primary .md-nav--primary > .md-nav__list,
+  .md-sidebar--primary .md-nav--primary .md-nav__item--section > .md-nav > .md-nav__list {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .md-nav--primary .md-nav__item--section > .md-nav,
+  .md-nav--primary .md-nav__item--nested > .md-nav {
+    margin-inline: 0;
+  }
+
+  .md-sidebar--primary .md-nav__link {
+    padding-inline: 0.6rem;
+  }
+}
+
+/* Ancho de los sidebars — solo en desktop. Por debajo del breakpoint el sidebar
+   primario es un drawer posicionado con `left: -width`; ensancharlo ahí dejaba
+   un borde asomando con el menú cerrado. */
+@media screen and (min-width: 76.25em) {
+  .md-sidebar--primary {
+    width: 13.5rem;
+  }
+
+  .md-sidebar--secondary {
+    width: 12.5rem;
+  }
+
+  /* Sticky pegado debajo del header más alto (3.2rem). No forzamos `height`:
+     Material calcula el alto del sticky dinámicamente; fijarlo a 100vh dejaba
+     un bloque de fondo muerto abajo en páginas cortas. */
+  .md-sidebar {
+    top: 3.2rem;
+  }
+}
+
+/* Scrollbar sutil en los sidebars: invisible en reposo, aparece fina al hacer
+   hover o al enfocar algo dentro. */
+.md-sidebar__scrollwrap {
+  scrollbar-gutter: stable;
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+
+.md-sidebar__scrollwrap::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.md-sidebar__scrollwrap::-webkit-scrollbar-thumb {
+  background-color: var(--border-subtle);
+  border-radius: 99px;
+}
+
+.md-sidebar__scrollwrap:hover,
+.md-sidebar__scrollwrap:focus-within {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-subtle) transparent;
+}
+
+.md-sidebar__scrollwrap:hover::-webkit-scrollbar,
+.md-sidebar__scrollwrap:focus-within::-webkit-scrollbar {
+  width: 0.3rem;
+  height: 0.3rem;
+}

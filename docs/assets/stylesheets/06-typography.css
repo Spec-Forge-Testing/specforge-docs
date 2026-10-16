@@ -1,0 +1,127 @@
+/* ==========================================================================
+   TIPOGRAFÍA Y CONTENIDO — cuerpo, eyebrow, encabezados, enlaces, citas
+   ========================================================================== */
+.md-typeset {
+  font-family: var(--md-font-sans);
+  font-size: 0.75rem; /* ~15px (root 20px) */
+  line-height: 1.6;
+  color: var(--text-main);
+}
+
+/* Eyebrow/kicker sobre el H1 (lo inyecta extra.js): el grupo del nav al que
+   pertenece la página, en pequeño, mayúsculas y color accent. */
+.md-typeset .sf-eyebrow {
+  margin: 0 0 0.4em;
+  font-family: var(--md-font-sans);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-color);
+}
+
+/* Portada: columna que apila eyebrow + H1 al lado de la mascota (la inyecta
+   extra.js cuando el H1 vive en una fila flex con una imagen). */
+.md-typeset .sf-title-col {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+
+.md-typeset .sf-title-col .sf-eyebrow {
+  margin-bottom: 0.2em;
+}
+
+.md-typeset .sf-title-col h1 {
+  margin: 0;
+}
+
+/* Encabezados. */
+.md-typeset h1 {
+  font-size: 1.55rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-bright);
+  margin-bottom: 0.6em;
+}
+
+.md-typeset h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--text-bright);
+  margin-top: 1.8em;
+  margin-bottom: 0.6em;
+}
+
+.md-typeset h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-bright);
+  margin-top: 1.3em;
+}
+
+/* Enlaces del cuerpo: color del texto fuerte (no accent), siempre subrayados;
+   en hover el subrayado se engrosa (sin cambiar el color). */
+.md-typeset a {
+  color: var(--text-bright);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.15em;
+  font-weight: 600;
+  transition: text-decoration-thickness 0.15s ease;
+}
+
+.md-typeset a:hover {
+  color: var(--text-bright);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+}
+
+.md-typeset h1 a,
+.md-typeset h2 a,
+.md-typeset h3 a {
+  color: inherit;
+}
+
+/* Código inline. */
+.md-typeset code {
+  font-family: var(--md-font-code);
+  font-size: 0.8em;
+  color: var(--text-bright);
+  background-color: var(--bg-card);
+  padding: 0.1em 0.35em;
+  margin: 0 0.1em;
+  border-radius: 5px;
+  border: 1px solid var(--border-subtle);
+}
+
+.md-typeset img {
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  display: block;
+  margin: 1.5em auto;
+}
+
+/* Citas: sin caja, borde izquierdo + indentación. */
+.md-typeset blockquote {
+  position: relative;
+  background: transparent;
+  border: none;
+  border-left: 2px solid var(--border-subtle);
+  border-radius: 0;
+  padding: 0.2rem 0 0.2rem 1rem;
+  margin: 1.5em 0;
+  color: var(--text-main);
+  font-size: 0.7rem;
+}
+
+.md-typeset blockquote > p {
+  margin: 0.4em 0 0;
+  color: var(--text-main);
+}
+
+.md-typeset blockquote > p:first-child {
+  margin-top: 0;
+}

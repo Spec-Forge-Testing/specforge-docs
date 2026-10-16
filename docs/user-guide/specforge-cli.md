@@ -113,12 +113,24 @@ clipboard, and through the terminal's own clipboard escape where the system one 
 not reachable). With `SPECFORGE_MOUSE=0` the terminal's native selection works
 instead; in many terminals `Shift`+drag does the same without turning anything off.
 
-!!! note "Confirmations in the full-screen interface"
-    A call that needs your approval (a destructive operation, a run that would pay for
-    LLM inference, a replay with side effects) cannot be asked inside the full-screen
-    interface yet. It stops with a message saying *nothing was sent* instead of
-    assuming a yes. Run that call with `SPECFORGE_TUI=0` (the text REPL asks), or
-    from your shell with `--yes`.
+### Questions
+
+When something needs your say, a question takes the place of the input and the conversation
+stays in view above it. Three kinds come up:
+
+- **An approval** (a destructive operation, a run that would pay for LLM inference, a replay
+  with side effects): the question and what would be sent. Only `y` approves; `n`, `Enter`,
+  `Esc`, `Ctrl-C` and `Ctrl-D` decline, and a declined call says *not approved; nothing was
+  sent*. Other keys do nothing, and a `y` typed before the question appeared is ignored, so
+  typing ahead never approves anything. For an inference cost or a replay, run the call, read
+  the estimate or the reason, and type `approve` to get the question.
+- **Trusting the folder.** Opening `specforge` in a folder that is not a project asks
+  *Do you trust this folder?* and lists what trusting allows: creating `specforge.toml` and a
+  `.specforge/` folder, reading the source code, and saving the spec when you give a URL. Only
+  `y` trusts; nothing is written to the folder before that.
+- **The spec.** In a trusted folder with no `openapi.yaml`, `.yml` or `.json`, a line asks for
+  the spec as a file path or a URL (a URL is downloaded into the folder). A path with no file,
+  or a URL that cannot be fetched, says why and asks again; an empty line or `Esc` cancels.
 
 ## The text REPL
 
@@ -275,8 +287,8 @@ run had produced; a second Ctrl-C stops waiting.
 ## Asking before it matters
 
 Some calls stop to ask first. In the text REPL the question is asked inline, and a call
-that needs approval can also be approved with `approve`. The full-screen interface does not
-ask these questions yet (see the note above).
+that needs approval can also be approved with `approve`. The full-screen interface asks the
+same questions on a [screen](#questions).
 
 | What | When it asks | Answering up front |
 | --- | --- | --- |
@@ -304,7 +316,7 @@ to Python as a terminal, so there a one-shot call never asks: use PowerShell or
 
 ## Operations
 
-`describe` publishes 32 operations across eight families. `requires` says
+`describe` publishes 33 operations across eight families. `requires` says
 what must already be true for the call to succeed: `none`, `project` (a
 project must be open — see [`open_project`](#open_project)), `contract` (a
 contract must also be loaded — see [`load_contract`](#load_contract), which
@@ -370,6 +382,20 @@ wrote).
 
 Giving `--name`, `--openapi-spec` or `--base-url` for a project whose
 `specforge.toml` already exists needs `--overwrite`.
+
+#### `update_project`
+
+Updates the active project's `name`, `openapi_spec` or `base_url` in
+`specforge.toml`, then reloads the project and its contract. Only the values
+provided are changed; the remaining project settings and comments are kept.
+
+The operation is refused while another operation is running.
+
+| Flag | Type | Required | Default |
+| --- | --- | --- | --- |
+| `--name` | string | no | — |
+| `--openapi-spec` | path | no | — |
+| `--base-url` | string | no | — |
 
 ### Contract
 
@@ -750,6 +776,53 @@ fail with — the document this whole page is derived from. No parameters.
 
 Just the operations, for a caller that wants nothing else (no event or error
 catalog). No parameters.
+
+## Local maintenance commands
+
+These commands belong to the packaged CLI. They do not start the core.
+
+### `credentials <file.env>`
+
+Copies `KEY=value` entries from the given `.env` file into the env file used
+by the core's LLM layer. Existing entries with the same name are replaced;
+other entries are kept. Secret values are masked in the terminal output.
+
+The core reports the destination path through `get_config`, so this command
+also works with a source checkout and with the packaged binary. It runs
+`diagnose` after writing the file. Nothing is written when the source file is
+missing, empty, or is already the core's destination file.
+
+```bash
+specforge credentials .env.local
+```
+
+The command needs a core that publishes `paths.llm_env_file` (protocol
+`0.1.14` or later).
+
+### `update`
+
+Checks GitHub for a newer packaged CLI release and installs it when one is
+available. Development installs are not changed; update them with `git pull`.
+On Windows, the replacement completes after the current process exits.
+
+```bash
+specforge update
+```
+
+Interactive sessions also check for an update once per day, in the background.
+That check only displays a notice; it never installs anything.
+
+### `delete`
+
+Removes the packaged CLI, its launcher, and its per-user data, settings, and
+cache after an interactive confirmation. Project files, including
+`specforge.toml` and `.specforge/`, are left untouched.
+
+```bash
+specforge delete
+```
+
+For a development install, use `pip uninstall specforge-cli` instead.
 
 ## Errors
 

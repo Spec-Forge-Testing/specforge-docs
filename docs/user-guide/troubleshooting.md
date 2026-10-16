@@ -3,6 +3,19 @@
 Common problems, what causes them, and how to fix them. Terms in this page are defined in the
 [Glossary](glossary.md) and the [Core Concepts](concepts.md) page.
 
+!!! info "Which CLI are you running?"
+  The shipped `specforge-cli` client uses the operations documented in
+  [Spec Forge CLI](specforge-cli.md): `diagnose`, `list_runs`, `get_run`,
+  `prune_runs`, `apply_prune_plan`, `--execution` and `--identities-path`.
+  The older commands in the sections below (`doctor`, `history`, `inspect`,
+  `prune`, `--mode` and `--identities`) belong to the core's built-in REPL,
+  documented in the [CLI Reference](cli-reference.md).
+
+For problems specific to the shipped client, first check the core startup
+command and timeout (`SPECFORGE_CORE_COMMAND` and
+`SPECFORGE_STARTUP_TIMEOUT`), then run the operation with `--json-output` to
+separate the result from terminal rendering.
+
 ## The environment is not ready
 
 **Symptom.** `doctor` reports a check as *critical* or a *warning*.

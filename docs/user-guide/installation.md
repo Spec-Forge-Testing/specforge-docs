@@ -14,22 +14,27 @@
 
 ## Quick start
 
-From the repository root, install the CLI:
+Install the packaged frontend in the environment where you want to run it:
 
 ```bash
-pip install -e core
+pip install specforge-cli
 ```
 
-Initialize a target project, then start the interactive shell:
+Create or open a target project, then start the interactive shell:
 
 ```bash
-specforge init
+specforge init_project --path ./my-api --openapi-spec ./my-api/openapi.yaml
 specforge
 ```
 
-Inside the shell, `help` lists every command; the [CLI Reference](cli-reference.md)
-explains each one, and the [Example Walkthrough](example-walkthrough.md) runs them
-end to end against a sample API.
+Inside the shell, `help` lists the operations published by the core. The
+[Spec Forge CLI guide](specforge-cli.md) covers the interactive interface and
+the one-shot form used by scripts and CI. The [Example Walkthrough](example-walkthrough.md)
+runs the pipeline against a sample API.
+
+The old core REPL is still available in the `llm-pbt-agent` checkout. It is a
+developer tool with a different command set; see the [CLI Reference](cli-reference.md)
+when working on the core itself.
 
 To run Spec Forge in containers instead, see [Running with Docker](docker.md). To
 work on Spec Forge itself, see

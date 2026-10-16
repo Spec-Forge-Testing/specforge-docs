@@ -1533,6 +1533,16 @@
   gap: 2rem;
 }
 
+/* Los enlaces dentro de las cards de "Start here" van en color accent (no el
+   text-bright del resto del cuerpo), para destacar como puntos de entrada. */
+.md-typeset .grid.cards.sf-start-here a {
+  color: var(--accent-color);
+}
+
+.md-typeset .grid.cards.sf-start-here a:hover {
+  color: var(--accent-color);
+}
+
 /* ==========================================================================
    DIAGRAMAS MERMAID
    ========================================================================== */

@@ -253,9 +253,18 @@ function setupHeaderBreadcrumb() {
   }
 }
 
+// El link de GitHub del header abre el repositorio en una pestaña nueva.
+function setupSourceNewTab() {
+  const source = document.querySelector(".md-header__source .md-source");
+  if (!source) return;
+  source.setAttribute("target", "_blank");
+  source.setAttribute("rel", "noopener noreferrer");
+}
+
 document$.subscribe(() => {
   setupScrollTopButton();
   setupTocToggle();
   setupH1Eyebrow();
   setupHeaderBreadcrumb();
+  setupSourceNewTab();
 });

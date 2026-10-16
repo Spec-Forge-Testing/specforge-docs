@@ -144,6 +144,8 @@
   padding-left: 0;
 }
 
+
+
 /* Reordenamos el grupo derecho con flexbox (sin tocar el HTML): el toggle de
    tema pasa a ser el último, a la derecha de GitHub. */
 .md-header__option[data-md-component="palette"] {

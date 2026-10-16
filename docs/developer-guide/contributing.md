@@ -4,6 +4,9 @@ Use this page when changing Spec Forge itself. For initial CLI setup, see
 [Installation](../user-guide/installation.md); for runtime profiles, see
 [Running with Docker](../user-guide/docker.md).
 
+Working on the command-line client? It has its own repository and its own guide: see
+[Working on the Spec Forge CLI](specforge-cli.md).
+
 ## Local setup
 
 Install the CLI editable, plus the task runner and the linter, then register the

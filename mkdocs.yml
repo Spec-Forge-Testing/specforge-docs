@@ -145,6 +145,7 @@ nav:
       - Data Flow: architecture/data-flow.md
   - Developer Guide:
       - Contributing & Testing: developer-guide/contributing.md
+      - Spec Forge CLI: developer-guide/specforge-cli.md
       - Core:
           - Overview: modules/core/index.md
           - Reference: modules/core/reference.md

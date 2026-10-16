@@ -186,11 +186,76 @@ function setupH1Eyebrow() {
   const eyebrow = document.createElement("p");
   eyebrow.className = "sf-eyebrow";
   eyebrow.textContent = label;
-  h1.parentNode.insertBefore(eyebrow, h1);
+
+  // Caso portada: el H1 vive dentro de una fila flex junto a una imagen
+  // (mascota). Queremos [imagen] [columna: eyebrow / h1], es decir el eyebrow
+  // ARRIBA del título pero AL LADO de la imagen. Para eso envolvemos eyebrow+H1
+  // en una columna dentro de la misma fila flex.
+  const parent = h1.parentElement;
+  if (parent && getComputedStyle(parent).display === "flex") {
+    const col = document.createElement("div");
+    col.className = "sf-title-col";
+    parent.insertBefore(col, h1);
+    col.appendChild(eyebrow);
+    col.appendChild(h1);
+    return;
+  }
+
+  // Caso general: el H1 puede estar envuelto en otros contenedores; el eyebrow
+  // va antes del bloque que es hijo directo del contenido.
+  let anchor = h1;
+  while (anchor.parentElement && anchor.parentElement !== content) {
+    anchor = anchor.parentElement;
+  }
+  anchor.parentNode.insertBefore(eyebrow, anchor);
+}
+
+// Título del header como breadcrumb fijo: "Spec Forge Docs ❯ <sección>".
+// Material por defecto intercambia el título estático por el de la página al
+// scrollear; en su lugar dejamos "Spec Forge Docs" SIEMPRE visible (y
+// clickeable hacia la home), y le sumamos al costado la sección actual del nav
+// izquierdo (un solo nivel). El CSS (body.sf-breadcrumb) desactiva el swap.
+function setupHeaderBreadcrumb() {
+  const title = document.querySelector(".md-header__title");
+  if (!title) return;
+
+  const firstTopic = title.querySelector(".md-header__topic:first-child");
+  if (!firstTopic) return;
+
+  document.body.classList.add("sf-breadcrumb");
+
+  // La primera parte ("Spec Forge Docs") pasa a ser un link a la home (la misma
+  // URL que el logo del header).
+  const siteName = firstTopic.querySelector(".md-ellipsis");
+  if (siteName && !siteName.querySelector(".sf-crumb-home")) {
+    const logo = document.querySelector(".md-header__button.md-logo");
+    const home = logo ? logo.getAttribute("href") : ".";
+    const text = siteName.textContent.trim();
+    siteName.innerHTML =
+      '<a class="sf-crumb-home" href="' + home + '">' + text + "</a>" +
+      '<span class="sf-crumb-sep" aria-hidden="true">\u276f</span>' +
+      '<span class="sf-crumb-section"></span>';
+  }
+
+  // Sección actual = grupo de primer nivel activo en el nav izquierdo.
+  const activeSection = document.querySelector(
+    ".md-nav--primary > .md-nav__list > .md-nav__item--section.md-nav__item--active > .md-nav__link .md-ellipsis, " +
+      ".md-nav--primary > .md-nav__list > .md-nav__item--active.md-nav__item--section > .md-nav__link .md-ellipsis"
+  );
+  const label = activeSection ? activeSection.textContent.trim() : "";
+
+  const section = title.querySelector(".sf-crumb-section");
+  if (section) {
+    section.textContent = label;
+    // Sin sección (p. ej. la home): nunca mostramos el breadcrumb de sección.
+    // La visibilidad al scrollear la maneja el CSS (--active del título).
+    document.body.classList.toggle("sf-breadcrumb-has-section", Boolean(label));
+  }
 }
 
 document$.subscribe(() => {
   setupScrollTopButton();
   setupTocToggle();
   setupH1Eyebrow();
+  setupHeaderBreadcrumb();
 });

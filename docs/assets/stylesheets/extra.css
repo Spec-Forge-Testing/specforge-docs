@@ -290,6 +290,94 @@
   margin-left: 0.3rem;
 }
 
+/* --- Breadcrumb del header (body.sf-breadcrumb, armado por extra.js) --------
+   Por defecto Material intercambia el título estático "Spec Forge Docs" por el
+   de la página al scrollear (clase --active en el título). Lo desactivamos: la
+   primera parte queda SIEMPRE fija y clickeable (link a la home), y al costado
+   mostramos la sección actual del nav. */
+.sf-breadcrumb .md-header__title--active .md-header__topic:first-child {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+  z-index: auto;
+}
+
+/* La segunda topic nativa (la que Material usa para el título de página) no se
+   usa en el breadcrumb: la ocultamos. */
+.sf-breadcrumb .md-header__topic + .md-header__topic {
+  display: none;
+}
+
+/* La primera topic contiene nuestro breadcrumb completo. */
+.sf-breadcrumb .md-header__topic:first-child .md-ellipsis {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+/* "Spec Forge Docs" clickeable → home. */
+.sf-crumb-home {
+  color: var(--text-bright);
+  text-decoration: none;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.sf-crumb-home:hover {
+  color: var(--accent-color);
+}
+
+/* Separador ❯ entre la home y la sección. */
+.sf-crumb-sep {
+  margin: 0 0.5rem;
+  color: var(--text-muted);
+  font-weight: 400;
+  flex-shrink: 0;
+}
+
+/* La sección actual: peso normal, color atenuado. Oculta por defecto (arriba de
+   todo, sin scroll); aparece recién cuando Material marca el título como
+   --active al scrollear, con una entrada suave. */
+.sf-crumb-sep,
+.sf-crumb-section {
+  opacity: 0;
+  transform: translateX(0.4rem);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.sf-crumb-section {
+  color: var(--text-muted);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Mostramos el breadcrumb solo si (a) hay una sección (no es la home) y (b) se
+   scrolleó (Material marca el título como --active). */
+.sf-breadcrumb-has-section .md-header__title--active .sf-crumb-sep,
+.sf-breadcrumb-has-section .md-header__title--active .sf-crumb-section {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sf-crumb-sep,
+  .sf-crumb-section {
+    transition: opacity 0.3s ease;
+    transform: none;
+  }
+}
+
+/* En pantallas angostas, si no hay sitio, el breadcrumb de sección se oculta y
+   queda solo "Spec Forge Docs". */
+@media screen and (max-width: 44.984375em) {
+  .sf-crumb-sep,
+  .sf-crumb-section {
+    display: none !important;
+  }
+}
+
 .md-header__button {
   color: var(--text-main);
 }
@@ -851,6 +939,23 @@
   color: var(--accent-color);
 }
 
+/* Portada: columna que apila eyebrow + H1 al lado de la mascota (la inyecta
+   extra.js cuando el H1 vive en una fila flex con una imagen). */
+.md-typeset .sf-title-col {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+
+.md-typeset .sf-title-col .sf-eyebrow {
+  margin-bottom: 0.2em;
+}
+
+.md-typeset .sf-title-col h1 {
+  margin: 0;
+}
+
 /* Encabezados Jerarquizados */
 .md-typeset h1 {
   font-size: 1.55rem;
@@ -1384,52 +1489,64 @@
 /* ==========================================================================
    9. TARJETAS DE GRID (landing — "Start Here")
    ========================================================================== */
-/* Material dibuja cada card de un `.grid.cards` como una caja con sombra —
-   la misma "heavy web UI" que el resto del sitio abandona. Se reemplaza por
-   el mismo borde izquierdo que código/admonitions, coloreado por intención:
-   azul (accent) para las cards orientadas a uso, violeta (brand) para las
-   de desarrollo interno — el mismo ancla de navegación que separa "usar
-   Spec Forge" de "extender Spec Forge" en la portada. */
+/* Material dibuja cada card de un `.grid.cards` como una caja con sombra. En la
+   portada ("Start here") la queremos limpia: sin caja, sin borde izquierdo y
+   sin la línea (`<hr>`) bajo el título. Solo el título (icono + texto) y su
+   lista de enlaces, con aire entre bloques. */
 .md-typeset .grid.cards > ul > li {
   background: transparent;
   border: none;
-  border-left: 2px solid var(--border-subtle);
   border-radius: 0;
   box-shadow: none;
-  padding: 0.9rem 0 0.9rem 1.1rem;
-  transition: border-color 0.15s ease;
+  padding: 0;
+  margin: 0;
 }
 
 .md-typeset .grid.cards > ul > li:hover {
   box-shadow: none;
-  border-left-color: var(--text-muted);
 }
 
+/* La línea `---` (hr) bajo el título de cada card: fuera. */
 .md-typeset .grid.cards > ul > li > hr {
-  border-color: var(--border-subtle);
-  margin: 0.6rem 0;
+  display: none;
 }
 
-/* Portada: una sola columna, apilada, en vez del grid lado a lado por
-   defecto de Material. */
+/* Título de cada card (el __texto en negrita__): como un subtítulo, con su
+   icono alineado. */
+.md-typeset .grid.cards > ul > li > p:first-child {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-bright);
+  margin: 0 0 0.6rem;
+}
+
+.md-typeset .grid.cards > ul > li > p:first-child .twemoji,
+.md-typeset .grid.cards > ul > li > p:first-child svg {
+  vertical-align: -0.15em;
+  margin-right: 0.3rem;
+}
+
+/* Portada: una sola columna apilada, con separación generosa entre las dos
+   secciones. */
 .md-typeset .grid.cards.sf-start-here {
   grid-template-columns: 1fr;
+  gap: 2rem;
 }
 
-/* Portada — "usar Spec Forge" (azul) vs. "extender Spec Forge" (violeta),
-   la misma ancla de color que el resto de la identidad de marca. */
-.sf-start-here > ul > li:nth-of-type(1) {
-  border-left-color: var(--accent-color);
+/* ==========================================================================
+   DIAGRAMAS MERMAID
+   ========================================================================== */
+/* Mermaid renderiza el SVG a su tamaño "natural", que suele desbordar el ancho
+   de la columna. Lo acotamos al contenedor y lo centramos, con un tope de alto
+   razonable para que no ocupe toda la pantalla. */
+.md-typeset .mermaid {
+  display: flex;
+  justify-content: center;
+  margin: 1.5em 0;
 }
 
-.sf-start-here > ul > li:nth-of-type(1) a {
-  color: var(--accent-color);
-}
-
-.sf-start-here > ul > li:nth-of-type(2) {
-  border-left-color: var(--brand-color);
-}
-
-.sf-start-here > ul > li:nth-of-type(2) a {
-  color: var(--brand-color);
+.md-typeset .mermaid svg {
+  max-width: 100%;
+  height: auto;
+  max-height: 26rem;
 }

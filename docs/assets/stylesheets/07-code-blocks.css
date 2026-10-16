@@ -1,0 +1,124 @@
+/* ==========================================================================
+   BLOQUES DE CÓDIGO — caja, botón de copiar y números de línea
+   ========================================================================== */
+/* Caja: fondo elevado sutil, borde fino, esquinas redondeadas. El botón de
+   copiar vive arriba a la derecha. */
+.md-typeset .highlight {
+  position: relative;
+  background-color: var(--bg-code);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  box-shadow: none;
+  margin: 1.2em 0;
+  overflow: hidden;
+}
+
+.md-typeset div.highlight > pre,
+.md-typeset pre {
+  background-color: transparent;
+  border: none;
+  border-radius: 0;
+  margin: 0;
+  padding: 0.85rem 1rem;
+  overflow-x: auto;
+}
+
+.md-typeset pre > code {
+  background: transparent;
+  padding: 0;
+  border: none;
+  font-family: var(--md-font-code);
+  font-size: 0.7rem; /* ~14px */
+  line-height: 1.6;
+  color: var(--text-bright);
+}
+
+/* Sitio a la derecha para que el texto largo no quede bajo el botón de copiar. */
+.md-typeset .highlight > pre > code,
+.md-typeset .highlighttable .code pre > code {
+  padding-right: 2rem;
+}
+
+/* El contenedor del botón (.md-code__nav) traía fondo + border-radius + padding
+   que dibujaban un recuadro gris alrededor del icono. Lo hacemos transparente y
+   lo fijamos centrado sobre la PRIMERA línea del código, para que el botón
+   quede en la misma posición tenga el bloque una línea o muchas. */
+.md-typeset .md-code__nav,
+.md-typeset .highlight:hover > .md-code__nav {
+  background: transparent !important;
+  background-color: transparent !important;
+  border-radius: 0;
+  padding: 0;
+  top: 1.4rem !important;
+  right: 0.6rem;
+  bottom: auto !important;
+  transform: translateY(-50%);
+}
+
+/* Botón de copiar (.md-code__button): un <button> cuyo chrome nativo dibujaba
+   un recuadro. Lo reseteamos a un icono plano, tenue en reposo y realzado en
+   hover/focus. */
+.md-typeset .md-code__nav .md-code__button,
+.md-typeset .md-code__button,
+.md-typeset .md-code__button:hover,
+.md-typeset .md-code__button:focus,
+.md-typeset .md-code__button:active,
+.md-typeset .md-code__button:focus-visible {
+  background: none !important;
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.md-typeset .md-code__button {
+  color: var(--text-muted);
+  width: 1.1rem;
+  height: 1.1rem;
+  padding: 0;
+  border-radius: 0;
+  transition: color 0.15s ease;
+}
+
+.md-typeset .md-code__button:hover,
+.md-typeset .md-code__button:focus,
+.md-typeset .md-code__button--active {
+  color: var(--text-bright) !important;
+}
+
+.md-typeset .md-code__button::after {
+  width: 1rem;
+  height: 1rem;
+}
+
+/* Tablas de números de línea. */
+.md-typeset .highlighttable,
+.md-typeset .highlighttable tbody,
+.md-typeset .highlighttable tr,
+.md-typeset .highlighttable td {
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+}
+
+.md-typeset .highlighttable .code {
+  overflow: hidden;
+}
+
+.md-typeset .linenodiv,
+.md-typeset .linenos {
+  background: transparent;
+  border: none;
+  padding-right: 0.8rem;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.md-typeset .linenodiv pre {
+  padding: 0.85rem 0 0.85rem 1rem;
+  color: var(--text-muted);
+  border-left: none;
+}

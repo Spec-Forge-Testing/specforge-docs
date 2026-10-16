@@ -49,7 +49,15 @@ theme:
     repo: fontawesome/brands/github
 
 extra_css:
-  - assets/stylesheets/extra.css
+  - assets/stylesheets/01-tokens.css
+  - assets/stylesheets/02-layout.css
+  - assets/stylesheets/03-header.css
+  - assets/stylesheets/04-nav.css
+  - assets/stylesheets/05-toc.css
+  - assets/stylesheets/06-typography.css
+  - assets/stylesheets/07-code-blocks.css
+  - assets/stylesheets/08-admonitions.css
+  - assets/stylesheets/09-components.css
 
 extra_javascript:
   - assets/javascripts/extra.js

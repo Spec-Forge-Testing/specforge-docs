@@ -1,0 +1,143 @@
+/* ==========================================================================
+   NAVEGACIÓN — sidebar izquierdo, encabezados de grupo y drawer móvil
+   ========================================================================== */
+.md-nav__title {
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: var(--text-bright);
+}
+
+/* Material fija el título de cada sidebar con un box-shadow grande del color del
+   fondo (halo de "desvanecido") que se lee como un overlay borroso arriba. Lo
+   quitamos y dejamos solo un fondo sólido. */
+.md-nav--primary .md-nav__title,
+.md-nav--secondary .md-nav__title {
+  box-shadow: none;
+  background-color: var(--bg-main);
+}
+
+/* En desktop el título del nav izquierdo es redundante con el header. Lo
+   ocultamos; en móvil el drawer sí lo necesita (es su cabecera). */
+@media screen and (min-width: 76.25em) {
+  .md-sidebar--primary .md-nav--primary > .md-nav__title {
+    display: none;
+  }
+
+  /* Con el título oculto, el `padding: 1.2rem 0` de .md-sidebar dejaba un hueco
+     muerto arriba. Lo achicamos para que el nav arranque cerca del borde. */
+  .md-sidebar--primary {
+    padding-top: 0.2rem;
+  }
+
+  .md-sidebar--primary .md-sidebar__scrollwrap {
+    padding-top: 0;
+  }
+}
+
+/* Encabezados de grupo (navigation.sections). Los marcamos como headers reales:
+   casi blancos y en negrita, para que no se confundan con los links de página. */
+.md-nav__item--section > .md-nav__link,
+.md-nav__item--section > .md-nav__link[for],
+.md-nav__item--section > label.md-nav__link {
+  color: var(--text-bright);
+  font-weight: 700;
+  font-size: 0.75rem;
+  margin-top: 1.1rem;
+  margin-bottom: 0.2rem;
+  cursor: default;
+  opacity: 1;
+}
+
+/* El label de sección es solo un rótulo (no navegable): sin hover de píldora. */
+.md-nav__item--section > .md-nav__link:hover {
+  background-color: transparent;
+  color: var(--text-bright);
+}
+
+/* El primer grupo no necesita el margen superior extra. */
+.md-nav--primary > .md-nav__list > .md-nav__item--section:first-child > .md-nav__link {
+  margin-top: 0.2rem;
+}
+
+/* --- Drawer móvil (< 76.25em) ----------------------------------------------
+   Material pinta la cabecera del cajón con el violeta de marca y reserva una
+   franja alta (5.6rem) para un logo grande. Como la barra de arriba ya muestra
+   el logo + título, la achicamos a una banda baja con fondo neutro. */
+@media screen and (max-width: 76.234375em) {
+  /* [for=__drawer] gana en especificidad a la regla de marca de Material. */
+  .md-nav--primary .md-nav__title[for="__drawer"] {
+    height: auto;
+    min-height: 3rem;
+    padding: 0.75rem 0.9rem;
+    background-color: var(--bg-chip-active);
+    color: var(--text-bright);
+    font-size: 0.95rem;
+    font-weight: 800;
+    box-shadow: none;
+    border-bottom: 1px solid var(--border-subtle);
+    line-height: 1.5;
+  }
+
+  /* El logo grande del cajón: fuera (la barra ya lo muestra). */
+  .md-nav--primary .md-nav__title[for="__drawer"] .md-logo {
+    display: none;
+  }
+
+  .md-nav--primary .md-nav__title[for="__drawer"] .md-nav__icon {
+    top: 50%;
+    transform: translateY(-50%);
+    margin: 0;
+  }
+
+  /* Barra de GitHub dentro del cajón: superficie neutra. */
+  .md-nav--primary .md-nav__source {
+    background-color: var(--bg-card);
+    color: var(--text-main);
+  }
+
+  .md-nav--primary .md-nav__item {
+    border-color: var(--border-subtle);
+  }
+
+  /* Encabezados de grupo del cajón: más livianos que el título, y espaciado
+     uniforme (el separador de cada item ya da el ritmo). */
+  .md-nav__item--section > .md-nav__link,
+  .md-nav__item--section > .md-nav__link[for],
+  .md-nav__item--section > label.md-nav__link {
+    font-weight: 500;
+    font-size: 0.8rem;
+    margin-top: 0;
+    margin-bottom: 0;
+  }
+
+  .md-nav--primary > .md-nav__list > .md-nav__item--section:first-child > .md-nav__link {
+    margin-top: 0;
+  }
+}
+
+/* Enlaces de navegación. */
+.md-nav__link {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  padding: 0.35rem 0.75rem;
+  border-radius: 10px;
+  transition: all 0.15s ease;
+}
+
+.md-nav__link:hover {
+  color: var(--text-bright);
+  background-color: color-mix(in srgb, var(--text-bright) 6%, transparent);
+}
+
+/* Píldora activa del sidebar izquierdo. */
+.md-nav__item--active > .md-nav__link,
+.md-nav__link--active {
+  font-weight: 600;
+  color: var(--accent-color);
+  background-color: var(--bg-chip-active);
+}
+
+.md-nav__item--nested > .md-nav__link {
+  background-color: transparent;
+}

@@ -1,0 +1,263 @@
+/* ==========================================================================
+   TABLA DE CONTENIDOS (sidebar derecho, colapsable) + scroll-to-top
+   ========================================================================== */
+
+/* Material mete `padding-left: .6rem` en el <ul> raíz del ToC, que corría las
+   entradas de primer nivel 0.6rem a la derecha del icono. Lo anulamos SOLO en
+   la lista raíz (los h2 quedan en el inset del link, 2.2rem). */
+.md-sidebar--secondary .md-nav--secondary > .md-nav__list[data-md-component="toc"] {
+  padding-left: 0;
+}
+
+/* Indentación por nivel: cada sublista corre un escalón a la derecha, para que
+   los subheaders se distingan de sus headers. */
+.md-sidebar--secondary .md-nav--secondary .md-nav__item .md-nav .md-nav__list {
+  padding-left: 0.9rem;
+}
+
+/* Links del ToC: sin caja. Solo el texto cambia de color. El inset de 2.2rem
+   los alinea con el icono/texto del título (el gutter izquierdo es para la
+   píldora del chevron que cuelga). */
+.md-sidebar--secondary .md-nav__link {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  font-size: 0.65rem;
+  line-height: 1.25;
+  padding: 0.08rem 0 0.08rem 2.2rem;
+  margin-bottom: 0;
+  color: var(--text-muted);
+  transition: color 0.15s ease;
+}
+
+/* Hover: solo acerca el texto a "bright". Anula el hover de píldora heredado. */
+.md-sidebar--secondary .md-nav__link:hover {
+  background: transparent;
+  color: var(--text-bright);
+}
+
+/* Link activo (sección actual al scrollear): color accent, sin fondo ni borde. */
+.md-sidebar--secondary .md-nav__link--active {
+  background: transparent;
+  border: none;
+  color: var(--accent-color);
+  font-weight: 600;
+}
+
+/* --- Encabezado del ToC -----------------------------------------------------
+   El título es una fila en una sola línea: [píldora chevron] + [icono listado]
+   + "Table of contents". La píldora se posiciona en absoluto y "cuelga" en el
+   gutter izquierdo (padding-left); los links quedan alineados con el icono. */
+.md-nav--secondary > .md-nav__title {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  overflow: visible;
+  padding-left: 2rem;
+  padding-right: 0;
+}
+
+.md-nav--secondary > .md-nav__title .sf-toc-list-icon {
+  margin-left: 0;
+}
+
+.md-nav--secondary > .md-nav__title .sf-toc-toggle {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* La píldora es más alta que la línea del título; con el título sticky top:0,
+   asomaba por arriba y el overflow del scrollwrap la recortaba. Un respiro
+   arriba la deja entrar completa. */
+@media screen and (min-width: 76.25em) {
+  .md-sidebar--secondary .md-sidebar__inner {
+    padding-top: 0.5rem;
+  }
+}
+
+/* --- ToC en móvil/tablet (< 76.25em) ---------------------------------------
+   Debajo del breakpoint Material renderiza el ToC en el flujo del contenido,
+   donde la píldora se rompe y el menú queda incómodo. Lo ocultamos por
+   completo (el `:not([hidden])` de Material pierde con el selector doble). */
+@media screen and (max-width: 76.234375em) {
+  .md-sidebar--secondary,
+  .md-sidebar--secondary:not([hidden]) {
+    display: none;
+  }
+}
+
+/* Píldora de toggle (abierto, solo chevron) y de reabrir (colapsado, chevron +
+   listado): mismo estilo. */
+.sf-toc-toggle,
+.sf-toc-reopen {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  flex-shrink: 0;
+  height: 1.6rem;
+  padding: 0 0.35rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 99px;
+  background-color: var(--bg-card);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.sf-toc-toggle:hover,
+.sf-toc-reopen:hover {
+  color: var(--text-bright);
+  border-color: var(--accent-color);
+}
+
+.sf-toc-chevron {
+  display: inline-flex;
+  align-items: center;
+}
+
+.sf-toc-chevron svg {
+  width: 0.95rem;
+  height: 0.95rem;
+  fill: currentColor;
+}
+
+/* Icono de listado: prefijo del título (abierto) y dentro de la píldora de
+   reabrir (colapsado). */
+.sf-toc-list-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-bright);
+}
+
+.sf-toc-list-icon svg {
+  width: 0.95rem;
+  height: 0.95rem;
+  fill: currentColor;
+}
+
+/* El rótulo "Table of contents" scrollea al inicio: puntero y realce en hover. */
+.sf-toc-title--clickable {
+  cursor: pointer;
+}
+
+.sf-toc-title--clickable:hover,
+.sf-toc-title--clickable:hover .sf-toc-list-icon {
+  color: var(--text-bright);
+}
+
+/* Estado colapsado (solo desktop): ocultamos la columna y ensanchamos el
+   contenido para que recupere el ancho liberado. */
+@media screen and (min-width: 76.25em) {
+  body.sf-toc-collapsed .md-sidebar--secondary {
+    display: none;
+  }
+
+  body.sf-toc-collapsed .md-content {
+    max-width: calc(var(--sf-content-max-width) + 12.5rem);
+  }
+}
+
+/* Píldora de reabrir: pegada al borde derecho, visible solo en colapsado, con
+   entrada por opacidad + desplazamiento. */
+.sf-toc-reopen {
+  position: fixed;
+  top: 4.4rem;
+  right: 0.9rem;
+  z-index: 5;
+  opacity: 0;
+  transform: translateX(1rem);
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease, color 0.15s ease,
+    background-color 0.15s ease, border-color 0.15s ease;
+}
+
+@media screen and (min-width: 76.25em) {
+  body.sf-toc-collapsed .sf-toc-reopen {
+    opacity: 1;
+    transform: translateX(0);
+    pointer-events: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sf-toc-reopen {
+    transition: opacity 0.2s ease;
+    transform: none;
+  }
+  body.sf-toc-collapsed .sf-toc-reopen {
+    transform: none;
+  }
+}
+
+/* --- Botón "scroll to top" --------------------------------------------------
+   Ocultamos el nativo de Material (.md-top), cuyo JS lo reposiciona por
+   dirección de scroll, e inyectamos .sf-top (extra.js): un FAB fijo abajo a la
+   izquierda que nada más mueve. */
+.md-top {
+  display: none !important;
+}
+
+.sf-top {
+  position: fixed;
+  left: max(0.9rem, env(safe-area-inset-left));
+  bottom: max(0.9rem, env(safe-area-inset-bottom));
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 50%;
+  background-color: var(--bg-card);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(0.5rem);
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease, color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.sf-top--show {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+@media (hover: hover) {
+  .sf-top:hover {
+    color: var(--text-bright);
+    border-color: var(--accent-color);
+  }
+}
+
+.sf-top:active {
+  color: var(--text-bright);
+  border-color: var(--accent-color);
+}
+
+.sf-top svg {
+  width: 1.15rem;
+  height: 1.15rem;
+  fill: currentColor;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sf-top {
+    transition: opacity 0.2s ease;
+    transform: none;
+  }
+  .sf-top--show {
+    transform: none;
+  }
+}

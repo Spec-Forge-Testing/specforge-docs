@@ -1,0 +1,176 @@
+/* ==========================================================================
+   HEADER — barra superior, breadcrumb, GitHub, toggle y buscador
+   ========================================================================== */
+.md-header {
+  background-color: var(--bg-main);
+  color: var(--text-main);
+  border-bottom: 1px solid var(--border-subtle);
+  box-shadow: none;
+}
+
+/* Barra un poco más alta que el 2.4rem por defecto. */
+.md-header__inner {
+  min-height: 3.2rem;
+}
+
+.md-header__title {
+  color: var(--text-bright);
+  font-weight: 700;
+}
+
+/* Menos separación logo ↔ título. Material fija `margin-left: 1rem` con
+   `[dir=ltr] .md-header__title` (0,2,0); igualamos con .md-header para ganar. */
+.md-header .md-header__title {
+  margin-left: 0.3rem;
+}
+
+/* --- Breadcrumb del header (body.sf-breadcrumb, armado por extra.js) --------
+   Material intercambia el título estático por el de la página al scrollear
+   (clase --active). Lo desactivamos: "Spec Forge Docs" queda fijo y clickeable
+   (link a la home), y la sección actual aparece al costado al scrollear. */
+.sf-breadcrumb .md-header__title--active .md-header__topic:first-child {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+  z-index: auto;
+}
+
+/* La segunda topic nativa (título de página) no se usa en el breadcrumb. */
+.sf-breadcrumb .md-header__topic + .md-header__topic {
+  display: none;
+}
+
+.sf-breadcrumb .md-header__topic:first-child .md-ellipsis {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+/* "Spec Forge Docs" clickeable → home. */
+.sf-crumb-home {
+  color: var(--text-bright);
+  text-decoration: none;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.sf-crumb-home:hover {
+  color: var(--accent-color);
+}
+
+/* Separador ❯ entre la home y la sección. */
+.sf-crumb-sep {
+  margin: 0 0.5rem;
+  color: var(--text-muted);
+  font-weight: 400;
+  flex-shrink: 0;
+}
+
+/* La sección: oculta por defecto (arriba de todo); aparece al scrollear, cuando
+   Material marca el título como --active. */
+.sf-crumb-sep,
+.sf-crumb-section {
+  opacity: 0;
+  transform: translateX(0.4rem);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.sf-crumb-section {
+  color: var(--text-muted);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Visible solo si (a) hay sección (no es la home) y (b) se scrolleó. */
+.sf-breadcrumb-has-section .md-header__title--active .sf-crumb-sep,
+.sf-breadcrumb-has-section .md-header__title--active .sf-crumb-section {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sf-crumb-sep,
+  .sf-crumb-section {
+    transition: opacity 0.3s ease;
+    transform: none;
+  }
+}
+
+/* En pantallas angostas la sección se oculta; queda solo "Spec Forge Docs". */
+@media screen and (max-width: 44.984375em) {
+  .sf-crumb-sep,
+  .sf-crumb-section {
+    display: none !important;
+  }
+}
+
+.md-header__button {
+  color: var(--text-main);
+}
+
+/* GitHub: Material le reservaba un ancho fijo (11.7rem) más grande que su
+   contenido, dejando un hueco a la derecha. Lo ajustamos al contenido para que
+   quede pegado al borde. */
+.md-header__source {
+  width: auto;
+  max-width: none;
+  margin-left: 1rem;
+}
+
+/* El link de GitHub como fila flex compacta (icono + "GitHub"). Material maqueta
+   el nombre del repo con un truco `padding-left: 2rem` + `margin-left: -2rem`
+   que, con width:auto, recortaba el texto a "Gi...". Lo deshacemos. */
+.md-header__source .md-source {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.md-header__source .md-source__icon {
+  width: auto;
+  height: auto;
+}
+
+.md-header__source .md-source__icon svg {
+  margin: 0;
+}
+
+.md-header__source .md-source__repository {
+  max-width: none;
+  overflow: visible;
+  margin-left: 0;
+  padding-left: 0;
+}
+
+/* Reordenamos el grupo derecho con flexbox (sin tocar el HTML): el toggle de
+   tema pasa a ser el último, a la derecha de GitHub. */
+.md-header__option[data-md-component="palette"] {
+  order: 10;
+  margin-left: 0.4rem;
+}
+
+.md-header__inner > .md-header__option[data-md-component="palette"] {
+  margin-right: 0;
+}
+
+/* Buscador estilo cápsula. */
+.md-search__form {
+  background-color: var(--bg-card);
+  border-radius: 99px;
+  border: 1px solid var(--border-subtle);
+}
+
+.md-search__input {
+  font-size: 0.7rem;
+  color: var(--text-main);
+}
+
+.md-search__input::placeholder {
+  color: var(--text-muted);
+}
+
+.md-search__icon {
+  color: var(--text-muted);
+}

@@ -1,0 +1,121 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+/* ==========================================================================
+   DESIGN TOKENS Y PALETAS (claro / oscuro)
+   --------------------------------------------------------------------------
+   Identidad semántica compartida con la CLI (specforge_core/ui/theme.py). Los
+   valores de marca son los tokens reales del tema de la CLI; los neutros de
+   fondo/texto se eligen por esquema. Todos los demás archivos consumen estas
+   variables, por eso este archivo se carga primero.
+   ========================================================================== */
+
+/* MODO CLARO (DEFAULT) */
+:root,
+[data-md-color-scheme="default"] {
+  --md-font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --md-font-code: 'JetBrains Mono', monospace;
+
+  /* Superficies */
+  --bg-main: #fafafa;
+  --bg-card: #f4f4f5;
+  --bg-code: #f4f4f5;
+  --bg-chip-active: #ede9fe;
+
+  /* Texto */
+  --text-main: #52525b;
+  --text-muted: #71717a;
+  --text-bright: #18181b;
+
+  /* Marca (tokens de la CLI) */
+  --brand-color: #9333ea;
+  --accent-color: #7b4aa6;
+  --success-color: #059669;
+  --warning-color: #d97706;
+  --error-color: #e11d48;
+  --info-color: #2563eb;
+  --border-subtle: #e4e4e7;
+  --border-footer: #eeeeee;
+
+  /* Mapeo con variables nativas de MkDocs */
+  --md-default-bg-color: var(--bg-main);
+  --md-default-bg-color--page: var(--bg-main);
+  --md-default-fg-color: var(--text-main);
+  --md-default-fg-color--light: var(--text-muted);
+  --md-primary-fg-color: var(--brand-color);
+  --md-accent-fg-color: var(--accent-color);
+  --md-typeset-color--success: var(--success-color);
+  --md-typeset-color--warning: var(--warning-color);
+  --md-typeset-color--error: var(--error-color);
+
+  --md-grid-max-width: 1760px;
+  --md-code-bg-color: var(--bg-code);
+  --md-code-fg-color: var(--text-bright);
+
+  /* Resaltado de sintaxis (claro): keywords azul, strings ámbar, funciones violeta. */
+  --md-code-hl-keyword-color: #2563eb;
+  --md-code-hl-function-color: #9333ea;
+  --md-code-hl-string-color: #b45309;
+  --md-code-hl-number-color: #0e7490;
+  --md-code-hl-constant-color: #7c3aed;
+  --md-code-hl-special-color: #be123c;
+  --md-code-hl-name-color: var(--text-bright);
+  --md-code-hl-operator-color: var(--text-muted);
+  --md-code-hl-punctuation-color: var(--text-muted);
+  --md-code-hl-comment-color: var(--text-muted);
+
+  /* Ancho de la columna de contenido (compartido con el footer prev/next). */
+  --sf-content-max-width: 54rem;
+
+  /* Gutter lateral único (header + sidebars + contenido comparten borde). */
+  --sf-gutter: 1.6rem;
+}
+
+/* MODO OSCURO (SLATE) */
+[data-md-color-scheme="slate"] {
+  /* Superficies */
+  --bg-main: #111111;
+  --bg-card: #1a1a1a;
+  --bg-code: #18181b;
+  --bg-chip-active: #2a1f3d;
+
+  /* Texto */
+  --text-main: #a1a1aa;
+  --text-muted: #737373;
+  --text-bright: #cbcbcb;
+
+  /* Marca (tokens de la CLI) */
+  --brand-color: #a855f7;
+  --accent-color: #9b65ca;
+  --success-color: #10b981;
+  --warning-color: #f59e0b;
+  --error-color: #f43f5e;
+  --info-color: #5d87ff;
+  --border-subtle: #3f3f46;
+  --border-footer: #242424;
+
+  /* Mapeo con variables nativas de MkDocs */
+  --md-default-bg-color: var(--bg-main);
+  --md-default-bg-color--page: var(--bg-main);
+  --md-default-fg-color: var(--text-main);
+  --md-default-fg-color--light: var(--text-muted);
+  --md-primary-fg-color: var(--brand-color);
+  --md-accent-fg-color: var(--accent-color);
+  --md-typeset-color--success: var(--success-color);
+  --md-typeset-color--warning: var(--warning-color);
+  --md-typeset-color--error: var(--error-color);
+
+  --md-code-bg-color: var(--bg-code);
+  --md-code-fg-color: var(--text-bright);
+
+  /* Resaltado de sintaxis (oscuro): versiones más luminosas para contrastar. */
+  --md-code-hl-keyword-color: #7aa2ff;
+  --md-code-hl-function-color: #c792ea;
+  --md-code-hl-string-color: #e5a66a;
+  --md-code-hl-number-color: #56b6c2;
+  --md-code-hl-constant-color: #b48eff;
+  --md-code-hl-special-color: #ff7a93;
+  --md-code-hl-name-color: var(--text-bright);
+  --md-code-hl-operator-color: var(--text-muted);
+  --md-code-hl-punctuation-color: var(--text-muted);
+  --md-code-hl-comment-color: var(--text-muted);
+}

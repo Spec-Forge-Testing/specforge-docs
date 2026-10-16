@@ -1,6 +1,6 @@
 # Operations
 
-`describe` publishes **32 operations in eight families**, derived from the
+`describe` publishes **33 operations in eight families**, derived from the
 core's own façade. Each operation declares what must be open before it is called
 (`requires`), whether it can be watched (`emits_progress`), whether it can be
 stopped (`cancellable`), and whether it destroys what cannot be undone
@@ -28,6 +28,7 @@ confirms those before sending, reading the flag instead of keeping its own list.
 | `project_state` | project | The open project's state |
 | `close_project` | none | Releases everything the project held; not counted by the busy guard |
 | `init_project` | none | Creates a project's `.specforge` and `specforge.toml` without opening it; see [below](#init-project) |
+| `update_project` | project | Updates the active project's settings and reloads it; refused while an operation is running |
 
 ### `init_project` { #init-project }
 

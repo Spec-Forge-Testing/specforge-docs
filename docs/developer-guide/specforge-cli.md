@@ -1,0 +1,114 @@
+# Working on the Spec Forge CLI
+
+This page is for changing **`specforge-cli`**, the client that ships to users. For what it does
+for them, see [Spec Forge CLI](../user-guide/specforge-cli.md); for what it talks to, the
+[protocol](../modules/core/protocol/index.md). The CLI lives in its own repository and imports
+nothing from the core: everything it knows about an operation comes from the catalog the core
+publishes in its handshake.
+
+## How it is organised
+
+```text
+src/specforge_cli/
+├── __main__.py        # routing only: update, delete, credentials, one-shot or interactive
+├── cli/               # the command-line modes: one-shot, interactive, argv parser, CI outcome
+├── startup/           # which core to launch, startup timeout, clean exit on SIGTERM
+├── maintenance/       # looking after the install: credentials, update, uninstall
+├── protocol/          # the client: transport, handshake, requests, events, cancellation
+├── catalog/           # the core's catalog: models, validation, completion, local commands
+├── session/           # what the REPL and the TUI share: controller, parsing, history, header
+├── repl/              # the text interface: a line reader over the session controller
+├── tui/               # the full-screen interface (see below)
+├── approval/          # confirmations: destructive calls, inference cost, replay side effects
+├── shell/             # the `!<command>` escape
+├── views/             # operation results, error codes and progress events as terminal output
+└── ui/                # theme, design tokens, components, banner
+```
+
+Two rules keep it this way. Dependencies point one way: `protocol` and `catalog` know nothing
+of the interfaces, `session` knows nothing of which interface is on top, and `views`/`ui` only
+render. And the CLI never declares an operation or a flag by hand — a new core operation
+completes, validates and gets a `--flag` without a CLI release.
+
+### One session, two interfaces
+
+`session.SessionController` is everything a session *does*: it decides what a line is (a local
+command, a system command or an operation), validates it against the catalog, asks the
+approver, sends it and reports what happened to a **surface**. The text REPL
+(`repl/`) and the full-screen interface (`tui/`) are two surfaces over the same controller, so a
+behaviour added to the controller reaches both.
+
+The full-screen interface is built in layers, each testable alone:
+
+| Package | Role |
+| --- | --- |
+| `tui/terminal/` | The gate (`SPECFORGE_TUI`, `SPECFORGE_MOUSE`), window title, prompt glyph, clipboard. |
+| `tui/model/` | The transcript: header, blocks (one per typed line), their items and snapshots. No terminal in it. |
+| `tui/render/` | Turns a snapshot into lines for a given width: capture of the Rich output, the `└` branch, `×N`, the live activity line. Pure. |
+| `tui/layout/` | The prompt_toolkit application: transcript control (scroll, selection), the input between two rules, the command menu, the notice, key bindings. |
+| `tui/screens/` | Panels and viewers that sit over the conversation: `help`, the long-table viewer, and the stack that opens and closes them. |
+| `tui/runtime/` | `TuiSession` and the surface that connect the controller to the model. |
+
+## Adding things
+
+### A local command (like `help` or `clear`)
+
+Add a `LocalCommand` to `LOCAL_COMMANDS` in `catalog/commands.py` — its names, usage, one-line
+summary and whether it takes arguments or runs alone — and handle it in
+`session/controller.py`. The menu, `help`, the "did you mean" notice and the line classification
+all read that one list, so nothing else needs to learn about it.
+
+### How an operation's result looks
+
+Results are rendered by **views** registered per operation, never by a branch:
+
+```python
+from specforge_cli.views.registry import register_view
+
+@register_view("list_runs")
+def _list_runs(runs: list[dict]) -> None:
+    ...
+```
+
+An operation with no view still renders, as a plain dump. Put the view in the module of its
+family under `views/` (`views/results/` has one module per kind of record: runs, findings,
+comparisons, retention…) and make sure the package imports it. Errors register with
+`register_error_view("CODE")` and progress events with `register_event_view("kind")` in the
+same way. A view prints with the helpers of `ui/` (`show_rows`, `key_values`, `heading`…) and
+never touches stdout directly, so it works in every interface and in `--json-output`.
+
+### A panel or a viewer in the TUI
+
+A screen is a small object the `ScreenStack` in `tui/screens/` shows over the conversation:
+it draws itself, owns its keys and closes with `Esc`. Look at `table_viewer.py` for the
+smallest one and `help.py` for one with tabs; open it from the controller through the surface
+(`show_help` is the model) so the text REPL can answer the same request in its own way.
+
+### A theme or a color
+
+Colors are **tokens** (`success`, `error`, `muted`, `accent`…), never literal styles; a theme in
+`ui/theme.py` maps each token to a color. Spec Forge's violet is the default theme's `accent`.
+Add a theme by adding one more mapping and its name to the registry.
+
+## Versioning and releases
+
+The version has one source in code: `__version__` in `specforge_cli/__init__.py`, which the
+banner shows. It must equal `version` in `pyproject.toml` — the release workflow compares the
+tag against the latter, and a test fails if the two drift. The numbers follow
+`MAJOR.MINOR.PATCH`; while the first is `0` the interface may still change between minors.
+
+## Tests and checks
+
+```bash
+cd specforge-cli
+python -m pytest -m "not real_core"      # the suite, against the core's recorded sessions
+python -m ruff check src tests
+python -m ruff format --check src tests
+```
+
+The recorded sessions come from the core's `protocol/fixtures`; when the core bumps the protocol
+version they change, and `docs/operations.md` (generated from `describe`) must be regenerated
+with `scripts/generate_operation_reference.py` — a test fails if it drifts. The `real_core`
+tests start an actual core and run only where it is installed. The full-screen interface is
+tested against a virtual terminal (`pyte`), so its tests need no real console; coverage of
+`tui/` is expected to stay at 95 % or above.

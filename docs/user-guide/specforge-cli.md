@@ -18,12 +18,14 @@ a CLI release.
 ## Running it
 
 ```bash
-specforge                       # the REPL: one core process, many operations
+specforge                       # interactive: one core process, many operations
 specforge <operation> [flags]   # one operation, then exit
 ```
 
-With no arguments, `specforge` launches an interactive REPL against a freshly
-started core: type an operation name, its flags, read the result, repeat.
+With no arguments, `specforge` opens an interactive session against a freshly
+started core: type an operation name, its flags, read the result, repeat. In a
+capable terminal that session is the [full-screen interface](#the-full-screen-interface);
+anywhere else it is a plain text [REPL](#the-text-repl) with the same commands.
 With an operation name as the first argument, it starts the core, dispatches
 exactly that one call, renders the result, and exits — no REPL, no prompt, no
 state kept between invocations. This second form is what scripts and CI use.
@@ -40,19 +42,112 @@ export SPECFORGE_CORE_COMMAND="python -m specforge_core --serve"
 | --- | --- | --- |
 | `SPECFORGE_CORE_COMMAND` | The command that launches the core. | `specforge --serve` |
 | `SPECFORGE_STARTUP_TIMEOUT` | Seconds to wait for the core's handshake. A cold start can take longer than the default; raise it rather than retrying. | `15` |
-| `SPECFORGE_SYSTEM_COMMANDS` | Set to `0`, `false`, `no` or `off` (case-insensitive) to disable the REPL's `!` system-command escape. Anything else, or unset, leaves it enabled. | enabled |
+| `SPECFORGE_SYSTEM_COMMANDS` | Set to `0`, `false`, `no` or `off` (case-insensitive) to disable the `!` system-command escape. Anything else, or unset, leaves it enabled. | enabled |
+| `SPECFORGE_TUI` | Set to a falsy value (`0`, `false`, `no`, `off`) to skip the full-screen interface and use the text REPL. | enabled when the terminal allows it |
+| `SPECFORGE_MOUSE` | Set to a falsy value to stop the full-screen interface from capturing the mouse, so the terminal's own selection and copy work and every action stays on the keys. | enabled |
+| `SPECFORGE_THEME` | The color theme: `default`, `light`, `mono`, `nord`, `dracula`, `solarized` or `matrix`. The default theme's accent is Spec Forge's violet. | `default` |
 
-Leaving the REPL (`exit`, Ctrl-D, or a closed terminal) cancels whatever is still
-running and waits for the core to answer before closing, so a run cut short keeps
-what it had produced.
+Leaving the session (`exit`, `quit`, Ctrl-D on an empty line, or a closed terminal)
+cancels whatever is still running and waits for the core to answer before closing,
+so a run cut short keeps what it had produced.
+
+## The full-screen interface
+
+When both stdin and stderr are real terminals, `TERM` is not `dumb` and `SPECFORGE_TUI`
+is not turned off, `specforge` takes over the screen: a banner and the conversation
+above, one input line anchored at the bottom between two rules, and the current folder
+(plus the open project, when it lives elsewhere) under it. The interface draws to
+stderr, so stdout stays reserved for machine output. When any of those conditions fails,
+the [text REPL](#the-text-repl) opens instead; `--json-output`, `--ci` and every
+one-shot call never use the full-screen interface.
+
+The banner says which core you are connected to and shows the CLI's version, the
+folder you started in, tips, and your last few commands under *Recent activity* (kept
+per project, in `.specforge/shell_history`). On a narrow terminal it drops to a
+compact form without the box, and under 24 columns to a single line; nothing it
+prints ever wraps.
+
+### Typing a command
+
+Commands are written as operation names with `key=value` pairs; there is no `/`
+prefix. As you type, a menu lists the commands that match, each with what it does:
+`↑`/`↓` move through it, `Enter` takes the highlighted entry (and, for a command that
+needs nothing else — `help`, `clear`, `exit`, or an operation with no parameters —
+runs it), `Esc` closes it. A first word the CLI does not know shows a notice with the
+closest commands; `Enter` still sends it, and the core answers like any other error.
+
+| Local command | What it does |
+| --- | --- |
+| `help [family\|operation]` | Opens a panel with a tab per family of operations, the operations in it, and each one's parameters. `←`/`→` change tab, `↑`/`↓` choose, `Enter` shows the details, `Esc` closes it. |
+| `clear` | Clears the screen, leaving the banner and the input. A run still going keeps going. |
+| `approve` | Approves what the core just asked to be approved. |
+| `credentials <file.env>` | Gives the core the LLM model and key from your own `.env`. |
+| `!<command>` | Runs a [system command](#system-commands-with). |
+| `exit`, `quit` | Leaves. |
+
+### Reading what comes back
+
+What you typed is shown on a shaded line; what the core answers sits under it, and an
+error hangs from it with a `└`. A long run shows one live line (a spinner, what it is
+doing, the latest counters) and keeps its detailed progress folded: click the line, or
+press `Ctrl-O`, to open it while it runs or once it finished; `Ctrl-O` again closes
+every fold. The same finding reported again and again is shown once, followed by `×N`.
+A table of more than 50 rows opens in a viewer (click it, or press `Ctrl-T`; `↑`/`↓`,
+`PgUp`/`PgDn` to move, `Esc` to close) instead of flooding the conversation.
+
+### Keys
+
+| Key | Effect |
+| --- | --- |
+| `Enter` | Sends the line (or takes the highlighted menu entry). |
+| `Esc` | Closes the menu, a panel or a viewer, or drops a selection. |
+| `Ctrl-C` | Copies the selection if there is one; otherwise cancels the runs in flight (the core answers with what they produced). |
+| `Ctrl-D` | Leaves, on an empty input line. |
+| `Ctrl-L` | Clears the screen. |
+| `Ctrl-O` / `Ctrl-T` | Opens or closes the folded progress / opens the last long table. |
+| `Ctrl-V` | Pastes from the system clipboard, as a single line. |
+| `PgUp` / `PgDn`, mouse wheel | Scroll the conversation. |
+
+Dragging with the mouse selects text and copies it when you let go (to the system
+clipboard, and through the terminal's own clipboard escape where the system one is
+not reachable). With `SPECFORGE_MOUSE=0` the terminal's native selection works
+instead; in many terminals `Shift`+drag does the same without turning anything off.
+
+### Questions
+
+When something needs your say, a question takes the place of the input and the conversation
+stays in view above it. Three kinds come up:
+
+- **An approval** (a destructive operation, a run that would pay for LLM inference, a replay
+  with side effects): the question and what would be sent. Only `y` approves; `n`, `Enter`,
+  `Esc`, `Ctrl-C` and `Ctrl-D` decline, and a declined call says *not approved; nothing was
+  sent*. Other keys do nothing, and a `y` typed before the question appeared is ignored, so
+  typing ahead never approves anything. For an inference cost or a replay, run the call, read
+  the estimate or the reason, and type `approve` to get the question.
+- **Trusting the folder.** Opening `specforge` in a folder that is not a project asks
+  *Do you trust this folder?* and lists what trusting allows: creating `specforge.toml` and a
+  `.specforge/` folder, reading the source code, and saving the spec when you give a URL. Only
+  `y` trusts; nothing is written to the folder before that.
+- **The spec.** In a trusted folder with no `openapi.yaml`, `.yml` or `.json`, a line asks for
+  the spec as a file path or a URL (a URL is downloaded into the folder). A path with no file,
+  or a URL that cannot be fetched, says why and asks again; an empty line or `Esc` cancels.
+
+## The text REPL
+
+The fallback interface: a prompt (`❯`), one line at a time, results printed in
+your terminal's scrollback. It takes the same lines and the same local commands as
+the full-screen interface, and the same completion (below), and it is what you get
+over a pipe, in a `dumb` terminal, on Git Bash without a pseudo-terminal, or with
+`SPECFORGE_TUI=0`. A destructive call, an inference cost or a replay with side
+effects is confirmed inline (see [Asking before it matters](#asking-before-it-matters)).
 
 ## Two ways to write a call
 
-**Inside the REPL**, a line is `<operation> [key=value ...]`:
+**Inside the interactive session**, a line is `<operation> [key=value ...]`:
 
 ```text
-specforge ❯ open_project path=/home/dev/my-api
-specforge ❯ fuzz base_url=http://localhost:8000 execution=stateful
+❯ open_project path=/home/dev/my-api
+❯ fuzz base_url=http://localhost:8000 execution=stateful
 ```
 
 Each value is parsed as JSON when it looks like JSON (`42`, `true`,
@@ -65,8 +160,8 @@ unquoted value, which is how a JSON object with spaces is quoted. An object or
 array can also span spaces unquoted:
 
 ```text
-specforge ❯ open_project path="C:\Users\Ana Perez\my-api"
-specforge ❯ fuzz base_url=http://localhost:8000 load={"latency_sla_ms": 500}
+❯ open_project path="C:\Users\Ana Perez\my-api"
+❯ fuzz base_url=http://localhost:8000 load={"latency_sla_ms": 500}
 ```
 
 **From your shell**, a flag is `--<name-with-dashes> <value>`, derived from the
@@ -79,7 +174,7 @@ specforge fuzz --base-url http://localhost:8000 --execution stateful
 A boolean parameter is a flag with no value, with an automatic negated form:
 `--save` / `--no-save`. An `object`-typed parameter (`load`, `producer` on
 `fuzz`/`run_pipeline`) takes one flag carrying a JSON literal, the same
-convention the REPL uses for a line's own `key=value`:
+convention the interactive session uses for a line's own `key=value`:
 
 ```bash
 specforge fuzz --base-url http://localhost:8000 \
@@ -98,28 +193,28 @@ contract loaded) is the core's call alone; the CLI never second-guesses it.
 
 ## Interactive niceties
 
-The REPL prompt completes as you type, in order: the operation name first, then
+The prompt completes as you type, in order: the operation name first, then
 `<parameter>=` for one of that operation's parameters, then — for an `enum`
 parameter — the admissible values after the `=`. All of it is derived from the
 catalog, so a parameter the core adds later completes without a CLI release.
 
-The REPL's history (`.specforge/shell_history`) never stores a credential in
+The history (`.specforge/shell_history`, kept only once the folder is a project) never stores a credential in
 plain text. A line that mentions `headers` (the option where an `Authorization`
 header would go) is not written to the file at all, though the up arrow still
 recalls it during the session. Any `user:pass@host` userinfo embedded in a URL
 (e.g. a `base_url=` with inline credentials) is redacted to `user:***@host`.
 Nothing is scrubbed from what the core itself logs or persists, and a secret
 passed as a shell argument stays in your shell's own history: this only protects
-the REPL's history file.
+the history file.
 
 ### System commands with `!`
 
-Prefix a REPL line with `!` to run it as a system command without leaving the
+Prefix a line with `!` to run it as a system command without leaving the
 session:
 
 ```text
-SpecForge ❯ !git status
-SpecForge ❯ !pytest -q
+❯ !git status
+❯ !pytest -q
 ```
 
 The escape is explicit on purpose: a line without `!` is always an operation call,
@@ -139,7 +234,7 @@ line never reaches the core; the CLI runs it locally.
 - **The prompt stays free.** The command runs off the prompt, like any operation,
   so you can keep typing while it runs.
 - **Failures don't end the session.** A missing program, an unparsable line (such
-  as an unbalanced quote) or a failing command is reported and the REPL carries on.
+  as an unbalanced quote) or a failing command is reported and the session carries on.
 - **Disabling it.** Set `SPECFORGE_SYSTEM_COMMANDS=0` (or `false`, `no`, `off`) to
   turn the escape off, for example in a shared or non-interactive environment.
   `!` then answers that system commands are disabled.
@@ -147,14 +242,14 @@ line never reaches the core; the CLI runs it locally.
 A command is a single program run **without a shell**: no pipes, redirection or
 shell built-ins such as `dir` or `ls` (`cd` is the exception, handled by the CLI
 itself), and no interactive programs (its stdin is closed, so
-`vim` or `git rebase -i` will not work). The `!` escape exists only in the REPL; the
-argv form (`specforge <operation> ...`) runs your shell's own commands anyway.
+`vim` or `git rebase -i` will not work). The `!` escape exists only in the interactive
+session (full-screen or text); the argv form (`specforge <operation> ...`) runs your shell's own commands anyway.
 
 When a program isn't found, the error suggests running it through a shell, which is
 how to use a built-in:
 
 ```text
-SpecForge ❯ !dir
+❯ !dir
 ✗  Command not found: dir
    │ It may be a shell built-in, and `!` runs programs directly, without a shell.
    │ Try: !powershell -c "dir"
@@ -183,7 +278,7 @@ specforge fuzz --project ./my-api --contract ./my-api/openapi.yaml \
 echo $?   # 1 if fuzz found anything, or if it didn't complete
 ```
 
-With no arguments at all, `specforge` opens the REPL regardless of any of
+With no arguments at all, `specforge` opens the interactive session regardless of any of
 these — they only apply once an operation name is given.
 
 Ctrl-C during a one-shot call asks the core to cancel and still prints what the
@@ -191,7 +286,9 @@ run had produced; a second Ctrl-C stops waiting.
 
 ## Asking before it matters
 
-Some calls stop to ask first. In the REPL the question is asked with `approve`.
+Some calls stop to ask first. In the text REPL the question is asked inline, and a call
+that needs approval can also be approved with `approve`. The full-screen interface asks the
+same questions on a [screen](#questions).
 
 | What | When it asks | Answering up front |
 | --- | --- | --- |
@@ -199,7 +296,7 @@ Some calls stop to ask first. In the REPL the question is asked with `approve`.
 | A run that would pay for LLM inference | The core refuses and returns its estimate (contracts to infer, tokens, cost). The CLI shows it, asks, and resends with the approval token. | `--yes`, but only with `producer.max_cost_usd` set; without a cap it stops with exit `2`. |
 | A replay that could change the target | The CLI explains why (recorded with side effects, or its run reached routes the safety guard held back) and asks. | `--allow-side-effects`. `--yes` does not cover it, and `--no-allow-side-effects` is never overridden. |
 
-In the REPL, a call that needs approval shows its estimate or reason and waits:
+In the text REPL, a call that needs approval shows its estimate or reason and waits:
 type `approve` to ask and resend it, or carry on with any other line to drop it.
 
 `--json-output`, `--ci` and a call with no terminal never wait for an answer:
@@ -219,14 +316,14 @@ to Python as a terminal, so there a one-shot call never asks: use PowerShell or
 
 ## Operations
 
-`describe` publishes 32 operations across eight families. `requires` says
+`describe` publishes 33 operations across eight families. `requires` says
 what must already be true for the call to succeed: `none`, `project` (a
 project must be open — see [`open_project`](#open_project)), `contract` (a
 contract must also be loaded — see [`load_contract`](#load_contract), which
 implies a project) or `analysis` (an [`analyze_endpoints`](#analyze_endpoints)
 run earlier in the same session, which implies a contract). A one-shot call
 cannot have an earlier call, so the operations that require an analysis are
-refused before anything is sent: use the REPL for them. The full `requires`/events summary, independent of the
+refused before anything is sent: use the interactive session for them. The full `requires`/events summary, independent of the
 CLI, lives in [Operations](../modules/core/protocol/operations.md); the
 values an operation's result can take (`run.status`, `comparability`, replay
 verdicts, …) are enumerated once in
@@ -285,6 +382,20 @@ wrote).
 
 Giving `--name`, `--openapi-spec` or `--base-url` for a project whose
 `specforge.toml` already exists needs `--overwrite`.
+
+#### `update_project`
+
+Updates the active project's `name`, `openapi_spec` or `base_url` in
+`specforge.toml`, then reloads the project and its contract. Only the values
+provided are changed; the remaining project settings and comments are kept.
+
+The operation is refused while another operation is running.
+
+| Flag | Type | Required | Default |
+| --- | --- | --- | --- |
+| `--name` | string | no | — |
+| `--openapi-spec` | path | no | — |
+| `--base-url` | string | no | — |
 
 ### Contract
 
@@ -366,7 +477,7 @@ POST:/transfer: resolved
   ✓  analyze_endpoints: completed
 ```
 
-Emits progress and is cancellable (`Ctrl-C` in the REPL; never subscribed to
+Emits progress and is cancellable (`Ctrl-C` in the interactive session; never subscribed to
 under `--json-output` — see [Argv-only flags](#argv-only-flags)).
 
 #### `get_static_analysis`
@@ -665,6 +776,53 @@ fail with — the document this whole page is derived from. No parameters.
 
 Just the operations, for a caller that wants nothing else (no event or error
 catalog). No parameters.
+
+## Local maintenance commands
+
+These commands belong to the packaged CLI. They do not start the core.
+
+### `credentials <file.env>`
+
+Copies `KEY=value` entries from the given `.env` file into the env file used
+by the core's LLM layer. Existing entries with the same name are replaced;
+other entries are kept. Secret values are masked in the terminal output.
+
+The core reports the destination path through `get_config`, so this command
+also works with a source checkout and with the packaged binary. It runs
+`diagnose` after writing the file. Nothing is written when the source file is
+missing, empty, or is already the core's destination file.
+
+```bash
+specforge credentials .env.local
+```
+
+The command needs a core that publishes `paths.llm_env_file` (protocol
+`0.1.14` or later).
+
+### `update`
+
+Checks GitHub for a newer packaged CLI release and installs it when one is
+available. Development installs are not changed; update them with `git pull`.
+On Windows, the replacement completes after the current process exits.
+
+```bash
+specforge update
+```
+
+Interactive sessions also check for an update once per day, in the background.
+That check only displays a notice; it never installs anything.
+
+### `delete`
+
+Removes the packaged CLI, its launcher, and its per-user data, settings, and
+cache after an interactive confirmation. Project files, including
+`specforge.toml` and `.specforge/`, are left untouched.
+
+```bash
+specforge delete
+```
+
+For a development install, use `pip uninstall specforge-cli` instead.
 
 ## Errors
 

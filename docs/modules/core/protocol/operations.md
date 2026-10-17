@@ -143,6 +143,15 @@ says which case applies (`recorded_with_side_effects` or `safety_breached`). On
 any other recording the parameter is accepted and does nothing. See
 [consent to re-send](../../specforge-engine/execution-modes.md#consent-to-re-send).
 
+### The target base URL { #base-url }
+
+The base URL a run targets, whether it comes from the project or from the call's
+`base_url` (on `fuzz` or `replay`), must be an `http` or `https`
+URL that names a host and, when it writes a port, one from 1 to 65535. Anything
+else is refused `INVALID_PARAMS` before any request is sent, with a reason that
+names `base_url` and never repeats the URL, since it may carry `user:pass@`. The
+`started` event of a `fuzz` names the target without its userinfo.
+
 ## `results`
 
 | Operation | `requires` | Events |
@@ -156,6 +165,11 @@ any other recording the parameter is accepted and does nothing. See
 | `compare_runs` | none | — |
 | `prune_runs` | none | — |
 | `apply_prune_plan` | none | — |
+
+`compare_runs` pairs two runs' defects by the engine's own rule for when an
+identity tells two defects apart (only for `access_control`), so it needs the
+execution engine installed; without it the call is refused
+`DEPENDENCY_UNAVAILABLE` with `data.dependency` `specforge_engine`.
 
 ## `config`
 

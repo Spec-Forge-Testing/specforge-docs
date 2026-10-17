@@ -191,7 +191,7 @@ response body to show - only the finding's signature and how often it was seen:
 | `invariant_violated` | Which invariant the finding broke. |
 | `rule_id` | The rule the finding broke: the business rule the contract declared, or the rule intrinsic to the invariant. There is no `rule_description` here - an unconfirmed finding has no reproducer to carry it. |
 | `status_code` | The failing response's status, or `null` when none was recorded. `0` means the request got no response at all (a transport failure). |
-| `identity_label` | The identity the request was sent under, or `null` when the run declared none. |
+| `identity_label` | The identity the finding was observed under, or `null` when the run declared none. |
 | `state` | `"flaky"` or `"unverified"` (see below). |
 | `represented_findings` | How many raw findings this entry stands for. |
 | `body_fingerprint` | The shape of the response body that grouped the finding; `""` when the response had no body. |
@@ -284,7 +284,8 @@ excluded, so `fuzz` refuses before sending anything), `fuzz_contract_producer`
 rejected by fusion),
 `replay_url_credentials_missing` and `replay_target_mismatch` (`replay
 --base-url` missing or pointed at a different host than the trace was recorded
-against). A refusal caught before any exception is raised - a missing library,
+against), and `replay_invalid_base_url` (`replay --base-url` is not an `http` or
+`https` URL with a host and a valid port). A refusal caught before any exception is raised - a missing library,
 bad flags - is reported through the same envelope, never a bare panel or a
 silent exit. Codes are stable across releases; a breaking change to the
 registry bumps `schema_version`.

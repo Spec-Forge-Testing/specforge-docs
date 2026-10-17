@@ -211,13 +211,15 @@ alters the recorded configuration the engine replays under.
 
 A replay does not always end `completed`. A `TargetLivenessMonitor` watches the
 stream of results as they come back. A streak of target failures
-(`timeout` or `availability`) reaching `MAX_INFRA_FAILURES` (5) trips a single
-liveness probe — a `HEAD` to the base URL:
+(`timeout`, `availability` or `connection_dropped`) reaching `MAX_INFRA_FAILURES`
+(5) trips a single liveness probe — a `HEAD` to the base URL:
 
 - if the target is dead, the replay stops re-sending and ends `aborted` with the
   truncation reason `target_down`;
 - if it answers, the run ends `truncated` with `infrastructure_abort` and stops
-  as well.
+  as well — unless every failure of the streak was a dropped connection: a live
+  target that drops connections is crashing on the recorded requests, which is
+  what the replay is there to show, so it keeps re-sending.
 
 A request that was never sent is no evidence about the target — it neither
 advances the streak nor clears it — and an isolated failure never cuts. When a
@@ -264,8 +266,12 @@ flight — the step's concurrency temporarily caps the run's shared connection
 pool, so a step of `8` sends eight at a time and no more. The step's example
 budget is a stable floor (at least `MIN_STEP_SAMPLES` sent samples, so the p95 is
 meaningful) rounded up to whole batches, and split evenly across the run's valid
-identities so every identity's share is a whole number of batches. The order the
-ladder walks is baseline-first.
+identities so every identity's share is a whole number of batches. Every step is
+filled to that budget: when an endpoint's input space runs out before it (an
+endpoint with no parameters has exactly one valid request), the step repeats
+payloads until it is full. Repetition is the point here: a latency sample is as
+good the second time. The flat load run, without a ladder, does not repeat. The
+order the ladder walks is baseline-first.
 
 The **first step is the baseline**: its p95 latency is the reference every later
 step is judged against. A later step is **degraded** when its p95 exceeds the
@@ -315,20 +321,45 @@ then crashes mid-response, instead of degrading gracefully, is a
 ```mermaid
 sequenceDiagram
     participant RN as ResilienceRunner
-    participant T as resolve_transport
     participant Orch as AsyncOrchestrator
-    participant Or as ResilienceOracle
+    participant T as resolve_transport
+    participant Or as oracles
 
     loop per endpoint
-        RN->>RN: build the base blueprint (deterministic payload)
+        RN->>RN: base blueprint (deterministic payload, battery identity)
+        RN->>Orch: execute the clean base request
+        RN->>Or: evaluate_contract_free → 5xx or drop is a finding
         loop per registered chaos attack
             RN->>T: resolve_transport(attack.transport)
             RN->>Orch: httpx send_chaos, or raw dispatch_raw
-            RN->>Or: check (chaos-marked) → degradation?
+            RN->>Or: check_response(chaos=attack.expectation) → degradation?
         end
+        RN->>RN: base request failed → no attack is blamed
     end
     RN->>RN: group → materialize → dedupe → build_unshrunk_stats
 ```
+
+### The base request and its identity
+
+Every attack targets one **base request** per endpoint: its path parameters are
+placeholders, and it goes out under the identity the endpoint's access demands,
+so a protected endpoint is attacked past its authentication instead of answering
+`401` to the whole battery:
+
+| The endpoint's access | The battery's identity |
+|---|---|
+| `role_only` | the first valid identity whose `role` is the required one |
+| `owner_only`, `authenticated`, none, or a role no identity holds | the first valid identity |
+| no valid identity declared | anonymous |
+
+Before the battery, the base request is sent **clean**, once, through the ordinary
+send path, and judged like any request outside chaos. A 5xx or a dropped
+connection there is a `not_a_server_error` finding on the base request, with the
+base payload as its reproducer. The battery still runs and is recorded, but when
+the clean request already failed no attack is blamed for a failure the endpoint
+had without it. When the clean request succeeds, each attack's verdict stands
+([ADR-108](adr/engine.md#adr-108)). The clean request is counted and traced like
+the others.
 
 The chaos battery is fixed data, registered from three groups that all fire on
 every endpoint:
@@ -353,22 +384,44 @@ the request byte for byte on a bare socket. Both share the orchestrator's one
 concurrency slot, so the raw path takes a slot through `dispatch_raw` exactly as
 the httpx path does through `send_chaos`.
 
-The `ResilienceOracle` is the sole judge of a chaos response — a 5xx **or** a
-connection the peer accepted and dropped mid-response is a degradation; a
-timeout or any 4xx (429 included) degraded gracefully — because `check_response`
-runs with `is_chaos=True`, which the ordinary server-error oracle stands down
-for. The connection-cut-off attack half-closes the socket and reads the server's
-actual reaction, so the verdict is the server's, not an artefact of the client
-closing.
+The raw transport writes the headers httpx would have sent before the attack's
+own: `Host` (from the base URL, never its userinfo), the Basic `Authorization`
+httpx derives from a `user:pass@` in the base URL, and the base request's
+headers (the run's configured headers and the identity's credentials). The
+attack's lines come last and win, and the headers that frame the message or steer
+the exchange (`Host`, `Content-Length`, `Transfer-Encoding`, `Expect`,
+`Connection`, `Keep-Alive`, `Proxy-Connection`, `TE`, `Trailer`, `Upgrade`) are
+the attack's alone. The duplicate-keys attack frames its JSON body with a
+`Content-Length`, so the server reads it as a body.
+
+The `ResilienceOracle` is the sole judge of a chaos response, because
+`check_response` runs with `chaos=attack.expectation`, which the ordinary
+server-error oracle stands down for. A 5xx is a degradation; a timeout or any 4xx
+(429 included) degraded gracefully. A connection the peer accepted and dropped
+is a degradation **unless the attack tolerates it**: each attack's
+`ChaosExpectation` says whether a drop refuses it rather than crashing under it.
+
+| Attack | A dropped connection is |
+|---|---|
+| `slow_partial_body`, `oversized_body`, `closed_mid_request` | a rejection: the server may cut off a request it will not finish reading |
+| every other attack | a degradation |
+
+On the raw socket, a reply whose first line is not an HTTP/1.x status line is a
+drop: nothing at all, a status line cut short, or an answer without one. Only the
+cut-request attack tolerates it, since a request cut inside its request line can
+get back a bare error. A worker that writes a traceback to the socket and closes
+is a crash under any other attack. The connection-cut-off attack half-closes the
+socket and reads the server's actual reaction, so the verdict is the server's,
+not an artefact of the client closing.
 
 A half-close is a TCP operation that TLS cannot express. Over an `https://` base
 URL the raw transport therefore decides **statically** — before it takes a
 concurrency slot or opens a socket — that the mid-request-close attack is not
 applicable, and returns an `unsendable_request` result with the detail *"raw socket
 transport cannot half-close over TLS"* (the same
-shape it uses for an unsupported scheme). No finding is produced and the request
-is counted as infrastructure in the endpoint's stats. Over `http://` the attack
-runs exactly as before.
+shape it uses for an unsupported scheme or a base URL whose host or port it
+cannot parse). No finding is produced and the request is counted as
+infrastructure in the endpoint's stats. Over `http://` the attack runs as usual.
 
 ### Stopping on a dead target
 
@@ -381,8 +434,7 @@ and ends `aborted` with the truncation reason `target_down`, announcing one
 `TargetDown` event with the verdict `LIVENESS_PROBE_FAILED`.
 
 A probe that **answers** does not stop the run: the target is alive, a timeout on
-one endpoint is not a finding, and the run continues to the next endpoint exactly
-as before. Resilience has no per-endpoint circuit breakers, so the only
+one endpoint is not a finding, and the run continues to the next endpoint. Resilience has no per-endpoint circuit breakers, so the only
 target-down verdict it reaches is `LIVENESS_PROBE_FAILED`.
 
 The cut falls **between endpoints, deliberately**. The runner iterates endpoints

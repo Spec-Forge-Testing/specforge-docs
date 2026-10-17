@@ -228,6 +228,23 @@ honouring the declared bounds. A string with a chronologically-sortable
 `format` (`date`, `date-time`) and a declared bound goes to a range-aware date
 builder rather than the format's regex.
 
+### Numeric boundaries
+
+A numeric field's boundary candidates are the fixed edges (`INT_BOUNDARY`, the
+signed word sizes; `FLOAT_BOUNDARY`, finite floats only, since JSON cannot carry
+`NaN` or an infinity) plus each declared bound and the values on either side of
+it, kept only when they fall inside the declared range. An exclusive bound
+resolves to the adjacent value: the next integer, or the adjacent representable
+float (`math.nextafter`), so it stays excluded at any magnitude and a narrow range
+keeps its values. When no candidate survives the range, the field falls back to its
+valid-phase draw, or to an open draw (finite, for `number`) when no sendable value
+satisfies the field at all. Candidates are filtered by range, not by
+`multipleOf`.
+
+The hacker `attack` phase reuses the same tables for `integer` and `number`, finite
+as well, but does **not** keep them inside the range: probing past the declared
+bounds is what that phase is for ([ADR-111](adr/compiler.md#adr-111)).
+
 ### Constant tables
 
 | Constant | Value | Used by |
@@ -346,7 +363,7 @@ every toggle family whose flag is set. The base builders:
 | Type | Base payloads |
 |---|---|
 | `string` | the profile pools (or a generic pool when no profile), extended by nulls and large values per toggle |
-| `integer` · `number` | attack and boundary edge values, plus `None` when `include_nulls` |
+| `integer` · `number` | attack and boundary edge values, all finite and not limited to the declared range, plus `None` when `include_nulls` |
 | `boolean` | the type-confusion pool (`True`, `False`, `None`, `0`, `1`, `"true"`, …) |
 | `array` | `[None]`, a long `[None]*size`, an injection-probe element |
 | `object` | `{}` and prototype-pollution shapes, plus `None` when `include_nulls` |

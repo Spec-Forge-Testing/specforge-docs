@@ -88,6 +88,7 @@ Field names of this family are stable: they are persisted as columns.
 | `UnprobedReason` | why the auth mode crossed nothing at a targeted endpoint: `declared_public` or `access_undeclared` (by design), `owner_producer_missing`, `owner_chain_cyclic`, `owner_resource_unprovisioned` or `required_role_unheld` (a precondition the run could not meet) — each one in [Execution modes](execution-modes.md#auth) |
 | `CrashReport`, `InvariantViolation` | a confirmed finding's reproducer and the invariant it broke — its `response_body` has sensitive field values redacted to `***` by name |
 | `ViolatedRule` | the rule a `CrashReport` broke (`id` + `description`) — declared by the contract for a `semantic_property` / `access_control` finding, or intrinsic to the invariant for every other one |
+| `keyed_identity(invariant, identity_label) -> str \| None` | the identity that tells two findings of `invariant` apart: the label for `access_control`, `None` for every other invariant ([ADR-106](adr/engine.md#adr-106)) |
 | `ExecutionTrace`, `TracedRequest`, `TruncationRecord` | the replayable record |
 | `ResponseDivergence`, `ReplayFidelity` | the replay comparison |
 | `ReplayReadiness` | the outcome of `validate_replayable` |
@@ -96,7 +97,7 @@ Field names of this family are stable: they are persisted as columns.
 
 | Name | One line |
 |---|---|
-| `ExecutionConfig` | global runtime: `base_url` (required), timeouts, concurrency, headers, identities. `valid_identities` and `invalid_identities` are derived views that split `identities` by credential kind; every mode rotates through `valid_identities` |
+| `ExecutionConfig` | global runtime: `base_url` (required; an `http`/`https` URL naming a host, with a port from 1 to 65535 when it writes one), timeouts, concurrency, headers, identities. `valid_identities` and `invalid_identities` are derived views that split `identities` by credential kind; every mode rotates through `valid_identities`, and `first_valid_identity` is the one a mode that sends under a single identity uses |
 | `Identity` | one caller identity: a `label`, its credential `headers`, an optional `role` (never empty) that only a `role_only` endpoint reads (`None` never satisfies a required role), and a `credential` (`CredentialKind`, default `VALID`) |
 | `StatelessOptions`, `StatefulOptions`, `PerformanceOptions`, `ReplayOptions` | passed to `run(options=...)` per mode |
 | `ConcurrencyLadder` | the value of `PerformanceOptions.concurrency_ladder`: strictly increasing `steps` plus the degradation `tolerance` (frozen) |
@@ -147,6 +148,7 @@ kernel's from `specforge_contracts`.
 |---|---|
 | `canonical_json(trace) -> str` | canonical JSON of a trace, for content-addressing |
 | `split_userinfo(url) -> tuple[str, str \| None]` | split `user:pass@` out of a URL |
+| `public_base_url(config) -> str` | the run's base URL with any `user:pass@` stripped, for anything shown to a user |
 | `validate_replayable(trace, config) -> ReplayReadiness` | whether a trace can be replayed under this config |
 
 ## Input validation (the policy boundary)

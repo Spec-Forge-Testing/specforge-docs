@@ -37,7 +37,7 @@ which one framed the event.
 
 | `kind` | Class | Own fields | When |
 | --- | --- | --- | --- |
-| `started` | fact | `operation`; on `fuzz`, `base_url`, `execution` and `strategy`; on `analyze_endpoints`, `endpoints` (int); on `replay`, `analysis_id`; on `get_run`, `run_id` | An operation begins |
+| `started` | fact | `operation`; on `fuzz`, `base_url` (without any `user:pass@` it carries), `execution` and `strategy`; on `analyze_endpoints`, `endpoints` (int); on `replay`, `analysis_id`; on `get_run`, `run_id` | An operation begins |
 | `finished` | fact | `operation`, `status` (`completed`, `cancelled`, `failed` or `safety_breached`; see [operation status](vocabularies.md#operation-status)), and operation-specific fields | An operation ends |
 | `contract_started` | fact | `endpoint` (ref), `index`, `total` | The run starts producing one endpoint's contract |
 | `contract_finished` | fact | `endpoint` (ref), `source` (`cache`, `model`, `fixture` or `absent`); with `model`, `input_tokens`, `output_tokens` (int) and `cost_usd` (number, absent when the model has no price) | The endpoint's contract is ready to fuzz with, or (`absent`) the endpoint runs schema-only |

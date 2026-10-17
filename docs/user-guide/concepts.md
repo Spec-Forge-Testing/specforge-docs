@@ -126,7 +126,7 @@ flowchart TD
 | **Requests** | How many requests the run sent. |
 | **Shrink requests** | Extra requests spent shrinking failures to their minimal form (not counted in Requests). |
 | **Raw findings** | Every rule violation seen while exploring. |
-| **Confirmed** | Findings that still failed after shrinking — one per distinct symptom. |
+| **Confirmed** | Findings that still failed after shrinking — one per distinct symptom. In the modes that never shrink (`performance`, `resilience`, `auth`), each distinct defect observed counts as confirmed. |
 | **Collapsed** | Findings with the same symptom as a confirmed one, so not shrunk again. |
 | **Unverified** | Findings the run collected but never got to shrink (it was cut short first). |
 | **Flaky** | Findings that could not be reproduced on a second try. |

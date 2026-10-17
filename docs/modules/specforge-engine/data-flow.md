@@ -220,6 +220,10 @@ and returns `self` when `factor == 1`
 `ExecutionConfig` holds the runtime controls (frozen): `base_url` is required
 — without it the engine cannot build absolute requests, and failing at
 construction is clearer than reporting synthetic availability errors later.
+It is validated as a `BaseUrl`, as is the optional `EndpointSpec.base_url`: an
+`http` or `https` URL that names a host and, when it writes a port, one from 1 to
+65535. A refusal never echoes the URL, since it may carry `user:pass@`. Otherwise
+a mistyped port would fail every connection and read as a dead target.
 The rest have defaults: `timeout_s`, `max_concurrency` (also the exploration
 batch size), `max_retries`, `headers`, `backoff_base`, `identities`, and
 `allow_side_effects` (default `False`: endpoints the producer marked as writing
@@ -253,12 +257,21 @@ percent-encoded segment, but the semantic oracle reads the typed value.
 ([Architecture](architecture.md#executionresult-is-the-canonical-record-of-a-request)).
 `category` maps `error=None` to `ErrorCategory.SUCCESS`; `was_sent` is false
 only for `UNSENDABLE_REQUEST` — a blueprint the injector flagged before sending,
-or a request the client refused at send time because a header value carried
-non-ASCII text or a line break. `INFRA_CATEGORIES` is deliberately wider than
-`TARGET_FAILURE_CATEGORIES`: a request that could not be sent says nothing
-about the API — neither that it misbehaved nor that it is down — so it is
-recorded in stats but never counted as evidence the target is failing, and
-never becomes a finding.
+or a request the client refused at send time: a body JSON cannot encode, a header
+name that is not a token, or a header value that is not ASCII or carries a NUL, a
+line break or edge whitespace.
+
+Two category sets overlap without either containing the other:
+
+| Set | Members | What it means |
+|---|---|---|
+| `INFRA_CATEGORIES` | `availability`, `timeout`, `unsendable_request` | no response from the target: recorded in stats, never a finding |
+| `TARGET_FAILURE_CATEGORIES` | `availability`, `timeout`, `connection_dropped` | evidence the target may be failing: what the abort streak counts |
+
+A request that could not be sent says nothing about the API — neither that it
+misbehaved nor that it is down — so it is in the first set only. A connection the
+server accepted and dropped is a crash, so it is a finding, and it also counts
+toward the streak, in the second set only.
 
 ## Per-mode options
 
@@ -317,7 +330,10 @@ it broke and the `ViolatedRule` naming the rule — the business rule the contra
 declared, or the requirement the invariant enforces on its own — reduced to its
 `id` and `description`. Findings are grouped by
 `FindingSignature` (endpoint, phase, invariant, status, identity label, rule id,
-body fingerprint) into `FindingGroup`s, then shrunk into `CrashReport`s. A
+body fingerprint) into `FindingGroup`s, then shrunk into `CrashReport`s. The
+identity label is part of the comparison only for an identity-scoped invariant
+(`access_control`); every other finding keeps the label it was observed under
+without being split by it. A
 `CrashReport` carries the `minimal_payload` keyed by zone (the smallest payload
 the shrink reached within its request budget, not an absolute minimum), the
 `invariant_violated`, an optional `rule` (the `ViolatedRule` the response broke,
@@ -337,15 +353,16 @@ producer:
 | Counter | Meaning |
 |---|---|
 | `findings_raw` | violations observed during exploration, before shrinking |
-| `findings_confirmed` | shrink attempts that reproduced and became a crash report |
-| `findings_unique` | distinct defects after collapsing reports with the same minimal reproducer and identity (equal to the count of `ConfirmedFinding`s, never above `findings_confirmed`) |
+| `findings_confirmed` | shrink attempts that reproduced and became a crash report; in a mode that never shrinks (`performance`, `resilience`, `auth`), each defect observed |
+| `findings_unique` | distinct defects after collapsing reports with the same minimal reproducer (and, for `access_control`, the same identity); equal to the count of `ConfirmedFinding`s, never above `findings_confirmed` |
 | `findings_flaky` | attempted during shrinking and did not reproduce |
 | `findings_collapsed` | not shrunk because a faithful representative of their signature stands for them |
 | `findings_unverified` | never attempted: the run was cut before shrinking, or no candidate could be produced |
 | `requests_shrink` | requests the shrinking phase put on the wire (in a stateful run, Hypothesis's shrink re-sends plus the sequence minimizer's); not part of `total_requests` |
 
 `EndpointStats` mirrors the per-endpoint subset (`requests`,
-`examples_planned`, `findings_raw`, `findings_confirmed`) plus a `LatencyStats`
+`examples_planned`, `findings_raw`, `findings_confirmed`; the rows of the last two
+sum to the run's totals in every mode) plus a `LatencyStats`
 whose fields all default to zero, so `LatencyStats()` is a valid "no samples"
 value — an endpoint can carry a confirmed crash report with no surviving
 requests to time. It also carries `starved_identities`: the labels of declared

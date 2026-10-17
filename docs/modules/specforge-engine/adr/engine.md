@@ -713,7 +713,7 @@ at all, a transport failure.
 
 ## ADR-048 — Semantic properties are checked by an always-on oracle, not an execution mode { #adr-048 }
 
-**Status:** accepted · Superseded in part by [ADR-056](#adr-056) · `runtime/oracles/semantic/`, `runtime/oracles/builtin.py`, `runtime/oracles/context.py`, `models/runtime/crash_report.py`
+**Status:** accepted · Superseded in part by [ADR-056](#adr-056), [ADR-104](#adr-104) · `runtime/oracles/semantic/`, `runtime/oracles/builtin.py`, `runtime/oracles/context.py`, `models/runtime/crash_report.py`
 
 ### Context
 
@@ -919,7 +919,7 @@ expressible — it waits until the `access` vocabulary grows a notion of role.
 
 ## ADR-052 — Raw-socket chaos transport for framing-level resilience attacks { #adr-052 }
 
-**Status:** accepted · Extends [ADR-041](#adr-041) · `runtime/runners/resilience/raw_socket.py`, `runtime/runners/resilience/raw_message.py`, `runtime/runners/resilience/raw_attacks.py`, `runtime/http/orchestrator.py`, `models/runtime/execution.py`, `runtime/oracles/resilience.py`
+**Status:** accepted · Extends [ADR-041](#adr-041) · Superseded in part by [ADR-105](#adr-105), [ADR-108](#adr-108) · `runtime/runners/resilience/raw_socket.py`, `runtime/runners/resilience/raw_message.py`, `runtime/runners/resilience/raw_attacks.py`, `runtime/http/orchestrator.py`, `models/runtime/execution.py`, `runtime/oracles/resilience.py`
 
 ### Context
 
@@ -1510,7 +1510,7 @@ recorded with the guard on carries the held endpoints' absence unchanged.
 
 ## ADR-059 — Invalid credentials are declared not fabricated, a replay stops on a dead target, and a TLS half-close is not applicable { #adr-059 }
 
-**Status:** accepted · `models/runtime/execution.py`, `models/runtime/access.py`, `runtime/runners/auth/`, `runtime/oracles/access_control.py`, `runtime/http/liveness.py`, `runtime/replay/fidelity.py`, `runtime/runners/replay.py`, `runtime/runners/resilience/raw_socket.py`
+**Status:** accepted · Superseded in part by [ADR-105](#adr-105) · `models/runtime/execution.py`, `models/runtime/access.py`, `runtime/runners/auth/`, `runtime/oracles/access_control.py`, `runtime/http/liveness.py`, `runtime/replay/fidelity.py`, `runtime/runners/replay.py`, `runtime/runners/resilience/raw_socket.py`
 
 ### Context
 
@@ -2342,7 +2342,7 @@ raises two exceptions, `AccessIdentityError` and `AccessUncrossableError`.
 
 ## ADR-103 — Findings redact the built-in sensitive names whatever the contract declares, and erase the credentials a request sent by value { #adr-103 }
 
-**Status:** accepted · Supersedes in part [ADR-060](#adr-060) · `runtime/findings/redaction.py`, `runtime/findings/constants.py`, `runtime/findings/materializer.py`, `runtime/findings/grouper.py`
+**Status:** accepted · Supersedes in part [ADR-060](#adr-060) · Superseded in part by [ADR-109](#adr-109) · `runtime/findings/redaction.py`, `runtime/findings/constants.py`, `runtime/findings/materializer.py`, `runtime/findings/grouper.py`
 
 ### Context
 
@@ -2394,3 +2394,390 @@ A credential the run sent does not leave the engine in a finding, even when the
 target echoes it in free text under an unrelated name. A credential shorter than
 `MIN_SECRET_LENGTH` echoed outside a sensitive name stays visible; the trace is
 untouched, because replay re-sends it byte for byte.
+
+---
+
+## ADR-104 — A broken business rule outranks the status, content-type and schema checks { #adr-104 }
+
+**Status:** accepted · Supersedes in part [ADR-048](#adr-048) · `runtime/oracles/precedence.py`, `runtime/oracles/registry.py`, `models/runtime/results.py`
+
+### Context
+
+The oracle order decides which violation a finding leads with, and a terminal
+verdict stops the chain. `semantic_property` sat at `SEMANTIC` (55), after three
+terminal checks: `status_code` (30), `content_type` (40) and `schema` (50). An input
+that broke a declared business rule and also got back a 2xx whose status, content
+type or body missed the declared response was reported as that deviation. The
+chain stopped before the rule was evaluated, so the finding cited an intrinsic
+rule ("the body matches the declared schema") and the rule the contract's author
+stated never appeared.
+
+The business rule is the most specific signal the engine has about a response: it
+names what the call promised. A body that drifts from its schema is real, but it is
+secondary when a stated rule is broken on the same response.
+
+### Decision
+
+**`SEMANTIC` moves to 30, right after `ACCESS_CONTROL` (25).** `STATUS_CODE` moves
+to 35; `CONTENT_TYPE` (40), `SCHEMA` (50) and `LATENCY` (60) keep their values. The
+full order is infrastructure, resilience, server error, access control, semantic
+property, status code, content type, schema, latency.
+
+The semantic verdict is non-terminal, so the oracles after it still judge the same
+response and their violations join the same raw finding. `primary_violation` is the
+first violation reported, so the response yields **one** finding whose primary
+violation is the business rule, cited by its id, with any status, content-type or
+schema deviation carried as a secondary violation.
+
+### Rejected
+
+- **Making the schema oracle non-terminal and reporting both.** One request would
+  produce two findings for one case, each counted, grouped and shrunk on its own.
+- **Moving the rule above the schema only.** On a 2xx the status-code and
+  content-type checks are terminal too, so an undeclared success status or a wrong
+  `Content-Type` would still hide the rule.
+
+### Consequences
+
+A finding that broke a declared rule cites that rule whatever else is wrong with
+the response, and its signature carries the rule's id. The semantic oracle still
+speaks only on a 2xx, so a non-2xx response is judged exactly as before. Access
+control still comes first: a caller who should not have obtained the response at all
+is the primary violation, ahead of any rule it also broke.
+
+---
+
+## ADR-105 — A connection the server drops is a crash in every mode, and drops alone never abort a live target { #adr-105 }
+
+**Status:** accepted · Supersedes in part [ADR-052](#adr-052), [ADR-059](#adr-059) · `runtime/http/error_classifier.py`, `models/runtime/execution.py`, `runtime/oracles/builtin.py`, `runtime/http/target_failure_streak.py`, `runtime/http/liveness.py`, `runtime/fuzzers/stateless/folding.py`, `runtime/fuzzers/stateful/circuit_breaker.py`
+
+### Context
+
+When a server process dies while handling a request, the client sees the
+connection close without a complete response: httpx raises `RemoteProtocolError`,
+`ReadError` or `WriteError`. Only the raw-socket chaos transport told that apart
+from an unreachable target. On the httpx path the three exceptions fell to the
+default `availability` category, which the infrastructure oracle suppresses. A
+payload that crashed the server was recorded as "target unreachable", counted
+toward the abort streak, and after five of them the endpoint was cut
+`infrastructure_abort`. The most serious defect an API can have read as a network
+problem, and the run looked clean.
+
+### Decision
+
+**The three exceptions classify as `connection_dropped`.** The category stays
+outside `INFRA_CATEGORIES`, so it is never suppressed.
+
+**The server-error oracle reports a drop as it reports a 5xx.** A dropped
+connection raises `not_a_server_error`, with status code `0` (no response), in
+every mode. Under a chaos request the resilience oracle judges it instead (see
+[ADR-108](#adr-108) for the attacks that tolerate it).
+
+**Drops count toward the target-failure streak.** `connection_dropped` joins
+`TARGET_FAILURE_CATEGORIES` beside `timeout` and `availability`, so the abort
+streak and the liveness probe still see a target that drops everything because it
+is going down.
+
+**A streak made only of drops, with a target that answers the probe, keeps
+exploring.** The streak records how many of its failures were drops. When it trips
+and the `HEAD` probe answers, a drops-only streak is an endpoint crashing on every
+request, not an outage: there is no `infrastructure_abort`, and from then on that
+streak counts a drop as an answer. The rule is the same wherever a streak is
+watched: the stateless fold, the shared `TargetLivenessMonitor` (replay, the
+stateful run-wide watch, the sequential runners' `TargetWatch`) and the stateful
+per-endpoint circuit breaker, which does not open on drops alone. A probe that
+fails still ends the run `target_down`, and a streak that mixes drops with
+timeouts or refused connections aborts as before.
+
+### Rejected
+
+- **Keeping drops as infrastructure.** It hides the crash behind the suppression
+  that exists for an unreachable target.
+- **Taking drops out of the streak.** A target that is dying would drop every
+  connection and never be probed, and the run would walk every endpoint against it.
+- **Aborting on a drops-only streak.** The endpoint is cut at the moment it proved
+  it crashes, and the evidence the rest of its budget would add is lost.
+
+### Consequences
+
+A crash mid-response is a finding wherever a response is judged, not only under
+chaos, and a replay marks a re-sent request that drops as a violation. Each drop that advances a streak still
+announces an `infra_failure` event. `by_category` counts drops under
+`connection_dropped`, and a finding for one has status code `0`.
+
+---
+
+## ADR-106 — The identity tells two findings apart only for access control { #adr-106 }
+
+**Status:** accepted · `models/runtime/crash_report.py`, `models/runtime/findings.py`, `runtime/findings/grouper.py`, `runtime/findings/deduplicator.py`; core `services/compare/`
+
+### Context
+
+A run with several identities splits each phase's budget across them. A defect
+that does not depend on the caller (a 5xx on a malformed body, a schema
+deviation) is then found once per identity. The finding signature and the dedupe
+key both carried the identity label, so the same defect became three findings,
+three crashes and three "unique" defects. Comparing two runs matched defects by
+identity too, so a defect found under `alice` in one run and under `bob` in the
+next read as one resolved and one new.
+
+For access control the identity is the defect: `alice` reading `bob`'s resource
+and `carol` reading it are two different crossings.
+
+### Decision
+
+**One predicate decides when the identity is part of a finding's key.**
+`IDENTITY_SCOPED_INVARIANTS` holds `access_control`, and
+`keyed_identity(invariant, identity_label)` returns the label for an invariant in
+that set and `None` otherwise. `FindingSignature` compares and hashes through it,
+and so does `ReportKey`, the dedupe key. Two findings that differ only in identity
+are one defect unless their invariant is identity-scoped.
+
+**A finding keeps the identity it was observed under.** The label is not erased:
+the signature still carries it, the group is shrunk under the identity of the
+finding that stands for it, and the crash report, the stored row and a replay all
+name that identity.
+
+**Comparing runs asks the engine.** The facade exports `keyed_identity`, and the
+core's run comparison pairs defects through it. When the engine is not installed
+the comparison is refused with `DEPENDENCY_UNAVAILABLE` naming it, rather than
+guessing the rule.
+
+### Rejected
+
+- **Dropping the identity from every key.** It would merge distinct access-control
+  crossings into one finding.
+- **Keeping it in every key.** It multiplies one defect by the number of identities
+  and inflates the unique count the run is judged by.
+- **Restating the rule in the core.** Two copies could drift, and the comparison
+  would pair defects differently from how the run deduplicated them.
+
+### Consequences
+
+The unique count of a multi-identity run counts defects, not defect-identity pairs.
+A non-access-control crash shows one identity, the one it was first observed under.
+The stateful suppression key ([ADR-065](#adr-065)) keeps its identity axis: a
+sequence runs under one identity throughout, and reports are deduplicated with the
+rule above afterwards.
+
+---
+
+## ADR-107 — Confirmed counts reconcile per endpoint and globally in every mode { #adr-107 }
+
+**Status:** accepted · `runtime/findings/stats.py`, `runtime/findings/request_breakdown.py`, `models/runtime/stats.py`; storage `models/run.py`
+
+### Context
+
+The modes that never shrink (`performance`, `resilience`, `auth`) set the run's
+`findings_confirmed` to `0` while their endpoints listed defects. Every stats
+builder filled the per-endpoint `findings_confirmed` with the endpoint's unique
+count, so even in `stateless` the rows did not add up to the run total, which was
+counted before deduplication. A reader comparing the summary with the endpoint
+table saw two different numbers for the same thing.
+
+### Decision
+
+**The run total and the endpoint rows come from the same counter.** Each builder
+counts per endpoint and takes the run total as the sum:
+
+| Mode | `findings_confirmed` counts |
+| --- | --- |
+| `stateless` | crash reports the shrinker reproduced, before deduplication |
+| `stateful` | confirmed sequence reports |
+| `performance`, `resilience`, `auth` | unique reports: a defect observed once is confirmed, since these modes have no reconfirmation step |
+
+`findings_raw` is built the same way. In every mode the endpoint rows sum to the
+run's total.
+
+### Rejected
+
+- **Keeping `0` to mean "not reconfirmed".** Next to a list of crashes it reads as
+  "nothing found".
+- **A separate "observed" counter.** It would change the report and protocol shape
+  for a meaning the mode already makes clear.
+
+### Consequences
+
+In a mode without shrinking, `findings_confirmed` equals `findings_unique`. The
+report, the stored metrics and the endpoint rows agree, and the document's shape is
+unchanged.
+
+---
+
+## ADR-108 — Resilience judges the endpoint unattacked first, and sends the battery as a real caller { #adr-108 }
+
+**Status:** accepted · Supersedes in part [ADR-052](#adr-052) · `runtime/runners/resilience/runner.py`, `runtime/runners/resilience/identity.py`, `runtime/runners/resilience/raw_headers.py`, `runtime/runners/resilience/raw_attacks.py`, `runtime/runners/resilience/raw_socket.py`, `runtime/runners/resilience/attack.py`, `models/runtime/chaos.py`, `runtime/oracles/resilience.py`
+
+### Context
+
+A resilience finding says "this attack degraded this endpoint". Four things made
+that claim unreliable:
+
+- The battery went out anonymous, and the raw-socket attacks carried only `Host`.
+  A protected endpoint answered `401` to every attack, so the mode measured the
+  authentication layer, not the handler.
+- An endpoint that already failed without any attack had its 5xx blamed on
+  whichever attack hit it. An endpoint that answered `500` to everything produced
+  one degradation per attack.
+- Every dropped connection was a degradation. A server that closes the connection
+  on an oversized body, a body that trickles in, or a request cut off mid-flight is
+  defending itself. And a request cut inside its request line can get back a bare
+  error with no status line, which read as a crash.
+- The duplicate-keys body went out without `Content-Length`, so the server never
+  read it as a body.
+
+### Decision
+
+**The battery is sent under the identity the endpoint's access demands.** A
+`role_only` endpoint uses the first valid identity holding its required role; any
+other endpoint, or a role no identity holds, uses the first valid identity; with no
+valid identity the battery is anonymous. Raw-socket attacks carry the headers httpx
+would send: `Host` (from the base URL without its userinfo), the Basic
+`Authorization` httpx derives from URL userinfo, and the base request's own
+headers, then the attack's lines, which win. Headers that frame the message or
+steer the exchange (`Host`, `Content-Length`, `Transfer-Encoding`, `Expect`,
+`Connection`, `Keep-Alive`, `Proxy-Connection`, `TE`, `Trailer`, `Upgrade`) are
+decided by the attack only.
+
+**A clean base request goes first, once per endpoint, and is judged on its own.**
+It is sent through the ordinary path and judged contract-free like any request
+outside chaos. A 5xx or a dropped connection is a `not_a_server_error` finding on
+the base request, whose reproducer is the base payload. When the base request
+fails, the battery still runs and is recorded, but no attack is blamed. When it
+succeeds, the attack verdicts stand.
+
+**Each attack declares whether a drop is a rejection.** `ChaosAttack.expectation`
+is a `ChaosExpectation`; `slow_partial_body`, `oversized_body` and
+`closed_mid_request` set `drop_is_rejection`, and every other attack keeps the
+default, under which a drop degrades. On the raw socket, a first line that is not
+an HTTP/1.x status line is a drop, so only the cut-request attack tolerates a
+statusless reply. A worker that writes a traceback to the socket and closes is a
+crash.
+
+**The duplicate-keys body is framed** with its `Content-Length`. A base URL whose
+port cannot be parsed is refused by the raw transport as an unsendable request
+instead of failing the run.
+
+### Rejected
+
+- **Re-sending the clean request after a 5xx to confirm it.** An attack that leaves
+  the endpoint broken for good would make the re-send fail as well, and the
+  degradation would be excused: a false green. The clean request has to be the
+  reference taken before any attack.
+- **An anonymous battery.** It tests the authentication middleware on every
+  protected endpoint.
+- **Every drop is a degradation.** It penalizes a server for refusing a request it
+  should refuse.
+- **A statusless reply is always a rejection.** A crashing worker that writes
+  anything but a status line would pass.
+
+### Consequences
+
+A resilience run sends one more request per endpoint, counted and traced like the
+others. An endpoint that fails on everything is reported once, on its base request,
+instead of being muted or blamed on every attack. The base request keeps its path
+parameters as placeholders, so an `owner_only` endpoint is attacked under its
+owner's identity on the placeholder path.
+
+---
+
+## ADR-109 — An echoed credential is matched in any per-character encoding a server writes { #adr-109 }
+
+**Status:** accepted · Supersedes in part [ADR-103](#adr-103) · `runtime/findings/redaction.py`, `runtime/findings/credential_forms.py`, `runtime/findings/echo_patterns.py`, `runtime/findings/constants.py`, `runtime/trace/url_userinfo.py`
+
+### Context
+
+The value pass of [ADR-103](#adr-103) matched each credential form literally, plus
+one variant with `/` written `\/`. Servers encode echoed text per character, and
+encoders differ: Go's `encoding/json` writes `<`, `>` and `&` as `<`,
+`>`, `&`; Jackson writes non-ASCII as `é` in upper-case hex; an HTML
+error page writes `&#38;`, `&#x26;` or `&amp;`; and one encoder may escape some
+characters of a string and leave others raw. A credential echoed in any of those
+forms stayed in the finding.
+
+The credential in the base URL's userinfo was not among the values scrubbed at
+all. httpx turns `user:pass@` into a Basic `Authorization` header, and a server that
+echoes the header or the password left it in the clear. With an empty password
+(`user:@` or `user@`) the username is the secret.
+
+### Decision
+
+**Each form is matched character by character.** A character other than an ASCII
+letter or digit may appear raw or in any of its encodings: a JSON short escape, a
+`\uXXXX` escape in either case (a surrogate pair beyond the BMP), a decimal or hex
+numeric entity, or any HTML5 named entity for it. Encodings may mix within one
+echo.
+
+**Two spellings, matched separately.** Inside a JSON string a backslash only opens
+an escape; in plain text a backslash is itself, and `\/` is still accepted. Each
+spelling reads a text one way only, so a near miss never backtracks through
+alternative splits.
+
+**The URL userinfo is a sent credential.** Its forms are the Basic header httpx
+sends and that header's forms, and the secret: the password decoded and as written
+(with its percent-escapes in upper and lower hex), or the username when there is no
+password.
+
+**`MIN_SECRET_LENGTH` (8) applies to the form itself.** A form shorter than that is
+not scrubbed in any encoding.
+
+### Rejected
+
+- **A list of whole-string escapers, one per known encoder.** Encoders mix forms
+  within one string, so whole-string variants miss the mixtures real servers write.
+- **One pattern that accepts JSON escapes and raw backslashes together.** On a near
+  miss it backtracks exponentially.
+- **Decoding the body and matching the decoded text.** The report shows the text the
+  server sent; replacing inside a decoded copy would change it.
+
+### Consequences
+
+A credential echoed by a Go, Java or HTML error page is scrubbed. Some echoes are
+still not matched: a value encoded twice, the URL-safe base64 of a token, a header
+credential reflected percent-encoded, an echo split across lines, and a credential
+used as an object key (keys are never rewritten). The trace is untouched, as before.
+
+---
+
+## ADR-110 — A route veto reads a path as every modelled server chain does { #adr-110 }
+
+**Status:** accepted · `runtime/http/route_reading.py`, `runtime/http/route.py`, `runtime/safety_guard/`
+
+### Context
+
+The safety guard vetoes a route as a pattern: it reduces every path to the route a
+server would dispatch it to and compares those shapes. It read each path two ways,
+decoded once and decoded twice, dropping path parameters after decoding. Real
+server chains apply the same steps in different orders. A servlet container may
+drop `;` parameters before decoding, so `%3B` stays literal, or decode first, so
+an encoded `;` starts parameters. Some split on backslashes before dropping
+parameters. A proxy in front may decode once, or normalize dot segments, before
+the container sees the path. A path such as
+`users;v=1%2F{id}/x//%2e%2e/notify//%2e%2e` reaches a vetoed route under one of
+those orders while both readings the guard computed miss it.
+
+### Decision
+
+**Each reading is a named server pipeline.** `SERVER_PIPELINES` lists nine chains,
+each named for the server, or the proxy and server, it stands for, and each a
+sequence of steps: drop path parameters, decode once (with or without `;`), the
+first of two decodings, split on backslashes, and normalize dots as a proxy does.
+Every pipeline ends with what a router does last: split on backslashes, then
+resolve dot segments. Each pipeline runs with and without merging repeated slashes
+first, so a path has at most 18 readings, and it is covered when any of them
+matches a veto. The guard fails closed.
+
+### Rejected
+
+- **Keeping the decode-once and decode-twice pair.** It misses every order that
+  drops parameters or normalizes dots before decoding.
+- **Every permutation of the steps.** It models no real server, holds routes no
+  server would dispatch to, and grows with each step added. A named row can be
+  checked against the server it stands for.
+
+### Consequences
+
+A path the run declares, a follow-up and a recorded row are all judged by the same
+readings. The cases the guard does not foresee are unchanged: a value filled in at
+run time, a non-canonical declared path, and a server that decodes more than
+twice.

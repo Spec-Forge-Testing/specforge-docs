@@ -51,7 +51,7 @@ with its risk, so its flag still vetoes its route. An endpoint listed both in
 A flag the mode holds vetoes its endpoint's route as a **pattern**, not as the
 declared string. `RouteVetoes.of_selection` builds one `VetoedRoute` per route
 shape, and every compiled endpoint, follow-up and recorded row is compared by its
-shape. `route_shapes` reduces a method and a path to the route a path-decoding
+shape. `route_shapes` reduces a method and a path to the routes a path-decoding
 server dispatches them to:
 
 | Spelling | How the shape reads it |
@@ -60,12 +60,22 @@ server dispatches them to:
 | query, fragment | cut off |
 | case | folded |
 | empty segments (a trailing or doubled slash) | dropped |
-| percent-encoded unreserved characters, `%2F`, `%5C` | decoded, once and as a server that decodes twice does |
+| percent-encoded unreserved characters, `%2F`, `%5C`, `%3B` | decoded once, or twice, in the order each server chain decodes |
 | `\` | a segment separator, as `/` |
-| path parameters (`;v=1`) | dropped from each segment |
+| path parameters (`;v=1`) | dropped from each segment, before or after decoding |
 | dot segments (`.`, `..`, encoded too) | resolved, both before and after merging repeated slashes |
 | a `..` that climbs above the base | matched by its tail, since the server resolves it from its own root |
 | `{name}` | one placeholder, so placeholder names never split a route |
+
+Servers apply those steps in different orders, and the order changes the route.
+`runtime/http/route_reading.py` names each modelled chain as a `ServerPipeline`
+in `SERVER_PIPELINES`: a servlet container that drops path parameters before
+decoding, once or twice; one that decodes first, so an encoded `;` starts
+parameters, with or without splitting backslashes before it drops them; and a
+proxy in front of a container that decodes once or normalizes dot segments
+first. Every pipeline ends as a router does, splitting on backslashes and then
+resolving dots, and runs with and without merging repeated slashes first, so a
+path has at most 18 readings ([ADR-110](adr/engine.md#adr-110)).
 
 A path may yield more than one shape; it is covered when any of them is. A
 placeholder in a veto covers any one segment; a literal segment in a veto never
@@ -188,12 +198,18 @@ unretried (see [Progress and cancellation](progress-and-cancellation.md)). Every
 transport error is returned on the first attempt: a 4xx or 5xx is the API's
 answer, not a fault to paper over, and a malformed URL will never succeed.
 
-A request the client cannot put on the wire at all — a header value carrying
-non-ASCII text, or an embedded line break the transport refuses — is caught at
-send time and returned as an **unsendable result** (`UNSENDABLE_REQUEST`, no
-status code), never as a transport fault. It is not counted as a wire request,
-never retried and never a finding; it is only recorded in stats by category, and
-its detail names the offending header, never its value.
+A request the client cannot put on the wire at all is caught before it is sent
+and returned as an **unsendable result** (`UNSENDABLE_REQUEST`, no status code),
+never as a transport fault and never as a crash of the run. Three things make a
+request unsendable: a JSON body JSON cannot encode (a `NaN` or an infinity), a
+header name that is not an RFC 9110 token, and a header value that is not ASCII
+or carries a NUL, a line break, or whitespace at either edge. The injector flags
+them when it builds the blueprint, and the orchestrator checks the body and the
+headers again on every send, so a request built without the injector (a replay
+rehydrating a recorded trace) is refused the same way. An unsendable request is
+not counted as a wire request, never retried and never a finding; it is only
+recorded in stats by category, and its detail names the offending header, never
+its value.
 
 `error_classifier.py` maps outcomes to an `ErrorCategory`. `classify_response`
 turns a status into `SERVER_ERROR` / `CLIENT_ERROR` / `None` (a clean 2xx/3xx);
@@ -203,15 +219,28 @@ not be listed to be classified. A local protocol error the client raises before
 the request leaves — a header it will not encode — resolves to
 `UNSENDABLE_REQUEST`, alongside a malformed URL or an unsupported scheme.
 
+| Exception | Category |
+|---|---|
+| `InvalidURL`, `UnsupportedProtocol`, `LocalProtocolError` | `UNSENDABLE_REQUEST` |
+| `ConnectError`, `ConnectTimeout` | `AVAILABILITY` |
+| any other `TimeoutException` | `TIMEOUT` |
+| `RemoteProtocolError`, `ReadError`, `WriteError` | `CONNECTION_DROPPED` |
+| anything else | `AVAILABILITY` |
+
 `CONNECTION_DROPPED` sits apart from the infrastructure categories on purpose. A
 peer that refuses the connection or never answers is `AVAILABILITY` or
 `TIMEOUT` — evidence about the target's health, recorded in stats but never a
 finding. A peer that *accepted* the connection and then dropped it before a
-complete response has crashed mid-response, so `CONNECTION_DROPPED` is deliberately
-outside `INFRA_CATEGORIES`: it reaches the resilience oracle and counts as a
-degradation, on the same footing as a 5xx. The raw-socket chaos transport is
-what produces it — it distinguishes a failure before the socket connected
-(`AVAILABILITY`) from one after (`CONNECTION_DROPPED`).
+complete response has crashed mid-response, so `CONNECTION_DROPPED` is
+deliberately outside `INFRA_CATEGORIES`: the server-error oracle reports it as
+`not_a_server_error` exactly as it reports a 5xx, and under chaos the resilience
+oracle judges it instead. It still belongs to `TARGET_FAILURE_CATEGORIES`, so a
+run of drops advances the abort streak and can trigger a liveness probe; a
+drops-only streak against a target that answers the probe keeps exploring (see
+[Stateless exploration](#stateless-exploration) and
+[ADR-105](adr/engine.md#adr-105)). The raw-socket chaos transport produces it
+too: it tells a failure before the socket connected (`AVAILABILITY`) from one
+after (`CONNECTION_DROPPED`).
 
 ### From payload to request: `ContextInjector`
 
@@ -230,8 +259,10 @@ config and an optional `Identity` into an immutable `RequestBlueprint`. It:
   when a body is present and nothing already set one;
 - **flags an unsendable request** when a percent-encoded path segment is one
   URL normalization would strip (`""`, `"."`, `".."`), because a request whose
-  path silently re-routes tests nothing. The blueprint carries an
-  `unsendable_reason` and the orchestrator refuses it rather than send it.
+  path silently re-routes tests nothing, and when the body or a header could not
+  be sent (above). The blueprint carries an `unsendable_reason`, every reason
+  joined when there are several, and the orchestrator refuses it rather than
+  send it.
 
 The identity's `label` rides on the blueprint — unless a generated header
 overrode one of the identity's own, in which case the request does not speak
@@ -286,14 +317,21 @@ OracleVerdict` — and precedence is a named `IntEnum` value, never a magic gap
 | Precedence | Oracle `name` | Fires on |
 |---|---|---|
 | `INFRA` (10) | `infra` | an infrastructure failure — suppresses everything below it |
-| `RESILIENCE` (15) | `resilience_degradation` | a 5xx under a chaos request |
-| `SERVER_ERROR` (20) | `server_error` | any 5xx |
+| `RESILIENCE` (15) | `resilience_degradation` | under a chaos request, a 5xx or a dropped connection the attack does not tolerate |
+| `SERVER_ERROR` (20) | `server_error` | any 5xx, or a connection the server dropped |
 | `ACCESS_CONTROL` (25) | `access_control` | a 2xx a caller should not have obtained, judged against the auth runner's expectation (non-terminal) |
-| `STATUS_CODE` (30) | `status_code` | a status no response contract declared |
+| `SEMANTIC` (30) | `semantic_property` | a 2xx that breaks a declared business rule (non-terminal) |
+| `STATUS_CODE` (35) | `status_code` | a status no response contract declared |
 | `CONTENT_TYPE` (40) | `content_type` | a body whose `Content-Type` misses the declared one |
 | `SCHEMA` (50) | `schema` | a body that fails the declared schema |
-| `SEMANTIC` (55) | `semantic_property` | a 2xx that breaks a declared business rule (non-terminal) |
 | `LATENCY` (60) | `latency_sla` | a clean 2xx/3xx slower than the run's SLA |
+
+The business rule runs before the status, content-type and schema checks on
+purpose. Those three are terminal; the rule is not. A 2xx that breaks a declared
+rule and also misses its declared response is therefore **one** finding: its
+primary violation is the rule, cited by its id, and the deviation rides along as a
+secondary violation, instead of the deviation stopping the chain before the rule
+is ever evaluated ([ADR-104](adr/engine.md#adr-104)).
 
 The `OracleVerdict` shape lives in its own leaf module, `runtime/oracles/verdict.py`
 (with the shared `CONTINUE` verdict), so the verdict depends on nothing else in the
@@ -318,17 +356,20 @@ order, turning each non-empty verdict into an `ObservedViolation` (its invariant
 paired with its rule), accumulating them and stopping at the first `terminal` one;
 it returns a `list[ObservedViolation]`, as do `check_response` and
 `evaluate_contract_free`. `check_response(result,
-endpoint, latency_sla_ms=, is_chaos=)` builds the `ResponseContext` — resolving
+endpoint, latency_sla_ms=, chaos=, access_expectation=)` builds the
+`ResponseContext` — resolving
 the endpoint's response contract for the status by exact code → status class →
 `default`, once, for the whole pipeline, and carrying the endpoint's
 `semantic_properties` onto the context — and evaluates it;
 `evaluate_contract_free(result)` evaluates against no contract, which is what a
 replay and a transition probe use. `build_context(result, responses, *,
-latency_sla_ms=, is_chaos=, semantic_properties=(), access_expectation=None)` is
+latency_sla_ms=, chaos=None, semantic_properties=(), access_expectation=None)` is
 the single builder: every optional beyond the response body and its contracts is
 keyword-only, so a caller supplies only the data its run has — the auth runner is
 the only one that passes an `access_expectation`, and outside an auth run it is
-`None`, so the `access_control` oracle stands down.
+`None`, so the `access_control` oracle stands down. Likewise only the resilience
+runner passes `chaos`, the attack's `ChaosExpectation`: whether a dropped
+connection refuses that attack rather than crashing under it.
 
 All nine built-ins are registered explicitly by `register_builtin_oracles`,
 never as a side effect of importing a runner, so the registered set is one
@@ -394,7 +435,8 @@ A rule is a **violation only when its root expression evaluates to exactly
 `False`**. A root that evaluates to `UNDETERMINED` — or to any non-boolean value —
 is never a finding: an undecidable rule stays silent rather than accusing the API.
 The oracle's verdict is **non-terminal**, so a semantic violation is recorded and
-the pipeline continues to the latency oracle. A rule such as "the created article
+the pipeline continues to the status-code, content-type, schema and latency
+oracles, whose violations join the same finding behind the rule. A rule such as "the created article
 keeps a non-empty slug" is the field reference `article.slug` compared `!=` to the
 literal `""`; a 2xx whose body has an empty slug makes that root `False`, and the
 oracle emits `InvariantViolation.SEMANTIC_PROPERTY`.
@@ -542,10 +584,10 @@ authentication", or "identity 'alice' succeeded with an invalid credential". A
 own role: the `identity_label` already points back into the user's identities
 file.
 
-The oracle sits at precedence 25, before every body-conformance oracle,
-because it never reads the body: a bypass that also returns a schema-invalid body
-must not be masked by a terminal schema violation raised lower in the chain
-([ADR-050](adr/engine.md#adr-050)).
+The oracle sits at precedence 25, before the business rule and every
+body-conformance oracle, because it never reads the body: a bypass that also
+returns a schema-invalid body must not be masked by a terminal schema violation
+raised lower in the chain ([ADR-050](adr/engine.md#adr-050)).
 
 ## The finding pipeline
 
@@ -564,8 +606,14 @@ group → shrink → materialize → dedupe → assemble → stats.
   it is constant (the invariant's own value), so it adds nothing new to identity,
   and for a `semantic_property` or `access_control` finding it is the declared
   rule's id, so two different business rules broken on one endpoint are two
-  findings. The rule's *description* never enters the signature. `group_findings`
-  collapses findings that share a signature, in first-seen order.
+  findings. The rule's *description* never enters the signature. The identity
+  label is carried on every signature but compared only through
+  `keyed_identity(invariant, label)`: it splits two findings only when the
+  invariant is in `IDENTITY_SCOPED_INVARIANTS` (`access_control`), so a 5xx found
+  under three identities is one finding, while two identities crossing one
+  access policy are two ([ADR-106](adr/engine.md#adr-106)). `group_findings`
+  collapses findings that share a signature, in first-seen order, and the group
+  keeps the identity of the finding that stands for it.
 - **Shrink.** `shrink_groups` attempts at most two representatives per signature
   (`MAX_REPRESENTATIVES_PER_SIGNATURE`). The first faithful reproducer stands
   for the group's untouched members (counted `collapsed`); a member that was
@@ -592,19 +640,28 @@ group → shrink → materialize → dedupe → assemble → stats.
   never mutated — the trace keeps the raw body
   ([ADR-060](adr/engine.md#adr-060)).
   A second pass erases by **value**: the credentials the request actually sent —
-  the identity's headers and `ExecutionConfig.headers` — are replaced with `***`
-  wherever they appear in a string of `minimal_payload` or `response_body`, at any
-  depth. Each value is matched in its derived forms too: the token after the
-  scheme, each cookie's value, the decoded `user:password` of a Basic credential
-  and its password, and every form with `/` written `\/`. A form shorter than
-  `MIN_SECRET_LENGTH` (8) is left alone, so a short value does not mangle a body
-  ([ADR-103](adr/engine.md#adr-103)).
+  the identity's headers, `ExecutionConfig.headers`, and the `user:pass@`
+  userinfo of the request URL — are replaced with `***` wherever they appear in a
+  string of `minimal_payload` or `response_body`, at any depth
+  ([ADR-103](adr/engine.md#adr-103)). Each value is matched in its derived forms
+  too: the token after the scheme, each cookie's value, the decoded
+  `user:password` of a Basic credential and its password, the Basic token with
+  or without its base64 padding, and, for URL userinfo, the Basic header httpx builds from
+  it and its secret (the password decoded and as written, or the username when
+  there is no password). Every form is matched **per character in any encoding a
+  server writes**: each character other than an ASCII letter or digit may appear
+  raw, as a JSON short escape, as `\uXXXX` in either case, or as a numeric or named
+  HTML entity, mixed freely within one echo, read once as a JSON string and once as
+  plain text ([ADR-109](adr/engine.md#adr-109)). A form shorter than
+  `MIN_SECRET_LENGTH` (8) is not scrubbed in any encoding, so a short value does
+  not mangle a body.
   `materialize_report` is the no-shrink path, used by the modes that never
   minimize ([ADR-037](adr/engine.md#adr-037)).
 - **Dedupe.** `dedupe_crash_reports` keeps one report per `ReportKey` — method,
-  endpoint, invariant, status, identity and the canonical reproducer, phase
-  deliberately excluded — and folds every duplicate's `represented_findings`
-  into the one it kept.
+  endpoint, invariant, status, the canonical reproducer and, for an
+  identity-scoped invariant only, the identity; phase deliberately excluded — and
+  folds every duplicate's `represented_findings` into the one it kept, which keeps
+  the identity it was observed under.
 - **Assemble.** `assemble_findings` reifies the outcomes as the closed `Finding`
   union `EngineRunResult.findings` carries: one `ConfirmedFinding` per
   deduplicated report, then the shrinker's own `FlakyFinding`s and
@@ -612,10 +669,13 @@ group → shrink → materialize → dedupe → assemble → stats.
   `occurrences` it stands for. The counters stay the measurement; the union
   reifies them ([ADR-044](adr/engine.md#adr-044)).
 - **Stats.** Four builders, one per lifecycle — `build_stats` (stateless),
-  `build_stateful_stats`, `build_unshrunk_stats` (performance, resilience) and
-  `build_replay_stats` — all start from the shared `RequestBreakdown`:
+  `build_stateful_stats`, `build_unshrunk_stats` (performance, resilience, auth)
+  and `build_replay_stats` — all start from the shared `RequestBreakdown`:
   per-endpoint request counts and latency, plus the run's `by_phase` and
-  `by_category` totals. Latency percentiles are **nearest-rank** (P50/P95/P99):
+  `by_category` totals. Each builder counts `findings_raw` and
+  `findings_confirmed` per endpoint and takes the run's total as their sum, so the
+  endpoint rows always add up to it; in a mode that never shrinks, a defect
+  observed once counts as confirmed ([ADR-107](adr/engine.md#adr-107)). Latency percentiles are **nearest-rank** (P50/P95/P99):
   always an observed sample, never interpolated, and an unsent request is never
   sampled into a latency it never took.
 
@@ -652,9 +712,17 @@ the carried `Cut` — no ad-hoc exception per abort reason
 | Reason | Trips when |
 |---|---|
 | `DEADLINE_EXCEEDED` | the endpoint's `deadline_ms` elapsed before a batch |
-| `INFRASTRUCTURE_ABORT` | `MAX_INFRA_FAILURES` target failures, target still answering a probe |
+| `INFRASTRUCTURE_ABORT` | `MAX_INFRA_FAILURES` target failures, not all of them dropped connections, target still answering a probe |
 | `TARGET_DOWN` | those failures, and a liveness probe confirms the target is down |
 | `GENERATION_EXHAUSTED` | a phase never produced a single generatable candidate |
+
+The target failures are `TARGET_FAILURE_CATEGORIES`: `timeout`, `availability`
+and `connection_dropped`. A streak made **only** of dropped connections, against a
+target that answers the probe, is not an outage: the endpoint accepts every
+connection and crashes on it, and every drop is already a finding. The pass keeps
+exploring, and from then on that streak counts a drop as an answer, so the
+endpoint is not probed again for the same reason
+([ADR-105](adr/engine.md#adr-105)).
 
 `ExplorationState` is fresh per endpoint, but the `LivenessProbe` is injected
 and **shared across every endpoint of the run**, so the last known-good safe
@@ -800,7 +868,9 @@ collector's single `is_send_blocked(endpoint_id)`. A per-endpoint
 `EndpointCircuitBreaker` takes an endpoint that stops answering out of the
 machine for the rest of the run — there is no half-open state — so one dead
 endpoint cannot starve a still-live consumer of a bundle it needs; that stays the
-breaker's job, "one endpoint broken, the rest alive". Alongside it, a **run-wide
+breaker's job, "one endpoint broken, the rest alive". A streak of dropped
+connections alone does not open it: the endpoint accepted every connection, and
+whether the target itself is down is the run-wide watch's call. Alongside it, a **run-wide
 liveness watch** (`RunLivenessWatch`, a `LivenessWatch` composed onto the
 collector) feeds the shared `TargetLivenessMonitor` from the
 collector's one `record` point. Both send sites — a rule step and a transition
@@ -891,11 +961,13 @@ probes: the `ReplayRunner` feeds it each result as it returns, the stateful mode
 feeds the same monitor through its run-wide watch (above), and the two sequential
 runners (resilience and auth) feed it through a per-batch `TargetWatch`
 (below). The monitor counts a streak of target failures — the
-`TARGET_FAILURE_CATEGORIES` (`timeout`, `availability`) — and ignores anything
-that was never sent (no evidence either way). When the streak reaches
-`MAX_INFRA_FAILURES` (5) it fires one `probe_liveness()` `HEAD`: a dead target
-returns `target_down` and a live one `infrastructure_abort`, and either stops the
-loop with a `TruncationRecord`. `run_status_of(truncation)` then maps that record
+`TARGET_FAILURE_CATEGORIES` (`timeout`, `availability`, `connection_dropped`) —
+and ignores anything that was never sent (no evidence either way). When the
+streak reaches `MAX_INFRA_FAILURES` (5) it fires one `probe_liveness()` `HEAD`: a
+dead target returns `target_down` and a live one `infrastructure_abort`, and
+either stops the loop with a `TruncationRecord`. A live target behind a streak of
+dropped connections only returns no verdict: the run goes on, and that streak
+counts later drops as answers. `run_status_of(truncation)` then maps that record
 to the run's status — `aborted` for `target_down`, `truncated` otherwise.
 
 The monitor takes the run's cancellation token and can **abandon a probe in

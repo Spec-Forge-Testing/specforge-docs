@@ -390,7 +390,8 @@ unexpectedly.
     - **Represents** — how many of the 41 raw findings this one minimal reproducer
       stands for after shrinking; present only in stateless runs.
     - **Identity** — which declared `--identities` label the request was sent
-      under; a dash means no identity was recorded for that crash (e.g. the run
+      under (for a crash several identities hit, the one it was first observed
+      under); a dash means no identity was recorded for that crash (e.g. the run
       had none declared).
     - **Payload** — the smallest input that still reproduces the crash, already
       shrunk; this is what you'd replay by hand to confirm it.
@@ -453,9 +454,11 @@ unexpectedly.
     than dropped in silence), and a finding is shrunk under the identity that
     found it, never
     re-drawn. A stateful sequence draws one identity when it starts and keeps it
-    for every step, since a sequence is a session. The same symptom found under two
-    identities is two findings, never one — so the crash tables gain the
-    **Identity** column above. The label is persisted with the crash and the run's
+    for every step, since a sequence is a session. The same access-control symptom
+    found under two identities is two findings, since who sent the request is the
+    defect; any other symptom is one finding, whichever identities found it, and
+    keeps the identity it was first observed under — which is what the crash
+    tables' **Identity** column above shows. The label is persisted with the crash and the run's
     trace; the credentials never are (see below).
 
     `--mode` selects how the engine explores the endpoints: `stateless` (the
@@ -467,7 +470,12 @@ unexpectedly.
     `Content-Length`, duplicate or oversized headers, a connection cut off
     mid-request) and repeated-request sequences — and flags an endpoint that answers
     `5xx`, or accepts the connection and drops it mid-response, instead of degrading
-    gracefully (a timeout or a `4xx` counts as graceful); `auth` crosses the declared
+    gracefully (a timeout or a `4xx` counts as graceful, and so does a dropped
+    connection on an oversized, slow or cut-off request, which a server may refuse
+    that way). The battery goes out under the first valid `--identities` entry the
+    endpoint's access admits, after one clean request to the same endpoint: if the
+    clean request already fails, that failure is the finding and no attack is
+    blamed for it. `auth` crosses the declared
     identities against each endpoint's access policy and flags a `2xx` a caller
     should not have obtained (a cross-identity or anonymous read of an owner's
     resource, a success without the required role on a role-restricted endpoint,
@@ -918,9 +926,9 @@ unexpectedly.
     ```
 
     Pairs every defect from `--before <id>` and `--after <id>` by **symptom** —
-    method, path, invariant, status code and identity, five of the six terms
-    the engine dedups a single run's crashes on, deliberately without the
-    sixth, the minimal payload: shrinking runs again each time against a
+    method, path, invariant, status code and, for an access-control defect only,
+    the identity: the terms the engine dedups a single run's crashes on,
+    deliberately without the last one, the minimal payload: shrinking runs again each time against a
     target that may have changed between the two runs, so a defect that never
     actually left can still shrink to a different reproducer. `compare` shows
     the payload alongside each defect as its counterexample instead, and flags
@@ -953,9 +961,12 @@ unexpectedly.
     └────────┴──────────────┴─────────┴───────────────────┴────────┴──────────┴─────────────────────┴──────────┘
     ```
 
-    - **Method / Endpoint / Invariant / Status / Identity** — five of the six
-      terms a pairing is matched on (the sixth, the minimal payload, is shown
-      separately as each side's counterexample instead).
+    - **Method / Endpoint / Invariant / Status / Identity** — what a pairing is
+      matched on, the identity only for an access-control defect: any other
+      defect is the same defect whichever identity found it, and the column
+      shows the identity each side observed it under. The minimal payload, the
+      engine's last dedup term, is shown separately as each side's
+      counterexample instead.
     - **Phase** — the later side's phase (`--after`), falling back to the
       earlier one when it only appears in `--before`; not part of the pairing key.
     - **Verdict** — `persisted` (both runs), `possibly resolved` (only

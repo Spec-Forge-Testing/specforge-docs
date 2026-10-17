@@ -254,9 +254,12 @@ gap. Oracles run as a Chain of Responsibility: the first terminal verdict
 short-circuits, non-terminal ones continue. All built-ins are registered
 explicitly in `runtime/oracles/builtin.py` — never as a side effect of importing
 a runner. The nine built-ins are, in precedence order: infrastructure,
-resilience, server error, access control, status code, content type, response
-schema, semantic property, latency ([ADR-036](adr/engine.md#adr-036),
-[ADR-048](adr/engine.md#adr-048), [ADR-050](adr/engine.md#adr-050)).
+resilience, server error, access control, semantic property, status code, content
+type, response schema, latency ([ADR-036](adr/engine.md#adr-036),
+[ADR-048](adr/engine.md#adr-048), [ADR-050](adr/engine.md#adr-050),
+[ADR-104](adr/engine.md#adr-104)). A non-terminal oracle placed early adds its
+violation and lets the rest judge the same response; the first violation is the
+finding's primary one, so the order decides what a finding leads with.
 
 An oracle can be **dormant until it has its datum**: it registers unconditionally
 but returns `CONTINUE` until the endpoint carries the input it judges. The
@@ -289,9 +292,36 @@ framing-level anomalies httpx corrects by design. Both take a slot from the
 orchestrator's single concurrency semaphore.
 
 An attack is a `ChaosAttack` — a `ChaosAttackName`, the transport key it rides,
-and a `build(blueprint)` that yields the emissions it puts on the wire — added
-to the battery with `register_attack(attack)`. Adding an attack is one data row,
-not a branch: it names an existing transport key (or a new one you registered)
+a `build(blueprint)` that yields the emissions it puts on the wire, and an
+`expectation` that says what the server may legitimately do to it — added to the
+battery with `register_attack(attack)`. The expectation defaults to
+`NOTHING_TOLERATED`, under which a dropped connection is a degradation; an attack a
+server may refuse by cutting the connection (a body too large or too slow, a
+request cut short) passes `DROP_IS_REJECTION` instead. A row registered by hand
+looks like the built-in oversized-body one:
+
+```python
+from specforge_engine.runtime.runners.resilience.attack import (
+    DROP_IS_REJECTION, ChaosAttack, ChaosAttackName,
+)
+from specforge_engine.runtime.runners.resilience.battery import register_attack
+from specforge_engine.runtime.runners.resilience.transport import HTTPX_TRANSPORT
+
+register_attack(
+    ChaosAttack(
+        name=ChaosAttackName.OVERSIZED_BODY,
+        transport=HTTPX_TRANSPORT,
+        build=_build_oversized_body,
+        expectation=DROP_IS_REJECTION,
+    )
+)
+```
+
+A raw-socket builder lays out its header block with `header_lines(blueprint,
+*attack_lines)`, which writes the headers httpx would send and then the attack's,
+so the attack reaches the endpoint under the run's identity.
+
+Adding an attack is one data row, not a branch: it names an existing transport key (or a new one you registered)
 and the runner resolves the transport for it. The `ChaosAttackName` vocabulary is
 the closed set of attacks across both the httpx and raw-socket tables.
 

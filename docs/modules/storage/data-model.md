@@ -163,7 +163,7 @@ over `analysis_endpoints` and `run_endpoint_stats`.
 | `run_id` | INTEGER | no | — | The run (`runs.id`), and the primary key: at most one row per run. |
 | `total_requests` | INTEGER | no | — | Requests the run attempted, including any that never left the client. |
 | `findings_raw` | INTEGER | no | — | Violations found during exploration, before shrinking. |
-| `findings_confirmed` | INTEGER | no | — | Findings that reproduced after shrinking. |
+| `findings_confirmed` | INTEGER | no | — | Findings reproduced after shrinking, or observed once in a mode that never shrinks. |
 | `findings_unique` | INTEGER | no | — | Distinct defects found; equal to the run's confirmed rows in `findings`. |
 | `findings_flaky` | INTEGER | no | — | Findings that did not reproduce after shrinking. |
 | `findings_collapsed` | INTEGER | no | `0` | Findings never shrunk because another with their signature was. |
@@ -189,7 +189,7 @@ field, a [`LatencyRecord`](#value-objects), sampling only requests that reached 
 | `requests` | INTEGER | no | — | Requests attempted against the endpoint, counted like `total_requests`. |
 | `examples_planned` | INTEGER | no | `0` | Examples the fuzzer planned for the endpoint, drawn or not; `requests` may exceed it. |
 | `findings_raw` | INTEGER | no | — | Violations found at the endpoint, before shrinking. |
-| `findings_confirmed` | INTEGER | no | `0` | Count of the endpoint's confirmed rows in `findings`. |
+| `findings_confirmed` | INTEGER | no | `0` | This endpoint's share of the run's `findings_confirmed`; the rows sum to it. |
 | `latency_count` | INTEGER | no | `0` | `latency.count`: latency samples timed, so it can be lower than `requests`; `0` tells "nothing timed" apart from zero latencies. |
 | `latency_min_ms` | REAL | no | `0` | `latency.min_ms`: minimum latency, in milliseconds. |
 | `latency_max_ms` | REAL | no | `0` | `latency.max_ms`: maximum latency, in milliseconds. |
@@ -233,7 +233,7 @@ reproducer: `status_code`, `minimal_payload`, `sanitized_headers` and `response_
 | `stack_trace` | TEXT | yes | — | The stack trace the engine attached to a confirmed finding, when it had one. |
 | `transition_sequence` | TEXT | yes | — | JSON request chain that built a stateful finding's state; NULL otherwise. |
 | `represented_findings` | INTEGER | no | `1` | Raw findings this row stands for, itself included: its unshrunk group mates and the duplicates it absorbed. The record requires it. |
-| `identity_label` | TEXT | yes | — | The identity the failing request was sent under; NULL when the run declared none. |
+| `identity_label` | TEXT | yes | — | The identity the finding was observed under; NULL when the run declared none. It tells two findings apart only for `access_control`. |
 | `rule_id` | TEXT | yes | — | The rule the finding broke, declared by the contract or intrinsic to its invariant; NULL when the engine named none. |
 | `rule_description` | TEXT | yes | — | Human-readable text of `rule_id`. |
 | `body_fingerprint` | TEXT | yes | — | Shape, never values, of the response body behind an unconfirmed finding; `''` when there was no body, NULL for a confirmed finding. |

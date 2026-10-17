@@ -451,3 +451,55 @@ hostile attack and mutation pools are untouched, since a payload that cannot cro
 this transport is the raw-socket path's concern. The `GenerationContext` grows one
 field, and a new zone that needs its own alphabet is a row in
 `_ZONE_TEXT_ALPHABET`.
+
+---
+
+## ADR-111 — Numbers stay finite, and the boundary phase stays inside the declared range { #adr-111 }
+
+**Status:** accepted · `strategy_compiler/constants.py`, `strategy_compiler/fields/default/constraints.py`, `strategy_compiler/fields/default/boundary.py`, `strategy_compiler/fields/hacker/payloads.py`; engine `runtime/http/wire_body.py`
+
+### Context
+
+The float edge table carried `inf` and `-inf`, the `number` boundary builder did
+not filter its candidates by the declared range (the `integer` one did), and an
+exclusive bound was resolved by adding or subtracting a fixed `1e-10`. Three
+failures followed. httpx serializes a JSON body with `allow_nan=False`, so a single
+infinite value raised inside the send path and aborted the whole run. A boundary
+value outside `minimum`/`maximum` was spent as a "boundary" probe it was not. And
+the fixed step broke at both ends of the scale: on a large bound `x + 1e-10 == x`,
+so an exclusive bound was included, and a range narrower than the step resolved to
+nothing at all.
+
+### Decision
+
+**Every generated number is finite.** `FLOAT_BOUNDARY` holds finite edges only,
+and the candidates built from a declared bound drop anything non-finite.
+
+**An exclusive bound resolves to the adjacent representable float**
+(`math.nextafter`), so it is excluded at any magnitude and a narrow range keeps its
+values.
+
+**The boundary phase stays inside the declared range.** `number` candidates are
+the finite edges plus each resolved bound and the floats on either side of it, kept
+only when they fall within the range, as `integer` candidates already were. When no
+candidate survives, the field falls back to its valid-phase draw, or to an open
+finite draw when no sendable value satisfies the field at all.
+
+**The attack phase keeps out-of-range values.** Its numeric payloads are finite,
+but they still cross the declared range on purpose: probing outside it is what the
+phase is for.
+
+### Rejected
+
+- **Catching the failure only when the body is serialized.** It keeps the run
+  alive but spends budget on values that can never be sent. The engine does catch
+  it as a second line of defence: a body JSON cannot encode becomes an
+  `unsendable_request` result.
+- **Filtering attack values to the range.** It would remove the probes the phase
+  exists to send.
+
+### Consequences
+
+A contract with a `number` field runs to completion, its boundary probes sit on and
+next to the declared edges, and an exclusive bound is honoured exactly. Boundary
+candidates are filtered by range, not by `multipleOf`.

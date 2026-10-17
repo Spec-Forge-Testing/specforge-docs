@@ -109,3 +109,11 @@ Assembly's.
 | [ADR-089](engine.md#adr-089) | engine | The stateful shrink is budgeted, skips Hypothesis's explain phase, and the engine minimizes the sequence by replaying recorded requests |
 | [ADR-102](engine.md#adr-102) | engine | The auth run degrades per endpoint, and fails only when it crossed nothing |
 | [ADR-103](engine.md#adr-103) | engine | Findings redact the built-in sensitive names whatever the contract declares, and erase the credentials a request sent by value |
+| [ADR-104](engine.md#adr-104) | engine | A broken business rule outranks the status, content-type and schema checks |
+| [ADR-105](engine.md#adr-105) | engine | A connection the server drops is a crash in every mode, and drops alone never abort a live target |
+| [ADR-106](engine.md#adr-106) | engine | The identity tells two findings apart only for access control |
+| [ADR-107](engine.md#adr-107) | engine | Confirmed counts reconcile per endpoint and globally in every mode |
+| [ADR-108](engine.md#adr-108) | engine | Resilience judges the endpoint unattacked first, and sends the battery as a real caller |
+| [ADR-109](engine.md#adr-109) | engine | An echoed credential is matched in any per-character encoding a server writes |
+| [ADR-110](engine.md#adr-110) | engine | A route veto reads a path as every modelled server chain does |
+| [ADR-111](compiler.md#adr-111) | strategy_compiler | Numbers stay finite, and the boundary phase stays inside the declared range |

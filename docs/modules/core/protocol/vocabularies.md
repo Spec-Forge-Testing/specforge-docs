@@ -66,9 +66,12 @@ set when that endpoint's pass was cut short whether or not the run was.
 | `target_down` | The API stopped answering; [`target_down_verdict`](#target-down-verdict) says how the run concluded it. |
 | `state_link_abort` | A stateful chain could not be honored: a fault of the harness, not of the API. |
 | `generation_exhausted` | No request could be generated for the endpoint. |
+| `engine_failure` | The engine itself raised while exploring the endpoint; it was isolated and the run went on. |
 | `cancelled` | The client asked the run to stop. |
 
-`detail` beside it is free text for a person, or `null`.
+`detail` beside it is free text for a person, or `null`. For `engine_failure` it
+names the error's type and where it was raised (`<type> @ <file>:<line>`); the
+message and the traceback are in the core's stderr log, never in the report.
 
 ## `target_down_verdict` { #target-down-verdict }
 

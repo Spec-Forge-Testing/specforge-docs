@@ -199,7 +199,7 @@ run, fidelity after it, and the two are separate values.
 
 ## ADR-033 — A zoned payload is a value object with a body sentinel { #adr-033 }
 
-**Status:** accepted · `runtime/payload.py`
+**Status:** accepted · Superseded in part by [ADR-116](#adr-116) · `runtime/payload.py`
 
 ### Context
 
@@ -2683,7 +2683,7 @@ owner's identity on the placeholder path.
 
 ## ADR-109 — An echoed credential is matched in any per-character encoding a server writes { #adr-109 }
 
-**Status:** accepted · Supersedes in part [ADR-103](#adr-103) · `runtime/findings/redaction.py`, `runtime/findings/credential_forms.py`, `runtime/findings/echo_patterns.py`, `runtime/findings/constants.py`, `runtime/trace/url_userinfo.py`
+**Status:** accepted · Supersedes in part [ADR-103](#adr-103) · Superseded in part by [ADR-123](#adr-123) · `runtime/findings/redaction.py`, `runtime/findings/credential_forms.py`, `runtime/findings/echo_patterns.py`, `runtime/findings/constants.py`, `runtime/trace/url_userinfo.py`
 
 ### Context
 
@@ -2781,3 +2781,296 @@ A path the run declares, a follow-up and a recorded row are all judged by the sa
 readings. The cases the guard does not foresee are unchanged: a value filled in at
 run time, a non-canonical declared path, and a server that decodes more than
 twice.
+
+---
+
+## ADR-116 — A request poisons one field, and its intent travels to the oracles, the trace and the replay { #adr-116 }
+
+**Status:** accepted · Supersedes in part [ADR-033](#adr-033) · `models/runtime/intent.py`, `models/runtime/draw.py`, `strategy_compiler/zone.py`, `strategy_compiler/body.py`, `runtime/fuzzers/phases.py`, `runtime/payload.py`, `runtime/http/injector.py`, `runtime/oracles/context.py`, `runtime/trace/`
+
+### Context
+
+A boundary or invalid request whose fields are all drawn from the phase's builder
+at once says nothing about which field a rejection was for, and an acceptance
+cannot be pinned on any of them. An oracle that reports "the API accepted an
+invalid value" needs to know which value was meant to be invalid, and so does a
+reader of the finding. The shrink reconstructs a pass's strategy from the compiled
+parts, so whatever marks the poisoned field must be compiled into the strategy,
+not added on the side when a pass is planned.
+
+### Decision
+
+**One poisoned field per request, always.** In a poisoning phase each zone
+compiles a `one_of` of variants, one per field the phase can poison: that field
+from the phase's poison, every other one valid. The request draws one poisonable
+zone in that variant and every other zone valid. A phase no zone can poison has no
+strategy for the endpoint and is not planned.
+
+**A zone draws a `ZoneDraw`.** `ZoneDraw(values, poisoned_field)` is what every
+zone strategy draws, in every phase; `poisoned_field` is `None` outside a poisoned
+variant. A body that is not an object is the field `BODY_ROOT` (`"$"`), and a body
+left out of a draw is `NO_BODY_DRAWN`.
+
+**`RequestIntent` is the value the request carries.** `RequestIntent(phase,
+poisoned_zone, poisoned_field)` is frozen, and the zone and the field are set
+together or not at all. `ZonedPayload.from_mapping` reads it off the draws (two
+poisoned zones raise), `with_field` keeps it, the injector copies it to
+`RequestBlueprint.intent` (`phase` is a derived property for the readers that need
+nothing else), and `ResponseContext.intent` exposes it to the oracles.
+
+**The trace records it as three facts.** A `TracedRequest` keeps `phase`,
+`poisoned_zone` and `poisoned_field` as flat fields with no default, and its
+`intent` property reconstructs the value, so a replay sends the request with the
+intent it was drawn with.
+
+**The report keeps its shape.** `bare_values` unwraps the draws where a finding
+is materialized, so `minimal_payload` is the values a request sent, keyed by zone.
+
+### Rejected
+
+- **Poisoning in the pass planner.** The shrink reconstructs the strategy from the
+  compiled parts and would never see it.
+- **A marker key inside the drawn values.** A reserved key is fragile and leaks to
+  the wire.
+- **Two poisoned fields when aggressiveness is high.** Two fields make the
+  attribution ambiguous again. `aggressiveness` belongs to the attack phase.
+
+### Consequences
+
+Every boundary and invalid request names the one field it is about. The oracles
+and the reserved-header rule read the intent, never the phase
+([ADR-118](#adr-118), [ADR-119](#adr-119)). A trace carries two more fields per
+request.
+
+---
+
+## ADR-118 — A success that accepts the poisoned field outside its declared schema is an `input_validation` finding, one per field { #adr-118 }
+
+**Status:** accepted · `runtime/oracles/input_validation.py`, `runtime/oracles/precedence.py`, `runtime/oracles/builtin.py`, `runtime/oracles/schema_check.py`, `models/runtime/crash_report.py`
+
+### Context
+
+An API that answers 2xx to a value its own spec declares invalid is not
+validating its input: the defect a schema-driven fuzzer is best placed to find.
+Reading it off the phase ("a 2xx in the invalid phase is a finding") is wrong both
+ways. An invalid draw can fall back to a valid value when the field has no
+candidate on its wire, and a boundary draw can be invalid (`max + 1`, `""` below
+`minLength`).
+
+### Decision
+
+**`InputValidationOracle` judges the field the intent names.** It runs on a 2xx
+whose intent names a poisoned field with a declared schema. It reads the value the
+request sent, by zone:
+
+| Zone | Value judged |
+|---|---|
+| `path`, `query` | the value drawn, as sent |
+| `header` | the header's text, matched without case |
+| `body` | the field of the body, or the whole body for `$`; for a form or multipart body, the text the encoder sent |
+
+A field the request did not send is absent, which is not `null`. An absent field
+breaks the schema only when it is required. A sent value is read on a text wire as
+the declared type through the strict literals ([ADR-117](compiler.md#adr-117)) and
+checked by `validate_value`.
+
+**It is non-terminal, between the business rule and the status.** Its precedence
+`INPUT_VALIDATION` (33) runs after `SEMANTIC` (30) and before `STATUS_CODE` (35).
+A business rule still leads a finding that breaks one ([ADR-104](#adr-104)), and a
+response that also misses its declared status carries both violations.
+
+**The accepted field is the rule.** The verdict carries `ViolatedRule(id=
+"<zone>.<field>")`, such as `query.limit` or `body.$`, and `input_validation`
+belongs to `DECLARED_RULE_INVARIANTS`. Findings group by rule id, so a run reports
+one finding per endpoint and field.
+
+**A declared numeric format bounds the value.** `validate_value` holds a field
+declared `int32`, `int64` or `float` to its word. An unformatted integer is
+unbounded there: the `int64` the valid phase draws from is a choice of generation,
+not a promise of the spec ([ADR-113](compiler.md#adr-113)). The rule reaches the
+response schema oracle too, on purpose.
+
+### Rejected
+
+- **Judging by phase.** An invalid draw that is in fact valid would be reported,
+  and an invalid boundary draw would not.
+- **An intrinsic rule with a fixed id.** It cannot name the field, and grouping
+  by rule id would fold every field of an endpoint into one finding.
+
+### Consequences
+
+The built-in oracles are ten. A lenient API gets one finding for each field it
+fails to validate, each naming the field. The core labels the rule as the declared
+schema it is ([ADR-125](../../core/adr/core.md#adr-125)).
+
+---
+
+## ADR-119 — Credential headers belong to the identities and `Content-Type` to the transport { #adr-119 }
+
+**Status:** accepted · `runtime/http/reserved_headers.py`, `runtime/http/credentials.py`, `runtime/http/injector.py`, `runtime/trace/rehydrate.py`, `runtime/fuzzers/stateful/`
+
+### Context
+
+A spec that declares `Authorization` as a header parameter makes it a field the
+generator draws. Laid over the credentials, a generated value replaces the
+identity's token, and the request is sent as nobody while the run believes it
+spoke for an identity. A generated or configured `Content-Type` replaces the one
+that describes the body actually sent, so the server parses the body as something
+else.
+
+### Decision
+
+**Reserved names are the credentials' and the transport's.** `reserved_for(config
+headers, identity)` is the lowercased names of the credential headers (the config
+and the identity merged) plus `Content-Type`.
+
+**A generated header with a reserved name is dropped, unless it is the poisoned
+field.** When the intent poisons that header, the generated value goes out and the
+intent says so. The rule reads the intent, not the phase.
+
+| Header | Order, lowest first |
+|---|---|
+| a credential | config → identity → the generated value, only when it is the poisoned field |
+| `Content-Type` | the encoded body's, replacing a config one → the generated value, only when it is the poisoned field; multipart leaves it to the client, which writes the boundary |
+
+**The identity stays the identity.** A dropped generated header does not unlabel
+the request; only an admitted, poisoned header that shadows one of the identity's
+own drops its label.
+
+**A replay applies the same rule to the credentials.** A traced header with a
+reserved name is dropped, and every dropped name is refilled from the live
+credentials. The traced `Content-Type` is kept: it is the one that went out, and a
+replay has no compiled endpoint to recompute it.
+
+**A state link cannot write into a reserved header.** A rule step or a transition
+probe that would is a `StatefulLinkError`, so the run stops with `state_link_abort`
+rather than dropping the write and reporting it consumed.
+
+### Rejected
+
+- **Filtering the reserved headers out in the core's projection.** The engine
+  could then never poison them.
+- **Dropping a state-link write silently.** The step's `consumed` bindings would
+  claim a value the request never carried.
+
+### Consequences
+
+Every request speaks for the identity it was built under, and a body goes out with
+the media type it was encoded for. The credential and content-type headers are
+still attacked, one at a time, as the poisoned field.
+
+---
+
+## ADR-120 — An endpoint whose exploration raises is isolated as `engine_failure`, and the run goes on { #adr-120 }
+
+**Status:** accepted · `runtime/bulkhead.py`, `log.py`, `exceptions.py`, `models/runtime/results.py`, `models/runtime/run_status.py`, `models/runtime/trace.py`, `runtime/runners/loop.py`, `runtime/runners/auth/`, `runtime/runners/resilience/runner.py`, `runtime/fuzzers/stateful/outcome.py`, `runtime/fuzzers/stateful/supervisor.py`, `runtime/fuzzers/stateless/`, `runtime/harness/settled.py`; core `adapters/stdio/engine_log.py`
+
+### Context
+
+A defect of the engine (an exception while generating, building or folding one
+endpoint's requests) propagates out of the run. The run ends with no result: no
+findings for the endpoints already explored, no report, nothing that says which
+endpoint broke or why.
+
+### Decision
+
+**A bulkhead around each endpoint.** `guard_endpoint(endpoint_id, work,
+evidence=...)` wraps one endpoint's work in the shared loop (stateless and
+performance), in auth and in resilience. The control exceptions pass through
+untouched: `StopExplorationError`, `asyncio.CancelledError` and
+`SafetyGuardBreachError`, which must still stop the run; `KeyboardInterrupt` and
+`SystemExit` are not `Exception`s and are never caught. Any other exception becomes
+an `EngineFailure`.
+
+**The failure is a cut of that endpoint.** Its `TruncationRecord` has reason
+`ENGINE_FAILURE`, the endpoint id, the requests it sent and a `detail` of
+`<type> @ <file>:<line>` of the root cause, exception groups unwrapped. The run
+explores the other endpoints, and `run_status_of` ends it `truncated`, never
+`completed`. `kept_cut` folds the cuts: one that halts the run outranks any other,
+and otherwise the first recorded stands.
+
+**What the endpoint sent is kept.** `SentEvidence(results, findings)` is what the
+endpoint had sent and found when it raised. The shared loop reads it through the
+required `EndpointLoopSpec.evidence_of` (the stateless fuzzer's `sent_to`); auth
+and resilience record each result before judging it. Concurrent sends are gathered
+with `gather_settled`, so every sibling's result is recorded before the first error
+is raised again.
+
+**The message and traceback go to the engine's logger.** `engine_failure_record`
+logs the error with its traceback on `ENGINE_LOGGER_NAME` (`specforge_engine`).
+The library adds no handler; the embedding process decides where the records go,
+and the core writes them to stderr while it serves the protocol on stdout.
+
+**The other shapes fail the same way.** A stateful pass that raises anything the
+outcome table does not classify ends as `MachineFailed`, and the supervisor records
+an `ENGINE_FAILURE` cut owned by the endpoint whose rule raised (the first endpoint
+otherwise) and keeps the results. A raised stateless pass re-raises the same error
+when Hypothesis replays it, so the detail names the engine's error, not
+Hypothesis's wrapper. When shrinking raises, every finding group is reported
+unverified and the run is cut `engine_failure` at the endpoint being shrunk.
+
+**An auth endpoint with no valid request is not a defect.** It is cut
+`generation_exhausted` with the detail `no valid request available to cross`: the
+endpoint's own strategy produced no candidate, and the run goes on.
+
+### Rejected
+
+- **Catching per phase inside an endpoint.** A broken phase would go on spending
+  on the others without saying why.
+- **The exception message in `detail`.** It can echo drawn values or a credential,
+  and the detail travels to the report and the database. Type and location say
+  where to look; the log says the rest.
+
+### Consequences
+
+One defective endpoint costs that endpoint, never the run. A run with an engine
+failure is `truncated` with the failing endpoint named. A replay re-sends a trace
+and explores no endpoint, so it has no bulkhead.
+
+---
+
+## ADR-123 — Credential redaction covers one encoding layer per character over the whole echo { #adr-123 }
+
+**Status:** accepted · Supersedes in part [ADR-109](#adr-109) · `runtime/findings/redaction.py`, `runtime/findings/credential_forms.py`, `runtime/findings/constants.py`, `models/base_url.py`
+
+### Context
+
+[ADR-109](#adr-109) matches each credential form per character in any encoding a
+server writes, and leaves some echoes unmatched: the URL-safe base64 of a Basic
+token, a header credential echoed percent-encoded, a credential used as an object
+key, and the same secret in another Unicode normal form. Beyond those lie a value
+encoded twice and an echo split across lines. Chasing every one has no end.
+
+### Decision
+
+**The scope is one encoding layer per character, over the whole echo.** Inside it,
+every form is matched:
+
+- a Basic token padded and unpadded, in the standard and the URL-safe base64
+  alphabets;
+- every form percent-escaped, in either hex case, header credentials included;
+- every form in NFC and NFD;
+- object keys, scrubbed like values.
+
+`MIN_SECRET_LENGTH` (8) still applies to each form.
+
+**Outside it, nothing is pursued.** A server that encodes a secret twice, or
+splits it across lines, returns a text no client shows as the secret; matching it
+needs the backtracking [ADR-109](#adr-109) rejects.
+
+**The userinfo stays where it can be found.** A base URL whose fragment holds an
+`@` is refused at the boundary, with a message to percent-encode any userinfo: a
+URL split by hand would read the fragment as userinfo and miss the real one.
+
+### Rejected
+
+- **Dropping a body that looks like it holds a credential.** It removes the
+  evidence of real findings on a heuristic.
+- **Decoding layers until nothing changes.** It needs the backtracking that
+  [ADR-109](#adr-109) rejects, for echoes no client shows as the secret.
+
+### Consequences
+
+Every echo inside the scope is scrubbed in the finding; the trace is not redacted
+([ADR-060](#adr-060)). A double encoding and a split echo stay in the clear: that is
+the stated limit.

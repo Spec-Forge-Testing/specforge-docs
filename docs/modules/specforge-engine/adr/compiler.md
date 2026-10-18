@@ -376,7 +376,7 @@ a typed value; storage's phase description lists `mutation`.
 
 ## ADR-067 — A header's text alphabet is narrowed at generation by zone, derived from what the wire carries, and an incompatible pattern falls back rather than excluding the endpoint { #adr-067 }
 
-**Status:** accepted · `strategy_compiler/zone.py`, `strategy_compiler/fields/context.py`, `strategy_compiler/fields/default/alphabet.py`, `strategy_compiler/fields/default/valid.py`, `strategy_compiler/constants.py`
+**Status:** accepted · Superseded in part by [ADR-114](#adr-114) · `strategy_compiler/zone.py`, `strategy_compiler/fields/context.py`, `strategy_compiler/fields/default/alphabet.py`, `strategy_compiler/fields/default/valid.py`, `strategy_compiler/constants.py`
 
 ### Context
 
@@ -456,7 +456,7 @@ field, and a new zone that needs its own alphabet is a row in
 
 ## ADR-111 — Numbers stay finite, and the boundary phase stays inside the declared range { #adr-111 }
 
-**Status:** accepted · `strategy_compiler/constants.py`, `strategy_compiler/fields/default/constraints.py`, `strategy_compiler/fields/default/boundary.py`, `strategy_compiler/fields/hacker/payloads.py`; engine `runtime/http/wire_body.py`
+**Status:** accepted · Superseded in part by [ADR-113](#adr-113) · `strategy_compiler/constants.py`, `strategy_compiler/fields/default/constraints.py`, `strategy_compiler/fields/default/boundary.py`, `strategy_compiler/fields/hacker/payloads.py`; engine `runtime/http/wire_body.py`
 
 ### Context
 
@@ -503,3 +503,340 @@ phase is for.
 A contract with a `number` field runs to completion, its boundary probes sit on and
 next to the declared edges, and an exclusive bound is honoured exactly. Boundary
 candidates are filtered by range, not by `multipleOf`.
+
+---
+
+## ADR-113 — Numbers are bounded by their declared format, and the generation word bounds only the valid phase { #adr-113 }
+
+**Status:** accepted · Supersedes in part [ADR-111](#adr-111) · `models/schema.py`, `strategy_compiler/constants.py`, `strategy_compiler/fields/default/constraints.py`, `strategy_compiler/fields/default/boundary.py`, `strategy_compiler/fields/default/valid.py`, `runtime/oracles/schema_check.py`
+
+### Context
+
+An `integer` drawn from an open strategy reaches twenty-nine digits, and about one
+valid draw in five has eleven or more. A field declared `format: int32` drawn the
+same way leaves its word. A server rejects such a value while parsing, before its
+endpoint logic runs, so the valid phase spends its budget on requests that test
+the parser. A `number` declared `format: float` is probed with a double's edges
+(`1e308`), which a single-precision field cannot hold either.
+
+### Decision
+
+**Numeric formats are their own vocabulary.** `NumericFormat` (`int32`, `int64`,
+`float`, `double`) sits beside the string `SchemaFormat`, and `NUMERIC_WORD_RANGE`
+in `models/schema.py` holds the word of each bounded one. The string builders key
+their regex table by `SchemaFormat`; a string that declares `format: int32` never
+reaches it.
+
+**Two ranges, read by different phases.**
+
+| Range | What it is | Read by |
+|---|---|---|
+| declared (`declared_int_range`, `declared_float_range`) | `minimum`/`maximum` and the exclusive bounds, narrowed by a declared format's word and never widened | `boundary`, `invalid`; the oracles hold a value to the same bounds and word |
+| generation (`generation_int_range`, `generation_float_range`) | the declared range inside the word of `UNFORMATTED_INTEGER_FORMAT` (`int64`) when the field names no integer format | `valid` |
+
+`int64` for an unformatted integer is a choice of generation: an integer with no
+format is a 64-bit word in every real implementation. It is not a promise of the
+spec, so the boundary and invalid phases still probe past it, and the oracles hold
+an unformatted integer to no word at all. An `int32` field's boundary phase offers
+`2**31 - 1`; its invalid phase offers `2**31` as out of range.
+
+**Float edges follow the format.** `FLOAT_BOUNDARY` is keyed by `NumericFormat`:
+`float` probes `±3.4028235e38` and `±1.1754944e-38`, and `double` (and a `number`
+with no format) keeps the double's edges.
+
+**Boundary candidates sit on the declared multiple.** Each candidate is snapped
+down and up to `multipleOf` in exact rational arithmetic, and an integer field
+keeps only the whole results.
+
+The attack phase keeps the full word tables: probing past a declared range is
+what it is for.
+
+### Rejected
+
+- **Leaving the unformatted integer open in the valid phase.** Twenty-nine digits
+  is noise, not coverage.
+- **Bounding the boundary and invalid phases by `int64` too.** For an unformatted
+  integer, the value past the word is exactly the probe those phases exist to send.
+- **Adding the numeric formats to `SchemaFormat`.** The string builder indexes its
+  pattern table by every known `SchemaFormat`; a numeric member there has no
+  pattern and fails at the first string that declares it.
+
+### Consequences
+
+Valid integers fit the word their field declares, or `int64`. A response that
+returns `2**31` for a field declared `int32` breaks the response schema. The
+boundary phase of a field with `multipleOf` stays on the multiple.
+
+---
+
+## ADR-114 — Strings draw from one of three alphabets, chosen by zone and phase, and the body stays open { #adr-114 }
+
+**Status:** accepted · Supersedes in part [ADR-067](#adr-067) · `models/wire.py`, `strategy_compiler/constants.py`, `strategy_compiler/parameter.py`, `strategy_compiler/fields/default/alphabet.py`
+
+### Context
+
+[ADR-067](#adr-067) narrows a header's strings to what the transport can carry.
+Query and path strings drawn from the open alphabet carry control characters and
+unassigned code points. They are percent-encoded and sent, and a server rejects
+the URL before routing it, so a valid request tests the URL parser. A body string
+is different: a control character is legal inside a JSON string.
+
+### Decision
+
+**`TextAlphabet` has three members.**
+
+| Member | Characters |
+|---|---|
+| `OPEN` | every code point but the surrogates |
+| `PRINTABLE` | every code point but the control (`Cc`), surrogate (`Cs`) and unassigned (`Cn`) categories |
+| `WIRE_SENDABLE` | printable ASCII without space, `0x21`–`0x7E` |
+
+**The alphabet is a table of phase and zone.** `TEXT_ALPHABET_BY_PHASE` maps the
+`valid` phase to `VALID_TEXT_ALPHABET`; every other phase takes
+`NON_VALID_TEXT_ALPHABET`. A zone absent from a table draws `OPEN`.
+
+| Zone | `valid` | every other phase |
+|---|---|---|
+| `header` | `WIRE_SENDABLE` | `WIRE_SENDABLE` |
+| `query`, `path` | `PRINTABLE` | `OPEN` |
+| `body` | `OPEN` | `OPEN` |
+
+`compile_parameter` sets the alphabet on the field's `GenerationContext` for the
+phase it compiles. In a poisoned request only the poisoned field is compiled for
+the poisoning phase; every other field draws valid, under the valid alphabet.
+
+**The body keeps the open alphabet on purpose.** A JSON string may carry any
+character but a surrogate. A server that rejects a control character in a JSON
+string validates more than it declares, and the valid phase is where that shows.
+
+### Rejected
+
+- **An alphabet per field in the contract.** A knob no producer has a value for.
+- **`PRINTABLE` for the body.** It would stop sending legal JSON strings a server
+  may mishandle.
+
+### Consequences
+
+Valid query and path values never carry a control or unassigned character. The
+header table is unchanged. The printable narrowing belongs to the valid phase
+alone: `semantic`, `attack` and `mutation` draw query and path text from the open
+alphabet.
+
+---
+
+## ADR-115 — Optional parameters are optional, and the minimal request is the first valid example, inside the quota { #adr-115 }
+
+**Status:** accepted · `strategy_compiler/zone.py`, `strategy_compiler/fields/default/valid.py`, `runtime/harness/minimal.py`, `runtime/fuzzers/stateless/example_counts.py`, `runtime/fuzzers/stateless/exploration.py`; core `services/fuzz/projection/schema.py`
+
+### Context
+
+A zone compiled as a fixed dictionary of every parameter sends every optional
+parameter in every draw. The request clients send most often, the required
+parameters and nothing else, is then never sent, and an endpoint that misbehaves
+only without an optional parameter is never caught. On the fused path the core
+never marks a parameter required, so every parameter there is optional by
+omission.
+
+### Decision
+
+**A valid draw holds what is required and sometimes the rest.** The valid phase
+compiles each zone as a fixed dictionary with the required parameters always
+present and every optional one optional. A path segment is always present. The
+non-poisoning phases other than `valid` (`attack`, `mutation`, `semantic`) send
+every parameter; a poisoning variant holds the required parameters and the
+poisoned one, and the rest optionally.
+
+**The core marks the kernel's required parameters.** The projection reads the
+contract's `required_parameters` and sets `required` on the contracts of their
+zone.
+
+**The minimal request is a seeded example.** `plan_passes` computes, for every
+valid pass, `minimal_draw(strategy)`: the simplest payload the pass's strategy
+draws, found by Hypothesis with the shrink settings. The pass runs it as an
+explicit `@example`, so it is the first request the pass sends. It is carried as
+`Pass.minimal_payload`.
+
+**It takes one place of the pass's share.** A pass with a minimal payload
+generates `share - 1` examples, or runs only the explicit example when its share
+is 1. Hypothesis does not count an explicit example toward `max_examples`, so
+adding it on top would send one request more than the plan.
+
+### Rejected
+
+- **A separate `minimal` pass.** It duplicates the budget and its accounting.
+- **The minimal request on top of the share.** A performance ladder step promises
+  to send exactly its budget, and every request counter would drift by one per
+  pass.
+
+### Consequences
+
+Every valid pass opens with the request that sends only what the spec requires.
+Optional parameters are left out of a share of the draws, and request counts stay
+exact.
+
+---
+
+## ADR-117 — The zone's wire decides what is invalid and how the oracle reads it back { #adr-117 }
+
+**Status:** accepted · `models/wire.py`, `models/media_type.py`, `strategy_compiler/fields/context.py`, `strategy_compiler/fields/default/invalid.py`, `strategy_compiler/parameter.py`, `runtime/oracles/input_validation.py`
+
+### Context
+
+A query, a header and a form field carry text. An integer drawn for a string
+field arrives as the text `6`, which the string accepts. `None` for an optional
+query parameter means the parameter is left out, which is valid. A path segment
+can be neither empty nor left out. Lenient servers read more texts as a type than
+a strict parser does: `?flag=1` is `true` for many of them, and Python's `int`
+reads `" 7"` and `"1_0"`. A JSON body carries types and `null` as such.
+
+An invalid generator that ignores the wire sends valid requests labelled invalid,
+and an oracle that judges them reports an API for accepting valid input.
+
+### Decision
+
+**`ZoneWire` names how a zone carries a value.** `zone_wire(zone, media_type)`:
+path is `SEGMENT`, query and header are `TEXT`, and the body is `STRUCTURED` for a
+JSON media type (or none) and `TEXT` for any other, form and multipart included.
+The compiler puts the wire on the field's `GenerationContext`.
+
+**The invalid candidates are those the wire tells apart.**
+
+| Candidate | `STRUCTURED` | `TEXT` | `SEGMENT` |
+|---|---|---|---|
+| a value of another type (`integer` or `boolean` for a `string`) | yes | no | no |
+| text for a numeric or boolean field | any text | text no lenient server reads as the type | text no lenient server reads as the type |
+| `""` for `minLength > 0` | yes | yes | no |
+| `None` | for an `integer`, `number`, `array` or `object` field | only for a required parameter: leaving it out is the invalid request | never |
+| an array | wrong type, or `[]` below `minItems` | one item its own schema rejects, as `[item]` | one item its own schema rejects, as `[item]` |
+| an object | wrong type | not poisoned | not poisoned |
+
+Every wire also offers the over-long string past `maxLength`, a text outside an
+`enum`, and an integer outside the declared range. "Lenient" is
+`reads_leniently_as`: Python's `int` and `float`, and the booleans `1`, `0`, `yes`,
+`no`, `on`, `off`, `t`, `f`, `y` and `n`.
+
+**The oracle reads strictly.** On a text wire the input-validation oracle reads
+the text the request carried as the declared type through strict literals
+(`-?[0-9]+` for an integer, a decimal with an optional exponent for a number,
+`true` or `false`); a text the literal does not parse stays text and fails the
+type. A form or multipart field is judged as the text its encoder sent.
+
+The gap between the two readings is the point. The generator never offers a text
+some server reads as valid; the oracle never credits a text the spec does not
+spell.
+
+### Rejected
+
+- **Filtering after generation.** It spends budget on draws that are thrown away,
+  and Hypothesis gives up on a strategy it must filter too much.
+- **One reading for both.** A strict generator offers `" 7"` as an invalid
+  integer, and a lenient server accepts it: a false finding. A lenient oracle
+  excuses whatever any server would read.
+
+### Consequences
+
+A path string with no length or `enum` constraint has no invalid candidate, nor
+does an optional query or header string without one, so its zone plans no invalid
+phase on its account. A pattern or a format
+alone is not a candidate: producing a text that breaks an arbitrary pattern is not
+attempted. A body sent as a form is generated and judged on a text wire.
+
+---
+
+## ADR-121 — The spec's default and examples seed the valid phase at a fixed share { #adr-121 }
+
+**Status:** accepted · Supersedes [ADR-012](models.md#adr-012) · `models/schema.py`, `models/contracts/strategies/base.py`, `models/contracts/normalization.py`, `strategy_compiler/fields/schema_view.py`, `strategy_compiler/fields/default/valid.py`, `strategy_compiler/constants.py`; kernel `specforge_contracts.endpoint`; `contract_assembly/fusion/vocabulary.py`
+
+### Context
+
+A schema's `default` and `examples` are values the API's author asserts are
+valid: the sort order a list takes when none is given, an id that exists, a
+realistic date. A valid phase that draws only from the constraints rarely reaches
+them, and they are the values most likely to pass the parser and reach the
+endpoint's logic.
+
+### Decision
+
+**The contract carries the spec's samples.** The kernel's `SchemaProperty` and
+`BaseStrategyContract` carry `default` and `examples`; `SchemaKeyword` gains
+`default`, `examples` and `example`; every type allows them; fusion keeps them
+beside an `enum`. The dialect folds `example` into `examples`
+([ADR-112](models.md#adr-112)), and the core adds a parameter's own `example` and
+its `examples` entries' `value`s.
+
+**`SchemaView.seeds` is the declared order, each value once.** The `default`
+first, then the `examples`, deduplicated by `same_seed`.
+
+**A fixed share of valid draws is a seed.** `build_valid_strategy` is a weighted
+union with no hidden weights: a roll in `0..99` below `SEED_SHARE_PERCENT` (20)
+draws a copy of one seed, any other roll draws from the schema. A field with no
+seeds draws from the schema alone.
+
+**Seeds are trusted as written.** They are not filtered through the schema: a
+seed is an assertion of the spec, and a seed the schema rejects is a contradiction
+the server is entitled to answer.
+
+**Only the phases that send benign values seed.** `attack`, `mutation` and
+`semantic` reuse the valid builder and inherit the seeds. `boundary` and `invalid`
+fall back to `build_unseeded_valid_strategy` where they draw a valid value.
+
+### Rejected
+
+- **Seeds only as explicit `@example`s.** Each would be sent once and never again.
+- **A seed weight per field.** A knob no producer has a value for.
+
+### Consequences
+
+About one valid draw in five of a seeded field is a value the spec named. The
+documentation schema and the `hypothesis-jsonschema` fallback see `default` and
+`examples` as the annotations they are.
+
+---
+
+## ADR-124 — Poisoning is a property of the registered phase { #adr-124 }
+
+**Status:** accepted · `strategy_compiler/fields/registry.py`, `strategy_compiler/fields/builtin.py`, `strategy_compiler/fields/poisoning.py`, `strategy_compiler/zone.py`, `strategy_compiler/body.py`, `strategy_compiler/compiler.py`, `models/runtime/engine_input.py`, `runtime/fuzzers/phases.py`
+
+### Context
+
+Poisoning has two halves. The compiler must know which values a field can be
+poisoned with in a phase, and the runtime must know whether a phase draws one zone
+poisoned and the rest valid. If the first lives in a compiler table and the second
+in a runtime constant, a new phase poisons only after both are edited, and the
+runtime reads a list the compiler never saw.
+
+### Decision
+
+**A phase declares its candidates where it is registered.**
+`GenerationPhase.candidates` is a `CandidateSource | None`: given a contract and
+its context, the strategy over the values the field could be poisoned with, or
+`None` when it has none. It resolves by MRO, like `build`. A phase with candidates
+poisons; one without never does.
+
+**The candidates decide; the build poisons.** `poisoning_strategy(contract, phase,
+context=...)` asks the phase's candidates whether the field can be poisoned and,
+when it can, compiles the field with the phase's `build`. One source of truth
+decides both whether a field is poisonable and what it is poisoned with.
+
+**The compiled output says which phases poison.** Each `CompiledRequestPart`
+carries `poisoning_phases`, the phases whose strategy poisons one of its fields
+per draw, always a subset of the phases it compiled.
+`CompiledEndpointStrategies.poisoning_phases` holds the phases the endpoint's
+contract type poisons. The runtime reads those sets and never the registry: a
+poisoning phase that no zone can poison is not drawn.
+
+The built-in `boundary` and `invalid` phases register `boundary_candidates` and
+`invalid_candidates`; `valid`, `attack`, `mutation` and `semantic` register none.
+
+### Rejected
+
+- **A constant of poisoning phases in the runtime.** A second source of truth the
+  compiler cannot see.
+- **The runtime asking the registry.** The runtime consumes the `EngineInput`
+  alone ([ADR-014](api.md#adr-014)).
+
+### Consequences
+
+A new poisoning phase is one registration with its candidates. An endpoint with
+no poisonable field plans no boundary or invalid pass, and the budget those
+phases would have spent stays unspent.

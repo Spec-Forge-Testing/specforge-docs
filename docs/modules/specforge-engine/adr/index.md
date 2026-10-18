@@ -24,15 +24,16 @@ reused across files — the number tells you when it was written, the file
 tells you what it governs. The sequence is shared by the whole site, so a number
 missing here belongs to another module:
 [ADR-064](../../contract-assembly/adr/foundations.md#adr-064) is Contract
-Assembly's.
+Assembly's, and [ADR-125](../../core/adr/core.md#adr-125), how the report labels
+`input_validation` and `engine_failure`, is the core's.
 
 | File | Area | Covers |
 | --- | --- | --- |
 | [foundations.md](foundations.md) | package-wide | Exceptions, the root constants, naming |
-| [models.md](models.md) | models | Vocabularies, the contract package, the boundary DTOs |
+| [models.md](models.md) | models | Vocabularies, the contract package and its dialect, the boundary DTOs |
 | [api.md](api.md) | facade / policy | What `run` takes, what the facade exports, how input is validated |
 | [compiler.md](compiler.md) | strategy_compiler | How a field becomes a strategy |
-| [engine.md](engine.md) | engine | Findings, counters, runners, replay |
+| [engine.md](engine.md) | engine | Requests and their intent, oracles, findings, counters, runners, replay |
 
 ## Full index
 
@@ -117,3 +118,16 @@ Assembly's.
 | [ADR-109](engine.md#adr-109) | engine | An echoed credential is matched in any per-character encoding a server writes |
 | [ADR-110](engine.md#adr-110) | engine | A route veto reads a path as every modelled server chain does |
 | [ADR-111](compiler.md#adr-111) | strategy_compiler | Numbers stay finite, and the boundary phase stays inside the declared range |
+| [ADR-112](models.md#adr-112) | models | The dialect folds OpenAPI 3.0's spellings, and a numeric bound is a number or nothing |
+| [ADR-113](compiler.md#adr-113) | strategy_compiler | Numbers are bounded by their declared format, and the generation word bounds only the valid phase |
+| [ADR-114](compiler.md#adr-114) | strategy_compiler | Strings draw from one of three alphabets, chosen by zone and phase, and the body stays open |
+| [ADR-115](compiler.md#adr-115) | strategy_compiler | Optional parameters are optional, and the minimal request is the first valid example, inside the quota |
+| [ADR-116](engine.md#adr-116) | engine | A request poisons one field, and its intent travels to the oracles, the trace and the replay |
+| [ADR-117](compiler.md#adr-117) | strategy_compiler | The zone's wire decides what is invalid and how the oracle reads it back |
+| [ADR-118](engine.md#adr-118) | engine | A success that accepts the poisoned field outside its declared schema is an `input_validation` finding, one per field |
+| [ADR-119](engine.md#adr-119) | engine | Credential headers belong to the identities and `Content-Type` to the transport |
+| [ADR-120](engine.md#adr-120) | engine | An endpoint whose exploration raises is isolated as `engine_failure`, and the run goes on |
+| [ADR-121](compiler.md#adr-121) | strategy_compiler | The spec's default and examples seed the valid phase at a fixed share |
+| [ADR-122](models.md#adr-122) | models | The body is one root contract with one media type, encoded by a closed table |
+| [ADR-123](engine.md#adr-123) | engine | Credential redaction covers one encoding layer per character over the whole echo |
+| [ADR-124](compiler.md#adr-124) | strategy_compiler | Poisoning is a property of the registered phase |

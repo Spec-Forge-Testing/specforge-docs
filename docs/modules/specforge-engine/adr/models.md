@@ -145,7 +145,7 @@ compiling — so the field is carried, not interpreted, here.
 
 ## ADR-008 — The four request zones are one value object { #adr-008 }
 
-**Status:** accepted · `models/compiler/endpoint_spec.py`
+**Status:** accepted · Superseded in part by [ADR-122](#adr-122) · `models/compiler/endpoint_spec.py`
 
 ### Context
 
@@ -273,7 +273,7 @@ that needs a different budget derives a new plan.
 
 ## ADR-012 — `SchemaKeyword` omits `default` { #adr-012 }
 
-**Status:** accepted · `models/schema.py`, `models/contracts/normalization.py`
+**Status:** accepted · Superseded by [ADR-121](compiler.md#adr-121) · `models/schema.py`, `models/contracts/normalization.py`
 
 ### Context
 
@@ -305,3 +305,132 @@ is dropped silently at the boundary rather than documented as inert vocabulary.
 
 Twenty-one keywords. The base allow-list has one element type; the hacker
 allow-list's union names exactly the two things it holds.
+
+---
+
+## ADR-112 — The dialect folds OpenAPI 3.0's spellings, and a numeric bound is a number or nothing { #adr-112 }
+
+**Status:** accepted · `models/contracts/dialect.py`, `models/contracts/strategies/base.py`; core `services/fuzz/projection/schema.py`
+
+### Context
+
+OpenAPI 3.0 spells an exclusive bound as a boolean modifier of the inclusive one
+(`minimum: 0, exclusiveMinimum: true`); 3.1 and JSON Schema spell it as the bound
+itself (`exclusiveMinimum: 0`). A lax numeric field reads the boolean as a number:
+`exclusiveMinimum: false` becomes an exclusive minimum of `0`, so a field declared
+`[0, 30]` never draws `0`, and `exclusiveMinimum: true` becomes an exclusive
+minimum of `1` whatever the declared `minimum` is. The same version writes one
+`example` per schema where the newer ones write an `examples` list, and a
+parameter object names its examples in a map whose entries hold a `value`.
+
+A contract reaches the engine by two paths, projected from the OpenAPI document
+or fused with an inferred contract. The engine's contract model is the one point
+both cross.
+
+### Decision
+
+**`normalize_dialect` translates every 3.0 spelling, at every depth.** It is the
+`before` validator of `BaseStrategyContract`, so it runs on every schema fragment
+of both paths. Two rules join the type-array rule:
+
+- A boolean exclusive bound becomes a numeric one. `true` moves the inclusive
+  bound into the exclusive keyword; `true` with no inclusive bound, and `false`,
+  are dropped.
+- `example` and a non-list `examples` fold into one `examples` list. A map
+  contributes each entry's `value`; any other non-list contributes nothing; the
+  singular `example` is appended unless the list already holds it.
+
+**A bound is strictly typed.** `exclusiveMinimum` and `exclusiveMaximum` are
+`StrictInt | StrictFloat`; `minimum` and `maximum` also take a string, for date
+bounds. A boolean that reaches the model without the dialect is a validation
+error at the boundary, never `0` or `1`.
+
+**Two samples are one value when they are equal and of one type.** `same_seed` is
+that rule, so `1` and `True` stay distinct seeds. The facade exports it, and the
+core's projection deduplicates a parameter's own examples with it.
+
+### Rejected
+
+- **Normalizing in contract assembly or in the core's projection.** There are two
+  entry paths, and a second normalizer would drift from the first. The engine is
+  the one place every contract passes through.
+- **Withholding an endpoint whose `examples` is not a list.** A spelling
+  difference would cost the whole endpoint.
+
+### Consequences
+
+A 3.0 document with `exclusiveMinimum: false` generates on the closed range, and
+one with `true` excludes exactly the declared bound. A contract that writes a
+boolean bound where the dialect cannot see it fails validation and names the
+field.
+
+---
+
+## ADR-122 — The body is one root contract with one media type, encoded by a closed table { #adr-122 }
+
+**Status:** accepted · Supersedes in part [ADR-008](#adr-008) · `models/compiler/endpoint_spec.py`, `models/runtime/engine_input.py`, `models/media_type.py`, `strategy_compiler/body.py`, `runtime/http/body_encoders.py`, `runtime/http/injector.py`, `runtime/trace/`; core `services/fuzz/projection/body.py`
+
+### Context
+
+Modelled as a map of the root object's properties beside a list of the endpoint's
+content types, a body whose root is not an object (an array of ids, a bare string,
+a number) has no properties and is never sent. Nothing in that shape says whether
+the body is required, so an optional body is always sent; nothing ties the content
+type sent to the media type whose schema the values were drawn from; and a single
+JSON writer sends every body as JSON, whatever its media type says.
+
+### Decision
+
+**`BodySpec` is the declared body as a whole.** `BodySpec(media_type, required,
+root)`: the chosen media type, whether the body is required, and the root contract.
+`fields` is derived from the root's properties, never stored twice, and is empty
+for a root that is not an object. A required body makes its root required, so an
+omitted root is judged as missing. `RequestZones.body` is a `BodySpec | None`;
+`EndpointSpec.content_types` does not exist.
+
+**The producer picks one media type.** The core's projection prefers
+`application/json`, then any JSON media type (`is_json_media_type`: the essence is
+`application/json` or ends in `+json`), then the first one declared, and takes that
+media type's own schema. A body only an inferred contract declares is JSON.
+
+**A root that is not an object compiles as one field.** It is the field
+`BODY_ROOT` (`"$"`): its draw is the value itself, and the poisoning phases poison
+it under that name. An optional body is left out of some `valid` draws, as often as
+an optional parameter, and never out of a poisoning draw.
+
+**`CompiledBody` carries what the transport needs.** It extends
+`CompiledRequestPart` with the `media_type` and the `file_fields`, the root's
+properties declared `format: binary`. The blueprint and the trace carry `body`,
+`media_type` and `file_fields`, so a replay encodes a recorded body without the
+compiled endpoint.
+
+**Encoders are a closed table keyed by media type.** `BODY_ENCODERS` holds three:
+JSON (every JSON media type), `application/x-www-form-urlencoded` and
+`multipart/form-data`. An encoder names the `Content-Type` to send (`None` lets the
+client write it, as multipart needs for its boundary), the client arguments, and
+why a body cannot be encoded. A media type without an encoder is an
+`unsendable_request`, never JSON in disguise.
+
+**`None` is "not sent", on every wire.** A body drawn as `None` is sent as no body
+and without the body's `Content-Type`; a form or multipart field drawn as `None` is left out; a
+parameter drawn as `None` is left out of the query and the headers.
+
+### Rejected
+
+- **A `Map` of fields plus a separate list of content types.** It cannot express
+  a root that is not an object, and nothing ties the content type sent to the
+  schema drawn.
+- **Building a multipart body by hand.** The client already frames the parts and
+  writes the boundary.
+- **An open encoder registry.** An encoder decides what a request carries on the
+  wire and how the input-validation oracle reads it back
+  ([ADR-117](compiler.md#adr-117)); a media type is a new row in that one file,
+  reviewed with the oracle.
+
+### Consequences
+
+An array, string or number body is compiled, sent and judged. A form or multipart
+body is sent as such, each field as text (a non-string value as its JSON text), and
+a multipart body with no field to send is unsendable. Every body the spec does not
+mark required is left out of some valid draws. A root declared `{}` sends
+arbitrary JSON.

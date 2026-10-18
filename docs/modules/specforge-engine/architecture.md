@@ -32,7 +32,8 @@ src/specforge_engine/
 ├── __init__.py            # Public facade, curated __all__
 ├── main.py                # compile_strategies() and run(): thin delegators
 ├── constants.py           # Engine-health numbers shared by two or more layers
-├── exceptions.py          # Domain exception taxonomy
+├── exceptions.py          # Domain exception taxonomy, and the StopExplorationError control signal
+├── log.py                 # ENGINE_LOGGER_NAME: the stdlib logger; the library adds no handler
 ├── phase_extension_builtins.py  # composition root: registers the builtin SEMANTIC extension
 ├── shared/                # Stage-neutral helpers; import only models, never a stage
 │   ├── numeric.py         # is_multiple_of: exact arithmetic shared by compiler and oracles
@@ -45,26 +46,30 @@ src/specforge_engine/
 ├── policy/                # validate_endpoint_spec, field-reference checks
 ├── strategy_compiler/     # Per-endpoint compile, zones, planning, fields/
 │   ├── compiler.py        # compile(): per-endpoint orchestration, exclusions
-│   ├── zone.py            # ZoneCompileContext, compile_zone
+│   ├── parameter.py       # compile_parameter, poison_parameter: one parameter under its zone's alphabet and wire
+│   ├── zone.py            # ZoneCompileContext, compile_zone: plain and poisoning phases of a zone
+│   ├── body.py            # compile_body: object fields as a zone, or the root as the field `$`
 │   ├── planning.py        # build_generation_plan, estimate_parameter_space
 │   ├── effective_phases.py # effective_phases / effective_split: read the extension registry
-│   ├── constants.py       # boundary tables, choice counts, attack-profile maps
+│   ├── constants.py       # boundary tables, alphabets per phase, seed share, choice counts, attack-profile maps
 │   └── fields/            # Field → SearchStrategy
 │       ├── context.py     # GenerationContext, EMPTY_CONTEXT
 │       ├── schema_view.py # SchemaView: typed reader over a contract
-│       ├── registry.py    # phase registry: register_phase, resolve_phase, isolated
-│       ├── builtin.py     # the seven built-in phase registrations
-│       ├── default/       # valid · boundary · invalid · constraints
+│       ├── registry.py    # phase registry: register_phase, resolve_phase, candidates_for, isolated
+│       ├── poisoning.py   # poisoning_strategy: the phase's candidates decide, its build poisons
+│       ├── builtin.py     # the built-in phase registrations
+│       ├── default/       # valid · boundary · invalid · constraints · formats · alphabet
 │       └── hacker/        # request · mutation · mutation_operators · payloads · builders · tables
 └── runtime/                # Execution
     ├── facade.py          # run(): resolve the mode, open one client, dispatch, hold safe endpoints
     ├── safety_guard.py    # partition_by_safety: hold declared side-effect endpoints back
-    ├── payload.py         # ZonedPayload: the value object a strategy draws
+    ├── payload.py         # ZonedPayload: the value object a strategy draws, with its intent
+    ├── bulkhead.py        # guard_endpoint: an endpoint whose exploration raises becomes an engine_failure cut
     ├── ordering.py        # order_by_risk: most-risky-first, before dispatch
     ├── progress/          # Throttled counters and lifecycle events pushed to an observer
-    ├── http/              # Async orchestrator, request injection, credentials, error classifier
-    ├── harness/           # The Hypothesis bridge: one event loop, settings, identity strategy
-    ├── oracles/           # Response oracles: verdict leaf, intrinsic rules, registry, precedence, the nine builtins
+    ├── http/              # Async orchestrator, request injection, body encoders, credentials, reserved headers, error classifier
+    ├── harness/           # The Hypothesis bridge: one event loop, settings, identity strategy, minimal draw, settled gather
+    ├── oracles/           # Response oracles: verdict leaf, intrinsic rules, registry, precedence, the ten builtins
     ├── findings/          # Group, deduplicate, materialize, shrink, stats
     ├── fuzzers/           # stateless/ and stateful/ procedures
     ├── state_link/        # Shared bundle capture and status matching (stateful + auth)
@@ -90,13 +95,14 @@ declares a domain type.
 
 ```text
 models/
-├── execution_mode.py · strategy_mode.py · phase.py · schema.py   # vocabulary enums (StrEnum)
+├── execution_mode.py · strategy_mode.py · phase.py · schema.py   # vocabulary enums (StrEnum), numeric word ranges
+├── wire.py · media_type.py   # ZoneWire, TextAlphabet, the wire literals; is_json_media_type
 ├── profile.py          # StrategyModeProfile: what one strategy mode decides
 ├── contracts/          # the contract vocabulary: kernel re-exports + the engine's own contracts
 │   ├── dialect.py · normalization.py · response.py · state_link.py · endpoint_controls.py
 │   └── strategies/     # BaseStrategyContract, HackerStrategyContract
-├── compiler/           # compiler-side DTOs: CompilerInput, EndpointSpec, RequestZones, CompilationOutcome
-└── runtime/             # engine-side DTOs: EngineInput, GenerationPlan, runtime, options, results, trace, replay
+├── compiler/           # compiler-side DTOs: CompilerInput, EndpointSpec, RequestZones, BodySpec, CompilationOutcome
+└── runtime/             # engine-side DTOs: EngineInput, CompiledBody, GenerationPlan, RequestIntent, ZoneDraw, runtime, options, results, trace, replay
 ```
 
 The enums sit at the package root because both the compiler and the engine key

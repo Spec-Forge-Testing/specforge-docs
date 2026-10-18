@@ -84,9 +84,18 @@ neither. See [ADR-095](../adr/protocol.md#adr-095).
 ## Changelog
 
 The report document that `fuzz`, `replay` and `run_pipeline` answer with is
-`schema_version` 1.17. The protocol's own README holds the full entry for each
+`schema_version` 1.18. The protocol's own README holds the full entry for each
 version; the lines below are the summary.
 
+- **Report 1.18** — The report names a success that accepted an invalid input, and
+  an endpoint the engine failed on while the rest of the run went on. Additive; the
+  protocol version does not change. The invariant `input_validation`: a 2xx that
+  accepted a value outside the declared schema of the field its `rule_id` names,
+  as `<zone>.<field>` (`query.limit`; `body.$` for a body that is not an object),
+  one finding per endpoint and field. The truncation reason `engine_failure`: an
+  endpoint whose exploration raised inside the engine was isolated, with the
+  error's type and location in `detail`; the run explores the other endpoints and
+  ends `truncated` ([ADR-125](../adr/core.md#adr-125)).
 - **0.1.12** — The catalog says what an operation needs and what it destroys.
   Additive. `requires: "analysis"` on `get_static_analysis`,
   `get_endpoint_static_analysis` and `get_llm_payload`; `destructive` on every

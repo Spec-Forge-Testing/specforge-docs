@@ -293,3 +293,56 @@ The core starts without the LLM stack. The first inference, estimate or
 `diagnose` pays for the import once. The answer is still cached per process, so
 the doctor's "installed but not yet loaded" verdict keeps its meaning after that
 first use.
+
+---
+
+## ADR-125 — The report names an accepted invalid input and an endpoint the engine could not explore { #adr-125 }
+
+**Status:** accepted · `utils/constants.py`, `services/report/constants.py`, `repl/views/formatting.py`, `repl/views/fuzz.py`, `adapters/stdio/engine_log.py`, `adapters/stdio/server.py`; `protocol/README.md`
+
+### Context
+
+The engine reports two facts a client must show. A 2xx that accepted a value
+outside the declared schema of the field the request poisoned is an
+`input_validation` finding whose rule id names that field
+([ADR-118](../../specforge-engine/adr/engine.md#adr-118)). An endpoint whose
+exploration raised inside the engine is cut with the truncation reason
+`engine_failure`, and the run goes on `truncated`
+([ADR-120](../../specforge-engine/adr/engine.md#adr-120)). The report labels a
+contract-declared rule "Business rule", which is wrong for a schema the spec
+declared.
+
+### Decision
+
+**The report document is `schema_version` 1.18, additive over 1.17.** It adds one
+value to the invariant vocabulary and one to the truncation reasons. No key
+changes, the protocol version does not move, and no stored column changes: neither
+`findings.invariant_violated` nor a `truncation_reason` column constrains its
+values.
+
+**A declared rule is labelled by its invariant.** `DECLARED_RULE_LABELS` maps each
+invariant whose rule the contract declares to its label: "Business rule" for
+`semantic_property` and `access_control`, "Declared schema" for
+`input_validation`. `DECLARED_RULE_INVARIANTS` is derived from that table, and a
+test pins it to the engine's own set, so a new declared invariant without a label
+fails the suite. The REPL shows the finding as `invalid input accepted · <zone>.<field>`.
+
+**An engine failure is readable without the log.** The REPL's headline for
+`engine_failure` names the endpoint, says it was isolated and points at the core's
+stderr. While the server owns stdout, the engine's `specforge_engine` logger writes
+its `ERROR` records, tracebacks included, to stderr.
+
+### Rejected
+
+- **A protocol version bump.** No message, operation or event changed shape; the
+  run document's vocabularies grew.
+- **Keeping one scalar label for every declared rule.** It would call a schema
+  violation a business rule.
+
+### Consequences
+
+A client that reads the report shows the accepted field and the isolated endpoint
+with the vocabularies it already renders. A client that branches on the truncation
+reason meets one more value, listed with the others in the
+[result vocabularies](../protocol/vocabularies.md#truncation-reason) and in the
+[changelog](../protocol/handshake.md#changelog).

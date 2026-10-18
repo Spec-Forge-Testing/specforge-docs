@@ -22,16 +22,19 @@ engine owns the ones that are its own.
 | `StrategyMode` | `models/strategy_mode.py` | `Default` · `Hacker` (capitalized: the wire spelling the LLM emits) |
 | `Phase` | `models/phase.py` | `valid` · `boundary` · `invalid` · `attack` · `transition` · `mutation` · `semantic` |
 | `SchemaType` | `models/schema.py` | `string` · `integer` · `number` · `boolean` · `array` · `object` · `null` |
-| `SchemaKeyword` | `models/schema.py` | the 21 JSON Schema keywords the engine reads, by wire spelling: `type` · `enum` · `const` · `nullable` · `required` · `properties` · `items` · `format` · `pattern` · `multipleOf` · `minimum` · `maximum` · `exclusiveMinimum` · `exclusiveMaximum` · `minLength` · `maxLength` · `minItems` · `maxItems` · `minProperties` · `maxProperties` · `allowExtraFields` |
-| `SchemaFormat` | `models/schema.py` | `email` · `uuid` · `date` · `date-time` · `uri` · `ipv4` · `hostname` · `byte` |
+| `SchemaKeyword` | `models/schema.py` | the 24 JSON Schema keywords the engine reads, by wire spelling: `type` · `enum` · `const` · `nullable` · `required` · `properties` · `items` · `format` · `pattern` · `multipleOf` · `minimum` · `maximum` · `exclusiveMinimum` · `exclusiveMaximum` · `minLength` · `maxLength` · `minItems` · `maxItems` · `minProperties` · `maxProperties` · `allowExtraFields` · `default` · `examples` · `example` |
+| `SchemaFormat` | `models/schema.py` | the string formats: `email` · `uuid` · `date` · `date-time` · `uri` · `ipv4` · `hostname` · `byte` |
+| `NumericFormat` | `models/schema.py` | the numeric formats: `int32` · `int64` · `float` · `double` |
+| `ZoneWire` | `models/wire.py` | how a zone carries a value: `structured` · `text` · `segment` |
+| `TextAlphabet` | `models/wire.py` | the characters a compiled string draws from: `open` · `printable` · `wire` |
 
 The engine-side outcome vocabularies follow the same rule:
 
 | Enum | Members (`.value`) |
 |---|---|
 | `ErrorCategory` | `success` · `client_error` · `server_error` · `contract_violation` · `timeout` · `availability` · `unsendable_request` · `connection_dropped` |
-| `InvariantViolation` | `not_a_server_error` · `status_code_conformance` · `response_schema_conformance` · `content_type_conformance` · `state_transition` · `latency_sla` · `latency_degradation` · `resilience_degradation` · `semantic_property` · `access_control` |
-| `TruncationReason` | `infrastructure_abort` · `deadline_exceeded` · `target_down` · `state_link_abort` · `generation_exhausted` · `cancelled` |
+| `InvariantViolation` | `not_a_server_error` · `status_code_conformance` · `response_schema_conformance` · `content_type_conformance` · `state_transition` · `latency_sla` · `latency_degradation` · `resilience_degradation` · `semantic_property` · `access_control` · `input_validation` |
+| `TruncationReason` | `infrastructure_abort` · `deadline_exceeded` · `target_down` · `state_link_abort` · `generation_exhausted` · `cancelled` · `engine_failure` |
 | `FidelityLevel` | `exact` · `reduced` |
 
 ### Enums serialize as their wire value
@@ -51,7 +54,7 @@ The types that cross a stage line, all validated with `extra="forbid"`:
 | DTO | Direction | Notes |
 |---|---|---|
 | `CompilerInput` | in | endpoints plus a single global `strategy_mode` (never per-endpoint), and the `withheld` endpoints the caller keeps out of the run |
-| `EndpointSpec` | in | one endpoint; its four request zones are a `RequestZones` value object |
+| `EndpointSpec` | in | one endpoint; its request zones are a `RequestZones` value object, the body a `BodySpec` |
 | `BaseStrategyContract` / `HackerStrategyContract` | in | per-value generation knobs (hacker is a pydantic subclass, dispatched by type) |
 | `ResponseContract`, `StateLinkContract` (+ `StateProduction` / `StateConsumption`) | in | expected responses, stateful links |
 | `EndpointRisk`, `EndpointAttack`, `EndpointAccess` | in | kernel semantic DTOs, re-exported through `models/contracts`, never duplicated |
@@ -78,8 +81,8 @@ graph LR
 ## The compiler input: `EndpointSpec` and `RequestZones`
 
 `EndpointSpec` is endpoint identity (`method`, `path_url`, optional `base_url`)
-plus everything needed to shape and judge its requests: the four request
-zones, `content_types`, and the optional endpoint-level controls — `risk`,
+plus everything needed to shape and judge its requests: the request zones and
+the optional endpoint-level controls — `risk`,
 `budget`, `attack`, `responses` (keyed by status-code string), `state_link`,
 `semantic_properties` and `access`. The controls are independently optional and
 stay flat on the spec ([ADR-009](adr/models.md#adr-009)).
@@ -98,14 +101,21 @@ ordinary run carries `access` and never acts on it
 ([Execution modes](execution-modes.md#auth), [ADR-050](adr/engine.md#adr-050),
 [ADR-053](adr/engine.md#adr-053)).
 
-The four zones are a `RequestZones` value object: a frozen pydantic model with
-one field per `Zone` (`path`, `query`, `header`, `body`), each a `ParamMap`
+The zones are a `RequestZones` value object: a frozen pydantic model with one
+field per `Zone`. `path`, `query` and `header` are each a `ParamMap`
 (`dict[str, HackerStrategyContract | BaseStrategyContract]`) defaulting to
-empty. Its `by_zone()` iterator yields the non-empty zones in `path, query,
-header, body` order as `(Zone, ParamMap)` pairs, so callers iterate a
-`Zone`-keyed structure instead of four loose fields. The same `Zone`-keyed
-shape reappears on the engine side, so one concept lives on both sides of the
-compile ([ADR-008](adr/models.md#adr-008)).
+empty; `body` is a `BodySpec` or `None`. `parameter_zones()` yields the non-empty
+parameter zones in `path, query, header` order as `(Zone, ParamMap)` pairs, and
+`by_zone()` adds the body's fields when its root is an object, so callers iterate a
+`Zone`-keyed structure instead of loose fields. The same `Zone`-keyed shape
+reappears on the engine side, so one concept lives on both sides of the compile
+([ADR-008](adr/models.md#adr-008)).
+
+`BodySpec(media_type, required, root)` is the declared body as a whole: the media
+type the producer chose, whether the body is required (default `False`), and the
+root contract. `fields` is derived from the root's properties and is empty when
+the root is not an object, which then compiles as the single field `$`
+([ADR-122](adr/models.md#adr-122), [Requests](requests.md#the-body)).
 
 The two kernel DTOs an endpoint may carry:
 
@@ -132,13 +142,21 @@ values keep the hacker knobs ([ADR-010](adr/models.md#adr-010)).
 Two invariants are enforced in the model itself, so the compiler never sees a
 contract that breaks them:
 
-- **Dialect normalization** (`normalize_type_array`, a `mode="before"`
-  validator at every nesting level): a JSON Schema `type` array collapses to
-  one scalar `type` plus an explicit `nullable`. An empty array (`type: []`)
-  raises `StrategyCompilationError`; a union of more than one concrete type
-  raises (the compiler models one type per value); a null-only array becomes
-  `type: null`; a null member alongside one concrete type sets
-  `nullable: true`, outranking a contradictory `nullable: false`.
+- **Dialect normalization** (`normalize_dialect`, a `mode="before"` validator
+  at every nesting level, [ADR-112](adr/models.md#adr-112)):
+    - a JSON Schema `type` array collapses to one scalar `type` plus an explicit
+      `nullable`. An empty array (`type: []`) raises `StrategyCompilationError`;
+      a union of more than one concrete type raises (the compiler models one type
+      per value); a null-only array becomes `type: null`; a null member alongside
+      one concrete type sets `nullable: true`, outranking a contradictory
+      `nullable: false`;
+    - an OpenAPI 3.0 boolean exclusive bound becomes a numeric one: `true` moves
+      the inclusive bound into the exclusive keyword, and `false` (or `true` with
+      no inclusive bound) is dropped. `exclusiveMinimum` and `exclusiveMaximum`
+      are then strictly numeric, so a boolean that skipped the dialect is a
+      validation error, never `0` or `1`;
+    - a singular `example`, and an `examples` map whose entries hold a `value`,
+      fold into one `examples` list, each value once by `same_seed`.
 - **Mistyped bounds** (`mode="after"`): a string `minimum` / `maximum` is
   legal only as an ISO `date` / `date-time` range on a string contract;
   anything else raises, so a stray string bound never reaches strategy
@@ -156,8 +174,9 @@ extends each entry with `HACKER_EXTRA_FIELDS`, derived from the model aliases
 new hacker field extends the allow-list on its own. The hacker table's value
 type is `frozenset[SchemaKeyword | str]` because those extra names are the
 hacker contract's own snake_case wire names, not JSON Schema keywords; the
-base table is a plain `frozenset[SchemaKeyword]`
-([ADR-012](adr/models.md#adr-012)).
+base table is a plain `frozenset[SchemaKeyword]`. `default` and `examples` are
+allowed for every type: they are the spec's seeds for the valid phase
+([ADR-121](adr/compiler.md#adr-121)).
 
 ## Responses and state links
 
@@ -197,8 +216,10 @@ to compile.
 `EngineInput` carries `CompiledExecutionEndpoint`s. Each pairs endpoint
 identity with its `CompiledEndpointStrategies` (one `CompiledRequestPart` per
 non-empty zone — `path_parameters`, `query_parameters`, `header_parameters`,
-`body` — each holding the per-`Phase` `SearchStrategy`s, plus the
-`generation_plan` and `content_types`) and the contract DTOs the engine still
+`body` — each holding the per-`Phase` `SearchStrategy`s and the
+`poisoning_phases` among them; the body is a `CompiledBody` that also carries its
+`media_type` and `file_fields` — plus the `generation_plan` and the endpoint's
+`poisoning_phases`) and the contract DTOs the engine still
 needs (`risk`, `attack`, `budget`, `responses`, `state_link`,
 `semantic_properties`, `access`). Its
 `endpoint_id` is `format_endpoint_id(method, path_url)` —
@@ -222,7 +243,8 @@ and returns `self` when `factor == 1`
 construction is clearer than reporting synthetic availability errors later.
 It is validated as a `BaseUrl`, as is the optional `EndpointSpec.base_url`: an
 `http` or `https` URL that names a host and, when it writes a port, one from 1 to
-65535. A refusal never echoes the URL, since it may carry `user:pass@`. Otherwise
+65535, and whose fragment holds no `@` (a URL split by hand would read it as
+userinfo). A refusal never echoes the URL, since it may carry `user:pass@`. Otherwise
 a mistyped port would fail every connection and read as a dead target.
 The rest have defaults: `timeout_s`, `max_concurrency` (also the exploration
 batch size), `max_retries`, `headers`, `backoff_base`, `identities`, and
@@ -245,10 +267,12 @@ splits the pool into `valid_identities` and `invalid_identities` for the consume
 that need one or the other.
 
 `RequestBlueprint` is the immutable request built from a compiled endpoint and
-a payload: method, URL, headers, query, `path_params`, JSON body, `phase`,
-`endpoint_id`, the `config_header_names` (whose values are credentials and are
-never recorded), the `identity_label`, and an `unsendable_reason` when the
-request must not be sent. `path_params` holds the raw path-parameter values as
+a payload: method, URL, headers, query, `path_params`, the `body` with its
+`media_type` and `file_fields`, the `intent` (a `RequestIntent`: the phase and the
+one poisoned zone and field, if any; `phase` is a derived property), `endpoint_id`,
+the `config_header_names` (whose values are credentials and are never recorded),
+the `identity_label`, and an `unsendable_reason` when the request must not be
+sent. A parameter or body drawn as `None` is not on it: it records what went out. `path_params` holds the raw path-parameter values as
 drawn, typed as drawn, before URL interpolation — the URL still carries the
 percent-encoded segment, but the semantic oracle reads the typed value.
 `generated_headers` is the subset the fuzzer produced.
@@ -313,8 +337,9 @@ their conclusion is the crash report. Each `TracedRequest` is an observed fact,
 so no field has a default; credentials are omitted rather than redacted (only
 the config header *names* are recorded), `omitted_url_userinfo` flags a
 stripped `user:pass@`, the raw `path_params` sent before URL interpolation are
-recorded alongside the query and body, and `sent_at_ms` is excluded from
-anything hashed. Because no field has a default, a trace recorded before
+recorded alongside the query and the body (with its `media_type` and
+`file_fields`), the intent is recorded as `phase`, `poisoned_zone` and
+`poisoned_field`, and `sent_at_ms` is excluded from anything hashed. Because no field has a default, a trace recorded before
 `path_params` existed fails validation on load — traces are regenerated, not
 migrated.
 `TruncationRecord` records where and why a run, or one endpoint, was cut short:

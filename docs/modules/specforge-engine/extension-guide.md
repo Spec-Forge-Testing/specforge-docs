@@ -8,7 +8,7 @@ extension axes, each a registry populated at import time, each with a public
 |---|---|---|---|
 | **Runner** (how a run executes) | an `ExecutionRunner` + `register_runner(...)` | `runtime/runners/registry.py` | `isolated()` + `registered_modes()` |
 | **Profile** (what gets generated) | a `StrategyMode` member + `register_profile(StrategyModeProfile(...))` | `profiles/registry.py` | `isolated()` + `registered_strategy_modes()` |
-| **Phase** (a generation phase) | a `GenerationPhase(name=Phase.X, ...)` + `register_phase(...)` | `strategy_compiler/fields/registry.py` | `isolated()` + `registered_phases()` |
+| **Phase** (a generation phase, poisoning when it declares candidates) | a `GenerationPhase(name=Phase.X, ..., candidates=...)` + `register_phase(...)` | `strategy_compiler/fields/registry.py` | `isolated()` + `registered_phases()` |
 | **Phase extension** (an extra phase that activates on a datum) | a `PhaseExtension(phase, applies, share, refiner)` + `register_phase_extension(...)` | `shared/phase_extensions.py` | `isolated()` + `registered_phase_extensions()` |
 | **Oracle** (a response check) | a class satisfying `ResponseOracle` + `register_oracle(...)` | `runtime/oracles/registry.py` | `isolated()` + `registered_oracle_names()` |
 | **Chaos transport** | a factory under a new key in the transport table | `runtime/runners/resilience/transport.py` | `isolated()` |
@@ -16,6 +16,12 @@ extension axes, each a registry populated at import time, each with a public
 An unknown key raises a domain exception — `PolicyError` from the profile
 registry, `EngineError` from the engine-side registries — never a builtin
 `ValueError`.
+
+One table is **closed** on purpose and is not a registry: the body encoders. An
+encoder decides what a request carries on the wire and how the input-validation
+oracle reads it back, so a new media type is a new row in
+`runtime/http/body_encoders.py`, reviewed with that oracle
+([Add a body encoder](#add-a-body-encoder)).
 
 ## Add a runner
 
@@ -38,8 +44,15 @@ register_runner(MyRunner())
 ```
 
 If your runner reuses the shared loop, pass an `EndpointLoopSpec(fuzz_one,
-resolve, build_stats)` to `explore_endpoints`; if its shape is genuinely
-different (like stateful, replay or resilience), write its own loop. The options
+evidence_of, resolve, build_stats)` to `explore_endpoints`. `evidence_of(endpoint)`
+returns the `SentEvidence` — results and findings — the endpoint had produced when
+its `fuzz_one` raised, so the bulkhead keeps it; a runner whose `fuzz_one` records
+nothing outside its return value passes `lambda _endpoint: SentEvidence()`. If its
+shape is genuinely different (like stateful, replay or resilience), write its own
+loop, and wrap each endpoint's work in `guard_endpoint(endpoint_id, work,
+evidence=...)` (`runtime/bulkhead.py`) so a failing endpoint is isolated as
+`engine_failure` instead of taking the run down
+([Engine internals](engine-internals.md#isolating-a-failing-endpoint)). The options
 type is resolved per runner by `resolve_options(runner, options)` beside the
 registry — the dispatcher never changes.
 
@@ -125,6 +138,55 @@ phase runs. The share the phase draws from the budget is a row of the mode's
 `phase_split` ([Add a profile](#add-a-profile)); it does not come from
 registration.
 
+### A phase that poisons one field
+
+A phase that registers `candidates` is a **poisoning phase**: each of its requests
+draws one field from the phase and every other field valid, and the request's
+intent names that field ([Requests](requests.md#one-poisoned-field-per-request)).
+`candidates` is a `CandidateSource`: given the contract and its context, the
+strategy over the values the field could be poisoned with, or `None` when the
+field has none on its wire. The phase's `build` is still the strategy that
+poisons; the candidates only decide whether the field can be.
+
+```python
+from hypothesis import strategies as st
+
+from specforge_engine.models.contracts import BaseStrategyContract
+from specforge_engine.models.phase import Phase
+from specforge_engine.models.wire import ZoneWire
+from specforge_engine.strategy_compiler.fields import GenerationPhase, SchemaView, register_phase
+
+
+def my_candidates(contract, *, context):
+    view = SchemaView(contract)
+    if view.max_length is None or context.zone_wire is ZoneWire.SEGMENT:
+        return None  # nothing this phase can tell apart here
+    return st.just("a" * (view.max_length * 2))
+
+
+def build_my_phase(contract, *, context):
+    return my_candidates(contract, context=context)
+
+
+register_phase(
+    GenerationPhase(
+        name=Phase.MY_PHASE,
+        contract_type=BaseStrategyContract,
+        build=build_my_phase,
+        candidates=my_candidates,
+    )
+)
+```
+
+Nothing else changes. The compiler records the phase in each zone's
+`poisoning_phases` and in the endpoint's, the runtime draws one poisonable zone
+per request, and a phase no zone can poison on an endpoint is not planned there.
+Read the wire from `context.zone_wire` and offer only values the wire can tell
+apart from a valid one: on a text wire every value is text, and `None` is the
+parameter left out ([ADR-117](adr/compiler.md#adr-117)). The input-validation
+oracle then judges every 2xx to such a request against the poisoned field's
+declared schema, with no change of its own.
+
 ## Add a phase extension
 
 A phase in a profile's `phase_split` compiles for every endpoint that mode runs.
@@ -195,7 +257,7 @@ it.
 
 A string `format` is served by two tables: `FORMAT_PATTERNS` in
 `strategy_compiler/constants.py` and `DATE_RANGE_STRATEGIES` in
-`strategy_compiler/fields/default/constraints.py`. Two ways in, by nature of
+`strategy_compiler/fields/default/formats.py`. Two ways in, by nature of
 the format:
 
 - **A pattern format.** Add a member to the `SchemaFormat` enum and a row to
@@ -209,6 +271,9 @@ the format:
 
 A `format` the tables do not know is handed to `hypothesis-jsonschema` through
 the `json_schema` fallback, so an unknown format degrades rather than failing.
+A numeric format (`int32`, `int64`, `float`, `double`) is not a string format:
+it is a `NumericFormat` member, and a bounded one is a row of `NUMERIC_WORD_RANGE`
+in `models/schema.py` ([ADR-113](adr/compiler.md#adr-113)).
 
 ## Add an attack toggle
 
@@ -253,11 +318,12 @@ class ResponseOracle(Protocol):
 gap. Oracles run as a Chain of Responsibility: the first terminal verdict
 short-circuits, non-terminal ones continue. All built-ins are registered
 explicitly in `runtime/oracles/builtin.py` — never as a side effect of importing
-a runner. The nine built-ins are, in precedence order: infrastructure,
-resilience, server error, access control, semantic property, status code, content
-type, response schema, latency ([ADR-036](adr/engine.md#adr-036),
-[ADR-048](adr/engine.md#adr-048), [ADR-050](adr/engine.md#adr-050),
-[ADR-104](adr/engine.md#adr-104)). A non-terminal oracle placed early adds its
+a runner. The ten built-ins are, in precedence order: infrastructure,
+resilience, server error, access control, semantic property, input validation,
+status code, content type, response schema, latency
+([ADR-036](adr/engine.md#adr-036), [ADR-048](adr/engine.md#adr-048),
+[ADR-050](adr/engine.md#adr-050), [ADR-104](adr/engine.md#adr-104),
+[ADR-118](adr/engine.md#adr-118)). A non-terminal oracle placed early adds its
 violation and lets the rest judge the same response; the first violation is the
 finding's primary one, so the order decides what a finding leads with.
 
@@ -269,7 +335,9 @@ for the endpoint it stands down and costs nothing, and it only ever speaks on a
 oracle is dormant the same way: it stays silent unless the auth runner hands the
 context an `AccessExpectation`, so it fires in an auth run and nowhere else.
 Registration is the extension point; the datum on the context decides whether the
-check runs.
+check runs. The input-validation oracle reads its datum off the request: it speaks
+only when `context.intent` names a poisoned field. An oracle that judges what a
+request was drawn to test reads `context.intent`, never the phase.
 
 ## Add a chaos transport
 
@@ -324,6 +392,47 @@ so the attack reaches the endpoint under the run's identity.
 Adding an attack is one data row, not a branch: it names an existing transport key (or a new one you registered)
 and the runner resolves the transport for it. The `ChaosAttackName` vocabulary is
 the closed set of attacks across both the httpx and raw-socket tables.
+
+## Add a body encoder
+
+`BODY_ENCODERS` (`runtime/http/body_encoders.py`) is a closed table keyed by the
+media type's essence (lowercased, without parameters). Every JSON media type —
+`application/json` or any `+json` — resolves to the JSON encoder before the table
+is read. A media type with no row makes the request an `unsendable_request`.
+
+An encoder satisfies the `BodyEncoder` Protocol:
+
+```python
+class BodyEncoder(Protocol):
+    def content_type(self, media_type: str) -> str | None: ...
+    def arguments(self, body: Any, *, file_fields: frozenset[str]) -> Mapping[str, Any]: ...
+    def unsendable_reason(self, body: Any, *, file_fields: frozenset[str]) -> str | None: ...
+```
+
+`content_type` is the header to send (`None` leaves it to the client, as multipart
+needs for its boundary); `arguments` are the httpx body arguments; and
+`unsendable_reason` says why a body cannot be encoded, never echoing a value.
+Adding a media type is one new class and one new entry in the table:
+
+```python
+BODY_ENCODERS: Final[Mapping[str, BodyEncoder]] = MappingProxyType(
+    {
+        JSON_MEDIA_TYPE: _JSON_ENCODER,
+        FORM_MEDIA_TYPE: FormEncoder(),
+        MULTIPART_MEDIA_TYPE: MultipartEncoder(),
+        "text/plain": PlainTextEncoder(),  # the new row
+    }
+)
+```
+
+Three things travel with the row. The compiler gives every body that is not JSON
+the `TEXT` wire, so its invalid candidates are those a text wire tells apart; the
+input-validation oracle reads such a body's fields as the text `wire_text` spells,
+so the encoder must send that same text; and `None` must stay off the wire, as the
+other encoders leave a `None` field out. Its tests sit in
+`tests/runtime/http/test_body_encoders.py`, beside the cases that resolve an encoder
+from a media type and the ones that check the `Content-Type` sent matches the
+bytes written.
 
 ## The `isolated()` seam in tests
 

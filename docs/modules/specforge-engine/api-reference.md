@@ -14,7 +14,7 @@ For how the stages work inside, see [Architecture](architecture.md) and
 ```python
 from specforge_engine import (
     compile_strategies, run,
-    CompilerInput, EndpointSpec, RequestZones,
+    CompilerInput, EndpointSpec, RequestZones, BodySpec,
     BaseStrategyContract, HackerStrategyContract,
     ExecutionConfig, Identity, ExecutionMode, StrategyMode,
     CompilationOutcome, EngineRunResult, RunStatus,
@@ -59,8 +59,9 @@ invariant, `StatefulLinkError` when a state link cannot be honored.
 |---|---|
 | `CompilerInput` | the endpoints plus a single global `strategy_mode`, and the `withheld` ones |
 | `WithheldEndpoint` | an endpoint its caller keeps out of the run: `method`, `path_url`, `risk`, `reason`; compiled into an exclusion whose risk still vetoes its route |
-| `EndpointSpec` | one endpoint: identity, zones, content types, and its endpoint-level controls |
-| `RequestZones` | the four request zones of an `EndpointSpec`, one `ParamMap` per `Zone` |
+| `EndpointSpec` | one endpoint: identity, zones, and its endpoint-level controls |
+| `RequestZones` | the request zones of an `EndpointSpec`: `path`, `query` and `header` as `ParamMap`s, and `body` as a `BodySpec` or `None` |
+| `BodySpec` | the declared body: `media_type`, `required` (default `False`) and the `root` contract; `fields` is the root's properties (empty when the root is not an object) and `drawn_fields` what a body draw fills — its fields, or the root alone under `$`. A required body makes its root required ([Requests](requests.md#the-body)) |
 | `BaseStrategyContract` | per-value generation knobs, JSON Schema aliases |
 | `HackerStrategyContract` | subclass adding attack profiles and payload-variant toggles |
 | `ResponseContract` | expected `content_type` and `body_schema` for a status |
@@ -78,7 +79,7 @@ Field names of this family are stable: they are persisted as columns.
 |---|---|
 | `CompilationOutcome` | Result: `engine_input` + `exclusions` |
 | `EndpointExclusion` | one rejected or withheld endpoint with its `reason` |
-| `EngineInput`, `CompiledExecutionEndpoint`, `CompiledEndpointStrategies` | the executable compile output |
+| `EngineInput`, `CompiledExecutionEndpoint`, `CompiledEndpointStrategies` | the executable compile output; `CompiledEndpointStrategies` holds one compiled part per zone (`body` a `CompiledBody`), the `generation_plan`, and the `poisoning_phases` its contract type poisons |
 | `EngineRunResult` | `findings` + `status` + `stats` + `trace` + optional `fidelity` |
 | `Finding` | the discriminated union of `ConfirmedFinding`, `FlakyFinding`, `UnverifiedFinding` on `state` |
 | `ConfirmedFinding` | a settled reproducer: carries its `report` |
@@ -87,9 +88,9 @@ Field names of this family are stable: they are persisted as columns.
 | `LoadStepStats` | one concurrency-ladder step on an endpoint's `load_profile`: its `concurrency`, measured `latency` and `degraded` verdict |
 | `UnprobedReason` | why the auth mode crossed nothing at a targeted endpoint: `declared_public` or `access_undeclared` (by design), `owner_producer_missing`, `owner_chain_cyclic`, `owner_resource_unprovisioned` or `required_role_unheld` (a precondition the run could not meet) — each one in [Execution modes](execution-modes.md#auth) |
 | `CrashReport`, `InvariantViolation` | a confirmed finding's reproducer and the invariant it broke — its `response_body` has sensitive field values redacted to `***` by name |
-| `ViolatedRule` | the rule a `CrashReport` broke (`id` + `description`) — declared by the contract for a `semantic_property` / `access_control` finding, or intrinsic to the invariant for every other one |
+| `ViolatedRule` | the rule a `CrashReport` broke (`id` + `description`) — declared by the contract for a `semantic_property` / `access_control` finding, the accepted field (`<zone>.<field>`, such as `query.limit` or `body.$`) for an `input_validation` finding, or intrinsic to the invariant for every other one |
 | `keyed_identity(invariant, identity_label) -> str \| None` | the identity that tells two findings of `invariant` apart: the label for `access_control`, `None` for every other invariant ([ADR-106](adr/engine.md#adr-106)) |
-| `ExecutionTrace`, `TracedRequest`, `TruncationRecord` | the replayable record |
+| `ExecutionTrace`, `TracedRequest`, `TruncationRecord` | the replayable record; a `TracedRequest` records the request's intent as `phase`, `poisoned_zone` and `poisoned_field`, and its body with `media_type` and `file_fields` |
 | `ResponseDivergence`, `ReplayFidelity` | the replay comparison |
 | `ReplayReadiness` | the outcome of `validate_replayable` |
 
@@ -97,7 +98,7 @@ Field names of this family are stable: they are persisted as columns.
 
 | Name | One line |
 |---|---|
-| `ExecutionConfig` | global runtime: `base_url` (required; an `http`/`https` URL naming a host, with a port from 1 to 65535 when it writes one), timeouts, concurrency, headers, identities. `valid_identities` and `invalid_identities` are derived views that split `identities` by credential kind; every mode rotates through `valid_identities`, and `first_valid_identity` is the one a mode that sends under a single identity uses |
+| `ExecutionConfig` | global runtime: `base_url` (required; an `http`/`https` URL naming a host, with a port from 1 to 65535 when it writes one, and no `@` in its fragment), timeouts, concurrency, headers, identities. `valid_identities` and `invalid_identities` are derived views that split `identities` by credential kind; every mode rotates through `valid_identities`, and `first_valid_identity` is the one a mode that sends under a single identity uses |
 | `Identity` | one caller identity: a `label`, its credential `headers`, an optional `role` (never empty) that only a `role_only` endpoint reads (`None` never satisfies a required role), and a `credential` (`CredentialKind`, default `VALID`) |
 | `StatelessOptions`, `StatefulOptions`, `PerformanceOptions`, `ReplayOptions` | passed to `run(options=...)` per mode |
 | `ConcurrencyLadder` | the value of `PerformanceOptions.concurrency_ladder`: strictly increasing `steps` plus the degradation `tolerance` (frozen) |
@@ -134,7 +135,8 @@ See [Progress and cancellation](progress-and-cancellation.md) for how they behav
 | `RunStatus` | a run's terminal outcome: `COMPLETED` / `TRUNCATED` / `ABORTED` / `CANCELLED` |
 | `FindingState` | a finding's settled state: `CONFIRMED` / `FLAKY` / `UNVERIFIED` |
 | `ErrorCategory` | the outcome category of one request |
-| `TruncationReason` | why a run, or one endpoint, was cut short (includes `TARGET_DOWN`, `INFRASTRUCTURE_ABORT`, `CANCELLED`) |
+| `TruncationReason` | why a run, or one endpoint, was cut short (includes `TARGET_DOWN`, `INFRASTRUCTURE_ABORT`, `CANCELLED`, and `ENGINE_FAILURE` for an endpoint the engine itself failed on and isolated) |
+| `InvariantViolation` | the invariant a finding broke (includes `INPUT_VALIDATION`: a 2xx accepted the poisoned field outside its declared schema) |
 | `FidelityLevel` | `EXACT` / `REDUCED` |
 | `CredentialKind` | whether an identity's credentials are ones the target should accept: `VALID` / `INVALID` |
 
@@ -150,6 +152,14 @@ kernel's from `specforge_contracts`.
 | `split_userinfo(url) -> tuple[str, str \| None]` | split `user:pass@` out of a URL |
 | `public_base_url(config) -> str` | the run's base URL with any `user:pass@` stripped, for anything shown to a user |
 | `validate_replayable(trace, config) -> ReplayReadiness` | whether a trace can be replayed under this config |
+
+## Logging, media types and spec seeds
+
+| Name | One line |
+|---|---|
+| `ENGINE_LOGGER_NAME` | `"specforge_engine"`, the stdlib logger every engine record goes to — an isolated endpoint's traceback among them. The library adds no handler; the embedding process routes it |
+| `is_json_media_type(media_type) -> bool` | whether a media type is JSON: its essence (lowercased, parameters dropped) is `application/json` or ends in `+json`. The compiler picks the body's wire with it, the transport its encoder, and the core's projection its preferred media type |
+| `same_seed(left, right) -> bool` | whether two spec samples are one value: equal and of one type, so `1` is not `True`. How the dialect and the core deduplicate `default` and `examples` |
 
 ## Input validation (the policy boundary)
 
@@ -171,8 +181,32 @@ kernel's from `specforge_contracts`.
 
 All descend from `SpecforgeEngineError`, never from `ValueError`
 ([ADR-001](adr/foundations.md#adr-001)). The full taxonomy, including
-`EndpointCompilationError` and `StatefulLinkError`, is importable from
+`EndpointCompilationError`, `StatefulLinkError` and the control signal
+`StopExplorationError` (which carries a pass's `Cut` out of Hypothesis and is
+never isolated as an engine failure), is importable from
 `specforge_engine.exceptions`.
+
+## Requests
+
+These names are not on the facade. They are the vocabulary of how a request is
+shaped and what it carries ([Requests](requests.md)), and the seams the runners'
+own tests exercise.
+
+| Name | Module | One line |
+|---|---|---|
+| `ZoneWire` | `models/wire.py` (also `specforge_engine.models`) | how a zone carries a value: `STRUCTURED` (a JSON body), `TEXT` (query, header, a form or multipart body), `SEGMENT` (path); `zone_wire(zone, media_type)` picks one |
+| `TextAlphabet` | `models/wire.py` | the characters a compiled string draws from: `OPEN`, `PRINTABLE`, `WIRE_SENDABLE` |
+| `RequestIntent` | `models/runtime/intent.py` (also `specforge_engine.models.runtime`) | frozen `(phase, poisoned_zone, poisoned_field)`: what a request was drawn to test; the zone and the field are set together or not at all |
+| `ZoneDraw` | `models/runtime/draw.py` | what one zone's strategy draws: `values` and the `poisoned_field`, if any |
+| `BODY_ROOT` | `models/runtime/intent.py` | `"$"`, the field name of a body that is not an object |
+| `NO_BODY_DRAWN` | `models/runtime/draw.py` | the body zone's values when a draw sends no body; `None` is a drawn value, never sent |
+| `CompiledBody` | `models/runtime/engine_input.py` | the compiled body: a `CompiledRequestPart` plus the `media_type` and the `file_fields` (properties declared `format: binary`, sent as file parts) |
+| `CompiledRequestPart.poisoning_phases` | `models/runtime/engine_input.py` | the phases whose strategy poisons one of the zone's fields per draw; a subset of the compiled phases |
+| `SentEvidence` | `models/runtime/results.py` | `(results, findings)`: what an endpoint had sent and found when its exploration stopped short; `requests_sent` counts the results that reached the wire |
+| `kept_cut(current, cut)` | `models/runtime/run_status.py` | folds two cuts: one that halts the run outranks any recorded first, otherwise the first recorded stands |
+| `BODY_ENCODERS` | `runtime/http/body_encoders.py` | the closed table of body encoders by media type essence: JSON, form-urlencoded, multipart |
+| `reserved_for(config_headers, identity)` | `runtime/http/reserved_headers.py` | the lowercased header names the credentials and the transport own |
+| `guard_endpoint(endpoint_id, work, *, evidence)` | `runtime/bulkhead.py` | runs one endpoint's work, turning any exception but a control signal into an `EngineFailure` with an `engine_failure` cut |
 
 ## Strategy compiler
 
@@ -191,9 +225,14 @@ tests exercise, documented for that reason
 | `estimate_parameter_space(parameters) -> int` | the estimated combination count for a parameter map, capped at 10⁹ |
 | `effective_phases(endpoint, base_phases) -> tuple[Phase, ...]` (`effective_phases.py`) | the profile's phases plus every phase extension the endpoint activates |
 | `effective_split(endpoint, base_split) -> Mapping[Phase, float]` (`effective_phases.py`) | a phase split with each activated extension's share reserved; unchanged when none applies |
-| `compile_zone(zone, params, ctx) -> CompiledRequestPart` | one zone's per-phase strategies plus its documentation schema |
+| `compile_zone(zone, params, ctx) -> CompiledRequestPart` | one zone's per-phase strategies plus its documentation schema (`zone.py`) |
 | `build_zone_schema(params, *, force_required) -> dict` | the zone's parameters as a JSON Schema object |
-| `ZoneCompileContext` | endpoint-wide knobs constant across an endpoint's zones |
+| `ZoneCompileContext` | endpoint-wide knobs constant across an endpoint's zones: the `phases`, a `FieldKnobs`, and the body's media type; `wire_for(zone)` and `slot_for(phase, zone)` |
+| `compile_body(spec, ctx) -> CompiledBody` | the body's per-phase strategies: its object fields as a zone, or its root as the field `$`; an optional body is left out of some valid draws (`body.py`) |
+| `build_body_schema(spec) -> dict` | the body's documentation schema: its fields as an object, or its root as declared |
+| `compile_parameter(name, contract, zone, slot)` | one parameter compiled for the slot's phase under its zone's alphabet and wire (`parameter.py`) |
+| `poison_parameter(name, contract, zone, slot)` | the parameter compiled to poison it in the slot's phase, or `None` when the phase has no candidate for it |
+| `ParameterSlot`, `FieldKnobs` | the phase, wire and knobs a parameter compiles in; the endpoint-wide generation context, focus and sensitive fields |
 
 ### `strategy_compiler.fields`
 
@@ -204,7 +243,11 @@ tests exercise, documented for that reason
 | `registered_phases()` | the keys currently in the phase table |
 | `resolve_phase(contract, phase)` | the phase registered for a contract's type or its nearest ancestor |
 | `isolated()` | a context manager giving the block its own phase registry, restored on exit |
-| `GenerationPhase` | one `(name, contract_type, build)` mapping; a non-callable `build` is rejected |
+| `GenerationPhase` | one `(name, contract_type, build, candidates)` mapping; a non-callable `build` or `candidates` is rejected |
+| `CandidateSource` | the Protocol of a phase's `candidates`: `(contract, *, context) -> SearchStrategy \| None` |
+| `candidates_for(phase, contract_type)` | the candidates of the phase resolved for a contract type, or `None` when it does not poison |
+| `poisoning_phases(phases, contract_types)` | the phases that carry candidates for at least one of the types |
+| `poisoning_strategy(contract, phase, *, context)` | the field compiled to poison it in `phase`, or `None` when the phase's candidates have nothing for it |
 | `GenerationContext` | endpoint-wide generation knobs a builder may read |
 | `EMPTY_CONTEXT` | the shared context for an endpoint with no attack knobs |
 | `SchemaView` | typed, read-only view over a strategy contract (below) |
@@ -219,8 +262,11 @@ key:
 | `is_nullable` · `is_required` · `allow_extra_fields` | booleans |
 | `minimum` · `maximum` · `exclusive_minimum` · `exclusive_maximum` · `multiple_of` | numeric bounds |
 | `min_length` · `max_length` · `min_items` · `max_items` | length and size bounds |
+| `numeric_minimum` · `numeric_maximum` · `string_minimum` · `string_maximum` | the bounds narrowed to a number or to a date string |
 | `format` | the raw format string or `None` |
-| `known_format` | the `SchemaFormat` for a recognized spelling, else `None` |
+| `known_format` | the `SchemaFormat` for a recognized string format, else `None` |
+| `numeric_format` | the `NumericFormat` (`int32`, `int64`, `float`, `double`) for a recognized numeric format, else `None` |
+| `seeds` | the spec's `default` then its `examples`, each value once |
 | `pattern` | the regex pattern or `None` |
 | `property_count` | the object's declared property count |
 | `json_schema` | the one raw `model_dump` — the zone schema and the jsonschema fallback |

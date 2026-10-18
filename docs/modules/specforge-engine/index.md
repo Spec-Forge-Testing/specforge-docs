@@ -160,9 +160,10 @@ decisions this rule produced are in the [decision records](adr/index.md).
 | Understand the layers and the package map | [Architecture](architecture.md) |
 | Follow a DTO from input to output | [Data flow](data-flow.md) |
 | See how contracts become strategies | [Strategy compiler](strategy-compiler.md) |
+| See what a request holds, which field it poisons, and how its body and headers go out | [Requests](requests.md) |
 | See how a request is sent, checked and reported | [Engine internals](engine-internals.md) |
 | Pick a mode and its options | [Execution modes](execution-modes.md) |
-| Add a runner, a profile, a phase, an oracle or a transport | [Extension guide](extension-guide.md) |
+| Add a runner, a profile, a phase, an oracle, a transport or a body encoder | [Extension guide](extension-guide.md) |
 | Call a function, or know what it raises | [API reference](api-reference.md) |
 | Know *why* something is the way it is | [Decision records](adr/index.md) |
 | Run or extend the suites | [Testing](testing.md) |

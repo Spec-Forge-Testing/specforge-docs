@@ -10,7 +10,8 @@ are covered on their own page ([Progress and cancellation](progress-and-cancella
 
 Stateless and performance share one loop template (`explore_endpoints`, a
 higher-order function taking an `EndpointLoopSpec` value object that bundles the
-three steps that vary — `fuzz_one`, `resolve` and `build_stats`
+steps that vary — `fuzz_one`, `evidence_of` (what an endpoint had sent when its
+`fuzz_one` raised), `resolve` and `build_stats`
 ([ADR-043](adr/engine.md#adr-043))). Stateful (a supervisor that builds a fresh
 state machine for every pass), replay (trace-driven), resilience (a fixed
 chaos battery per endpoint) and auth (a per-endpoint provision-and-cross) each
@@ -56,6 +57,27 @@ A cancelled run ends in the fourth terminal status, beside `completed`,
 cancellation outranks a soft budget or deadline cut but not a confirmed dead
 target. The full behaviour, the events a run emits, and how a listener maps them to
 the wire are on [Progress and cancellation](progress-and-cancellation.md).
+
+## A failing endpoint is isolated
+
+An exception the engine raises while exploring one endpoint never takes the run
+down ([ADR-120](adr/engine.md#adr-120)). The endpoint is cut with the
+`TruncationReason` `engine_failure`, its `detail` naming the error's type and
+location (`<type> @ <file>:<line>`); what it had already sent and found is kept; the
+traceback goes to the `specforge_engine` logger; and the run explores the other
+endpoints and ends `truncated`. The control signals — a stop, a cancellation and a
+safety-guard breach — pass through the bulkhead and still stop the run.
+
+| Mode | Where the bulkhead sits |
+|---|---|
+| `STATELESS`, `PERFORMANCE` | around each endpoint's `fuzz_one` in the shared loop, and around resolving the findings (the stateless shrink): if that raises, every finding group is reported unverified and the run is cut at the endpoint being resolved |
+| `STATEFUL` | around each pass: an exception the outcome table does not classify ends the machine as `MachineFailed`, cut at the endpoint whose rule raised, with every result kept |
+| `RESILIENCE` | around each endpoint's battery; every result is recorded before it is judged |
+| `AUTH` | around each endpoint's crossing; every result is recorded before it is judged |
+| `REPLAY` | none: a replay re-sends a recorded trace and explores no endpoint |
+
+The mechanism — `guard_endpoint`, `SentEvidence`, `kept_cut` — is on
+[Engine internals](engine-internals.md#isolating-a-failing-endpoint).
 
 ## Stateless (default)
 
@@ -535,8 +557,11 @@ sequenceDiagram
 ```
 
 Each endpoint is crossed with **one deterministic valid request** — the simplest
-example of the VALID strategy, drawn once and reused. What the runner does with
-it depends on the policy:
+example of the VALID strategy, drawn once and reused. An endpoint whose valid
+strategy draws nothing to cross with is cut `generation_exhausted`, with the detail
+`<endpoint>: no valid request available to cross`: its own strategy produced no
+candidate, so the run goes on to the next endpoint and ends `truncated`. What the
+runner does with the request depends on the policy:
 
 | Policy | What the runner sends |
 |---|---|

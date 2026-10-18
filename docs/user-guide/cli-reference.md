@@ -321,19 +321,20 @@ unexpectedly.
       order `report.json` sorts its defects, so the screen and the document never
       disagree. Each row: method, endpoint, phase, how many
       prior steps set it up (a dash for a single request), the violated invariant
-      (a business-rule or access-control finding appends the declared rule's id
-      to its label — a semantic finding reads `business rule violated · <rule
-      id>` — while every other invariant shows just its label, since the rule id
-      there would only repeat it),
+      (a business-rule, access-control or input-validation finding appends the
+      declared rule's id to its label — a semantic finding reads `business rule
+      violated · <rule id>`, an input-validation one `invalid input accepted ·
+      <zone>.<field>` — while every other invariant shows just its label, since
+      the rule id there would only repeat it),
       the status code, how many raw findings the crash stands for (`Represents`;
       stateless runs only), the identity it was found under (`Identity`; only shown
       when at least one crash in the run recorded one) and the smallest failing
       payload.
     - **Unconfirmed findings** — a table after the crashes, listing every finding
       the run saw but never confirmed as a crash: its method, endpoint, phase,
-      invariant (a business-rule or access-control finding again appending the
-      declared rule's id to its label, e.g. `business rule violated · <rule
-      id>`), status (a dash when none was recorded), the identity it was found
+      invariant (a business-rule, access-control or input-validation finding
+      again appending the declared rule's id to its label, e.g. `business rule
+      violated · <rule id>`), status (a dash when none was recorded), the identity it was found
       under (when any), its **State** (`flaky` or `unverified`) and how many times
       it was **Seen**. A flaky finding was seen but did not reproduce; an
       unverified one was collected before the run could check it. The section is

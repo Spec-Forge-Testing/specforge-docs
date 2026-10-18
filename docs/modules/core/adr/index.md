@@ -23,7 +23,7 @@ it governs. A number missing here belongs to another module.
 
 | File | Area | Covers |
 | --- | --- | --- |
-| [core.md](core.md) | the headless core | Unprobed reasons, dependency gateways, the busy guard, cancelled-run evidence, oracle scope, breached-run evidence, engine option precedence, when the inference gateway loads |
+| [core.md](core.md) | the headless core | Unprobed reasons, dependency gateways, the busy guard, cancelled-run evidence, oracle scope, breached-run evidence, engine option precedence, when the inference gateway loads, the report's labels for the engine's outcomes |
 | [inference.md](inference.md) | contract production | Adopting a produced contract, the inference cache, approval and the spend cap, watching and cancelling production |
 | [protocol.md](protocol.md) | the wire | How fixtures are captured, how versions are matched, one name and `null` for every reader, how `shutdown` ends a session |
 
@@ -48,3 +48,4 @@ it governs. A number missing here belongs to another module.
 | [ADR-099](inference.md#adr-099) | inference | The inference cache is a proxy in front of the model, keyed by what shapes the prompt |
 | [ADR-100](inference.md#adr-100) | inference | No inference without an approved estimate, and a predictive cap |
 | [ADR-101](inference.md#adr-101) | inference | Production is visible, bounded and cancellable, and a cancelled production leaves no run |
+| [ADR-125](core.md#adr-125) | core | The report names an accepted invalid input and an endpoint the engine could not explore |

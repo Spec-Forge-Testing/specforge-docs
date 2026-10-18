@@ -219,6 +219,7 @@ nav:
           - Architecture: modules/specforge-engine/architecture.md
           - Data flow: modules/specforge-engine/data-flow.md
           - Strategy compiler: modules/specforge-engine/strategy-compiler.md
+          - Requests: modules/specforge-engine/requests.md
           - Engine internals: modules/specforge-engine/engine-internals.md
           - Execution modes: modules/specforge-engine/execution-modes.md
           - Progress and cancellation: modules/specforge-engine/progress-and-cancellation.md

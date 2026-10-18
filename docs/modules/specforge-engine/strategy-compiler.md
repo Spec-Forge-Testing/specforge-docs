@@ -3,7 +3,10 @@
 `strategy_compiler/` turns validated per-parameter contracts into Hypothesis
 `SearchStrategy`s. It does no HTTP and no re-validation — that already happened
 in `policy/`. Its subpackage `fields/` translates a *field* (the schema
-description of one parameter) into a strategy.
+description of one parameter) into a strategy; `parameter.py`, `zone.py` and
+`body.py` assemble the fields of a zone into the strategy that draws it. How a
+zone's draw becomes a request, and which field a draw poisons, is on
+[Requests](requests.md).
 
 ## The compile, top to bottom
 
@@ -24,18 +27,48 @@ Each endpoint is compiled in this order:
    attack knobs and risk into a `GenerationContext` (below). An endpoint with
    neither attack nor a risk-derived profile gets the shared `EMPTY_CONTEXT`.
 3. **`ZoneCompileContext`.** The endpoint-wide knobs constant across its zones —
-   the profile's `phases`, the generation context, and the attack focus and
-   sensitive field lists — are packed once. It does not carry the `Zone`; that
-   varies per zone and is a `compile_zone` argument
-   ([ADR-029](adr/compiler.md#adr-029)).
-4. **One `compile_zone` per non-empty zone.** `by_zone()` yields each declared
-   zone's parameter map; each becomes a `CompiledRequestPart`.
-5. **`build_generation_plan`.** The endpoint's budget, risk and aggressiveness
+   the profile's `phases` and a `FieldKnobs` (the generation context, and the
+   attack focus and sensitive field lists) — are packed once. It does not carry
+   the `Zone`; that varies per zone and is a `compile_zone` argument
+   ([ADR-029](adr/compiler.md#adr-029)). `wire_for(zone)` gives the zone's
+   `ZoneWire`, and `slot_for(phase, zone)` the `ParameterSlot` a parameter is
+   compiled in: the phase, the wire and the knobs.
+4. **One `compile_zone` per non-empty parameter zone.** `parameter_zones()`
+   yields the path, query and header maps; each becomes a `CompiledRequestPart`.
+5. **`compile_body` for the body.** A `BodySpec` becomes a `CompiledBody`: its
+   object fields compiled as a zone, or its root as the single field `$`, with the
+   body's media type deciding its wire ([Requests](requests.md#the-body)).
+6. **`build_generation_plan`.** The endpoint's budget, risk and aggressiveness
    become a concrete `GenerationPlan`.
 
-The compiled parts and the plan become a `CompiledEndpointStrategies`, wrapped
-with the endpoint's risk, attack, budget, responses and state link into a
+The compiled parts and the plan become a `CompiledEndpointStrategies`, with the
+`poisoning_phases` the mode's contract type poisons, wrapped with the endpoint's
+risk, attack, budget, responses and state link into a
 `CompiledExecutionEndpoint`.
+
+### One parameter, one zone
+
+`compile_parameter(name, contract, zone, slot)` compiles one parameter for the
+slot's phase: it applies the attack focus (a field the focus list does not
+address compiles `valid` under `attack`), the sensitive-field profiles, and the
+alphabet and wire of its zone, then drops the values a path segment cannot carry.
+`poison_parameter` compiles the same parameter to poison it, or returns `None`
+when the phase has no candidate for it.
+
+`compile_zone` builds every phase of the zone:
+
+- a **plain phase** is a fixed dictionary over every parameter. In `valid` the
+  required parameters are always present and each optional one is optional (every
+  path segment is always present); every other plain phase sends every parameter;
+- a **poisoning phase** is a `one_of` of variants, one per parameter the phase
+  can poison: that parameter from `poison_parameter`, every other one valid. A zone
+  with no poisonable parameter has no strategy for the phase.
+
+Every strategy draws a `ZoneDraw(values, poisoned_field)`. `compiled_part` keeps
+the phases that compiled and records which of them poison in
+`CompiledRequestPart.poisoning_phases`; a part that names a poisoning phase it did
+not compile is a `StrategyCompilationError`. `build_zone_schema` is the zone's
+documentation schema; a path zone marks every parameter required.
 
 ### Where a rejection becomes an exclusion, and where it does not
 
@@ -85,7 +118,8 @@ never guards for `None` ([ADR-024](adr/compiler.md#adr-024)):
 | `mutation_depth` | how deep object mutation recurses (hacker) |
 | `aggressiveness` | the attack-vs-benign mix weight (hacker) |
 | `extra_profiles` | attack profiles the endpoint's risk earns, added to the field's own |
-| `text_alphabet` | the character set a compiled string may draw from: `OPEN` (the full Unicode space) or `WIRE_SENDABLE`; `OPEN` everywhere but the header zone |
+| `text_alphabet` | the `TextAlphabet` a compiled string draws from — `OPEN`, `PRINTABLE` or `WIRE_SENDABLE` — set per zone and phase by `compile_parameter` |
+| `zone_wire` | the `ZoneWire` of the destination zone — `STRUCTURED`, `TEXT` or `SEGMENT` — which decides what the invalid phase can tell apart |
 
 `EMPTY_CONTEXT` is the shared instance for an endpoint with no attack knobs and
 no risk-derived profiles.
@@ -107,9 +141,12 @@ The compiler reads a contract's schema through `SchemaView`, a frozen typed
 accessor over the contract, instead of picking a dictionary apart by string
 keys ([ADR-023](adr/compiler.md#adr-023)). Each JSON Schema constraint is a
 property — `value_type`, `enum`, `minimum`, `min_length`, `known_format`,
-`property_count`, and so on — returning the closed enums `SchemaType` and
-`SchemaFormat`, never a literal. `known_format` returns a `SchemaFormat` only
-for a wire spelling the enum recognizes, and `None` otherwise.
+`property_count`, and so on — returning the closed enums `SchemaType`,
+`SchemaFormat` and `NumericFormat`, never a literal. `known_format` returns a
+`SchemaFormat` only for a string format the enum recognizes, and `numeric_format`
+a `NumericFormat` (`int32`, `int64`, `float`, `double`) only for a numeric one;
+each returns `None` otherwise. `seeds` is the spec's `default` and then its
+`examples`, each value once ([Seeds](#seeds-from-the-spec)).
 
 One property is the exception: `json_schema` is the single raw
 `model_dump(by_alias=True, exclude_none=True)`. It is used in exactly two
@@ -127,10 +164,19 @@ contract's MRO, so a `HackerStrategyContract` — a subclass of
 `BaseStrategyContract` — picks up the base phases plus `attack` and `mutation`
 without a branch ([ADR-010](adr/models.md#adr-010)).
 
-A `GenerationPhase` binds `name: Phase`, `contract_type` and a `build`
-callable. Its `__post_init__` rejects a non-callable `build` with a `TypeError`
-at registration, so a mis-registration fails where it is written, not at the
-first draw ([ADR-026](adr/compiler.md#adr-026)).
+A `GenerationPhase` binds `name: Phase`, `contract_type`, a `build` callable
+and, for a phase that poisons, its `candidates`. Its `__post_init__` rejects a
+non-callable `build` or `candidates` with a `TypeError` at registration, so a
+mis-registration fails where it is written, not at the first draw
+([ADR-026](adr/compiler.md#adr-026)).
+
+**A phase with candidates poisons.** `candidates` is a `CandidateSource`: given a
+contract and its context, the strategy over the values the field could be
+poisoned with, or `None` when it has none. `poisoning_strategy(contract, phase,
+context=...)` asks the candidates and, when the field is poisonable, compiles it
+with the phase's `build`; `poisoning_phases(phases, contract_types)` is the subset
+of `phases` with candidates for at least one of the types. Both resolve by MRO,
+like `build` ([ADR-124](adr/compiler.md#adr-124)).
 
 `compile_contract(contract, phase, *, context)` resolves the builder and calls
 it. A builder receives the `context` only if its signature accepts it — a
@@ -141,16 +187,16 @@ The built-in phases are registered explicitly by `register_builtin_phases`,
 never as a side effect of importing a builder module
 ([ADR-025](adr/compiler.md#adr-025)):
 
-| Phase | Contract | Builder |
-|---|---|---|
-| `valid` | base | `build_valid_strategy` |
-| `boundary` | base | `build_boundary_strategy` |
-| `invalid` | base | `build_invalid_strategy` |
-| `attack` | base | `build_valid_strategy` |
-| `attack` | hacker | `build_hacker_attack` |
-| `mutation` | base | `build_valid_strategy` |
-| `mutation` | hacker | `build_hacker_mutation` |
-| `semantic` | base | `build_valid_strategy` |
+| Phase | Contract | Builder | Candidates |
+|---|---|---|---|
+| `valid` | base | `build_valid_strategy` | — |
+| `boundary` | base | `build_boundary_strategy` | `boundary_candidates` |
+| `invalid` | base | `build_invalid_strategy` | `invalid_candidates` |
+| `attack` | base | `build_valid_strategy` | — |
+| `attack` | hacker | `build_hacker_attack` | — |
+| `mutation` | base | `build_valid_strategy` | — |
+| `mutation` | hacker | `build_hacker_mutation` | — |
+| `semantic` | base | `build_valid_strategy` | — |
 
 `attack`, `mutation` and `semantic` on the base contract fall back to valid
 values: a field draws in-spec values for those phases. `semantic` needs no
@@ -217,9 +263,10 @@ builders ([ADR-016](adr/compiler.md#adr-016)).
 |---|---|
 | `fields/default/valid.py` | `SchemaType → valid builder` |
 | `fields/default/boundary.py` | `SchemaType → boundary builder` |
-| `fields/default/invalid.py` | `SchemaType → invalid builder` |
-| `constants.py` | `FORMAT_PATTERNS`: `SchemaFormat → regex pattern` |
-| `fields/default/constraints.py` | the date-range builders `DATE_RANGE_STRATEGIES`, and `regex_strategy` over `FORMAT_PATTERNS` |
+| `fields/default/invalid.py` | `SchemaType → invalid rule`; `ZoneWire → what the wire tells apart` |
+| `constants.py` | `FORMAT_PATTERNS`: `SchemaFormat → regex pattern`; `FLOAT_BOUNDARY`: `NumericFormat → float edges`; `TEXT_ALPHABET_BY_PHASE`: `Phase → Zone → TextAlphabet` |
+| `fields/default/formats.py` | the date-range builders `DATE_RANGE_STRATEGIES`, and `regex_strategy` over `FORMAT_PATTERNS` |
+| `fields/default/alphabet.py` | `TextAlphabet → character strategy` |
 | `fields/hacker/payloads.py` | `SchemaType → base-payload builder`; the toggle-family table |
 
 Two overrides ride on top of the type dispatch. The boundary phase shrinks any
@@ -228,18 +275,35 @@ honouring the declared bounds. A string with a chronologically-sortable
 `format` (`date`, `date-time`) and a declared bound goes to a range-aware date
 builder rather than the format's regex.
 
+### Numeric ranges
+
+A numeric field has two ranges ([ADR-113](adr/compiler.md#adr-113)):
+
+| Range | What it is | Read by |
+|---|---|---|
+| declared (`declared_int_range`, `declared_float_range`) | `minimum`/`maximum` and the exclusive bounds, narrowed by the word of a declared `format` (`NUMERIC_WORD_RANGE`: `int32`, `int64`, `float`), never widened; `None` on a side is unbounded | `boundary`, `invalid` |
+| generation (`generation_int_range`, `generation_float_range`) | the declared range inside the word of `UNFORMATTED_INTEGER_FORMAT` (`int64`) for an integer that names no integer format | `valid` |
+
+So a valid integer always fits a 64-bit word, while the boundary and invalid phases
+of an unformatted integer still probe past it, and those of an `int32` field probe
+`2**31 - 1` and `2**31`. The oracles hold a value to a declared format's word only.
+
 ### Numeric boundaries
 
 A numeric field's boundary candidates are the fixed edges (`INT_BOUNDARY`, the
 signed word sizes; `FLOAT_BOUNDARY`, finite floats only, since JSON cannot carry
-`NaN` or an infinity) plus each declared bound and the values on either side of
-it, kept only when they fall inside the declared range. An exclusive bound
-resolves to the adjacent value: the next integer, or the adjacent representable
-float (`math.nextafter`), so it stays excluded at any magnitude and a narrow range
-keeps its values. When no candidate survives the range, the field falls back to its
-valid-phase draw, or to an open draw (finite, for `number`) when no sendable value
-satisfies the field at all. Candidates are filtered by range, not by
-`multipleOf`.
+`NaN` or an infinity, keyed by format: `float` probes the single-precision edges,
+`double` and an unformatted `number` the double's) plus each declared bound and
+the values on either side of it. Each candidate is snapped down and up to the
+declared `multipleOf` in exact rational arithmetic (an `integer` keeps only whole
+results), and kept only when it falls inside the declared range. An exclusive
+bound resolves to the adjacent value: the next integer, or the adjacent
+representable float (`math.nextafter`), so it stays excluded at any magnitude and
+a narrow range keeps its values. A numeric field with no candidate left is not
+poisonable in `boundary`; where the boundary builder still draws it (a field nested in a
+boundary object or array), it
+falls back to its valid-phase draw, or to an open draw (finite, for `number`) when
+no sendable value satisfies the field at all.
 
 The hacker `attack` phase reuses the same tables for `integer` and `number`, finite
 as well, but does **not** keep them inside the range: probing past the declared
@@ -256,79 +320,85 @@ bounds is what that phase is for ([ADR-111](adr/compiler.md#adr-111)).
 | `LARGE_ARRAY_SIZE` · `SMALL_ARRAY_SIZE` | 1000 · 10 | attack array lengths |
 | `MUTATION_OVERFLOW_FIELD_SIZE` | 4096 | the overflow field in a mutated object |
 | `DEFAULT_MUTATION_DEPTH` | 1 | mutation depth when no context sets it |
+| `SEED_SHARE_PERCENT` | 20 | the percent of valid draws taken from the spec's seeds |
 
-## String values and the wire alphabet
+## String values and the alphabets
 
-A string is generated to be *sendable* to the destination it is bound for. Most
-zones — body, query, path — carry the full Unicode space, so their strings draw
-from an **open** alphabet (every codepoint but the surrogates). A header value
-cannot: the client encodes it as strict ASCII before framing, and the framing
-layer refuses NUL, CR, LF and whitespace at either edge. A header string drawn
-from the open alphabet is therefore almost always unencodable, and the request
-never leaves the client — an honest "unsendable" result, but budget spent on a
-value that could never reach the server.
+A string is generated to be *sendable* to the zone it is bound for, and in the
+valid phase to *look valid* there. `TextAlphabet` has three members, and the
+compiler picks one per zone and phase while generating, not after
+([ADR-067](adr/compiler.md#adr-067), [ADR-114](adr/compiler.md#adr-114)):
 
-So the compiler narrows the alphabet by zone *while generating*, not after. A
-`_ZONE_TEXT_ALPHABET` table maps `Zone.HEADER` to `WIRE_SENDABLE`; every other
-zone keeps `OPEN`. `compile_parameter` narrows the `GenerationContext`'s
-`text_alphabet` to the zone's before compiling, and the string builders draw
-their characters through it.
+| Zone | `valid` | every other phase |
+|---|---|---|
+| `header` | `WIRE_SENDABLE` | `WIRE_SENDABLE` |
+| `query`, `path` | `PRINTABLE` | `OPEN` |
+| `body` | `OPEN` | `OPEN` |
 
-The **wire-sendable** alphabet is printable ASCII without space, `0x21..0x7E`.
-It is the set of characters *measured* to survive this transport in any
-position, not a set read off a spec: everything below `0x21` (the controls and
-space) or above `0x7E` (all non-ASCII) is refused by the client encoder or the
-framing grammar. Space and tab are legal in a header only as an interior
-separator between tokens; a header parameter is nearly always a single token, so
-generating the separator form is coverage knowingly not taken. Control
-characters that would in fact pass are also left out on purpose: looking valid is
-this phase's job — stressing the server with hostile bytes is the attack phase's.
+`TEXT_ALPHABET_BY_PHASE` maps `valid` to `VALID_TEXT_ALPHABET`; every other phase
+takes `NON_VALID_TEXT_ALPHABET`, and a zone absent from a table draws `OPEN`.
+`compile_parameter` sets the alphabet on the `GenerationContext` for the phase the
+parameter is compiled in, and the string builders draw their characters through
+`characters_for(context)`. In a poisoned request only the poisoned field is
+compiled for the poisoning phase, so every other field draws under the valid
+alphabet.
+
+- **`OPEN`** is every code point but the surrogates. The body keeps it in every
+  phase: a control character is legal inside a JSON string.
+- **`PRINTABLE`** drops the control (`Cc`), surrogate (`Cs`) and unassigned (`Cn`)
+  categories. A valid query or path value is percent-encoded into the URL, and a
+  control character there makes a server reject the URL before it routes it.
+- **`WIRE_SENDABLE`** is printable ASCII without space, `0x21..0x7E`. The client
+  encodes a header value as strict ASCII before framing, and the framing layer
+  refuses NUL, CR, LF and whitespace at either edge, so it is the set of characters
+  *measured* to survive this transport in any position, not a set read off a spec.
+  Space and tab are legal in a header only between tokens; a header parameter is
+  nearly always a single token, so that form is coverage knowingly not taken.
 
 ### Per branch of the string builder
 
 `string_strategy` reads the field through a `SchemaView` and the alphabet through
 the context, and each branch honours the alphabet it is handed:
 
-| The field declares | Under the open alphabet | Under the wire alphabet |
+| The field declares | Under `OPEN` | Under `PRINTABLE` or `WIRE_SENDABLE` |
 |---|---|---|
-| free text (no `format`, no `pattern`) | text of the declared length over the open alphabet | text of the declared length over the wire alphabet |
+| free text (no `format`, no `pattern`) | text of the declared length over the open alphabet | text of the declared length over the narrower alphabet |
 | a special-cased `format` (`email`, `uuid`, `date`, `date-time`, `uri`, `ipv4`, `hostname`, `byte`) | the format's regex | the same regex — every `FORMAT_PATTERNS` entry is ASCII by construction |
-| an unspecial-cased `format` | the `hypothesis-jsonschema` fallback | wire-alphabet text of the declared length, keeping a co-declared `pattern` |
-| a `pattern` | the pattern, drawn full-match | the pattern intersected with the wire alphabet |
+| an unspecial-cased `format` | the `hypothesis-jsonschema` fallback | narrower-alphabet text of the declared length, keeping a co-declared `pattern` |
+| a `pattern` | the pattern, drawn full-match | the pattern intersected with the narrower alphabet |
 
-The format regexes are all ASCII, so the wire alphabet leaves the special-cased
-formats unchanged. (The `date`, `date-time` and `ipv4` patterns match ASCII
-digits `[0-9]` rather than the Unicode decimal category, so a "date" is a date in
-every zone, not a string of Tamil or fullwidth digits.)
+The `date`, `date-time` and `ipv4` patterns match ASCII digits `[0-9]` rather than
+the Unicode decimal category, so a "date" is a date in every zone.
 
-One branch cannot always honour the alphabet: a **pattern that admits no
-wire-alphabet value keeps its open draw**. The restricted pattern is validated
-eagerly at compile time; if it is alphabet-incompatible it falls back to the
-unrestricted draw rather than raising. The generator refuses a character class
-that contains *any* character outside the alphabet — `[aé]{2}` is refused even
-though `aa` is drawable — so excluding such an endpoint would lose coverage that
-exists today. The rule is therefore: restrict where possible, behave as before
-where not. Nothing is excluded, nothing raises.
+A **pattern that admits no value in the narrower alphabet keeps its open draw**.
+The restricted pattern is validated eagerly at compile time; if it is
+alphabet-incompatible it falls back to the unrestricted draw rather than raising.
+The generator refuses a character class that contains *any* character outside the
+alphabet — `[aé]{2}` is refused even though `aa` is drawable — so excluding such an
+endpoint would lose coverage the open draw still provides.
 
 ### Why narrow, not filter
 
-The path zone already drops a few discrete whole values it cannot send, with a
-`.filter` after generation. The header restriction is deliberately **not** the
-same mechanism and the two are not unified into one table: a filter rejects a
-handful of finished values, whereas nearly everything the open alphabet draws is
-non-ASCII, so a header filter would reject almost every draw and Hypothesis would
-give up with `filter_too_much`. The alphabet has to be narrowed *during*
-generation — which is why the zone reaches the string builders at all
-([ADR-067](adr/compiler.md#adr-067)).
+The path zone drops a few discrete whole values it cannot send (`""`, `.`, `..`)
+with a `.filter` after generation. The alphabet is deliberately a different
+mechanism: a filter rejects a handful of finished values, whereas nearly everything
+the open alphabet draws is non-ASCII, so a header filter would reject almost every
+draw and Hypothesis would give up with `filter_too_much`.
 
-### Which phases restrict
+## Seeds from the spec
 
-The narrowing applies only where a phase means "this should reach the server":
-the `valid`, `semantic`, and non-hostile `attack`/`mutation` phases, all of which
-share the valid string builder. The `boundary` phase already draws ASCII from its
-own length table. The hostile `attack` and `mutation` pools — control characters,
-high bytes — are left untouched on purpose: such a payload still cannot cross
-this transport, which is the raw-socket path's business, not the client's.
+A field that declares a `default` or `examples` seeds its valid draws
+([ADR-121](adr/compiler.md#adr-121)). `SchemaView.seeds` is the `default` first,
+then the `examples`, each value once by `same_seed` (equal and of one type, so `1`
+is not `True`). The dialect has already folded OpenAPI 3.0's singular `example` and
+a parameter's `examples` map into the list ([ADR-112](adr/models.md#adr-112)).
+
+`build_valid_strategy` is a weighted union with no hidden weights: a roll in
+`0..99` below `SEED_SHARE_PERCENT` (20) draws a deep copy of one seed, any other
+roll draws from the schema (`build_unseeded_valid_strategy`). Seeds are trusted as
+written, never filtered through the schema. The phases that reuse the valid builder
+— `attack`, `mutation` and `semantic` on a base contract — inherit the seeds;
+`boundary` and `invalid` never seed.
 
 ## The hacker side
 

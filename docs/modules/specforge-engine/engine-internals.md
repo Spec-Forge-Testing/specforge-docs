@@ -4,8 +4,10 @@
 comes back into findings, statistics and a replayable trace. It is the deep
 machinery the [runners](execution-modes.md) drive: an HTTP transport, the
 Hypothesis harness, the response oracles, the finding pipeline, the two
-fuzzers, and the trace and replay layers. This page follows those layers in the
-order a request travels through them.
+fuzzers, the bulkhead that isolates a failing endpoint, and the trace and replay
+layers. This page follows those layers in the order a request travels through
+them; how a request is shaped before it gets here, and what it carries, is on
+[Requests](requests.md).
 
 The [modes page](execution-modes.md) covers the runners and how they compose
 these layers; this page is the layers themselves.
@@ -200,16 +202,26 @@ answer, not a fault to paper over, and a malformed URL will never succeed.
 
 A request the client cannot put on the wire at all is caught before it is sent
 and returned as an **unsendable result** (`UNSENDABLE_REQUEST`, no status code),
-never as a transport fault and never as a crash of the run. Three things make a
-request unsendable: a JSON body JSON cannot encode (a `NaN` or an infinity), a
-header name that is not an RFC 9110 token, and a header value that is not ASCII
-or carries a NUL, a line break, or whitespace at either edge. The injector flags
-them when it builds the blueprint, and the orchestrator checks the body and the
-headers again on every send, so a request built without the injector (a replay
-rehydrating a recorded trace) is refused the same way. An unsendable request is
-not counted as a wire request, never retried and never a finding; it is only
-recorded in stats by category, and its detail names the offending header, never
-its value.
+never as a transport fault and never as a crash of the run. A request is
+unsendable when its body cannot be encoded for its media type — a JSON body JSON
+cannot encode (a `NaN` or an infinity), a form or multipart body that is not an
+object of encodable fields, a multipart body with no field to send, or a media
+type no encoder handles — when a header name is not an RFC 9110 token, or when a
+header value is not ASCII or carries a NUL, a line break, or whitespace at either
+edge. The injector judges the body when it builds the blueprint, and a replay
+judges a rehydrated body the same way; the orchestrator refuses any blueprint that
+carries an `unsendable_reason`, and still refuses a header the client will not
+encode at send time. An unsendable request is not counted as a wire request, never
+retried and never a finding; it is only recorded in stats by category, and its
+detail names the offending header or the body's problem, never a value.
+
+**The body is encoded by its media type.** `runtime/http/body_encoders.py` holds
+`BODY_ENCODERS`, a closed table of three `BodyEncoder`s keyed by the media type's
+essence: JSON (any JSON media type, `+json` included), form-urlencoded and
+multipart. Each names the `Content-Type` it sends (`None` lets the client write
+multipart's boundary), the client arguments (`json=`, `data=`, `files=`), and why
+a body cannot be encoded. The table and what each encoder writes are on
+[Requests](requests.md#encoders) ([ADR-122](adr/models.md#adr-122)).
 
 `error_classifier.py` maps outcomes to an `ErrorCategory`. `classify_response`
 turns a status into `SERVER_ERROR` / `CLIENT_ERROR` / `None` (a clean 2xx/3xx);
@@ -250,13 +262,20 @@ config and an optional `Identity` into an immutable `RequestBlueprint`. It:
 - **interpolates the path** by percent-encoding each path value
   (`quote(..., safe="")`) and recording which segments the template actually
   consumed;
-- **layers headers** in three coats, each overriding the one below it —
-  config headers, then the identity's credential headers
-  (`merge_credential_layer`, case-insensitive, the identity winning), then the
-  fuzzer's generated headers on top — and records the credential header *names*
-  in `config_header_names` so their values are never persisted;
-- **sets the content type** from the endpoint's first declared `content_type`
-  when a body is present and nothing already set one;
+- **leaves out what was drawn as `None`**: a query or header parameter drawn as
+  `None` is not sent, and a body drawn as `None` is no body at all;
+- **layers headers** in three coats — config headers, then the identity's
+  credential headers (`credential_headers`, case-insensitive, the identity
+  winning), then the fuzzer's generated headers — and records the credential
+  header *names* in `config_header_names` so their values are never persisted. A
+  generated header whose name is **reserved** (a credential's, or `Content-Type`)
+  is dropped unless the request's intent poisons that very header
+  (`admit_generated_headers`, `runtime/http/reserved_headers.py`,
+  [ADR-119](adr/engine.md#adr-119));
+- **encodes the body** for the compiled body's `media_type`: the blueprint carries
+  `body`, `media_type` and `file_fields`, and the encoder's `Content-Type`
+  replaces a config one (an admitted, poisoned `Content-Type` stays);
+- **copies the intent** from the payload to `RequestBlueprint.intent`;
 - **flags an unsendable request** when a percent-encoded path segment is one
   URL normalization would strip (`""`, `"."`, `".."`), because a request whose
   path silently re-routes tests nothing, and when the body or a header could not
@@ -264,23 +283,29 @@ config and an optional `Identity` into an immutable `RequestBlueprint`. It:
   joined when there are several, and the orchestrator refuses it rather than
   send it.
 
-The identity's `label` rides on the blueprint — unless a generated header
-overrode one of the identity's own, in which case the request does not speak
-for that identity and the label is dropped.
+The identity's `label` rides on the blueprint — unless an admitted (poisoned)
+generated header shadows one of the identity's own, in which case the request does
+not speak for that identity and the label is dropped. A dropped reserved header
+never unlabels the request.
 
 ## The zoned payload
 
 `ZonedPayload` is the value object a strategy draws and the injector reads: the
 values for one request, keyed by `Zone` (`path`, `query`, `header`, `body`),
-plus the `Phase` they were drawn for. It is frozen; `with_field` returns a copy
-with one field written, never mutating the original
-([ADR-033](adr/engine.md#adr-033)).
+plus the `RequestIntent` they were drawn for — the phase, and the one zone and
+field drawn outside its schema, if any ([ADR-116](adr/engine.md#adr-116)). It is
+frozen; `with_field` returns a copy with one field written and the intent kept,
+never mutating the original ([ADR-033](adr/engine.md#adr-033)).
 
-Its `body` has **three** states, and the type keeps them apart with a private
-`_NO_BODY` sentinel: absent (no body zone at all), an explicit `None` (a body
-drawn as JSON `null`), and a value. `has_body` is true for the last two.
-`from_mapping` builds one from the zone-keyed dict Hypothesis draws;
-`as_mapping` renders it back, omitting empty zones and an absent body.
+Its `body` has **three** states, and the type keeps them apart with the
+`NO_BODY_DRAWN` sentinel (`models/runtime/draw.py`): absent (no body drawn), an
+explicit `None`, and a value. `has_body` is true for the last two; the injector
+sends neither an absent body nor a `None` one. `from_mapping` builds one from the
+zone-keyed dict Hypothesis draws, reading each zone's `ZoneDraw` — or bare values,
+as `as_mapping` renders them, with no intent — and raising when two zones claim a
+poisoned field; `as_mapping` renders it back, omitting empty zones and an absent
+body. Where the intent lives on every later object is on
+[Requests](requests.md#where-the-intent-lives).
 
 ## The Hypothesis harness
 
@@ -321,6 +346,7 @@ OracleVerdict` — and precedence is a named `IntEnum` value, never a magic gap
 | `SERVER_ERROR` (20) | `server_error` | any 5xx, or a connection the server dropped |
 | `ACCESS_CONTROL` (25) | `access_control` | a 2xx a caller should not have obtained, judged against the auth runner's expectation (non-terminal) |
 | `SEMANTIC` (30) | `semantic_property` | a 2xx that breaks a declared business rule (non-terminal) |
+| `INPUT_VALIDATION` (33) | `input_validation` | a 2xx to a request whose poisoned field was sent outside its declared schema (non-terminal) |
 | `STATUS_CODE` (35) | `status_code` | a status no response contract declared |
 | `CONTENT_TYPE` (40) | `content_type` | a body whose `Content-Type` misses the declared one |
 | `SCHEMA` (50) | `schema` | a body that fails the declared schema |
@@ -341,7 +367,8 @@ naming the rule the response broke (a verdict that decides no violation —
 `CONTINUE`, or an infrastructure suppression — carries no rule). **Every finding
 names its rule.** For a
 `semantic_property` or `access_control` finding the rule is *declared* by the
-contract — the business rule's own id and text, or the enforced access policy. For
+contract — the business rule's own id and text, or the enforced access policy —
+and for an `input_validation` finding it is the accepted field, `<zone>.<field>`. For
 every other invariant the rule is *intrinsic*: `intrinsic_verdict(invariant)`
 (built on `runtime/oracles/rules.py`) attaches a `ViolatedRule` whose id is the
 invariant's value and whose description is the one-sentence requirement the
@@ -371,11 +398,43 @@ the only one that passes an `access_expectation`, and outside an auth run it is
 runner passes `chaos`, the attack's `ChaosExpectation`: whether a dropped
 connection refuses that attack rather than crashing under it.
 
-All nine built-ins are registered explicitly by `register_builtin_oracles`,
+All ten built-ins are registered explicitly by `register_builtin_oracles`,
 never as a side effect of importing a runner, so the registered set is one
 readable function. `validate_value(value, contract)` structurally checks a
-response body against a strategy-contract shape through a `SchemaType`-keyed
-table of checkers — a missing type is a lookup miss, not a silent pass.
+value against a strategy-contract shape through a `SchemaType`-keyed table of
+checkers — a missing type is a lookup miss, not a silent pass. It holds a value
+declared `format: int32`, `int64` or `float` to that word, and an unformatted
+number to no word at all ([ADR-113](adr/compiler.md#adr-113)); the response schema
+oracle and the input-validation oracle both read it.
+
+### How input validation is judged
+
+The `input_validation` oracle answers one question: did a 2xx accept the value the
+request was drawn to get wrong? It reads the request's **intent**, never its phase
+([ADR-118](adr/engine.md#adr-118)), so it judges an out-of-range boundary edge as
+readily as an invalid draw, and stays silent on an invalid draw that happens to be
+valid.
+
+It speaks only on a 2xx whose intent names a poisoned field with a schema in the
+context's `declared_schemas_by_zone`. It reads the value the request sent, by
+zone: the drawn path or query value; the header's text, matched without case; the
+body's field, or the whole body for `$`, and for a form or multipart body the text
+its encoder sent. A field the request did not send is **absent**, which is not
+`null`; an absent field breaks the schema only when it is required. A sent text on
+a text wire is read as the declared type through strict literals
+(`interpret_wire_text`: `-?[0-9]+` for an integer, a decimal with an optional
+exponent for a number, `true` or `false`), so `" 7"` is text and fails an
+`integer` field ([ADR-117](adr/compiler.md#adr-117)). Then `validate_value`
+decides.
+
+A violation is a verdict with the invariant `input_validation`, non-terminal, and
+the rule `accepted_field_rule(zone, field)`: `ViolatedRule(id="<zone>.<field>")`,
+such as `query.limit` or `body.$`. `input_validation` is in
+`DECLARED_RULE_INVARIANTS`, so its rule is declared, not intrinsic, and findings
+group by that id: one finding per endpoint and field. Because it is non-terminal
+and runs before `status_code`, a 2xx that accepts the poisoned value and also
+misses its declared status is one finding with both violations, led by the
+accepted field.
 
 ### How a semantic property is evaluated
 
@@ -604,9 +663,9 @@ group → shrink → materialize → dedupe → assemble → stats.
   never carries an echoed credential). Every
   finding names a rule, so the id is always present; for an intrinsic invariant
   it is constant (the invariant's own value), so it adds nothing new to identity,
-  and for a `semantic_property` or `access_control` finding it is the declared
-  rule's id, so two different business rules broken on one endpoint are two
-  findings. The rule's *description* never enters the signature. The identity
+  and for a `semantic_property`, `access_control` or `input_validation` finding
+  it is the declared rule's id, so two different business rules broken on one
+  endpoint, or two fields it fails to validate, are two findings. The rule's *description* never enters the signature. The identity
   label is carried on every signature but compared only through
   `keyed_identity(invariant, label)`: it splits two findings only when the
   invariant is in `IDENTITY_SCOPED_INVARIANTS` (`access_control`), so a 5xx found
@@ -700,14 +759,22 @@ payloads into a batch and, when the batch fills to `max_concurrency`, flushes
 it: builds every blueprint, executes them concurrently on the one loop, and
 folds each result back in draw order. Folding evaluates the oracles, records a
 `RawFinding` on a violation, accumulates the oracles' rule decisions (above), and
-maintains the abort counters.
+maintains the abort counters. The concurrent sends are gathered with
+`gather_settled`, so when one send raises every sibling's result is recorded
+before the first error is raised again.
+
+A valid pass opens with its **minimal request**: `plan_passes` stores the simplest
+payload of the pass's strategy as `Pass.minimal_payload`, and the driver runs it
+as an explicit `@example` that takes one place of the pass's share
+([ADR-115](adr/compiler.md#adr-115)). A poisoning phase no zone of the endpoint can
+poison is not planned at all.
 
 **One stop signal crosses the `@given` boundary.** When folding decides the pass
-must stop, it sets a `Cut` on the shared state and raises a single internal
-`_StopExplorationError`, which unwinds cleanly out of Hypothesis's machinery to
-the carried `Cut` — no ad-hoc exception per abort reason
-([ADR-034](adr/engine.md#adr-034)). A pass stops for one of four reasons, each a
-`TruncationReason`:
+must stop, it sets a `Cut` on the shared state and raises a single
+`StopExplorationError` (`specforge_engine.exceptions`), which unwinds cleanly out
+of Hypothesis's machinery to the carried `Cut` — no ad-hoc exception per abort
+reason ([ADR-034](adr/engine.md#adr-034)). A pass stops for one of four reasons,
+each a `TruncationReason`:
 
 | Reason | Trips when |
 |---|---|
@@ -778,14 +845,18 @@ A **supervisor** runs passes until the machine stops finding anything new. Each
 pass ends in a closed union, isolated in one small function around the single
 `try`/`except` ([ADR-038](adr/engine.md#adr-038)). `run_pass` returns a
 `MachineOutcome`: a `PassOutcome` — `Reported`, `LinkBroken`, `Exhausted`,
-`Flaky`, `Completed` — or its sibling `ShrinkCutShort`, a pass whose shrink spent
-its budget. `settle_outcome` turns that into a `PassOutcome` on the wire (below),
+`Flaky`, `Completed`, `MachineFailed` — or its sibling `ShrinkCutShort`, a pass
+whose shrink spent its budget. `settle_outcome` turns that into a `PassOutcome` on the wire (below),
 and the supervisor reacts to it:
 
 - `Reported` appends a minimized crash report and **suppresses** that defect's
   signature, so the next pass looks past it; the run keeps going until
   `max_distinct_bugs` distinct defects are reported or the machine draws dry.
 - `LinkBroken` raises `StatefulLinkError` carrying the partial exploration.
+- `MachineFailed` — the engine itself raised inside the pass, with an exception
+  the outcome table does not classify — ends the machine with an `engine_failure`
+  cut owned by the endpoint whose rule raised (the first endpoint otherwise), and
+  keeps every result ([Isolating a failing endpoint](#isolating-a-failing-endpoint)).
 - `Flaky` — a shrink replay that stopped reproducing with no link error inside
   it — becomes a `FlakyFinding`: the recovered violation is turned into a
   `FindingSignature` and its occurrences are accumulated, or, when no violation
@@ -904,6 +975,57 @@ in the persisted `TruncationRecord` (whose `endpoint_id` the CLI reads), so the
 runner announces the verdict the outcome carries rather than assuming one
 ([ADR-066](adr/engine.md#adr-066)).
 
+## Isolating a failing endpoint
+
+An exception the engine raises while exploring one endpoint — generating,
+building, sending or folding its requests — costs that endpoint, never the run
+([ADR-120](adr/engine.md#adr-120)). `runtime/bulkhead.py` is the bulkhead:
+
+- `guard_endpoint(endpoint_id, work, evidence=...)` runs one endpoint's work. It
+  wraps the shared loop's `fuzz_one` (stateless and performance) and the per-endpoint
+  work of the auth and resilience runners.
+- `CONTROL_EXCEPTIONS` pass through untouched: `StopExplorationError`,
+  `asyncio.CancelledError` and `SafetyGuardBreachError`, which must still stop the
+  run. Only `Exception`s are caught, so `KeyboardInterrupt` and `SystemExit` are
+  never held.
+- Any other exception becomes an `EngineFailure`: a `TruncationRecord` with
+  reason `ENGINE_FAILURE`, the endpoint id, the requests it sent and a `detail`
+  of `<type> @ <file>:<line>` of the root cause (`describe_failure`; exception
+  groups are unwrapped by `root_cause`), plus the evidence below.
+
+**What the endpoint sent is kept.** `SentEvidence(results, findings)` is what the
+endpoint had sent and found when it raised; `failed_outcome` turns it into the
+endpoint's `ExplorationOutcome` with the cut. The shared loop reads it through the
+required `EndpointLoopSpec.evidence_of` — the stateless fuzzer's `sent_to` — and
+the auth and resilience runners record each result before judging it. Concurrent
+sends are gathered with `gather_settled` (`runtime/harness/settled.py`), so one
+send that raises never discards its siblings.
+
+**The run goes on.** The loop folds every endpoint's cut with `kept_cut`: a cut
+that halts the run (`target_down`, `cancelled`) outranks any other, and otherwise
+the first one recorded stands. `run_status_of` maps `engine_failure` to
+`truncated`, so a run with an engine failure is never `completed`.
+
+**The traceback goes to the engine's logger.** `engine_failure_record` logs the
+error and its traceback on `logging.getLogger(ENGINE_LOGGER_NAME)`
+(`"specforge_engine"`, `log.py`). The library adds no handler: the embedding
+process decides where records go, and the core writes the engine's `ERROR`
+records to stderr while it serves the protocol on stdout. The message stays in the
+log and out of `detail`, which travels to the report and the database and could
+echo a drawn value.
+
+The other places the engine can raise follow the same rule:
+
+| Where | What happens |
+|---|---|
+| a stateless pass | the batch flush keeps the error and raises the same one when Hypothesis replays the example, so the detail names the engine's error, not Hypothesis's wrapper |
+| a stateful pass | an exception the outcome table does not classify is `MachineFailed`; the supervisor records an `engine_failure` cut owned by the endpoint whose rule raised (the first endpoint otherwise) and keeps the results |
+| shrinking | when `resolve` raises, every finding group is reported as an `UnverifiedFinding` and the run is cut `engine_failure` at the endpoint whose finding was being shrunk (`EndpointLoopSpec.shrinking_at`) |
+| an auth endpoint with no valid request | not a failure: the endpoint is cut `generation_exhausted` with the detail `no valid request available to cross`, and the run goes on |
+
+A replay re-sends a recorded trace and explores no endpoint, so it has no
+bulkhead.
+
 ## Trace and replay
 
 `runtime/trace/` records **only what a run put on the wire**, in send order —
@@ -913,22 +1035,28 @@ wire in sequence, so its trace holds them, and `requests_shrink` counts them apa
 Each `TracedRequest` is an observed fact: credentials are *omitted* rather than
 redacted (only the config header names are kept), a URL's `user:pass@` is
 stripped and flagged with `omitted_url_userinfo`, the raw `path_params` sent
-before URL interpolation are recorded alongside the query and body, and
-`sent_at_ms` is excluded from anything hashed. `path_params` is a required field:
+before URL interpolation are recorded alongside the query and the body with its
+`media_type` and `file_fields`, the intent is recorded as `phase`,
+`poisoned_zone` and `poisoned_field` (the `intent` property reconstructs the value),
+and `sent_at_ms` is excluded from anything hashed. `path_params` is a required field:
 a trace recorded before it existed fails validation on load rather than
 rehydrating without it — traces are regenerated, not migrated. `canonical_json` serializes a trace so equal content
 yields equal bytes, and `content_hash` is its SHA-256 with the timing dropped,
 so two runs that sent the same requests content-address alike.
 
 The trace is the replay recipe, not a shareable report, so it is **not** put
-through body redaction: a request's `json_body` is generated data, and the
+through body redaction: a request's `body` is generated data, and the
 config/identity credential headers were already omitted by name. One consequence
 is worth stating plainly: a value the engine captures from a response through a
 state link — a resource id, by design — is re-sent verbatim on replay, so a
 producer that captured a secret into a bundle would leave it in the trace.
 
 `rehydrate_request` is the inverse: it reconstructs a `RequestBlueprint` from a
-traced request under a fresh config, applying three rules — the recorded
+traced request under a fresh config. It re-encodes the recorded body by its
+recorded media type, applies the reserved-header rule to the credentials — a
+traced header with a credential's name is dropped and refilled from the live
+credentials, while the traced `Content-Type` is kept, since it is the one that went
+out — and applies three rules — the recorded
 **identity** must still be declared, its **credential** header names must be
 suppliable, and when the URL's userinfo was omitted the live `base_url` must
 supply it for a **matching host**. Each rule that fails raises, so a replay

@@ -77,6 +77,26 @@ comparisons, retention…) and make sure the package imports it. Errors register
 same way. A view prints with the helpers of `ui/` (`show_rows`, `key_values`, `heading`…) and
 never touches stdout directly, so it works in every interface and in `--json-output`.
 
+### How a result gets what it needs to be read
+
+A view only draws the result it is handed, so a fact the core did not put in it is fetched
+before drawing, by `session/enrichment.py`, for the REPL, the full-screen app and a one-shot
+call alike. Today that is the model in use beside a `list_llm_models` listing (the
+`llm.primary_model` option, read with `get_config`) and the configuration as it was before a
+`set_config` or `reset_config`. It is an extra: if the core cannot answer it, the result is
+drawn without it. `--json-output` never gets it, and the extra request is not made.
+
+### Explaining a section once
+
+The words a view uses live in `views/vocabulary.py` (`problem`, `×N`, `possible problem`) next
+to the sentence that explains each section (`About`), the next step after each error code
+(`ERROR_NEXT_STEPS`) and which sections each operation explains (`OPERATION_SECTIONS`). A
+session's `Explainer` (`views/guidance.py`) hands each view the sections it has not explained yet
+when its result is created, and the view is drawn with that set (`render_result(…, explain=…)`),
+so a window resized or a result drawn again says the same as the first time. Call
+`heading(title, ABOUT_…)` for a section that explains itself; one the operation does not declare
+in `OPERATION_SECTIONS` is explained every time.
+
 ### A panel or a viewer in the TUI
 
 A screen is a small object the `ScreenStack` in `tui/screens/` shows over the conversation:

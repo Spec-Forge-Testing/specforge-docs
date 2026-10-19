@@ -95,6 +95,46 @@ every fold. The same finding reported again and again is shown once, followed by
 A table of more than 50 rows opens in a viewer (click it, or press `Ctrl-T`; `↑`/`↓`,
 `PgUp`/`PgDn` to move, `Esc` to close) instead of flooding the conversation.
 
+### Reading a run
+
+`fuzz`, `replay`, `get_run` and `get_finding` use the same few words, so a report reads the
+same wherever you meet it:
+
+| Word | Means |
+| --- | --- |
+| **problem** | One distinct way the API misbehaved: the same rule broken at the same endpoint with the same status, already grouped. |
+| **×N** | How many requests triggered it. |
+| **possible problem** | Something the engine saw but could not confirm (it did not reproduce, or the run stopped before checking it). |
+
+A run is drawn in sections, each with a line under its title saying what it is:
+
+- **Problems.** Worst first. Each one names the rule it broke in a sentence, the endpoint, the
+  status it answered, and, for the three worst, the evidence: `input` (what was sent), `reply`
+  (what the API answered) and `repro`, an approximate `curl` to send it again. The command is
+  aimed at the open project's URL (the call's own `base_url` when it named one) and says what it
+  leaves out: it carries no credentials, so add your token to repeat a request that needs one.
+- **Endpoints.** What happened to each endpoint the run reached. `Hits` is how many of its
+  requests triggered a problem; `Status` says how it answered (`401 only`, `500s`, `clean`…).
+- **Artifacts** (`get_run`). The files the run left on disk, each with its whole path: the
+  execution trace (every request and response, which `replay` re-sends) and the report as json
+  and as html.
+- **Observations.** What the run suggests, said in a sentence and worked out by the CLI from the
+  report: it was cut short by its deadline, no request ever got a successful answer, nearly every
+  response was refused by authentication, the same error repeated across endpoints, a redirect
+  the contract does not declare, or a replay that was not faithful.
+
+The headline counts problems, not the findings that make them up: three findings of the same
+rule at the same endpoint are `1 problem`, and `get_run` names the three (`findings #1, #2, #3`)
+so that `get_finding finding_id=<#>` opens any of them. A finding's own `×N` counts only the
+requests that finding stands for.
+
+Each explanation line is shown the first time it is useful in a session and not again, so a long
+session is not filled with the same sentences. `Ctrl-L` starts over, and so does the next
+session. Where a result names a file or a folder you may want to open or copy (the project root,
+the spec, the artifacts, a handler's file), the path is shown whole; only the header and the
+footer shorten it. Run without a terminal (a pipe, a file, CI), the output is drawn 160 columns
+wide, or as wide as `COLUMNS` says, so tables and commands are not cut.
+
 ### Keys
 
 | Key | Effect |
@@ -641,7 +681,9 @@ One analysis by id — the recipe a replay names.
 
 #### `list_runs`
 
-An analysis's runs, each row already saying whether to trust its evidence.
+An analysis's runs, each row already saying whether to trust its evidence. `Problems` counts
+the distinct problems a run found, and says how many were confirmed when that is not all of
+them (a run cut short leaves some unverified).
 
 | Flag | Type | Required | Default |
 | --- | --- | --- | --- |
@@ -653,7 +695,8 @@ An analysis's runs, each row already saying whether to trust its evidence.
 
 #### `get_run`
 
-Everything one run recorded, with its findings paged.
+Everything one run recorded, with its findings paged. It is drawn like a fresh report (see
+[Reading a run](#reading-a-run)), plus the files the run left on disk.
 
 | Flag | Type | Required | Default |
 | --- | --- | --- | --- |
@@ -665,7 +708,9 @@ instant).
 
 #### `get_finding`
 
-One finding, tagged as the crash or the unconfirmed finding it is.
+One finding, tagged as the crash or the unconfirmed finding it is. A confirmed one shows the
+rule it broke, the request that did it, what came back and an approximate `curl` to repeat it;
+one that never confirmed keeps no request and shows only the shape of the response.
 
 | Flag | Type | Required |
 | --- | --- | --- |
@@ -726,7 +771,8 @@ Every option's effective value, and which layer it came from.
 #### `set_config`
 
 Fixes values in the user's own config layer, and answers with the whole
-configuration. Requires a project.
+configuration. Requires a project. The CLI draws only what changed, each option as it was
+and as it is, and says when nothing changed.
 
 | Flag | Type | Required |
 | --- | --- | --- |
@@ -734,7 +780,8 @@ configuration. Requires a project.
 
 #### `reset_config`
 
-Returns options to their defaults, by key or all of them. Requires a project.
+Returns options to their defaults, by key or all of them. Requires a project. Like
+`set_config`, it draws only the options that changed.
 
 | Flag | Type | Required |
 | --- | --- | --- |
@@ -827,7 +874,9 @@ For a development install, use `pip uninstall specforge-cli` instead.
 ## Errors
 
 A rejection always renders to stderr with the domain code and the core's own
-message (never swallowed, never re-worded by the CLI), and argv exits `1`.
+message (never swallowed, never re-worded by the CLI), and argv exits `1`. For most codes the
+CLI adds the call that usually fixes it (`NO_STATIC_ANALYSIS` → `analyze_endpoints`), and an
+empty list says what to run to fill it.
 The full registry — every code `describe` publishes, what triggers each one —
 is in [Errors](../modules/core/protocol/errors.md). Two worth knowing up
 front because they're the ones a fresh session hits first:

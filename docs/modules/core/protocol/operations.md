@@ -1,6 +1,6 @@
 # Operations
 
-`describe` publishes **33 operations in eight families**, derived from the
+`describe` publishes **34 operations in eight families**, derived from the
 core's own façade. Each operation declares what must be open before it is called
 (`requires`), whether it can be watched (`emits_progress`), whether it can be
 stopped (`cancellable`), and whether it destroys what cannot be undone
@@ -55,6 +55,36 @@ given over an existing file without `overwrite`, is refused `INVALID_PARAMS`
 | `get_contract` | contract | — |
 | `list_endpoints` | contract | — |
 | `get_endpoint` | contract | — |
+| `generate_contract` | project | `started`, `contract_*`, `finished`; cancellable. Writes an OpenAPI from the source code and loads it; see [below](#generate-contract) |
+
+### `generate_contract` { #generate-contract }
+
+| Parameter | Default | What it changes |
+| --- | --- | --- |
+| `repo_root` | The project root. | Where routes are looked for. Not a directory, or no route in it: `CONTRACT_GENERATION_FAILED` (`data.path`, `data.reason`). |
+| `use_llm` | `false` | See the table below. |
+| `approval_token` | — | Only with `use_llm`. Without a valid one nothing is spent and the call is refused `INFERENCE_APPROVAL_REQUIRED` with `data.estimate`. |
+| `max_cost_usd` | No cap. | Only with `use_llm`. Caps the parameter and body inference, not the response calls. |
+| `destination` | `openapi.generated.yaml` | Where the document is written. |
+| `overwrite` | `false` | An existing `destination` is refused `INVALID_PARAMS` before anything is written; `true` replaces it. |
+| `adopt` | `false` | `true` also declares the file as `openapi_spec` in `specforge.toml`. |
+
+| | `use_llm: false` | `use_llm: true` |
+| --- | --- | --- |
+| Cost | Free, no approval. | Approved like a run; `estimated_cost_usd` and `cost_usd` in the result. |
+| Routes | The static scan's. | Also the ones the LLM finds (`source: "llm"`). |
+| Each operation | `operationId`, path parameters and a `default` response. | Also parameters, body, responses and `security`. |
+| `security_schemes` | Empty. | The authentication schemes the API uses. |
+| `refined`, `refinement_error` | `false`, `null`. | `true` when everything was inferred; otherwise why not. |
+| `llm_files` | Empty. | The files the LLM read. |
+
+With `use_llm` the approval can come twice: when discovery finds more routes
+than were priced, the call answers `INFERENCE_APPROVAL_REQUIRED` again with a
+new token, and what was already discovered is not paid again. The result
+carries `path`, `adopted`, `endpoints` (`method`, `path`, `handler`, `file`,
+`line`, `source`, `refined`, `refinement_error`), `llm_files`,
+`security_schemes`, `estimated_cost_usd`, `cost_usd` and `contract`, the shape
+`load_contract` answers with.
 
 ## `analysis`
 

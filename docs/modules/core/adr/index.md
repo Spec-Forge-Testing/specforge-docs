@@ -49,3 +49,4 @@ it governs. A number missing here belongs to another module.
 | [ADR-100](inference.md#adr-100) | inference | No inference without an approved estimate, and a predictive cap |
 | [ADR-101](inference.md#adr-101) | inference | Production is visible, bounded and cancellable, and a cancelled production leaves no run |
 | [ADR-125](core.md#adr-125) | core | The report names an accepted invalid input and an endpoint the engine could not explore |
+| [ADR-139](core.md#adr-139) | core | The report names five security findings and ranks them right after a server error |

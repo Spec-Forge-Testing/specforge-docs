@@ -24,8 +24,12 @@ reused across files — the number tells you when it was written, the file
 tells you what it governs. The sequence is shared by the whole site, so a number
 missing here belongs to another module:
 [ADR-064](../../contract-assembly/adr/foundations.md#adr-064) is Contract
-Assembly's, and [ADR-125](../../core/adr/core.md#adr-125), how the report labels
-`input_validation` and `engine_failure`, is the core's.
+Assembly's, [ADR-125](../../core/adr/core.md#adr-125), how the report labels
+`input_validation` and `engine_failure`, and
+[ADR-139](../../core/adr/core.md#adr-139), how it labels and ranks the security
+findings, are the core's, and
+[ADR-136](../../semantic-inference/adr/prompts.md#adr-136), the plausible values
+the prompt asks for, is Semantic Inference's.
 
 | File | Area | Covers |
 | --- | --- | --- |
@@ -131,3 +135,15 @@ Assembly's, and [ADR-125](../../core/adr/core.md#adr-125), how the report labels
 | [ADR-122](models.md#adr-122) | models | The body is one root contract with one media type, encoded by a closed table |
 | [ADR-123](engine.md#adr-123) | engine | Credential redaction covers one encoding layer per character over the whole echo |
 | [ADR-124](compiler.md#adr-124) | strategy_compiler | Poisoning is a property of the registered phase |
+| [ADR-126](compiler.md#adr-126) | strategy_compiler | `attack` is a poisoning phase over any contract, and its candidate is the poison |
+| [ADR-127](compiler.md#adr-127) | strategy_compiler | The attack payloads live in a package any contract uses, with default families per type |
+| [ADR-128](compiler.md#adr-128) | strategy_compiler | An attack payload is sent only when it fits the field's declared shape |
+| [ADR-129](compiler.md#adr-129) | strategy_compiler | Aggressiveness is one knob: the attack share of the budget |
+| [ADR-130](engine.md#adr-130) | engine | The payload family travels in the request intent |
+| [ADR-131](engine.md#adr-131) | engine | Five security oracles judge a named signal anchored on the intent |
+| [ADR-132](engine.md#adr-132) | engine | The oracle pipeline is the only infrastructure suppressor, and the streak counts judged failures |
+| [ADR-133](engine.md#adr-133) | engine | The shrink is bulkheaded per endpoint |
+| [ADR-134](compiler.md#adr-134) | strategy_compiler | Mass assignment is a zone variant the attack phase registers, one branch per body |
+| [ADR-135](engine.md#adr-135) | engine | A reflected payload is judged only in an HTML response |
+| [ADR-137](engine.md#adr-137) | engine | One raw finding per violated rule |
+| [ADR-138](engine.md#adr-138) | engine | An intent-anchored finding is confirmed against a control request |

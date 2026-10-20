@@ -39,6 +39,8 @@ src/specforge_engine/
 │   ├── numeric.py         # is_multiple_of: exact arithmetic shared by compiler and oracles
 │   ├── field_addressing.py # is_field_addressed: which zone/field a directive targets
 │   ├── semantic_properties.py # has_input_constraint: the neutral leaf both layers read
+│   ├── schema_check.py    # validate_value: the shape predicate the oracles and the attack filter share
+│   ├── sensitive_names.py # is_sensitive_field_name: the names the redaction and the sensitive-data oracle share
 │   └── phase_extensions.py # PhaseExtension value object + its registry (isolated, register, lookup)
 ├── models/                # DTOs and enums (see below)
 ├── profiles/              # Strategy-mode profiles: registry, builtin DEFAULT / HACKER
@@ -56,10 +58,11 @@ src/specforge_engine/
 │       ├── context.py     # GenerationContext, EMPTY_CONTEXT
 │       ├── schema_view.py # SchemaView: typed reader over a contract
 │       ├── registry.py    # phase registry: register_phase, resolve_phase, candidates_for, isolated
-│       ├── poisoning.py   # poisoning_strategy: the phase's candidates decide, its build poisons
+│       ├── poisoning.py   # poisoning_strategy, untagged: the phase's candidates are the poison
 │       ├── builtin.py     # the built-in phase registrations
 │       ├── default/       # valid · boundary · invalid · constraints · formats · alphabet
-│       └── hacker/        # request · mutation · mutation_operators · payloads · builders · tables
+│       ├── attack/        # payloads and candidates any contract uses: tables · payloads · request · builders · sampling · mass_assignment
+│       └── hacker/        # the hacker tuning: builders (toggles_of, candidates) · mutation · mutation_operators · tables
 └── runtime/                # Execution
     ├── facade.py          # run(): resolve the mode, open one client, dispatch, hold safe endpoints
     ├── safety_guard.py    # partition_by_safety: hold declared side-effect endpoints back
@@ -69,7 +72,8 @@ src/specforge_engine/
     ├── progress/          # Throttled counters and lifecycle events pushed to an observer
     ├── http/              # Async orchestrator, request injection, body encoders, credentials, reserved headers, error classifier
     ├── harness/           # The Hypothesis bridge: one event loop, settings, identity strategy, minimal draw, settled gather
-    ├── oracles/           # Response oracles: verdict leaf, intrinsic rules, registry, precedence, the ten builtins
+    ├── oracles/           # Response oracles: verdict leaf, intrinsic rules, registry, precedence, the fifteen builtins
+    │   └── security/      # the five intent-anchored security oracles
     ├── findings/          # Group, deduplicate, materialize, shrink, stats
     ├── fuzzers/           # stateless/ and stateful/ procedures
     ├── state_link/        # Shared bundle capture and status matching (stateful + auth)
@@ -181,7 +185,8 @@ graph TD
   through a public `isolated()` seam ([Extension guide](extension-guide.md)).
 - The engine consumes `EngineInput` alone and knows nothing about contracts or
   `StrategyMode`.
-- Inside `strategy_compiler/fields/`, `hacker/` may import `default/`, never
+- Inside `strategy_compiler/fields/`, the layers point one way: `hacker/` may
+  import `attack/` and `default/`, and `attack/` may import `default/`, never
   the reverse.
 - Every vocabulary enum is `enum.StrEnum`, so an enum-keyed map serializes to
   its wire strings ([ADR-004](adr/models.md#adr-004)).

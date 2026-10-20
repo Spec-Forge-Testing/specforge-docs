@@ -58,3 +58,50 @@ list with the model's, the rules ask for the complete list, not only the fields
 the type adds. A type whose code is omitted from the context yields no rules.
 Any edit to either partial moves the prompt fingerprint and invalidates cached
 contracts once.
+
+---
+
+## ADR-136 — The model is asked for plausible examples and defaults per field, never identifiers { #adr-136 }
+
+**Status:** accepted · `prompts/templates/partials/plausible_values.j2`, `prompts/templates/partials/schema_vocabulary.j2`, `prompts/templates/qa_default.j2`, `prompts/templates/security_default.j2`
+
+### Context
+
+A fuzzer reaches a handler's real logic faster when it starts from a value the
+code accepts: a sort order the handler switches on, a currency code it parses, a
+page size it falls back to. The engine already seeds its valid phase with a
+field's `default` and `examples` ([ADR-121](../../specforge-engine/adr/compiler.md#adr-121)),
+and contract fusion accepts both keywords on any type, but the model was never
+asked for them. Those values are often visible only in the code.
+
+### Decision
+
+The `plausible_values.j2` partial, included in the `qa` and `security` templates
+next to the declared constraints, asks for values only when the source context
+makes a concrete one plausible:
+
+- a value the code compares with or branches on, a shape the handler parses, a
+  value in a fixture or seed file, or an example in a comment becomes `examples`,
+  one to three of them;
+- the value the handler applies when the field is absent becomes `default`; a
+  typical value is not a default;
+- every value satisfies the field's other constraints, and sits on the field
+  where the OpenAPI definition places it.
+
+**Never an identifier.** No value for an id, a foreign key, a slug, a token or
+anything else that exists only once the database stores it. The schema vocabulary
+lists `examples` and `default` among the keywords of any type.
+
+### Rejected
+
+Asking for a value on every field: the model would invent plausible-looking ids,
+and an invented id only earns a 404 and teaches the fuzzer nothing. Leaving seeds
+to the OpenAPI document alone: most documents declare few examples, and the code
+is where the accepted values are written.
+
+### Consequences
+
+A field with evidence in the code reaches the valid phase with a value the handler
+accepts; a field without evidence gets none. The agent-neutral fallback stays
+free of the rule. The edit moves the prompt fingerprint and invalidates cached
+contracts once.

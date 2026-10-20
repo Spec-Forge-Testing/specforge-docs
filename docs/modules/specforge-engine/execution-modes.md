@@ -70,7 +70,7 @@ safety-guard breach — pass through the bulkhead and still stop the run.
 
 | Mode | Where the bulkhead sits |
 |---|---|
-| `STATELESS`, `PERFORMANCE` | around each endpoint's `fuzz_one` in the shared loop, and around resolving the findings (the stateless shrink): if that raises, every finding group is reported unverified and the run is cut at the endpoint being resolved |
+| `STATELESS`, `PERFORMANCE` | around each endpoint's `fuzz_one` in the shared loop; in stateless, around each finding's shrink too, keyed by its endpoint, so a shrink that raises cuts that endpoint alone and the others are still confirmed ([ADR-133](adr/engine.md#adr-133)) |
 | `STATEFUL` | around each pass: an exception the outcome table does not classify ends the machine as `MachineFailed`, cut at the endpoint whose rule raised, with every result kept |
 | `RESILIENCE` | around each endpoint's battery; every result is recorded before it is judged |
 | `AUTH` | around each endpoint's crossing; every result is recorded before it is judged |
@@ -113,7 +113,11 @@ A pass stops early with a `Cut` when the abort counters trip: too many
 infrastructure failures (`MAX_INFRA_FAILURES`), or `MAX_CONSECUTIVE_SERVER_ERRORS`
 consecutive 5xx on one endpoint, after which a liveness probe (one of
 `SAFE_PROBE_METHODS`) decides between a defective endpoint and a target that is
-down (`TruncationReason.TARGET_DOWN`).
+down (`TruncationReason.TARGET_DOWN`). The streak counts the failures the oracles
+judged: when every failure of a tripped streak is a finding (a dropped connection,
+or a timeout the poisoned field induced) and the probe answers, the endpoint is
+failing in a way the run reports, and the pass keeps exploring
+([ADR-132](adr/engine.md#adr-132)).
 
 ## Stateful
 
@@ -239,9 +243,11 @@ stream of results as they come back. A streak of target failures
 - if the target is dead, the replay stops re-sending and ends `aborted` with the
   truncation reason `target_down`;
 - if it answers, the run ends `truncated` with `infrastructure_abort` and stops
-  as well — unless every failure of the streak was a dropped connection: a live
-  target that drops connections is crashing on the recorded requests, which is
-  what the replay is there to show, so it keeps re-sending.
+  as well — unless every failure of the streak was a judged failure: a dropped
+  connection, or a timeout the request's poisoned field induced. Each replayed
+  result is judged before the monitor sees it, so a live target that crashes or
+  hangs on the recorded requests is showing what the replay is there to show,
+  and it keeps re-sending ([ADR-132](adr/engine.md#adr-132)).
 
 A request that was never sent is no evidence about the target — it neither
 advances the streak nor clears it — and an isolated failure never cuts. When a

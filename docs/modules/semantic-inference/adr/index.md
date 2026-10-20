@@ -28,3 +28,4 @@ missing here belongs to another module.
 | | Area | Decision |
 | --- | --- | --- |
 | [ADR-093](prompts.md#adr-093) | prompts | The prompt carries the declared security requirement and request-type constraints |
+| [ADR-136](prompts.md#adr-136) | prompts | The model is asked for plausible examples and defaults per field, never identifiers |

@@ -234,23 +234,26 @@ the request leaves — a header it will not encode — resolves to
 | Exception | Category |
 |---|---|
 | `InvalidURL`, `UnsupportedProtocol`, `LocalProtocolError` | `UNSENDABLE_REQUEST` |
-| `ConnectError`, `ConnectTimeout` | `AVAILABILITY` |
-| any other `TimeoutException` | `TIMEOUT` |
+| `ConnectError`, `ConnectTimeout`, `PoolTimeout`, `WriteTimeout` | `AVAILABILITY` |
+| any other `TimeoutException` (a read timeout) | `TIMEOUT` |
 | `RemoteProtocolError`, `ReadError`, `WriteError` | `CONNECTION_DROPPED` |
 | anything else | `AVAILABILITY` |
 
 `CONNECTION_DROPPED` sits apart from the infrastructure categories on purpose. A
 peer that refuses the connection or never answers is `AVAILABILITY` or
-`TIMEOUT` — evidence about the target's health, recorded in stats but never a
-finding. A peer that *accepted* the connection and then dropped it before a
+`TIMEOUT` — evidence about the target's health, recorded in stats and a finding
+only when the request's poisoned field induced the timeout
+([ADR-131](adr/engine.md#adr-131)). A pool or write timeout happens on the
+client's side, before the target could answer the payload, so it is
+`AVAILABILITY`, never a judged `TIMEOUT`. A peer that *accepted* the connection and then dropped it before a
 complete response has crashed mid-response, so `CONNECTION_DROPPED` is
 deliberately outside `INFRA_CATEGORIES`: the server-error oracle reports it as
 `not_a_server_error` exactly as it reports a 5xx, and under chaos the resilience
 oracle judges it instead. It still belongs to `TARGET_FAILURE_CATEGORIES`, so a
 run of drops advances the abort streak and can trigger a liveness probe; a
-drops-only streak against a target that answers the probe keeps exploring (see
-[Stateless exploration](#stateless-exploration) and
-[ADR-105](adr/engine.md#adr-105)). The raw-socket chaos transport produces it
+streak of judged failures only, drops included, against a target that answers the
+probe keeps exploring (see [Stateless exploration](#stateless-exploration) and
+[ADR-132](adr/engine.md#adr-132)). The raw-socket chaos transport produces it
 too: it tells a failure before the socket connected (`AVAILABILITY`) from one
 after (`CONNECTION_DROPPED`).
 
@@ -341,23 +344,37 @@ OracleVerdict` — and precedence is a named `IntEnum` value, never a magic gap
 
 | Precedence | Oracle `name` | Fires on |
 |---|---|---|
+| `INPUT_INDUCED_TIMEOUT` (5) | `input_induced_timeout` | a timeout on a request whose intent names a poisoned field (terminal) |
 | `INFRA` (10) | `infra` | an infrastructure failure — suppresses everything below it |
 | `RESILIENCE` (15) | `resilience_degradation` | under a chaos request, a 5xx or a dropped connection the attack does not tolerate |
 | `SERVER_ERROR` (20) | `server_error` | any 5xx, or a connection the server dropped |
 | `ACCESS_CONTROL` (25) | `access_control` | a 2xx a caller should not have obtained, judged against the auth runner's expectation (non-terminal) |
+| `MASS_ASSIGNMENT` (28) | `mass_assignment` | a 2xx that echoes an undeclared body key the request poisoned, with the value sent (non-terminal) |
 | `SEMANTIC` (30) | `semantic_property` | a 2xx that breaks a declared business rule (non-terminal) |
+| `INFORMATION_DISCLOSURE` (31) | `information_disclosure` | a non-2xx to a poisoned request whose body shows a leak marker outside the echo of the sent value (non-terminal) |
+| `SENSITIVE_DATA_EXPOSURE` (32) | `sensitive_data_exposure` | a 2xx to a poisoned request that carries a secret-looking key its response schema does not declare (non-terminal) |
 | `INPUT_VALIDATION` (33) | `input_validation` | a 2xx to a request whose poisoned field was sent outside its declared schema (non-terminal) |
+| `REFLECTED_PAYLOAD` (34) | `reflected_payload` | an HTML response that echoes the active payload of a reflectable family unescaped (non-terminal) |
 | `STATUS_CODE` (35) | `status_code` | a status no response contract declared |
 | `CONTENT_TYPE` (40) | `content_type` | a body whose `Content-Type` misses the declared one |
 | `SCHEMA` (50) | `schema` | a body that fails the declared schema |
 | `LATENCY` (60) | `latency_sla` | a clean 2xx/3xx slower than the run's SLA |
 
-The business rule runs before the status, content-type and schema checks on
-purpose. Those three are terminal; the rule is not. A 2xx that breaks a declared
-rule and also misses its declared response is therefore **one** finding: its
-primary violation is the rule, cited by its id, and the deviation rides along as a
-secondary violation, instead of the deviation stopping the chain before the rule
-is ever evaluated ([ADR-104](adr/engine.md#adr-104)).
+The business rule and the security oracles run before the status, content-type
+and schema checks on purpose. Those three are terminal; the oracles before them are
+not, so the chain reaches the rule before a deviation can stop it
+([ADR-104](adr/engine.md#adr-104)). A response that breaks two rules yields **two**
+findings: the fold records one raw finding per `(invariant, rule_id)`, each
+grouped, shrunk and confirmed on its own ([ADR-137](adr/engine.md#adr-137)). A
+2xx that breaks a declared rule and also misses its declared status is a
+`semantic_property` finding and a `status_code_conformance` finding.
+
+The security oracles are anchored on the intent and each states its limit; what
+each reads, and why `reflected_payload` reads HTML only, is in
+[ADR-131](adr/engine.md#adr-131) and [ADR-135](adr/engine.md#adr-135). They share
+`sent_value` (what the request sent for a field, by zone), `response_walk` (the
+nested objects and texts of a body) and `shared/sensitive_names` (the name
+predicate the finding redaction uses too).
 
 The `OracleVerdict` shape lives in its own leaf module, `runtime/oracles/verdict.py`
 (with the shared `CONTINUE` verdict), so the verdict depends on nothing else in the
@@ -368,7 +385,9 @@ naming the rule the response broke (a verdict that decides no violation —
 names its rule.** For a
 `semantic_property` or `access_control` finding the rule is *declared* by the
 contract — the business rule's own id and text, or the enforced access policy —
-and for an `input_validation` finding it is the accepted field, `<zone>.<field>`. For
+for an `input_validation` finding it is the accepted field, `<zone>.<field>`, and
+for a security finding the poisoned field, `<zone>.<field>`, or the exposed key,
+`response.<key>`. For
 every other invariant the rule is *intrinsic*: `intrinsic_verdict(invariant)`
 (built on `runtime/oracles/rules.py`) attaches a `ViolatedRule` whose id is the
 invariant's value and whose description is the one-sentence requirement the
@@ -398,9 +417,10 @@ the only one that passes an `access_expectation`, and outside an auth run it is
 runner passes `chaos`, the attack's `ChaosExpectation`: whether a dropped
 connection refuses that attack rather than crashing under it.
 
-All ten built-ins are registered explicitly by `register_builtin_oracles`,
+All fifteen built-ins are registered explicitly by `register_builtin_oracles`,
 never as a side effect of importing a runner, so the registered set is one
-readable function. `validate_value(value, contract)` structurally checks a
+readable function. `validate_value(value, contract)` (`shared/schema_check.py`,
+which the compiler's attack shape filter reads too) structurally checks a
 value against a strategy-contract shape through a `SchemaType`-keyed table of
 checkers — a missing type is a lookup miss, not a silent pass. It holds a value
 declared `format: int32`, `int64` or `float` to that word, and an unformatted
@@ -433,8 +453,8 @@ such as `query.limit` or `body.$`. `input_validation` is in
 `DECLARED_RULE_INVARIANTS`, so its rule is declared, not intrinsic, and findings
 group by that id: one finding per endpoint and field. Because it is non-terminal
 and runs before `status_code`, a 2xx that accepts the poisoned value and also
-misses its declared status is one finding with both violations, led by the
-accepted field.
+misses its declared status yields two findings, one per rule
+([ADR-137](adr/engine.md#adr-137)).
 
 ### How a semantic property is evaluated
 
@@ -757,8 +777,10 @@ The driver `explore_pass` runs a Hypothesis `@given` over the pass's strategy,
 but the callback **never raises on a finding** — it only accumulates drawn
 payloads into a batch and, when the batch fills to `max_concurrency`, flushes
 it: builds every blueprint, executes them concurrently on the one loop, and
-folds each result back in draw order. Folding evaluates the oracles, records a
-`RawFinding` on a violation, accumulates the oracles' rule decisions (above), and
+folds each result back in draw order. Folding evaluates the oracles on every
+result, unanswered ones included (the `infra` oracle is the one suppressor),
+records one `RawFinding` per violated rule ([ADR-137](adr/engine.md#adr-137)),
+accumulates the oracles' rule decisions (above), and
 maintains the abort counters. The concurrent sends are gathered with
 `gather_settled`, so when one send raises every sibling's result is recorded
 before the first error is raised again.
@@ -779,17 +801,20 @@ each a `TruncationReason`:
 | Reason | Trips when |
 |---|---|
 | `DEADLINE_EXCEEDED` | the endpoint's `deadline_ms` elapsed before a batch |
-| `INFRASTRUCTURE_ABORT` | `MAX_INFRA_FAILURES` target failures, not all of them dropped connections, target still answering a probe |
+| `INFRASTRUCTURE_ABORT` | `MAX_INFRA_FAILURES` target failures, not all of them judged failures, target still answering a probe |
 | `TARGET_DOWN` | those failures, and a liveness probe confirms the target is down |
 | `GENERATION_EXHAUSTED` | a phase never produced a single generatable candidate |
 
 The target failures are `TARGET_FAILURE_CATEGORIES`: `timeout`, `availability`
-and `connection_dropped`. A streak made **only** of dropped connections, against a
-target that answers the probe, is not an outage: the endpoint accepts every
-connection and crashes on it, and every drop is already a finding. The pass keeps
-exploring, and from then on that streak counts a drop as an answer, so the
-endpoint is not probed again for the same reason
-([ADR-105](adr/engine.md#adr-105)).
+and `connection_dropped`. The streak observes the folded result, so it knows which
+failures the oracles judged: `ExecutionResult.is_judged_failure` is a result an
+oracle turned into a finding, or a dropped connection, which is judged by
+definition. A streak made **only** of judged failures, against a target that
+answers the probe, is not an outage: the endpoint crashes or hangs on what it is
+sent, and every failure is already a finding. The pass keeps exploring, and from
+then on the streak counts a judged failure as an answer
+(`count_judged_as_answers`), so the endpoint is not probed again for the same
+reason ([ADR-132](adr/engine.md#adr-132)).
 
 `ExplorationState` is fresh per endpoint, but the `LivenessProbe` is injected
 and **shared across every endpoint of the run**, so the last known-good safe
@@ -808,7 +833,12 @@ signature — rather than spending requests rediscovering the target is down.
 requests stay out of the trace. It first re-sends the finding's own payload to
 confirm it still reproduces, then `find`s the smallest payload that still does,
 then re-executes that minimal payload to package it; a minimal payload that does
-not reproduce on re-execution is flaky and yields no report. Reproduction is
+not reproduce on re-execution is flaky and yields no report. A `mass_assignment`
+or `input_induced_timeout` finding is then checked against a **control request**
+(`CONTROL_CHECKS`, `control.py`): the payload without the poisoned key, or with
+the poisoned field at its minimal valid value. A control that shows the same
+signal refutes the finding, which counts as flaky
+([ADR-138](adr/engine.md#adr-138)). Reproduction is
 judged **by the finding's identity**: `_still_violates` accepts a re-executed
 response only when it breaks the same invariant *and* the same rule id as the
 original finding (and the search additionally holds the status fixed). That rule
@@ -939,9 +969,10 @@ collector's single `is_send_blocked(endpoint_id)`. A per-endpoint
 `EndpointCircuitBreaker` takes an endpoint that stops answering out of the
 machine for the rest of the run — there is no half-open state — so one dead
 endpoint cannot starve a still-live consumer of a bundle it needs; that stays the
-breaker's job, "one endpoint broken, the rest alive". A streak of dropped
-connections alone does not open it: the endpoint accepted every connection, and
-whether the target itself is down is the run-wide watch's call. Alongside it, a **run-wide
+breaker's job, "one endpoint broken, the rest alive". A streak of judged
+failures alone, dropped connections included, does not open it: the endpoint
+answered with something the engine reports, and whether the target itself is down
+is the run-wide watch's call ([ADR-132](adr/engine.md#adr-132)). Alongside it, a **run-wide
 liveness watch** (`RunLivenessWatch`, a `LivenessWatch` composed onto the
 collector) feeds the shared `TargetLivenessMonitor` from the
 collector's one `record` point. Both send sites — a rule step and a transition
@@ -1020,7 +1051,8 @@ The other places the engine can raise follow the same rule:
 |---|---|
 | a stateless pass | the batch flush keeps the error and raises the same one when Hypothesis replays the example, so the detail names the engine's error, not Hypothesis's wrapper |
 | a stateful pass | an exception the outcome table does not classify is `MachineFailed`; the supervisor records an `engine_failure` cut owned by the endpoint whose rule raised (the first endpoint otherwise) and keeps the results |
-| shrinking | when `resolve` raises, every finding group is reported as an `UnverifiedFinding` and the run is cut `engine_failure` at the endpoint whose finding was being shrunk (`EndpointLoopSpec.shrinking_at`) |
+| one finding's shrink | the shrink runs inside `isolate`, keyed by its endpoint: the exception becomes an `engine_failure` cut of that endpoint, recorded in `ShrinkOutcome.engine_failures` and put on its stats row; the endpoint's remaining findings are not attempted, every other endpoint's are shrunk, and the first such cut is offered as the run's ([ADR-133](adr/engine.md#adr-133)) |
+| the resolve step outside any shrink | every finding group is reported as an `UnverifiedFinding` and the run is cut `engine_failure` at the endpoint whose finding was being shrunk (`EndpointLoopSpec.shrinking_at`) |
 | an auth endpoint with no valid request | not a failure: the endpoint is cut `generation_exhausted` with the detail `no valid request available to cross`, and the run goes on |
 
 A replay re-sends a recorded trace and explores no endpoint, so it has no
@@ -1094,8 +1126,8 @@ and ignores anything that was never sent (no evidence either way). When the
 streak reaches `MAX_INFRA_FAILURES` (5) it fires one `probe_liveness()` `HEAD`: a
 dead target returns `target_down` and a live one `infrastructure_abort`, and
 either stops the loop with a `TruncationRecord`. A live target behind a streak of
-dropped connections only returns no verdict: the run goes on, and that streak
-counts later drops as answers. `run_status_of(truncation)` then maps that record
+judged failures only (dropped connections included) returns no verdict: the run
+goes on, and that streak counts later judged failures as answers. `run_status_of(truncation)` then maps that record
 to the run's status — `aborted` for `target_down`, `truncated` otherwise.
 
 The monitor takes the run's cancellation token and can **abandon a probe in

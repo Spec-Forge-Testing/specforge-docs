@@ -115,7 +115,7 @@ The built-in `mutation` phase is the worked example. It is meaningful only for a
 hacker contract — it seeds from a valid value and applies one hostile operator —
 but it must still compile for a plain field inside a hacker-mode compile. So it
 is registered twice: the real builder on the hacker contract, and a valid-value
-fallback on the base contract, exactly as `attack` is:
+fallback on the base contract:
 
 ```python
 from specforge_engine.models.contracts import BaseStrategyContract, HackerStrategyContract
@@ -143,10 +143,14 @@ registration.
 A phase that registers `candidates` is a **poisoning phase**: each of its requests
 draws one field from the phase and every other field valid, and the request's
 intent names that field ([Requests](requests.md#one-poisoned-field-per-request)).
-`candidates` is a `CandidateSource`: given the contract and its context, the
-strategy over the values the field could be poisoned with, or `None` when the
-field has none on its wire. The phase's `build` is still the strategy that
-poisons; the candidates only decide whether the field can be.
+`candidates` is a `CandidateSource`: given the contract and its context, a
+strategy of `PoisonCandidate(value, attack_family)`, or `None` when the field has
+none on its wire. The drawn candidate is the poison: the compiler unwraps it into
+the field's value and the request's `attack_family`. A source that draws bare
+values registers through `untagged(source)`, which wraps each value as a candidate
+of no family; that is how `boundary` and `invalid` register. The phase's `build`
+draws bare values and is what `compile_parameter` and the recursive builders
+call ([ADR-126](adr/compiler.md#adr-126)).
 
 ```python
 from hypothesis import strategies as st
@@ -154,10 +158,16 @@ from hypothesis import strategies as st
 from specforge_engine.models.contracts import BaseStrategyContract
 from specforge_engine.models.phase import Phase
 from specforge_engine.models.wire import ZoneWire
-from specforge_engine.strategy_compiler.fields import GenerationPhase, SchemaView, register_phase
+from specforge_engine.strategy_compiler.fields import (
+    GenerationPhase,
+    SchemaView,
+    register_phase,
+    untagged,
+)
+from specforge_engine.strategy_compiler.fields.default import build_valid_strategy
 
 
-def my_candidates(contract, *, context):
+def my_values(contract, *, context):
     view = SchemaView(contract)
     if view.max_length is None or context.zone_wire is ZoneWire.SEGMENT:
         return None  # nothing this phase can tell apart here
@@ -165,7 +175,8 @@ def my_candidates(contract, *, context):
 
 
 def build_my_phase(contract, *, context):
-    return my_candidates(contract, context=context)
+    values = my_values(contract, context=context)
+    return build_valid_strategy(contract, context=context) if values is None else values
 
 
 register_phase(
@@ -173,10 +184,15 @@ register_phase(
         name=Phase.MY_PHASE,
         contract_type=BaseStrategyContract,
         build=build_my_phase,
-        candidates=my_candidates,
+        candidates=untagged(my_values),
     )
 )
 ```
+
+A phase whose values belong to an attack family draws `PoisonCandidate(value,
+attack_family=AttackProfile.X)` directly, as `base_attack_candidates` does; the
+family then reaches the oracles through the intent
+([ADR-130](adr/engine.md#adr-130)).
 
 Nothing else changes. The compiler records the phase in each zone's
 `poisoning_phases` and in the endpoint's, the runtime draws one poisonable zone
@@ -186,6 +202,35 @@ apart from a valid one: on a text wire every value is text, and `None` is the
 parameter left out ([ADR-117](adr/compiler.md#adr-117)). The input-validation
 oracle then judges every 2xx to such a request against the poisoned field's
 declared schema, with no change of its own.
+
+### A whole-zone variant
+
+A poisoning phase can add branches that are not one declared field: a body with
+an undeclared key, for instance. Register a `ZoneVariantSource` per zone in
+`zone_variants`. It receives the zone's parameters, their valid strategies and the
+parameters always sent, and returns a strategy of `ZoneDraw`s that names its own
+poisoned field, or `None` when it does not apply. The zone compiler adds it beside
+the per-field variants; a focus list that addresses no field of the zone keeps it
+away.
+
+```python
+from specforge_engine.models.contracts import Zone
+
+register_phase(
+    GenerationPhase(
+        name=Phase.ATTACK,
+        contract_type=BaseStrategyContract,
+        build=build_base_attack,
+        candidates=base_attack_candidates,
+        zone_variants={Zone.BODY: mass_assignment_variant},
+    )
+)
+```
+
+A source should draw the key it adds inside one branch: every variant is one
+`one_of` member, so a source that returns one branch per key would take most of
+the phase's draws ([ADR-134](adr/compiler.md#adr-134)). A phase with variants but
+no candidates does not poison, so its variants are never drawn.
 
 ## Add a phase extension
 
@@ -283,11 +328,13 @@ any is missing:
 1. **The contract.** Add an `include_*` boolean field to
    `HackerStrategyContract`.
 2. **`AttackToggles`.** Add a field of the same name to the `AttackToggles`
-   value object and read it in `from_contract`. The pinning test asserts the
+   value object (`strategy_compiler/fields/attack/request.py`), give it a value in
+   `DEFAULT_ATTACK_TOGGLES`, and read it in `toggles_of(contract)`
+   (`strategy_compiler/fields/hacker/builders.py`). The pinning test asserts the
    toggle set equals the contract's `include_*` flags, so this step is not
    optional.
 3. **A toggle family.** Add a row to the toggle-family table in
-   `strategy_compiler/fields/hacker/payloads.py`, keyed by
+   `strategy_compiler/fields/attack/payloads.py`, keyed by
    `(toggle_name, SchemaType)`, whose value is the pool the toggle contributes.
    A toggle whose effect is inside a base builder (like `include_nulls`) reads
    the flag off `request.toggles` there instead.
@@ -295,12 +342,14 @@ any is missing:
 ## Add an attack profile pool
 
 An attack profile's string payloads live in `PROFILE_STRING_PAYLOADS` in
-`strategy_compiler/fields/hacker/tables.py`, keyed by `AttackProfile`. Add the
+`strategy_compiler/fields/attack/tables.py`, keyed by `AttackProfile`. Add the
 `AttackProfile` member to the kernel vocabulary, then a row mapping it to its
-payload tuple. The hacker string builder draws that pool whenever the profile
-is on the field's `AttackRequest`. To make an endpoint's data earn the profile
-automatically, add a row to `SENSITIVITY_ATTACK_PROFILES` in the compiler's
-`constants.py`.
+payload tuple. The attack string builder draws that pool, each spelling tagged
+with the profile as its family, whenever the profile is on the field's
+`AttackRequest`. To attack every field of a type with it, add it to the type's
+row of `DEFAULT_ATTACK_PROFILES_BY_TYPE`; to make an endpoint's data earn it, add
+a row to `SENSITIVITY_ATTACK_PROFILES`. Both live in the compiler's `constants.py`
+([ADR-127](adr/compiler.md#adr-127)).
 
 ## Add an oracle
 
@@ -318,14 +367,19 @@ class ResponseOracle(Protocol):
 gap. Oracles run as a Chain of Responsibility: the first terminal verdict
 short-circuits, non-terminal ones continue. All built-ins are registered
 explicitly in `runtime/oracles/builtin.py` — never as a side effect of importing
-a runner. The ten built-ins are, in precedence order: infrastructure,
-resilience, server error, access control, semantic property, input validation,
-status code, content type, response schema, latency
-([ADR-036](adr/engine.md#adr-036), [ADR-048](adr/engine.md#adr-048),
+a runner. The fifteen built-ins are, in precedence order: input-induced
+timeout, infrastructure, resilience, server error, access control, mass
+assignment, semantic property, information disclosure, sensitive data exposure,
+input validation, reflected payload, status code, content type, response schema,
+latency ([ADR-036](adr/engine.md#adr-036), [ADR-048](adr/engine.md#adr-048),
 [ADR-050](adr/engine.md#adr-050), [ADR-104](adr/engine.md#adr-104),
-[ADR-118](adr/engine.md#adr-118)). A non-terminal oracle placed early adds its
-violation and lets the rest judge the same response; the first violation is the
-finding's primary one, so the order decides what a finding leads with.
+[ADR-118](adr/engine.md#adr-118), [ADR-131](adr/engine.md#adr-131)). A
+non-terminal oracle placed early adds its violation and lets the rest judge the
+same response; the fold records one finding per violated rule
+([ADR-137](adr/engine.md#adr-137)), and a terminal verdict decides which later
+oracles never speak. The infrastructure oracle is the only suppressor of an
+unanswered request: an oracle that must judge one, such as a timeout, runs ahead
+of it ([ADR-132](adr/engine.md#adr-132)).
 
 An oracle can be **dormant until it has its datum**: it registers unconditionally
 but returns `CONTINUE` until the endpoint carries the input it judges. The
@@ -337,7 +391,12 @@ context an `AccessExpectation`, so it fires in an auth run and nowhere else.
 Registration is the extension point; the datum on the context decides whether the
 check runs. The input-validation oracle reads its datum off the request: it speaks
 only when `context.intent` names a poisoned field. An oracle that judges what a
-request was drawn to test reads `context.intent`, never the phase.
+request was drawn to test reads `context.intent`, never the phase, and gates on
+`context.intent.attack_family` when its signal depends on the payload's family.
+An oracle whose signal can be the endpoint's normal behaviour also adds a row to
+`CONTROL_CHECKS` (`runtime/fuzzers/stateless/control.py`): how to build the
+control payload, and whether the control's response shows the same signal
+([ADR-138](adr/engine.md#adr-138)).
 
 ## Add a chaos transport
 

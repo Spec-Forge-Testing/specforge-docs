@@ -90,7 +90,7 @@ Field names of this family are stable: they are persisted as columns.
 | `CrashReport`, `InvariantViolation` | a confirmed finding's reproducer and the invariant it broke — its `response_body` has sensitive field values redacted to `***` by name |
 | `ViolatedRule` | the rule a `CrashReport` broke (`id` + `description`) — declared by the contract for a `semantic_property` / `access_control` finding, the accepted field (`<zone>.<field>`, such as `query.limit` or `body.$`) for an `input_validation` finding, or intrinsic to the invariant for every other one |
 | `keyed_identity(invariant, identity_label) -> str \| None` | the identity that tells two findings of `invariant` apart: the label for `access_control`, `None` for every other invariant ([ADR-106](adr/engine.md#adr-106)) |
-| `ExecutionTrace`, `TracedRequest`, `TruncationRecord` | the replayable record; a `TracedRequest` records the request's intent as `phase`, `poisoned_zone` and `poisoned_field`, and its body with `media_type` and `file_fields` |
+| `ExecutionTrace`, `TracedRequest`, `TruncationRecord` | the replayable record; a `TracedRequest` records the request's intent as `phase`, `poisoned_zone`, `poisoned_field` and `poisoned_family` (the one field with a default, `None`), and its body with `media_type` and `file_fields` |
 | `ResponseDivergence`, `ReplayFidelity` | the replay comparison |
 | `ReplayReadiness` | the outcome of `validate_replayable` |
 
@@ -136,7 +136,7 @@ See [Progress and cancellation](progress-and-cancellation.md) for how they behav
 | `FindingState` | a finding's settled state: `CONFIRMED` / `FLAKY` / `UNVERIFIED` |
 | `ErrorCategory` | the outcome category of one request |
 | `TruncationReason` | why a run, or one endpoint, was cut short (includes `TARGET_DOWN`, `INFRASTRUCTURE_ABORT`, `CANCELLED`, and `ENGINE_FAILURE` for an endpoint the engine itself failed on and isolated) |
-| `InvariantViolation` | the invariant a finding broke (includes `INPUT_VALIDATION`: a 2xx accepted the poisoned field outside its declared schema) |
+| `InvariantViolation` | the invariant a finding broke (includes `INPUT_VALIDATION`: a 2xx accepted the poisoned field outside its declared schema; and the security invariants `INFORMATION_DISCLOSURE`, `SENSITIVE_DATA_EXPOSURE`, `REFLECTED_PAYLOAD`, `MASS_ASSIGNMENT`, `INPUT_INDUCED_TIMEOUT`) |
 | `FidelityLevel` | `EXACT` / `REDUCED` |
 | `CredentialKind` | whether an identity's credentials are ones the target should accept: `VALID` / `INVALID` |
 
@@ -196,8 +196,8 @@ own tests exercise.
 |---|---|---|
 | `ZoneWire` | `models/wire.py` (also `specforge_engine.models`) | how a zone carries a value: `STRUCTURED` (a JSON body), `TEXT` (query, header, a form or multipart body), `SEGMENT` (path); `zone_wire(zone, media_type)` picks one |
 | `TextAlphabet` | `models/wire.py` | the characters a compiled string draws from: `OPEN`, `PRINTABLE`, `WIRE_SENDABLE` |
-| `RequestIntent` | `models/runtime/intent.py` (also `specforge_engine.models.runtime`) | frozen `(phase, poisoned_zone, poisoned_field)`: what a request was drawn to test; the zone and the field are set together or not at all |
-| `ZoneDraw` | `models/runtime/draw.py` | what one zone's strategy draws: `values` and the `poisoned_field`, if any |
+| `RequestIntent` | `models/runtime/intent.py` (also `specforge_engine.models.runtime`) | frozen `(phase, poisoned_zone, poisoned_field, attack_family)`: what a request was drawn to test; the zone and the field are set together or not at all, and a family needs a poisoned field |
+| `ZoneDraw` | `models/runtime/draw.py` | what one zone's strategy draws: `values`, the `poisoned_field`, if any, and the `attack_family` of its value, if any |
 | `BODY_ROOT` | `models/runtime/intent.py` | `"$"`, the field name of a body that is not an object |
 | `NO_BODY_DRAWN` | `models/runtime/draw.py` | the body zone's values when a draw sends no body; `None` is a drawn value, never sent |
 | `CompiledBody` | `models/runtime/engine_input.py` | the compiled body: a `CompiledRequestPart` plus the `media_type` and the `file_fields` (properties declared `format: binary`, sent as file parts) |
@@ -231,7 +231,7 @@ tests exercise, documented for that reason
 | `compile_body(spec, ctx) -> CompiledBody` | the body's per-phase strategies: its object fields as a zone, or its root as the field `$`; an optional body is left out of some valid draws (`body.py`) |
 | `build_body_schema(spec) -> dict` | the body's documentation schema: its fields as an object, or its root as declared |
 | `compile_parameter(name, contract, zone, slot)` | one parameter compiled for the slot's phase under its zone's alphabet and wire (`parameter.py`) |
-| `poison_parameter(name, contract, zone, slot)` | the parameter compiled to poison it in the slot's phase, or `None` when the phase has no candidate for it |
+| `poison_parameter(name, contract, zone, slot)` | the phase's `PoisonCandidate`s for the parameter in the slot's phase, filtered to what its zone can send, or `None` when the phase has no candidate for it or focus keeps it out |
 | `ParameterSlot`, `FieldKnobs` | the phase, wire and knobs a parameter compiles in; the endpoint-wide generation context, focus and sensitive fields |
 
 ### `strategy_compiler.fields`
@@ -243,11 +243,15 @@ tests exercise, documented for that reason
 | `registered_phases()` | the keys currently in the phase table |
 | `resolve_phase(contract, phase)` | the phase registered for a contract's type or its nearest ancestor |
 | `isolated()` | a context manager giving the block its own phase registry, restored on exit |
-| `GenerationPhase` | one `(name, contract_type, build, candidates)` mapping; a non-callable `build` or `candidates` is rejected |
-| `CandidateSource` | the Protocol of a phase's `candidates`: `(contract, *, context) -> SearchStrategy \| None` |
+| `GenerationPhase` | one `(name, contract_type, build, candidates, zone_variants)` mapping; a non-callable `build`, `candidates` or zone variant is rejected |
+| `PoisonCandidate` | frozen `(value, attack_family)`: a value a field could be poisoned with, and its family, if any |
+| `CandidateSource` | the Protocol of a phase's `candidates`: `(contract, *, context) -> SearchStrategy[PoisonCandidate] \| None` |
+| `untagged(source)` | a value source adapted to a `CandidateSource` whose candidates carry no family |
+| `ZoneVariantSource` | the Protocol of a whole-zone branch: `(params, valid, always_sent) -> SearchStrategy[ZoneDraw] \| None` |
 | `candidates_for(phase, contract_type)` | the candidates of the phase resolved for a contract type, or `None` when it does not poison |
 | `poisoning_phases(phases, contract_types)` | the phases that carry candidates for at least one of the types |
-| `poisoning_strategy(contract, phase, *, context)` | the field compiled to poison it in `phase`, or `None` when the phase's candidates have nothing for it |
+| `poisoning_strategy(contract, phase, *, context)` | the phase's candidates for the field, or `None` when the phase cannot poison it |
+| `zone_variants_for(phase, zone, contract_types)` | the distinct zone-variant sources the phase resolves for the types on that zone |
 | `GenerationContext` | endpoint-wide generation knobs a builder may read |
 | `EMPTY_CONTEXT` | the shared context for an endpoint with no attack knobs |
 | `SchemaView` | typed, read-only view over a strategy contract (below) |
@@ -271,16 +275,28 @@ key:
 | `property_count` | the object's declared property count |
 | `json_schema` | the one raw `model_dump` — the zone schema and the jsonschema fallback |
 
+### `strategy_compiler.fields.attack`
+
+| Name | One line |
+|---|---|
+| `base_attack_candidates(contract, *, context)` | the attack candidates of a field no contract names profiles for: its type's default profiles, the default toggles |
+| `build_base_attack(contract, *, context)` | the base candidates' values, or the valid strategy when none fits |
+| `fitting_candidates(contract, candidates, *, context)` | the candidates, deduplicated first-seen, that fit the field's declared shape, or `None` |
+| `tagged_base_payloads(value_type, request)` | the profile pools first, each spelling tagged with its profile, then the type's base payloads and toggle families |
+| `sample_attack_payloads(payloads)` | the sampled-from strategy over deduplicated payloads, or `st.none()` when empty |
+| `mass_assignment_variant(params, valid, always_sent)` | the body zone variant: the valid body plus one undeclared privileged key |
+| `AttackRequest` | everything a base-payload builder or toggle family needs for a field |
+| `AttackToggles` | the eight payload-variant flags, pinned to the contract by a guard test; `DEFAULT_ATTACK_TOGGLES` (`attack/request.py`) is the untuned set |
+
 ### `strategy_compiler.fields.hacker`
 
 | Name | One line |
 |---|---|
-| `build_hacker_attack(contract, *, context)` | the attack-phase strategy for a hacker contract |
+| `hacker_attack_candidates(contract, *, context)` | the attack candidates of the contract's declared profiles and toggles that fit the field's shape |
+| `build_hacker_attack(contract, *, context)` | the sampled hacker payloads, as bare values |
 | `build_hacker_mutation(contract, *, context)` | the mutation-phase strategy: a non-null valid seed with one sampled operator applied |
-| `build_attack_payloads(value_type, request)` | the sampled-from strategy over one field's attack payloads |
+| `toggles_of(contract)` | the `AttackToggles` a hacker contract declares |
 | `mutation_operators(value_type, toggles)` | the gate-enabled mutation operators for a schema type |
-| `AttackRequest` | everything a base-payload builder or toggle family needs for a field |
-| `AttackToggles` | the eight payload-variant flags, pinned to the contract by a guard test |
 | `MutationOperator` | a frozen `(name, gate, apply)` mutation transform |
 | `mutate_object(obj, depth)` | layered object mutation for prototype-pollution and overflow probing |
 
@@ -299,6 +315,8 @@ to ([Extension guide](extension-guide.md#add-a-phase-extension)).
 | `phase_extension_for(phase)` | the extension registered for a phase, or `None` when it is not an extension phase |
 | `isolated()` | a context manager giving the block its own extension registry, restored on exit (`shared.phase_extensions`; not re-exported by `shared`) |
 | `is_field_addressed(zone, name, entries) -> bool` | whether a field is named by an attack addressing list, bare or zone-qualified |
+| `validate_value(value, contract) -> bool` | whether a value fits a strategy contract's type, length, `enum` and range; read by the oracles and by the attack shape filter (`schema_check.py`) |
+| `is_sensitive_field_name(name) -> bool` | whether a field name holds a credential or a secret, by one normalized form; read by the redaction and the sensitive-data oracle (`sensitive_names.py`) |
 | `has_input_constraint(endpoint) -> bool` | whether the endpoint declares at least one input-constraint semantic property |
 | `input_constraints(properties) -> tuple[SemanticProperty, ...]` | the properties classed as input constraints, in declaration order |
 | `register_builtin_phase_extensions()` | the composition root (`phase_extension_builtins.py`, at the package root) that registers the built-in `semantic` extension; the package `__init__` calls it once |

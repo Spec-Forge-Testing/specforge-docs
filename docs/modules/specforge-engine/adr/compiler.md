@@ -955,7 +955,7 @@ does not see them.
 
 ## ADR-128 — An attack payload is sent only when it fits the field's declared shape { #adr-128 }
 
-**Status:** accepted · `strategy_compiler/fields/attack/builders.py`, `strategy_compiler/parameter.py`, `shared/schema_check.py`, `models/wire.py`
+**Status:** accepted · Supersedes in part [ADR-111](#adr-111) · `strategy_compiler/fields/attack/builders.py`, `strategy_compiler/parameter.py`, `shared/schema_check.py`, `models/wire.py`
 
 ### Context
 

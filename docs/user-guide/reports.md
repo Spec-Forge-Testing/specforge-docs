@@ -43,7 +43,13 @@ its metrics, endpoint stats and crashes stay queryable through `history` and
 
 `ReportDocument` is a frozen, `extra="forbid"` Pydantic model: a pure function
 of a run's persisted data, never a live object. It carries a `schema_version`
-("1.18" today), bumped when the shape changes in a way a reader cannot ignore.
+("1.19" today), bumped when the shape changes in a way a reader cannot ignore.
+1.19 is additive over 1.18: the invariant vocabulary gains five security
+findings - `information_disclosure`, `sensitive_data_exposure`,
+`reflected_payload`, `mass_assignment` and `input_induced_timeout` - each with a
+declared rule naming the field that triggered it (`<zone>.<field>`, or
+`response.<key>` for an exposed key) and a rule label of its own; they rank right
+after `not_a_server_error`.
 1.18 is additive over 1.17: the invariant vocabulary gains `input_validation` - a
 2xx that accepted a value outside the declared schema of the field the request
 was drawn to get wrong, its `rule_id` naming that field as `<zone>.<field>`

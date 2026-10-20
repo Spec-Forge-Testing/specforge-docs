@@ -2399,7 +2399,7 @@ untouched, because replay re-sends it byte for byte.
 
 ## ADR-104 — A broken business rule outranks the status, content-type and schema checks { #adr-104 }
 
-**Status:** accepted · Supersedes in part [ADR-048](#adr-048) · `runtime/oracles/precedence.py`, `runtime/oracles/registry.py`, `models/runtime/results.py`
+**Status:** accepted · Supersedes in part [ADR-048](#adr-048) · Superseded in part by [ADR-137](#adr-137) · `runtime/oracles/precedence.py`, `runtime/oracles/registry.py`, `models/runtime/results.py`
 
 ### Context
 
@@ -2449,7 +2449,7 @@ is the primary violation, ahead of any rule it also broke.
 
 ## ADR-105 — A connection the server drops is a crash in every mode, and drops alone never abort a live target { #adr-105 }
 
-**Status:** accepted · Supersedes in part [ADR-052](#adr-052), [ADR-059](#adr-059) · `runtime/http/error_classifier.py`, `models/runtime/execution.py`, `runtime/oracles/builtin.py`, `runtime/http/target_failure_streak.py`, `runtime/http/liveness.py`, `runtime/fuzzers/stateless/folding.py`, `runtime/fuzzers/stateful/circuit_breaker.py`
+**Status:** accepted · Supersedes in part [ADR-052](#adr-052), [ADR-059](#adr-059) · Superseded in part by [ADR-132](#adr-132) · `runtime/http/error_classifier.py`, `models/runtime/execution.py`, `runtime/oracles/builtin.py`, `runtime/http/target_failure_streak.py`, `runtime/http/liveness.py`, `runtime/fuzzers/stateless/folding.py`, `runtime/fuzzers/stateful/circuit_breaker.py`
 
 ### Context
 
@@ -2846,7 +2846,7 @@ request.
 
 ## ADR-118 — A success that accepts the poisoned field outside its declared schema is an `input_validation` finding, one per field { #adr-118 }
 
-**Status:** accepted · `runtime/oracles/input_validation.py`, `runtime/oracles/precedence.py`, `runtime/oracles/builtin.py`, `runtime/oracles/schema_check.py`, `models/runtime/crash_report.py`
+**Status:** accepted · Superseded in part by [ADR-137](#adr-137) · `runtime/oracles/input_validation.py`, `runtime/oracles/precedence.py`, `runtime/oracles/builtin.py`, `runtime/oracles/schema_check.py`, `models/runtime/crash_report.py`
 
 ### Context
 
@@ -2963,7 +2963,7 @@ still attacked, one at a time, as the poisoned field.
 
 ## ADR-120 — An endpoint whose exploration raises is isolated as `engine_failure`, and the run goes on { #adr-120 }
 
-**Status:** accepted · `runtime/bulkhead.py`, `log.py`, `exceptions.py`, `models/runtime/results.py`, `models/runtime/run_status.py`, `models/runtime/trace.py`, `runtime/runners/loop.py`, `runtime/runners/auth/`, `runtime/runners/resilience/runner.py`, `runtime/fuzzers/stateful/outcome.py`, `runtime/fuzzers/stateful/supervisor.py`, `runtime/fuzzers/stateless/`, `runtime/harness/settled.py`; core `adapters/stdio/engine_log.py`
+**Status:** accepted · Superseded in part by [ADR-133](#adr-133) · `runtime/bulkhead.py`, `log.py`, `exceptions.py`, `models/runtime/results.py`, `models/runtime/run_status.py`, `models/runtime/trace.py`, `runtime/runners/loop.py`, `runtime/runners/auth/`, `runtime/runners/resilience/runner.py`, `runtime/fuzzers/stateful/outcome.py`, `runtime/fuzzers/stateful/supervisor.py`, `runtime/fuzzers/stateless/`, `runtime/harness/settled.py`; core `adapters/stdio/engine_log.py`
 
 ### Context
 
@@ -3074,3 +3074,279 @@ URL split by hand would read the fragment as userinfo and miss the real one.
 Every echo inside the scope is scrubbed in the finding; the trace is not redacted
 ([ADR-060](#adr-060)). A double encoding and a split echo stay in the clear: that is
 the stated limit.
+
+---
+
+## ADR-130 — The payload family travels in the request intent { #adr-130 }
+
+**Status:** accepted · Extends [ADR-116](#adr-116) · `models/runtime/draw.py`, `models/runtime/intent.py`, `models/runtime/trace.py`, `runtime/payload.py`, `runtime/trace/recorder.py`, `runtime/trace/rehydrate.py`, `strategy_compiler/zone.py`, `strategy_compiler/body.py`
+
+### Context
+
+An oracle that judges an attack needs to know what the poisoned value was meant to
+do: an unescaped echo matters for a script or an injection payload, not for an
+oversized integer. The value alone does not say it, and guessing the family from
+the value's text would duplicate the pools the compiler drew it from. The family
+is known only where the candidate is drawn ([ADR-126](compiler.md#adr-126)), and
+the runtime does not import the compiler.
+
+### Decision
+
+**The family rides the same channel as the poisoned field.**
+`ZoneDraw.attack_family` is set by the zone or body compiler from the drawn
+`PoisonCandidate`, and `ZonedPayload` copies it into `RequestIntent.attack_family`
+beside `poisoned_zone` and `poisoned_field`. Both values reject a family without a
+poisoned field. The type is the kernel's `AttackProfile`, which the models
+re-export, so the runtime reads it with no edge to the compiler.
+
+**The trace records it as `poisoned_family`, with a default.** A valid draw, a
+`boundary` or `invalid` draw and an untagged attack payload carry no family, so
+`None` is a legitimate value. `poisoned_family` is the one `TracedRequest` field
+with a default, so a trace written without it still loads. The `intent` property
+rebuilds the full value, and a replay is judged with the family it was drawn with.
+
+### Rejected
+
+- **Inferring the family from the payload text.** A second classifier of what the
+  pools already label.
+- **A side table keyed by the drawn value.** Two pools may share a spelling, and
+  the shrink would have to keep the table aligned with its draws.
+
+### Consequences
+
+An oracle gates on `context.intent.attack_family`, never on the phase. A payload
+without a family is never judged by an oracle that requires one.
+
+---
+
+## ADR-131 — Five security oracles judge a named signal anchored on the intent { #adr-131 }
+
+**Status:** accepted · `runtime/oracles/security/`, `runtime/oracles/precedence.py`, `runtime/oracles/builtin.py`, `runtime/oracles/rules.py`, `runtime/oracles/sent_value.py`, `runtime/oracles/response_walk.py`, `runtime/http/error_classifier.py`, `shared/sensitive_names.py`, `models/runtime/crash_report.py`
+
+### Context
+
+An attack pass that draws real payloads finds nothing unless a response is judged
+for what an attack provokes: a leaked internal, an exposed secret, a reflected
+payload, a privileged key the server took, a request it could not finish. A signal
+read off the phase alone would report every attack request; a signal read off the
+response alone cannot tell the payload's effect from the API's normal output.
+Each check must also state where it stops seeing.
+
+### Decision
+
+**Five oracles in `runtime/oracles/security/`, each anchored on the intent.** They
+speak only on a request whose intent names a poisoned field. Each cites a declared
+rule: the poisoned field as `<zone>.<field>`, built by `rules.declared_field_rule`,
+or the exposed key as `response.<key>`. Findings group by rule id, so a run
+reports one finding per endpoint and field.
+
+| Oracle | Precedence | Signal | Stated limit |
+|---|---|---|---|
+| `input_induced_timeout` | 5, terminal | a `timeout` on a poisoned request | a read timeout only; a pool, write or connect timeout is `availability` |
+| `mass_assignment` | 28 | a 2xx echoes an undeclared body key with the value sent | a key taken silently is not observable; confirmed by a control ([ADR-138](#adr-138)) |
+| `information_disclosure` | 31 | a leak marker in a non-2xx body, outside the echo of the sent value | a 5xx stops the chain at `server_error`, so in practice it reads 3xx and 4xx |
+| `sensitive_data_exposure` | 32 | a secret-looking key on a 2xx, by name, that the response schema does not declare | values are never read |
+| `reflected_payload` | 34 | an active payload echoed unescaped | an HTML response and the reflectable families only ([ADR-135](#adr-135)) |
+
+**Placement.** The four response oracles are non-terminal between `SERVER_ERROR`
+(20) and `STATUS_CODE` (35), so a crash still leads and a status deviation is
+judged beside them. `input_induced_timeout` runs at 5, ahead of the infrastructure
+suppressor (10), which keeps every other timeout silent ([ADR-132](#adr-132)).
+
+**Shared pieces.** `sent_value` reads what the request sent for a field by zone,
+`response_walk` walks the nested objects and texts of a body, and
+`shared/sensitive_names` is the name predicate the finding redaction uses too.
+
+### Rejected
+
+- **Judging by phase.** Every attack response would be a finding.
+- **Reading the values of response keys for secrets.** A value pattern misfires on
+  hashes and ids; a name is what the schema can be checked against.
+
+### Consequences
+
+The built-in oracles are fifteen. The five invariants belong to
+`DECLARED_RULE_INVARIANTS`, and the core labels and ranks them
+([ADR-139](../../core/adr/core.md#adr-139)).
+
+---
+
+## ADR-132 — The oracle pipeline is the only infrastructure suppressor, and the streak counts judged failures { #adr-132 }
+
+**Status:** accepted · Supersedes in part [ADR-105](#adr-105) · `runtime/fuzzers/stateless/folding.py`, `runtime/oracles/builtin.py`, `runtime/http/target_failure_streak.py`, `runtime/http/liveness.py`, `runtime/fuzzers/stateful/circuit_breaker.py`, `models/runtime/execution.py`
+
+### Context
+
+A fold that skips the oracles for a result in `INFRA_CATEGORIES` never lets a
+timeout reach `input_induced_timeout` ([ADR-131](#adr-131)). A streak that spares
+only dropped connections from an `infrastructure_abort` ([ADR-105](#adr-105)) cuts
+an endpoint that hangs on every attack payload as an outage, at the moment it
+proved the defect.
+
+### Decision
+
+**Every result goes through the pipeline.** The stateless fold judges each result,
+and `InfraOracle` is the one place where an unanswered request is silenced. The
+streak observes the folded result, so it sees what the pipeline concluded.
+
+**The streak counts judged failures.** `ExecutionResult.is_judged_failure` is a
+result an oracle turned into a finding, or a dropped connection, which is judged
+by definition. When a streak trips and the liveness probe answers, a streak made
+only of judged failures is an endpoint failing in a way the engine reports: the
+streak calls `count_judged_as_answers()` and exploration goes on. A failed probe
+still ends the run `target_down`; a streak with one unjudged failure aborts. The
+rule holds in the stateless fold, the `TargetLivenessMonitor` and the stateful
+circuit breaker.
+
+### Rejected
+
+- **A second suppression in the fold.** Two places decide what is silent, and the
+  pipeline's order stops meaning anything for the categories the fold drops.
+- **Exempting timeouts from the streak.** A dying target would never be probed.
+
+### Consequences
+
+A poisoned request that times out is a finding, and the endpoint keeps its budget.
+A timeout on a request with no poisoned field stays suppressed.
+
+---
+
+## ADR-133 — The shrink is bulkheaded per endpoint { #adr-133 }
+
+**Status:** accepted · Supersedes in part [ADR-120](#adr-120) · `runtime/runners/stateless.py`, `runtime/runners/loop.py`, `models/runtime/results.py`, `runtime/bulkhead.py`
+
+### Context
+
+A shrink that raises and leaves every finding group of the run unverified
+([ADR-120](#adr-120)) lets one defect on one endpoint's finding discard the
+confirmation of every other endpoint.
+
+### Decision
+
+**Each shrink runs inside `isolate`, keyed by its endpoint.** An exception records
+an `engine_failure` cut for that endpoint, with the wire requests its attempt
+spent, and leaves its finding unattempted. The other findings of that endpoint are
+not attempted; the findings of every other endpoint are shrunk as usual.
+
+**The cut is reported where it belongs.** `ShrinkOutcome.engine_failures` carries
+the cuts in the order they were raised. The shared loop puts each one on its
+endpoint's stats row, unless the exploration already cut that row, and offers the
+first one as the run's cut, so the run ends `truncated`.
+
+### Rejected
+
+- **Catching per finding and moving on within the endpoint.** The same defect
+  would raise again on each finding of the endpoint, spending requests to learn
+  nothing.
+
+### Consequences
+
+A shrink defect costs the confirmation of one endpoint, never the run. The outer
+isolation of the resolve step stays for a failure outside any single shrink.
+
+---
+
+## ADR-135 — A reflected payload is judged only in an HTML response { #adr-135 }
+
+**Status:** accepted · `runtime/oracles/security/reflected_payload.py`, `models/media_type.py`
+
+### Context
+
+APIs echo what they were sent: a validation error quotes the bad value, a created
+resource returns its fields. In a JSON body that echo is data, not markup, and
+nothing executes it. Judging every echo of an active payload would report the
+normal behaviour of most APIs as a vulnerability.
+
+### Decision
+
+**`reflected_payload` judges a response whose media type renders as markup.** It
+reads `text/html` and `application/xhtml+xml`, by the media type's essence. It runs
+only for the families that are dangerous when reflected verbatim (`xss`,
+`injection`, `sql_injection`), and only when the sent value carries a metacharacter
+that changes what a page does until it is escaped. The limit is a record of its
+own, not only a row of [ADR-131](#adr-131), because it is the one a reader is most
+tempted to lift.
+
+### Rejected
+
+- **Every content type.** The finding would fire on each JSON error message.
+- **Every family.** A reflected path or an oversized number is not an injection.
+
+### Consequences
+
+An echo in a JSON body is never this finding. A JSON API whose front end renders
+it without escaping is out of the oracle's view: the engine does not see the page.
+
+---
+
+## ADR-137 — One raw finding per violated rule { #adr-137 }
+
+**Status:** accepted · Supersedes in part [ADR-104](#adr-104), [ADR-118](#adr-118) · `runtime/fuzzers/stateless/folding.py`, `runtime/fuzzers/stateful/violation.py`, `runtime/fuzzers/stateful/rule.py`, `models/runtime/stats.py`
+
+### Context
+
+A response judged by non-terminal oracles can break several rules: an accepted
+invalid field and an undeclared status, a leak and a business rule. One raw
+finding with a primary violation and secondaries is grouped and shrunk by its
+primary, so the other rules are never counted, confirmed or reported on their own.
+
+### Decision
+
+**The stateless fold records one `RawFinding` per rule.** `folding._record_finding`
+keeps the first violation of each `(invariant, rule_id)`, in the pipeline's order,
+and records a finding carrying that violation alone. Each one is grouped, shrunk
+and confirmed by itself.
+
+**The stateful machine raises the first violation not yet reported.**
+`first_new_violation` skips the violations whose signature an earlier pass
+reported, so a step that broke two rules reports the second on a later pass
+instead of being suppressed behind the first.
+
+### Rejected
+
+- **Keeping secondary violations on one finding.** The report would show a rule
+  that was never confirmed on its own.
+
+### Consequences
+
+`findings_raw` counts a response that breaks two rules twice. A response that
+breaks a business rule and misses its declared status yields two findings, each
+leading with its own rule.
+
+---
+
+## ADR-138 — An intent-anchored finding is confirmed against a control request { #adr-138 }
+
+**Status:** accepted · `runtime/fuzzers/stateless/control.py`, `runtime/fuzzers/stateless/shrinking.py`, `runtime/harness/minimal.py`
+
+### Context
+
+Two security signals can be the endpoint's normal behaviour rather than the
+payload's effect. A server may echo a key such as a role whatever the request
+sent, and an endpoint may time out on every request. A minimal payload that
+reproduces either signal still does not show that the poisoned field caused it.
+
+### Decision
+
+**After the minimal payload reproduces, a control request is sent.**
+`CONTROL_CHECKS` maps an invariant to a `ControlCheck`: how to build the control
+payload from the `Reproduction`, and whether the control's response shows the same
+signal. For `mass_assignment` the control leaves the poisoned key out and looks for
+the same echo; for `input_induced_timeout` it gives the poisoned field its minimal
+valid value and looks for a timeout. A control that shows the signal refutes the
+finding.
+
+**A refuted finding counts as flaky.** It did not hold when re-examined, and no
+closer name exists in the findings vocabulary; it stays flaky until a taxonomy
+gives a refuted finding its own name.
+
+### Rejected
+
+- **A control for every invariant.** The other signals are not normal behaviour by
+  construction, and each control costs a request.
+
+### Consequences
+
+A confirmed `mass_assignment` or `input_induced_timeout` finding names a cause the
+control ruled in. Each control is one more shrink request. The stateful mode sends
+no controls.

@@ -20,7 +20,7 @@ graph LR
     inj --> bp["RequestBlueprint<br/>intent · body · media_type"]
     bp --> res["ExecutionResult"]
     res --> ora["ResponseContext.intent<br/>→ oracles"]
-    res --> tr["TracedRequest<br/>phase · poisoned_zone · poisoned_field"]
+    res --> tr["TracedRequest<br/>phase · poisoned_zone · poisoned_field · poisoned_family"]
     tr --> rh["rehydrate_request<br/>→ replay"]
 ```
 
@@ -60,8 +60,9 @@ string. The tables are `VALID_TEXT_ALPHABET`, `NON_VALID_TEXT_ALPHABET` and
 
 The valid phase compiles each zone as a fixed dictionary: the required parameters
 in every draw, each optional one in some. A path segment is always present. The
-`attack`, `mutation` and `semantic` phases send every parameter
-([ADR-115](adr/compiler.md#adr-115)).
+`mutation` and `semantic` phases send every parameter
+([ADR-115](adr/compiler.md#adr-115)); a poisoning phase keeps the valid phase's
+split for the fields it leaves valid.
 
 **The minimal request comes first.** For every valid pass, `plan_passes` finds the
 simplest payload the pass's strategy draws (`minimal_draw`, a Hypothesis `find`
@@ -74,19 +75,21 @@ explicit example when its share is 1.
 `examples` draws one of them, copied, in `SEED_SHARE_PERCENT` (20) of its valid
 draws, and from its schema in the rest. `SchemaView.seeds` lists them, the
 `default` first, each value once by `same_seed`. Seeds are not filtered through
-the schema, and `boundary` and `invalid` never seed
+the schema, and a field a poisoning phase poisons never seeds
 ([ADR-121](adr/compiler.md#adr-121)).
 
 ## One poisoned field per request
 
-`boundary` and `invalid` are the **poisoning phases**: each of their requests
-draws exactly one field from the phase and every other field valid
-([ADR-116](adr/engine.md#adr-116)).
+`boundary`, `invalid` and `attack` are the **poisoning phases**: each of their
+requests draws exactly one field from the phase and every other field valid
+([ADR-116](adr/engine.md#adr-116), [ADR-126](adr/compiler.md#adr-126)).
 
 - **Per zone.** The zone compiles a `one_of` of variants, one per field the phase
   can poison: that field poisoned, every other one valid, with the valid phase's
-  required and optional split. The draw is a `ZoneDraw(values, poisoned_field)`;
-  outside a poisoned variant `poisoned_field` is `None`.
+  required and optional split, plus any whole-zone variant the phase registers
+  for that zone. The draw is a `ZoneDraw(values, poisoned_field, attack_family)`;
+  outside a poisoned variant `poisoned_field` is `None`, and `attack_family` is set
+  only when the drawn candidate carries one.
 - **Per request.** `merged_strategy_for_phase` draws one zone that can poison the
   phase in its poisoned variant and every other zone valid.
 - **Per endpoint.** A phase no zone can poison is not drawn: `phase_strategies`
@@ -94,7 +97,9 @@ draws exactly one field from the phase and every other field valid
 
 Whether a field can be poisoned, and with what, is the phase's **candidates**,
 declared where the phase is registered (`GenerationPhase.candidates`,
-[ADR-124](adr/compiler.md#adr-124)). The compiled output records the result:
+[ADR-124](adr/compiler.md#adr-124)). A candidate is a `PoisonCandidate(value,
+attack_family)`; the compiler unwraps it into the field's value and the draw's
+family. The compiled output records the result:
 `CompiledRequestPart.poisoning_phases` names the phases whose strategy poisons one
 of the zone's fields, and `CompiledEndpointStrategies.poisoning_phases` the phases
 the endpoint's contract type poisons. The runtime reads those sets, never the
@@ -106,6 +111,7 @@ The built-in candidates:
 |---|---|
 | `boundary` (`boundary_candidates`) | it is an `integer` or `number` with at least one edge inside the declared range and on the declared multiple, a `string` (its length edges), an `array` or an `object` |
 | `invalid` (`invalid_candidates`) | its wire can tell at least one value apart from a valid one (below) |
+| `attack` (`base_attack_candidates`, `hacker_attack_candidates`) | at least one attack payload of its type fits its declared shape ([ADR-128](adr/compiler.md#adr-128)); on an object body, the `mass_assignment_variant` adds one branch with an undeclared privileged key ([ADR-134](adr/compiler.md#adr-134)) |
 
 `invalid` offers, per wire:
 
@@ -192,17 +198,20 @@ A state link that writes into a reserved header is a `StatefulLinkError`.
 
 ## Where the intent lives
 
-`RequestIntent(phase, poisoned_zone, poisoned_field)` is frozen; the zone and the
-field are set together or not at all.
+`RequestIntent(phase, poisoned_zone, poisoned_field, attack_family)` is frozen;
+the zone and the field are set together or not at all, and a family needs a
+poisoned field ([ADR-130](adr/engine.md#adr-130)).
 
 | Holder | Field | Set by |
 |---|---|---|
-| `ZoneDraw` | `poisoned_field` | the compiled zone strategy |
+| `ZoneDraw` | `poisoned_field`, `attack_family` | the compiled zone strategy |
 | `ZonedPayload` | `intent` | `from_mapping`, from the zone draws; `with_field` keeps it |
 | `RequestBlueprint` | `intent` (and `phase`, derived) | `ContextInjector.build` |
 | `ResponseContext` | `intent` | the oracle context, from the result's blueprint |
-| `TracedRequest` | `phase`, `poisoned_zone`, `poisoned_field`; the `intent` property reconstructs the value | the recorder |
+| `TracedRequest` | `phase`, `poisoned_zone`, `poisoned_field`, `poisoned_family` (default `None`); the `intent` property reconstructs the value | the recorder |
 
 The oracles read the intent, never the phase: the input-validation oracle judges
 the field it names against the field's declared schema
-([Engine internals](engine-internals.md#how-input-validation-is-judged)).
+([Engine internals](engine-internals.md#how-input-validation-is-judged)), and the
+security oracles judge what the response gives away for that field, the
+reflected-payload one gated on its `attack_family`.

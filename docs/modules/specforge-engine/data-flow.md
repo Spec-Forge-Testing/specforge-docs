@@ -268,8 +268,9 @@ that need one or the other.
 
 `RequestBlueprint` is the immutable request built from a compiled endpoint and
 a payload: method, URL, headers, query, `path_params`, the `body` with its
-`media_type` and `file_fields`, the `intent` (a `RequestIntent`: the phase and the
-one poisoned zone and field, if any; `phase` is a derived property), `endpoint_id`,
+`media_type` and `file_fields`, the `intent` (a `RequestIntent`: the phase, the
+one poisoned zone and field, if any, and the `attack_family` of the value drawn
+into it; `phase` is a derived property), `endpoint_id`,
 the `config_header_names` (whose values are credentials and are never recorded),
 the `identity_label`, and an `unsendable_reason` when the request must not be
 sent. A parameter or body drawn as `None` is not on it: it records what went out. `path_params` holds the raw path-parameter values as
@@ -334,14 +335,15 @@ recorded request was itself a finding).
 `ExecutionTrace` is the ordered record of the exploration requests one run
 actually sent — the recipe for reproducing it. Shrinking requests are absent:
 their conclusion is the crash report. Each `TracedRequest` is an observed fact,
-so no field has a default; credentials are omitted rather than redacted (only
+so no field has a default but `poisoned_family`; credentials are omitted rather than redacted (only
 the config header *names* are recorded), `omitted_url_userinfo` flags a
 stripped `user:pass@`, the raw `path_params` sent before URL interpolation are
 recorded alongside the query and the body (with its `media_type` and
-`file_fields`), the intent is recorded as `phase`, `poisoned_zone` and
-`poisoned_field`, and `sent_at_ms` is excluded from anything hashed. Because no field has a default, a trace recorded before
-`path_params` existed fails validation on load — traces are regenerated, not
-migrated.
+`file_fields`), the intent is recorded as `phase`, `poisoned_zone`,
+`poisoned_field` and `poisoned_family`, and `sent_at_ms` is excluded from
+anything hashed. A trace missing any required field fails validation on load;
+`poisoned_family` defaults to `None`, so a trace written without it still loads
+([ADR-130](adr/engine.md#adr-130)).
 `TruncationRecord` records where and why a run, or one endpoint, was cut short:
 a `TruncationReason`, the `endpoint_id`, the `requests_sent` before the cut and
 an optional `detail`.
@@ -350,7 +352,8 @@ an optional `detail`.
 
 Inside the engine, an exploration pass produces `RawFinding`s (a finding needs
 at least one `ObservedViolation`; `primary_violation` is the first the oracles
-reported). An `ObservedViolation` is what one oracle saw: the `InvariantViolation`
+reported). The stateless fold records one raw finding per violated rule, each
+carrying that one violation ([ADR-137](adr/engine.md#adr-137)). An `ObservedViolation` is what one oracle saw: the `InvariantViolation`
 it broke and the `ViolatedRule` naming the rule — the business rule the contract
 declared, or the requirement the invariant enforces on its own — reduced to its
 `id` and `description`. Findings are grouped by
@@ -377,10 +380,10 @@ producer:
 
 | Counter | Meaning |
 |---|---|
-| `findings_raw` | violations observed during exploration, before shrinking |
+| `findings_raw` | violations observed during exploration, before shrinking: a response that breaks two rules counts twice |
 | `findings_confirmed` | shrink attempts that reproduced and became a crash report; in a mode that never shrinks (`performance`, `resilience`, `auth`), each defect observed |
 | `findings_unique` | distinct defects after collapsing reports with the same minimal reproducer (and, for `access_control`, the same identity); equal to the count of `ConfirmedFinding`s, never above `findings_confirmed` |
-| `findings_flaky` | attempted during shrinking and did not reproduce |
+| `findings_flaky` | attempted during shrinking and did not reproduce, or refuted by a control request ([ADR-138](adr/engine.md#adr-138)) |
 | `findings_collapsed` | not shrunk because a faithful representative of their signature stands for them |
 | `findings_unverified` | never attempted: the run was cut before shrinking, or no candidate could be produced |
 | `requests_shrink` | requests the shrinking phase put on the wire (in a stateful run, Hypothesis's shrink re-sends plus the sequence minimizer's); not part of `total_requests` |

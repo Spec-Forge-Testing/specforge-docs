@@ -456,7 +456,7 @@ field, and a new zone that needs its own alphabet is a row in
 
 ## ADR-111 — Numbers stay finite, and the boundary phase stays inside the declared range { #adr-111 }
 
-**Status:** accepted · Superseded in part by [ADR-113](#adr-113) · `strategy_compiler/constants.py`, `strategy_compiler/fields/default/constraints.py`, `strategy_compiler/fields/default/boundary.py`, `strategy_compiler/fields/hacker/payloads.py`; engine `runtime/http/wire_body.py`
+**Status:** accepted · Superseded in part by [ADR-113](#adr-113) and [ADR-128](#adr-128) · `strategy_compiler/constants.py`, `strategy_compiler/fields/default/constraints.py`, `strategy_compiler/fields/default/boundary.py`, `strategy_compiler/fields/hacker/payloads.py`; engine `runtime/http/wire_body.py`
 
 ### Context
 
@@ -745,7 +745,7 @@ attempted. A body sent as a form is generated and judged on a text wire.
 
 ## ADR-121 — The spec's default and examples seed the valid phase at a fixed share { #adr-121 }
 
-**Status:** accepted · Supersedes [ADR-012](models.md#adr-012) · `models/schema.py`, `models/contracts/strategies/base.py`, `models/contracts/normalization.py`, `strategy_compiler/fields/schema_view.py`, `strategy_compiler/fields/default/valid.py`, `strategy_compiler/constants.py`; kernel `specforge_contracts.endpoint`; `contract_assembly/fusion/vocabulary.py`
+**Status:** accepted · Supersedes [ADR-012](models.md#adr-012) · Superseded in part by [ADR-126](#adr-126) · `models/schema.py`, `models/contracts/strategies/base.py`, `models/contracts/normalization.py`, `strategy_compiler/fields/schema_view.py`, `strategy_compiler/fields/default/valid.py`, `strategy_compiler/constants.py`; kernel `specforge_contracts.endpoint`; `contract_assembly/fusion/vocabulary.py`
 
 ### Context
 
@@ -795,7 +795,7 @@ documentation schema and the `hypothesis-jsonschema` fallback see `default` and
 
 ## ADR-124 — Poisoning is a property of the registered phase { #adr-124 }
 
-**Status:** accepted · `strategy_compiler/fields/registry.py`, `strategy_compiler/fields/builtin.py`, `strategy_compiler/fields/poisoning.py`, `strategy_compiler/zone.py`, `strategy_compiler/body.py`, `strategy_compiler/compiler.py`, `models/runtime/engine_input.py`, `runtime/fuzzers/phases.py`
+**Status:** accepted · Superseded in part by [ADR-126](#adr-126) · `strategy_compiler/fields/registry.py`, `strategy_compiler/fields/builtin.py`, `strategy_compiler/fields/poisoning.py`, `strategy_compiler/zone.py`, `strategy_compiler/body.py`, `strategy_compiler/compiler.py`, `models/runtime/engine_input.py`, `runtime/fuzzers/phases.py`
 
 ### Context
 
@@ -840,3 +840,238 @@ The built-in `boundary` and `invalid` phases register `boundary_candidates` and
 A new poisoning phase is one registration with its candidates. An endpoint with
 no poisonable field plans no boundary or invalid pass, and the budget those
 phases would have spent stays unspent.
+
+---
+
+## ADR-126 — `attack` is a poisoning phase over any contract, and its candidate is the poison { #adr-126 }
+
+**Status:** accepted · Supersedes in part [ADR-124](#adr-124), [ADR-121](#adr-121) · `strategy_compiler/fields/registry.py`, `strategy_compiler/fields/poisoning.py`, `strategy_compiler/fields/builtin.py`, `strategy_compiler/fields/attack/builders.py`, `strategy_compiler/parameter.py`, `strategy_compiler/zone.py`, `strategy_compiler/body.py`, `runtime/payload.py`
+
+### Context
+
+`attack` drew attack payloads only for a field whose contract was a
+`HackerStrategyContract`, which a field becomes when the producer hints it. A
+plain field under the `HACKER` profile compiled `attack` with the valid builder,
+so a run without an inferred contract sent valid requests in its attack pass and
+could find nothing an attack finds. Where it did attack, every field of the
+request was hostile at once, and a finding could not be pinned on any of them.
+
+### Decision
+
+**`attack` registers candidates on the base contract and on the hacker one.**
+`(BaseStrategyContract, attack)` registers `base_attack_candidates` and
+`(HackerStrategyContract, attack)` registers `hacker_attack_candidates`. `attack`
+is therefore a poisoning phase like `boundary` and `invalid`: each request
+attacks one field and draws every other one valid, and its intent names that
+field ([ADR-116](engine.md#adr-116)). Focus, the reserved-header rule and the
+shrink apply to it unchanged.
+
+**The candidate is the poison.** A `CandidateSource` draws `PoisonCandidate(value,
+attack_family)`. `poisoning_strategy` returns the phase's candidates, and the zone
+or body compiler unwraps the drawn candidate into the field's value and the
+`ZoneDraw`'s `attack_family`. `boundary` and `invalid` register their value
+sources through the `untagged(source)` adapter, which wraps each value as a
+candidate of no family, so their modules and the values they draw do not change.
+
+**`build` still draws bare values.** `build_base_attack` is the candidates mapped
+to their values, or the valid strategy when no candidate fits the field. A phase's
+`build` is what `compile_parameter` and the recursive builders call, so it never
+yields a wrapper.
+
+### Rejected
+
+- **Poisoning in a refiner after the draw.** The shrink rebuilds the pass's
+  strategy from the compiled parts and would never see the poison.
+- **Wrapping only the attack values, and telling the two shapes apart where the
+  draw is built.** One channel would carry two shapes.
+- **Keeping "the candidates decide, the build poisons".** The family of a drawn
+  value is known only where the value is chosen; drawing the build again loses it.
+
+### Consequences
+
+The `HACKER` profile attacks every string field with family-tagged payloads
+whether or not a producer ran; the producer narrows and tunes the attack, it does
+not enable it. A field outside the endpoint's `focus_fields` is never the
+attacked one. The fields `attack` leaves valid draw from the valid builder, seeds
+included.
+
+---
+
+## ADR-127 — The attack payloads live in a package any contract uses, with default families per type { #adr-127 }
+
+**Status:** accepted · `strategy_compiler/fields/attack/`, `strategy_compiler/fields/hacker/`, `strategy_compiler/constants.py`; `tests/strategy_compiler/fields/test_layering.py`
+
+### Context
+
+The payload pools and the per-type payload builders lived in the hacker layer and
+read the hacker contract's toggles. Once `attack` serves any contract
+([ADR-126](#adr-126)), the generic machinery cannot live in the layer that tunes
+it, nor in `default/`, which is the valid, boundary and invalid phases. A plain
+field also needs families of its own: it carries no `attack_profiles`.
+
+### Decision
+
+**`fields/attack/` is a peer package.** It holds the pools by `AttackProfile`
+(`tables.py`), the base payloads per `SchemaType` and the toggle families
+(`payloads.py`), the pure `AttackRequest` and `AttackToggles` (`request.py`), the
+shape filter and the candidate builders (`builders.py`), the first-seen
+deduplication (`sampling.py`) and the mass-assignment variant
+([ADR-134](#adr-134)). `fields/hacker/` keeps what belongs to the hacker contract:
+`toggles_of(contract)`, the extra-fields object mutation, the `mutation` phase and
+its operators, and the hacker candidates composed over the generic payloads. The
+layers point one way, `hacker` → `attack` → `default`, pinned by a layering test.
+
+**A field with no declared profiles is attacked with its type's defaults.**
+`DEFAULT_ATTACK_PROFILES_BY_TYPE` maps a string to `injection`, `xss`,
+`path_traversal`, `input_validation` and `information_disclosure`, an integer or a
+number to `business_logic` and `resource_abuse`, and every other type to none. The
+profiles the endpoint's risk and sensitivity earn (`extra_profiles`) are added
+after them, deduplicated. `DEFAULT_ATTACK_TOGGLES` are the toggles an untuned
+hacker contract resolves to, pinned by a test.
+
+**Each payload carries its family.** A profile pool tags every spelling it adds
+with its profile; a payload that two pools share keeps the first family it came
+under. Only string payloads come from profile pools; every other payload has no
+family.
+
+### Rejected
+
+- **The generic machinery in `hacker/`.** An attack without any hint would be
+  named and housed as the hacker's, and the generic code would depend on the layer
+  that tunes it.
+- **An attack module inside `default/`.** It would import `hacker/` for the pools
+  and close a package cycle.
+- **Choosing families by field name.** A name is not a type, and a heuristic on
+  names breaks on the first API that spells them differently.
+
+### Consequences
+
+A new attack profile pool is a row of `PROFILE_STRING_PAYLOADS`; a new default
+for a type is a row of `DEFAULT_ATTACK_PROFILES_BY_TYPE`. Integer and number
+payloads are sent without a family label, so an oracle that gates on the family
+does not see them.
+
+---
+
+## ADR-128 — An attack payload is sent only when it fits the field's declared shape { #adr-128 }
+
+**Status:** accepted · Supersedes in part [ADR-111](#adr-111) · `strategy_compiler/fields/attack/builders.py`, `strategy_compiler/parameter.py`, `shared/schema_check.py`, `models/wire.py`
+
+### Context
+
+A payload of the wrong type, past `maxLength`, outside an `enum` or out of range
+is rejected by the server's shape validation before any handler logic runs. It
+spends budget, returns a 400 that tells nothing about the attack, and repeats
+what `boundary` and `invalid` already test.
+
+### Decision
+
+**A candidate is kept only when `validate_value` accepts it for the field's
+contract.** On a text wire the payload is first read as the declared type through
+the strict literals (`interpret_wire_text`), so a textual attack on a numeric
+query parameter is judged as the server will read it. `validate_value` lives in
+`shared/`, so the compiler and the oracles share one predicate without the
+compiler importing `runtime/`.
+
+**What the predicate does not check passes.** `validate_value` holds a value to
+its type, `maxLength`, `enum` and numeric range, not to a string `pattern` or
+`format`; a payload that breaks a pattern is sent, which is what an attack is
+for. A field with no fitting payload is not poisonable in `attack`.
+
+**The zone filters are total.** A poisoned value a path segment cannot carry, or a
+header text the client cannot frame, is filtered out per zone. Each filter accepts
+any drawn object, because the shrinker may hand a filter the raw value of a
+sibling branch.
+
+### Rejected
+
+- **Sending everything and letting the 400 sort it out.** The budget goes to shape
+  errors and the security oracles read noise.
+- **A list of families allowed to exceed the shape.** `resource_abuse` already
+  survives exactly where there is no bound to exceed.
+
+### Consequences
+
+A field with a short `maxLength` never receives a long payload in `attack`; an
+`enum` field receives none at all. The oversize probe of a bounded field stays
+with `boundary` and `invalid`.
+
+---
+
+## ADR-129 — Aggressiveness is one knob: the attack share of the budget { #adr-129 }
+
+**Status:** accepted · `budget/aggressiveness.py`, `strategy_compiler/planning.py`, `strategy_compiler/fields/context.py`, `strategy_compiler/fields/hacker/builders.py`
+
+### Context
+
+`EndpointAttack.aggressiveness` had two readers. The planner grew the `attack`
+share of the split with it, and the hacker attack builder mixed valid values into
+attacked fields with a per-field roll weighted by it. The two pulled in opposite
+directions: a low aggressiveness funded a small attack pass and then sent valid
+values in part of it, so the number of attacks did not grow with the knob.
+
+### Decision
+
+**The planner is the only reader.** `derive_attack_split(base_split,
+aggressiveness)` sets the `attack` share at 0.05 per point, capped at
+`MAX_AGGRESSIVENESS` (10) points, and rescales the other phases. An endpoint
+without the knob keeps its profile's split. `GenerationContext` carries no
+aggressiveness, and the attack builders draw attack payloads only: with one field
+attacked per request, the rest of the request is already valid.
+
+### Rejected
+
+- **Keeping both readers and balancing them.** The result is not monotone in the
+  knob.
+
+### Consequences
+
+More aggressiveness always means more attacking requests, and zero means no
+attack pass. The `HACKER` profile's split keeps `attack` at 0.05 of the budget;
+the `DEFAULT` profile has no attack pass.
+
+---
+
+## ADR-134 — Mass assignment is a zone variant the attack phase registers, one branch per body { #adr-134 }
+
+**Status:** accepted · `strategy_compiler/fields/registry.py`, `strategy_compiler/fields/builtin.py`, `strategy_compiler/fields/attack/mass_assignment.py`, `strategy_compiler/zone.py`
+
+### Context
+
+A server that binds every key of a request body onto its model accepts
+properties the contract never declared, privileged ones included. A poisoning
+phase iterates the declared fields, so an undeclared key has no field to poison.
+Offering each privileged key as its own variant made those variants most of the
+`attack` draws and starved the declared fields.
+
+### Decision
+
+**A phase may register whole-zone branches.** `GenerationPhase.zone_variants` maps
+a `Zone` to a `ZoneVariantSource`: given the zone's parameters, their valid
+strategies and the parameters always sent, a strategy of `ZoneDraw`s, or `None`.
+`zone_variants_for(phase, zone, contract_types)` resolves the distinct sources by
+MRO, and a poisoning phase adds each one beside its per-field variants. A phase
+with variants but no candidates does not poison, so its variants are never drawn.
+
+**`attack` registers `mass_assignment_variant` on the body.** It draws the valid
+body plus one key of `MASS_ASSIGNMENT_KEYS` the body does not declare, each with a
+sentinel privileged value no real state holds by chance. The draw names that key
+as the poisoned field and `auth_bypass` as its family. The key is chosen inside
+one branch, so the probe costs one variant of the body's `one_of`, never one per
+key. A focus list that addresses no field of the body keeps the variant away.
+
+### Rejected
+
+- **One variant per key.** Hypothesis flattens nested `one_of`s and draws
+  uniformly; most attacks went to undeclared keys.
+- **Reusing the hacker's extra-fields mutation.** It adds a generic key, not a
+  plausible privileged one, and names no field.
+- **A branch inside the zone compiler for `attack` on the body.** The zone
+  compiler would know about one phase.
+
+### Consequences
+
+The `mass_assignment` oracle judges the echo ([ADR-131](engine.md#adr-131)), and a
+control request confirms it ([ADR-138](engine.md#adr-138)). Only a body whose root
+is an object carries the variant, and only at its top level: a key slipped beside
+a wrapping object is a key the server may ignore.

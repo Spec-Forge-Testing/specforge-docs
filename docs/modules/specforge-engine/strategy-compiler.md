@@ -116,13 +116,14 @@ never guards for `None` ([ADR-024](adr/compiler.md#adr-024)):
 | Field | Holds |
 |---|---|
 | `mutation_depth` | how deep object mutation recurses (hacker) |
-| `aggressiveness` | the attack-vs-benign mix weight (hacker) |
 | `extra_profiles` | attack profiles the endpoint's risk earns, added to the field's own |
 | `text_alphabet` | the `TextAlphabet` a compiled string draws from — `OPEN`, `PRINTABLE` or `WIRE_SENDABLE` — set per zone and phase by `compile_parameter` |
 | `zone_wire` | the `ZoneWire` of the destination zone — `STRUCTURED`, `TEXT` or `SEGMENT` — which decides what the invalid phase can tell apart |
 
 `EMPTY_CONTEXT` is the shared instance for an endpoint with no attack knobs and
-no risk-derived profiles.
+no risk-derived profiles. The context carries no aggressiveness: the planner is
+its only reader, and it sets the size of the `attack` pass, not what a field
+draws in it ([ADR-129](adr/compiler.md#adr-129)).
 
 The risk-to-profile mapping is a table. An endpoint's data sensitivity earns a
 profile for every hacker field, and an auth-surface endpoint earns
@@ -165,18 +166,31 @@ contract's MRO, so a `HackerStrategyContract` — a subclass of
 without a branch ([ADR-010](adr/models.md#adr-010)).
 
 A `GenerationPhase` binds `name: Phase`, `contract_type`, a `build` callable
-and, for a phase that poisons, its `candidates`. Its `__post_init__` rejects a
-non-callable `build` or `candidates` with a `TypeError` at registration, so a
-mis-registration fails where it is written, not at the first draw
-([ADR-026](adr/compiler.md#adr-026)).
+and, for a phase that poisons, its `candidates` and, optionally, its
+`zone_variants`. Its `__post_init__` rejects a non-callable `build`, `candidates`
+or zone variant with a `TypeError` at registration, so a mis-registration fails
+where it is written, not at the first draw ([ADR-026](adr/compiler.md#adr-026)).
 
-**A phase with candidates poisons.** `candidates` is a `CandidateSource`: given a
-contract and its context, the strategy over the values the field could be
-poisoned with, or `None` when it has none. `poisoning_strategy(contract, phase,
-context=...)` asks the candidates and, when the field is poisonable, compiles it
-with the phase's `build`; `poisoning_phases(phases, contract_types)` is the subset
+**A phase with candidates poisons, and its candidate is the poison.**
+`candidates` is a `CandidateSource`: given a contract and its context, a strategy
+of `PoisonCandidate(value, attack_family)`, or `None` when the field cannot be
+poisoned. `poisoning_strategy(contract, phase, context=...)` returns the phase's
+candidates, and the zone or body compiler unwraps the drawn candidate into the
+field's value and the `ZoneDraw`'s `attack_family`. A phase whose source draws
+bare values registers it through `untagged(source)`, which wraps each value as a
+candidate of no family. `poisoning_phases(phases, contract_types)` is the subset
 of `phases` with candidates for at least one of the types. Both resolve by MRO,
-like `build` ([ADR-124](adr/compiler.md#adr-124)).
+like `build` ([ADR-124](adr/compiler.md#adr-124),
+[ADR-126](adr/compiler.md#adr-126)). A phase's `build` still draws bare values:
+it is what `compile_parameter` and the recursive builders call.
+
+**A phase may add whole-zone branches.** `zone_variants` maps a `Zone` to a
+`ZoneVariantSource`: given the zone's parameters, their valid strategies and the
+parameters always sent, a strategy of `ZoneDraw`s, or `None`.
+`zone_variants_for(phase, zone, contract_types)` resolves the distinct sources by
+MRO, and a poisoning phase adds each one beside its per-field variants. A phase
+with variants but no candidates does not poison, so its variants are never drawn
+([ADR-134](adr/compiler.md#adr-134)).
 
 `compile_contract(contract, phase, *, context)` resolves the builder and calls
 it. A builder receives the `context` only if its signature accepts it — a
@@ -187,19 +201,21 @@ The built-in phases are registered explicitly by `register_builtin_phases`,
 never as a side effect of importing a builder module
 ([ADR-025](adr/compiler.md#adr-025)):
 
-| Phase | Contract | Builder | Candidates |
-|---|---|---|---|
-| `valid` | base | `build_valid_strategy` | — |
-| `boundary` | base | `build_boundary_strategy` | `boundary_candidates` |
-| `invalid` | base | `build_invalid_strategy` | `invalid_candidates` |
-| `attack` | base | `build_valid_strategy` | — |
-| `attack` | hacker | `build_hacker_attack` | — |
-| `mutation` | base | `build_valid_strategy` | — |
-| `mutation` | hacker | `build_hacker_mutation` | — |
-| `semantic` | base | `build_valid_strategy` | — |
+| Phase | Contract | Builder | Candidates | Zone variants |
+|---|---|---|---|---|
+| `valid` | base | `build_valid_strategy` | — | — |
+| `boundary` | base | `build_boundary_strategy` | `untagged(boundary_candidates)` | — |
+| `invalid` | base | `build_invalid_strategy` | `untagged(invalid_candidates)` | — |
+| `attack` | base | `build_base_attack` | `base_attack_candidates` | body: `mass_assignment_variant` |
+| `attack` | hacker | `build_hacker_attack` | `hacker_attack_candidates` | body: `mass_assignment_variant` |
+| `mutation` | base | `build_valid_strategy` | — | — |
+| `mutation` | hacker | `build_hacker_mutation` | — | — |
+| `semantic` | base | `build_valid_strategy` | — | — |
 
-`attack`, `mutation` and `semantic` on the base contract fall back to valid
-values: a field draws in-spec values for those phases. `semantic` needs no
+`attack` poisons on every contract: each attack request attacks one field and
+draws every other one valid ([The attack side](#the-attack-side)). `mutation` and
+`semantic` on the base contract fall back to valid values: a field draws in-spec
+values for those phases. `semantic` needs no
 hacker builder at all — its work is not per-field. It compiles a valid value
 for each parameter, and the engine refines the whole assembled payload once per
 endpoint (see [Engine internals](engine-internals.md#how-a-semantic-property-is-evaluated)).
@@ -267,7 +283,9 @@ builders ([ADR-016](adr/compiler.md#adr-016)).
 | `constants.py` | `FORMAT_PATTERNS`: `SchemaFormat → regex pattern`; `FLOAT_BOUNDARY`: `NumericFormat → float edges`; `TEXT_ALPHABET_BY_PHASE`: `Phase → Zone → TextAlphabet` |
 | `fields/default/formats.py` | the date-range builders `DATE_RANGE_STRATEGIES`, and `regex_strategy` over `FORMAT_PATTERNS` |
 | `fields/default/alphabet.py` | `TextAlphabet → character strategy` |
-| `fields/hacker/payloads.py` | `SchemaType → base-payload builder`; the toggle-family table |
+| `fields/attack/payloads.py` | `SchemaType → base-payload builder`; the toggle-family table |
+| `fields/attack/tables.py` | `PROFILE_STRING_PAYLOADS`: `AttackProfile → string payload pool` |
+| `constants.py` | `DEFAULT_ATTACK_PROFILES_BY_TYPE`: `SchemaType → default attack profiles` |
 
 Two overrides ride on top of the type dispatch. The boundary phase shrinks any
 array to a size-0..1 envelope through `_ARRAY_SIZE_OVERRIDE` instead of
@@ -305,9 +323,11 @@ boundary object or array), it
 falls back to its valid-phase draw, or to an open draw (finite, for `number`) when
 no sendable value satisfies the field at all.
 
-The hacker `attack` phase reuses the same tables for `integer` and `number`, finite
-as well, but does **not** keep them inside the range: probing past the declared
-bounds is what that phase is for ([ADR-111](adr/compiler.md#adr-111)).
+The `attack` phase reuses the same tables for `integer` and `number`, finite as
+well, and builds them without clipping to the range. A poisoned field keeps only
+the candidates that fit its declared shape, range included
+([ADR-128](adr/compiler.md#adr-128)), so the oversize probe of a bounded field
+stays with `boundary` and `invalid`.
 
 ### Constant tables
 
@@ -397,23 +417,45 @@ a parameter's `examples` map into the list ([ADR-112](adr/models.md#adr-112)).
 `0..99` below `SEED_SHARE_PERCENT` (20) draws a deep copy of one seed, any other
 roll draws from the schema (`build_unseeded_valid_strategy`). Seeds are trusted as
 written, never filtered through the schema. The phases that reuse the valid builder
-— `attack`, `mutation` and `semantic` on a base contract — inherit the seeds;
-`boundary` and `invalid` never seed.
+— `mutation` and `semantic` on a base contract — inherit the seeds, and so do the
+fields a poisoning phase leaves valid; a poisoned field in `boundary`, `invalid`
+or `attack` never seeds.
 
-## The hacker side
+## The attack side
 
-`build_hacker_attack` is the `attack` builder for a `HackerStrategyContract`.
-It reads the contract through a `SchemaView`, defaulting a typeless field to
-`string` in the caller so the base-payload table never keys on `None`
-([ADR-028](adr/compiler.md#adr-028)), and assembles an `AttackRequest` — the
-one value object a base-payload builder or toggle family needs for a field:
+`attack` is a poisoning phase on every contract
+([ADR-126](adr/compiler.md#adr-126)). The payload machinery lives in
+`fields/attack/`, a package any contract uses; `fields/hacker/` keeps only what
+tunes it from a `HackerStrategyContract`. The layers point one way, `hacker` →
+`attack` → `default`, pinned by a layering test
+([ADR-127](adr/compiler.md#adr-127)).
+
+| Contract | Candidates | Profiles | Toggles |
+|---|---|---|---|
+| base | `base_attack_candidates` | `DEFAULT_ATTACK_PROFILES_BY_TYPE` for the field's type, then the context's `extra_profiles` | `DEFAULT_ATTACK_TOGGLES` |
+| hacker | `hacker_attack_candidates` | the contract's own `attack_profiles`, then the context's `extra_profiles` | `toggles_of(contract)` |
+
+Both assemble an `AttackRequest`, the one value object a base-payload builder or
+toggle family needs for a field, and hand the tagged payloads to
+`fitting_candidates`:
 
 | `AttackRequest` field | From |
 |---|---|
-| `profiles` | the contract's own `attack_profiles` plus the context's `extra_profiles`, deduplicated |
-| `toggles` | the `AttackToggles` read off the contract |
+| `profiles` | the profiles of the table above, deduplicated in order |
+| `toggles` | the `AttackToggles` of the table above |
 | `minimum` · `maximum` | the field's numeric bounds |
-| `mutation_depth` | the context's, or `DEFAULT_MUTATION_DEPTH` |
+| `mutation_depth` | the context's (hacker), or `DEFAULT_MUTATION_DEPTH` |
+
+`DEFAULT_ATTACK_PROFILES_BY_TYPE` gives a string `injection`, `xss`,
+`path_traversal`, `input_validation` and `information_disclosure`, an integer or
+a number `business_logic` and `resource_abuse`, and every other type none. The
+hacker side defaults a typeless field to `string` in the caller, so the
+base-payload table never keys on `None` ([ADR-028](adr/compiler.md#adr-028)).
+
+A phase's `build` draws bare values. `build_base_attack` is the base candidates
+mapped to their values, or the valid strategy when no candidate fits the field;
+`build_hacker_attack` samples the hacker payloads, or draws `None` when there are
+none.
 
 ### `AttackToggles`: eight explicit flags
 
@@ -422,17 +464,21 @@ declare: `include_encoded_variants`, `include_nulls`, `include_large_values`,
 `include_extra_fields`, `include_empty_values`, `include_unicode_variants`,
 `include_control_chars`, `include_nested_objects`. They are explicit fields,
 not generated from the contract. A guard test pins the set to the contract's
-`include_*` flags, so adding a flag to the contract without adding it here fails that test
-([ADR-027](adr/compiler.md#adr-027)).
+`include_*` flags, so adding a flag to the contract without adding it here fails
+that test ([ADR-027](adr/compiler.md#adr-027)). `DEFAULT_ATTACK_TOGGLES` are the
+toggles an untuned hacker contract resolves to, and the ones a base contract is
+attacked with.
 
 ### Base payloads and toggle families
 
-`build_base_payloads` looks up the type's base builder, then extends it with
-every toggle family whose flag is set. The base builders:
+`tagged_base_payloads` puts the profile pools first, each spelling tagged with its
+profile as its attack family, then the type's base builder, extended with every
+toggle family whose flag is set; those carry no family. Only string payloads come
+from profile pools. The base builders:
 
 | Type | Base payloads |
 |---|---|
-| `string` | the profile pools (or a generic pool when no profile), extended by nulls and large values per toggle |
+| `string` | the profile pools of `PROFILE_STRING_PAYLOADS` (or a generic pool when no profile), extended by nulls and large values per toggle |
 | `integer` · `number` | attack and boundary edge values, all finite and not limited to the declared range, plus `None` when `include_nulls` |
 | `boolean` | the type-confusion pool (`True`, `False`, `None`, `0`, `1`, `"true"`, …) |
 | `array` | `[None]`, a long `[None]*size`, an injection-probe element |
@@ -443,31 +489,41 @@ The toggle-family table adds fixed pools keyed by `(toggle, SchemaType)`:
 
 | Toggle | Type | Adds |
 |---|---|---|
+| `include_encoded_variants` | string (profile pools) | the percent-encoded and base64 spelling of each payload |
 | `include_empty_values` | string / array | the empty string / the empty list |
 | `include_unicode_variants` | string | emoji, non-Latin scripts, zero-width and case-folding edges |
 | `include_control_chars` | string | SOH, BEL, ESC, DEL, FF |
 | `include_nested_objects` | object / array | nested-object / nested-array shapes |
 
-`include_extra_fields` on an object appends a mutated object built to the
-request's `mutation_depth`. `mutate_object` layers prototype-pollution keys
-(`__proto__`, `constructor`), a null field, and a 4096-character overflow field,
-recursing into nested dicts down to the depth.
+On a hacker contract, `include_extra_fields` on an object appends a mutated
+object built to the request's `mutation_depth`. `mutate_object` layers
+prototype-pollution keys (`__proto__`, `constructor`), a null field, and a
+4096-character overflow field, recursing into nested dicts down to the depth.
 
-### Dedupe, then mix
+### Dedupe, then fit the shape
 
-`build_attack_payloads` deduplicates in first-seen order before sampling:
-scalars key by `(type, value)` so `True` and `1` stay distinct, everything else
-keys by identity. The result is an `st.sampled_from`, or `st.none()` when empty.
+`fitting_candidates` deduplicates in first-seen order, so a payload two pools
+share keeps the first family it came under: scalars key by `(type, value)` so
+`True` and `1` stay distinct, everything else keys by identity. It then keeps a
+candidate only when `validate_value` accepts it for the field's contract, read on
+a text wire as the declared type through the strict literals
+([ADR-128](adr/compiler.md#adr-128)). The result is an `st.sampled_from`, or
+`None` when nothing fits: the field is then not poisonable in `attack`.
 
-`_mix_with_benign` weights attack against benign values by aggressiveness. With
-no aggressiveness the strategy is pure attack. Otherwise a roll in
-`1..MAX_AGGRESSIVENESS` draws an attack value when it lands at or under the
-aggressiveness, and a valid value otherwise — a `flatmap`, because `st.one_of`
-would dedupe the two branches by identity and could not weight them.
+### Mass assignment, a body variant
 
-`hacker/` may import `default/`; never the reverse.
+`mass_assignment_variant` is the zone variant `attack` registers on the body
+([ADR-134](adr/compiler.md#adr-134)). It draws the valid body plus one key of
+`MASS_ASSIGNMENT_KEYS` the body does not declare, with a sentinel privileged
+value, names that key as the poisoned field and `auth_bypass` as its family. The
+key is chosen inside the one branch, so the probe is one variant of the body's
+`one_of`, never one per key. Only a body whose root is an object carries it, and
+a focus list that addresses no field of the body keeps it away.
 
-### The mutation side
+`hacker/` may import `attack/` and `default/`, and `attack/` may import
+`default/`; never the reverse.
+
+## The hacker mutation phase
 
 `build_hacker_mutation` is the `mutation` builder for a `HackerStrategyContract`.
 Where the attack phase samples from fixed hostile pools, mutation starts from a

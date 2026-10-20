@@ -84,8 +84,9 @@ Each partial under `templates/partials/` is one part of what the model is told.
 | `source_context.j2` | user | The source context under SOURCE CODE CONTEXT, then the OpenAPI definition as indented JSON under OPENAPI BASE DEFINITION. |
 | `state_link.j2` | user | The bundles the endpoint produces and consumes, under STATE LINK (below). |
 | `declared_constraints.j2` | system | How validation declared on the request type becomes body constraints (below). `qa` and `security` only. |
+| `plausible_values.j2` | system | When the code makes a concrete value plausible, `examples` and a `default` for a field, never for an identifier (below). `qa` and `security` only. |
 | `output_contract.j2` | system | The allowed top-level keys, then the schema vocabulary, one section partial per section of the profile, and the output rules. |
-| `schema_vocabulary.j2` | system | The only keys a schema fragment may use, which type each keyword belongs to, and that a range is never empty. |
+| `schema_vocabulary.j2` | system | The only keys a schema fragment may use, which type each keyword belongs to (`examples` and `default` on any type), and that a range is never empty. |
 | `section_<name>.j2` | system | One per `ContractSection`: the section's fields, its closed values and the rules a contract is rejected for. |
 | `output_rules.j2` | system | The wire dialect (JSON Schema keywords in camelCase, everything else in snake_case), omit a section rather than send it empty, never emit a key not described, a single JSON object without fences or prose. |
 
@@ -131,6 +132,25 @@ the model to read them as code:
 
 The partial lists the spellings of each rule across the supported frameworks.
 `default.j2` does not include it.
+
+### The plausible values
+
+The engine seeds a field's valid draws with its `default` and `examples`, so a
+value the handler accepts reaches its real logic early. The partial asks for
+them only on evidence in the source context
+([ADR-136](adr/prompts.md#adr-136)):
+
+- a value the code compares with or branches on, a shape the handler parses, a
+  value in a fixture or seed file, or an example in a comment or docstring becomes
+  `examples`, one to three values;
+- the value the handler applies when the field is absent becomes `default`; a
+  typical value is not a default;
+- no value for an identifier, a foreign key, a slug, a token or anything else
+  that exists only once the database stores it;
+- every value satisfies the field's other constraints and sits on the field where
+  the OpenAPI definition places it.
+
+No evidence in the code, no value. `default.j2` does not include it.
 
 ### The state link
 

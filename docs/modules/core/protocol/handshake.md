@@ -84,8 +84,17 @@ neither. See [ADR-095](../adr/protocol.md#adr-095).
 ## Changelog
 
 The report document that `fuzz`, `replay` and `run_pipeline` answer with is
-`schema_version` 1.18. The protocol's own README holds the full entry for each
+`schema_version` 1.19. The protocol's own README holds the full entry for each
 version; the lines below are the summary.
+
+- **Report 1.19** — The report names five security findings. Additive; the
+  protocol version does not change. The invariants `information_disclosure`,
+  `sensitive_data_exposure`, `reflected_payload`, `mass_assignment` and
+  `input_induced_timeout`, each with a declared rule naming the field that
+  triggered it as `<zone>.<field>` (`body.role`), or `response.<key>` for an
+  exposed key, one finding per endpoint and field, and a rule label of its own.
+  They rank right after `not_a_server_error`
+  ([ADR-139](../adr/core.md#adr-139)).
 
 - **Report 1.18** — The report names a success that accepted an invalid input, and
   an endpoint the engine failed on while the rest of the run went on. Additive; the

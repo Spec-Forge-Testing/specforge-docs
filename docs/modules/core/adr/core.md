@@ -346,3 +346,48 @@ with the vocabularies it already renders. A client that branches on the truncati
 reason meets one more value, listed with the others in the
 [result vocabularies](../protocol/vocabularies.md#truncation-reason) and in the
 [changelog](../protocol/handshake.md#changelog).
+
+---
+
+## ADR-139 — The report names five security findings and ranks them right after a server error { #adr-139 }
+
+**Status:** accepted · `utils/constants.py`, `services/report/ordering.py`, `repl/views/formatting.py`; `protocol/README.md`
+
+### Context
+
+The engine reports five security invariants: `information_disclosure`,
+`sensitive_data_exposure`, `reflected_payload`, `mass_assignment` and
+`input_induced_timeout` ([ADR-131](../../specforge-engine/adr/engine.md#adr-131)).
+Each cites a rule the engine derives from the request it judged, so each is a
+declared rule. The report ranks findings by `INVARIANT_SEVERITY`, and an invariant
+missing from it ranks last, below a wrong `Content-Type`.
+
+### Decision
+
+**The report document is `schema_version` 1.19, additive over 1.18.** The
+invariant vocabulary grows by five values. No key changes and the protocol
+version does not move.
+
+**Each invariant has its own label.** `DECLARED_RULE_LABELS` gives each one a rule
+label of its own (Information disclosure, Sensitive data exposure, Reflected
+payload, Mass assignment, Input-induced timeout), and `DECLARED_RULE_INVARIANTS`
+is derived from that table, pinned to the engine's set ([ADR-125](#adr-125)). The
+REPL gives each a short headline label.
+
+**They rank right after `not_a_server_error`.** `INVARIANT_SEVERITY` lists them
+after the crash and ahead of `state_transition` and the conformance checks: an
+attack that leaks, exposes or takes a privileged key is more severe than a
+response that drifts from its contract.
+
+### Rejected
+
+- **One "Security" label for the five.** The reader could not tell a leak from a
+  reflected script without opening each finding.
+- **Ranking them above a server error.** A crash is the one defect the engine
+  reports on any request, attacked or not; it stays first.
+
+### Consequences
+
+A client that renders the invariant vocabulary shows the five findings with the
+labels the report carries. A client that sorts by severity sees them near the top.
+The change is listed in the [changelog](../protocol/handshake.md#changelog).

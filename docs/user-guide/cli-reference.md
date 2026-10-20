@@ -316,16 +316,20 @@ unexpectedly.
     - **Crashes** — a summary line first, tallying the unique crashes by invariant
       and status (`33 unique crashes: 2 × 5xx server error (500), 28 × wrong
       Content-Type (401), …`), then one row per minimal reproducer, **most severe
-      first**: 5xx server errors lead, contract violations follow, and within an
+      first**: 5xx server errors lead, the security findings come next, contract
+      violations follow, and within an
       invariant the crash representing more raw findings comes first — the same
       order `report.json` sorts its defects, so the screen and the document never
       disagree. Each row: method, endpoint, phase, how many
       prior steps set it up (a dash for a single request), the violated invariant
-      (a business-rule, access-control or input-validation finding appends the
-      declared rule's id to its label — a semantic finding reads `business rule
-      violated · <rule id>`, an input-validation one `invalid input accepted ·
-      <zone>.<field>` — while every other invariant shows just its label, since
-      the rule id there would only repeat it),
+      (a finding whose rule is declared appends the rule's id to its label — a
+      semantic finding reads `business rule violated · <rule id>`, an
+      input-validation one `invalid input accepted · <zone>.<field>` — while every
+      other invariant shows just its label, since the rule id there would only
+      repeat it; the security findings read `internal detail leaked`,
+      `sensitive data exposed`, `attack payload reflected`, `privileged field
+      assigned` and `input-induced timeout`, each followed by the field it names,
+      `<zone>.<field>`, or `response.<key>` for an exposed key),
       the status code, how many raw findings the crash stands for (`Represents`;
       stateless runs only), the identity it was found under (`Identity`; only shown
       when at least one crash in the run recorded one) and the smallest failing

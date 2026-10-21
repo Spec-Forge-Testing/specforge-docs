@@ -72,8 +72,8 @@ given over an existing file without `overwrite`, is refused `INVALID_PARAMS`
 | | `use_llm: false` | `use_llm: true` |
 | --- | --- | --- |
 | Cost | Free, no approval. | Approved like a run; `estimated_cost_usd` and `cost_usd` in the result. |
-| Routes | The static scan's. | Also the ones the LLM finds (`source: "llm"`). |
-| Each operation | `operationId`, path parameters and a `default` response. | Also parameters, body, responses and `security`. |
+| Routes | The static scan's, with the prefixes the code mounts them under (router groups, class-level routes, included modules, nested resources). | Also the ones the LLM finds (`source: "llm"`). |
+| Each operation | `operationId`, path parameters, a `default` response, and a body when the handler binds a Go struct with validation tags. | Also parameters, body, responses and `security`; the tag-derived body wins over the inferred one. |
 | `security_schemes` | Empty. | The authentication schemes the API uses. |
 | `refined`, `refinement_error` | `false`, `null`. | `true` when everything was inferred; otherwise why not. |
 | `llm_files` | Empty. | The files the LLM read. |

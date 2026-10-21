@@ -102,7 +102,13 @@ frozen value object with five fields:
 | Profile | Contract type | Phase split | Subclasses |
 |---|---|---|---|
 | `DEFAULT` | `BaseStrategyContract` | `valid` 0.60 · `boundary` 0.25 · `invalid` 0.15 | exact type only |
-| `HACKER` | `HackerStrategyContract` | `valid` 0.50 · `boundary` 0.25 · `invalid` 0.10 · `attack` 0.05 · `mutation` 0.10 | accepted |
+| `HACKER` | `HackerStrategyContract` | `valid` 0.40 · `boundary` 0.20 · `invalid` 0.10 · `attack` 0.25 · `mutation` 0.05 | accepted |
+
+Both splits, and the default budget of 200 examples, are measured: a grid of
+budgets and candidate splits on two targets, judged by a decision rule written
+before the first run ([ADR-140](adr/measurement.md#adr-140),
+[ADR-141](adr/measurement.md#adr-141)). The `HACKER` attack share applies when the
+endpoint declares no aggressiveness; with one, `derive_attack_split` sets it.
 
 Adding a profile is one registration call — see the
 [Extension guide](extension-guide.md#add-a-profile).
@@ -594,8 +600,9 @@ object, built in one place, never mutated afterwards
 - `max_examples` is the budget's, scaled by the endpoint's risk score through
   `weight_by_risk`.
 - `phase_split` is the budget's own split when it declares one, otherwise the
-  profile's — grown on the `attack` share by aggressiveness through
-  `derive_attack_split` when the mode has an attack phase. A budget that
+  profile's — with the `attack` share set by the endpoint's declared aggressiveness
+  through `derive_attack_split` when the mode has an attack phase and the contract
+  declares one. A budget that
   declares a phase outside the mode's split is a `PolicyError` raised by
   `validate_endpoint_spec` at the policy boundary; the planner takes a declared
   split as already validated.
@@ -625,7 +632,7 @@ planning calls it, and nothing else computes a share.
 | Function | What it does |
 |---|---|
 | `allocate_examples(max_examples, split)` | splits a budget across phases by largest remainder, ties broken by phase name; the result always sums to the budget |
-| `derive_attack_split(base_split, aggressiveness)` | grows the `attack` share by 0.05 per aggressiveness point (capped at `MAX_AGGRESSIVENESS` points) and rescales the other phases to fit |
+| `derive_attack_split(base_split, aggressiveness)` | sets the `attack` share to 0.05 per aggressiveness point, capped at `MAX_AGGRESSIVENESS` points (0.5), in place of the base split's own, and rescales the other phases to fit, keeping their proportions |
 | `weight_by_risk(max_examples, risk_score)` | scales the budget by `EndpointRisk.risk_score`: ×0.75 at 0, neutral at 50, ×1.25 at 100, never below 1; `None` leaves it unchanged |
 | `share_budget(total, identities)` | splits a budget evenly across the declared identities into `BudgetShare`s (the remainder goes to the first ones); with no identities, one anonymous share takes it all; an identity the budget cannot reach gets no share |
 

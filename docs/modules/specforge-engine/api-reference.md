@@ -85,7 +85,7 @@ Field names of this family are stable: they are persisted as columns.
 | `ConfirmedFinding` | a settled reproducer: carries its `report` |
 | `FlakyFinding`, `UnverifiedFinding` | a settled group: its `signature` and how many raw `occurrences` it stands for |
 | `RunStats`, `EndpointStats`, `LatencyStats` | run, endpoint and latency counters — `EndpointStats.unprobed_reason` names why a targeted endpoint drew no requests |
-| `LoadStepStats` | one concurrency-ladder step on an endpoint's `load_profile`: its `concurrency`, measured `latency` and `degraded` verdict |
+| `LoadStepStats` | one concurrency-ladder step on an endpoint's `load_profile`: its `concurrency`, measured `latency`, `degraded` verdict and, when the step was measured twice to confirm a degradation, the second window as `remeasured` |
 | `UnprobedReason` | why the auth mode crossed nothing at a targeted endpoint: `declared_public` or `access_undeclared` (by design), `owner_producer_missing`, `owner_chain_cyclic`, `owner_resource_unprovisioned` or `required_role_unheld` (a precondition the run could not meet) — each one in [Execution modes](execution-modes.md#auth) |
 | `CrashReport`, `InvariantViolation` | a confirmed finding's reproducer and the invariant it broke — its `response_body` has sensitive field values redacted to `***` by name |
 | `ViolatedRule` | the rule a `CrashReport` broke (`id` + `description`) — declared by the contract for a `semantic_property` / `access_control` finding, the accepted field (`<zone>.<field>`, such as `query.limit` or `body.$`) for an `input_validation` finding, or intrinsic to the invariant for every other one |
@@ -177,7 +177,7 @@ kernel's from `specforge_contracts`.
 | `EngineError` | an execution invariant was violated |
 | `AccessIdentityError` | the auth runner has no valid declared identity to run against; raised before the first request |
 | `AccessUncrossableError` | an auth run had access policies to cross and crossed none of them; `unprobed` maps each such endpoint to its `UnprobedReason`. Not raised for a run cut short. The runner and its modules (`chain.py`, `provisioning.py`, `producer_watch.py`, …) are mapped in [Execution modes](execution-modes.md#auth) |
-| `ConcurrencyLadderError` | a performance run's concurrency ladder cannot be honored — a step exceeds `max_concurrency`, or an endpoint funds no valid examples to measure a baseline (`endpoint_id`); raised before the first request |
+| `ConcurrencyLadderError` | a performance run's concurrency ladder cannot be honored — a step exceeds `max_concurrency`; raised before the first request |
 
 All descend from `SpecforgeEngineError`, never from `ValueError`
 ([ADR-001](adr/foundations.md#adr-001)). The full taxonomy, including
@@ -199,6 +199,8 @@ own tests exercise.
 | `RequestIntent` | `models/runtime/intent.py` (also `specforge_engine.models.runtime`) | frozen `(phase, poisoned_zone, poisoned_field, attack_family)`: what a request was drawn to test; the zone and the field are set together or not at all, and a family needs a poisoned field |
 | `ZoneDraw` | `models/runtime/draw.py` | what one zone's strategy draws: `values`, the `poisoned_field`, if any, and the `attack_family` of its value, if any |
 | `BODY_ROOT` | `models/runtime/intent.py` | `"$"`, the field name of a body that is not an object |
+| `FieldAddress` | `models/runtime/intent.py` | a frozen `(zone, field)`: one field of one zone, its dotted path when nested; `RequestIntent.poisoned` returns the poisoned field as one, or `None` |
+| `PhaseBudget` | `models/runtime/stats.py` | a frozen `(planned, carried_in)`: one phase's planned examples at an endpoint, and those an earlier pass of the same identity left it; `+` adds two, `merge_phase_budgets` sums maps of them |
 | `NO_BODY_DRAWN` | `models/runtime/draw.py` | the body zone's values when a draw sends no body; `None` is a drawn value, never sent |
 | `CompiledBody` | `models/runtime/engine_input.py` | the compiled body: a `CompiledRequestPart` plus the `media_type` and the `file_fields` (properties declared `format: binary`, sent as file parts) |
 | `CompiledRequestPart.poisoning_phases` | `models/runtime/engine_input.py` | the phases whose strategy poisons one of the zone's fields per draw; a subset of the compiled phases |
@@ -316,6 +318,7 @@ to ([Extension guide](extension-guide.md#add-a-phase-extension)).
 | `isolated()` | a context manager giving the block its own extension registry, restored on exit (`shared.phase_extensions`; not re-exported by `shared`) |
 | `is_field_addressed(zone, name, entries) -> bool` | whether a field is named by an attack addressing list, bare or zone-qualified |
 | `validate_value(value, contract) -> bool` | whether a value fits a strategy contract's type, length, `enum` and range; read by the oracles and by the attack shape filter (`schema_check.py`) |
+| `meets_declared_shape(value, contract) -> bool` | whether a value provably meets, at any depth, what `validate_value` leaves out: `pattern`, `format` (a format the checker cannot evaluate is never met; `password` and `binary` restrict nothing), `uniqueItems`, `minProperties`, `maxProperties`; read by the contract-completeness oracle (`schema_check.py`) |
 | `is_sensitive_field_name(name) -> bool` | whether a field name holds a credential or a secret, by one normalized form; read by the redaction and the sensitive-data oracle (`sensitive_names.py`) |
 | `has_input_constraint(endpoint) -> bool` | whether the endpoint declares at least one input-constraint semantic property |
 | `input_constraints(properties) -> tuple[SemanticProperty, ...]` | the properties classed as input constraints, in declaration order |

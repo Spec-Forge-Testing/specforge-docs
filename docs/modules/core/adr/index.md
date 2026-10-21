@@ -23,7 +23,7 @@ it governs. A number missing here belongs to another module.
 
 | File | Area | Covers |
 | --- | --- | --- |
-| [core.md](core.md) | the headless core | Unprobed reasons, dependency gateways, the busy guard, cancelled-run evidence, oracle scope, breached-run evidence, engine option precedence, when the inference gateway loads, the report's labels for the engine's outcomes |
+| [core.md](core.md) | the headless core | Unprobed reasons, dependency gateways, the busy guard, cancelled-run evidence, oracle scope, breached-run evidence, engine option precedence, when the inference gateway loads, the report's labels for the engine's outcomes, the run's URL |
 | [inference.md](inference.md) | contract production | Adopting a produced contract, the inference cache, approval and the spend cap, watching and cancelling production |
 | [protocol.md](protocol.md) | the wire | How fixtures are captured, how versions are matched, one name and `null` for every reader, how `shutdown` ends a session |
 
@@ -50,3 +50,4 @@ it governs. A number missing here belongs to another module.
 | [ADR-101](inference.md#adr-101) | inference | Production is visible, bounded and cancellable, and a cancelled production leaves no run |
 | [ADR-125](core.md#adr-125) | core | The report names an accepted invalid input and an endpoint the engine could not explore |
 | [ADR-139](core.md#adr-139) | core | The report names five security findings and ranks them right after a server error |
+| [ADR-146](core.md#adr-146) | core | The run's URL is composed once, with the specification's server path, and a follow-up keeps its trigger's server |

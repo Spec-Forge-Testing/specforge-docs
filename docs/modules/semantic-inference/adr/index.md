@@ -17,7 +17,8 @@ is never edited to reflect a later change of mind — a new record supersedes it
 
 Numbers stay global across the whole site and are never reused — the number
 tells you when it was written, the file tells you what it governs. A number
-missing here belongs to another module.
+missing here belongs to another module; what an inferred contract adds to a run,
+measured, is the engine's [ADR-147](../../specforge-engine/adr/measurement.md#adr-147).
 
 | File | Area | Covers |
 | --- | --- | --- |

@@ -291,10 +291,13 @@ starts.
 A **step** is one concurrency level. For each endpoint the runner replays only
 its `valid` phase, once per step, with exactly that step's number of requests in
 flight — the step's concurrency temporarily caps the run's shared connection
-pool, so a step of `8` sends eight at a time and no more. The step's example
-budget is a stable floor (at least `MIN_STEP_SAMPLES` sent samples, so the p95 is
-meaningful) rounded up to whole batches, and split evenly across the run's valid
-identities so every identity's share is a whole number of batches. Every step is
+pool, so a step of `8` sends eight at a time and no more. Every step sends the
+same number of samples: `LADDER_STEP_SAMPLES` (120) times the run's `load_factor`,
+rounded up to whole batches of `concurrency × identities` and split evenly across
+the run's valid identities, so every identity's share is a whole number of
+batches. 120 leaves six samples in the nearest-rank p95 tail. The size depends on
+nothing in the endpoint's split, risk or contract budget
+([ADR-145](adr/engine.md#adr-145)). Every step is
 filled to that budget: when an endpoint's input space runs out before it (an
 endpoint with no parameters has exactly one valid request), the step repeats
 payloads until it is full. Repetition is the point here: a latency sample is as
@@ -303,13 +306,33 @@ order the ladder walks is baseline-first.
 
 The **first step is the baseline**: its p95 latency is the reference every later
 step is judged against. A later step is **degraded** when its p95 exceeds the
-baseline p95 by more than the tolerance — with the default `0.5`, a step whose p95
-is more than 1.5× the baseline's. The baseline never degrades against itself, and
-a step that sent nothing (or a baseline that did) is never called degraded.
+latency its concurrency predicts, the baseline's p95 scaled by the ratio of
+concurrencies, by more than the tolerance:
+
+```
+degraded  ⇔  p95 > p95_base × (concurrency / concurrency_base) × (1 + tolerance)
+```
+
+A server that queues requests grows its latency linearly with the requests in
+flight; that is not a degradation, and the rule does not flag it. With the default
+`0.5`, a step at concurrency 16 over a baseline at 1 degrades above 24 times the
+baseline's p95. The baseline never degrades against itself, and a step that sent
+nothing (or a baseline that did) is never called degraded.
+
+**A degradation is confirmed by measuring twice.** When the first round marks a
+step degraded, the runner measures the baseline and every degraded step once more,
+at the same size and concurrency. A step stays degraded only if it exceeds its
+baseline in both rounds, each against its own baseline. The number of rounds is
+`DEGRADATION_CONFIRMATIONS` (1), a constant. A step the confirmation did not
+measure — the run was cancelled, or the first round was truncated — is not
+degraded: an unconfirmed step is never reported. When nothing degrades in the
+first round, nothing is measured again.
 
 Each degraded step becomes one `LATENCY_DEGRADATION` finding. It is **anchored on
-a real request**: the sent request whose latency sits at the step's nearest-rank
-p95, so the finding points at an actual exchange rather than a computed number.
+a real request**: the sent request whose latency sits at the nearest-rank p95 of
+the step's confirmation window, so the finding points at an actual exchange rather
+than a computed number. It counts under the `valid` phase in the endpoint's
+`findings_by_phase`.
 Its reproducer is the synthetic payload `{"concurrency_step": N}` naming the step.
 Degraded steps that answered with the same response signature fold into one
 report that names the rest through `represented_findings` — the profile already
@@ -325,15 +348,18 @@ ones are simply absent.
 
 Whatever the ladder measures lands on the endpoint's stats as `load_profile`: a
 tuple of `LoadStepStats`, one per completed step, each carrying the step's
-`concurrency`, its full `LatencyStats` distribution and its `degraded` verdict.
+`concurrency`, its full `LatencyStats` distribution, its `degraded` verdict and,
+when the step was measured a second time, `remeasured`: the confirmation window's
+`LatencyStats` (`None` otherwise).
 This is where the per-step latencies live; the finding only points into it.
 
 ### Preconditions and the no-ladder guarantee
 
-Two conditions are checked **before the first request** and fail typed with a
+One condition is checked **before the first request** and fails typed with a
 `ConcurrencyLadderError`: a step above the run's `max_concurrency` (it could never
-run at that level), and an endpoint that funds no `valid` examples (the ladder
-would have no baseline to measure — the error names the endpoint).
+run at that level). An endpoint whose split funds no `valid` examples still has a
+baseline: the `valid` phase is compiled from the profile, and the step sizes its
+own budget.
 
 Leaving `concurrency_ladder` unset is the default, and the mode then behaves
 exactly as it always has: the flat load run above, an empty `load_profile`, and no

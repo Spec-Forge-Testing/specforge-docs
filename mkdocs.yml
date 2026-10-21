@@ -233,6 +233,7 @@ nav:
               - Public API: modules/specforge-engine/adr/api.md
               - Strategy compiler: modules/specforge-engine/adr/compiler.md
               - Engine: modules/specforge-engine/adr/engine.md
+              - Measurement: modules/specforge-engine/adr/measurement.md
   - Test corpora:
       - Overview: testing/index.md
       - RealWorld corpus: testing/real-world.md

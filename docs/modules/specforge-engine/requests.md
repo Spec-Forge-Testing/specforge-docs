@@ -200,7 +200,9 @@ A state link that writes into a reserved header is a `StatefulLinkError`.
 
 `RequestIntent(phase, poisoned_zone, poisoned_field, attack_family)` is frozen;
 the zone and the field are set together or not at all, and a family needs a
-poisoned field ([ADR-130](adr/engine.md#adr-130)).
+poisoned field ([ADR-130](adr/engine.md#adr-130)). Its `poisoned` property reads
+the two as one `FieldAddress(zone, field)`, or `None` when no field was poisoned;
+the oracles read that.
 
 | Holder | Field | Set by |
 |---|---|---|
@@ -214,4 +216,6 @@ The oracles read the intent, never the phase: the input-validation oracle judges
 the field it names against the field's declared schema
 ([Engine internals](engine-internals.md#how-input-validation-is-judged)), and the
 security oracles judge what the response gives away for that field, the
-reflected-payload one gated on its `attack_family`.
+reflected-payload one gated on its `attack_family`. The contract-completeness
+oracle speaks only when the intent names no poisoned field
+([Engine internals](engine-internals.md#how-contract-completeness-is-judged)).

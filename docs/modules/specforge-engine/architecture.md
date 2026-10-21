@@ -72,7 +72,7 @@ src/specforge_engine/
     ├── progress/          # Throttled counters and lifecycle events pushed to an observer
     ├── http/              # Async orchestrator, request injection, body encoders, credentials, reserved headers, error classifier
     ├── harness/           # The Hypothesis bridge: one event loop, settings, identity strategy, minimal draw, settled gather
-    ├── oracles/           # Response oracles: verdict leaf, intrinsic rules, registry, precedence, the fifteen builtins
+    ├── oracles/           # Response oracles: verdict leaf, intrinsic rules, registry, precedence, the sixteen builtins
     │   └── security/      # the five intent-anchored security oracles
     ├── findings/          # Group, deduplicate, materialize, shrink, stats
     ├── fuzzers/           # stateless/ and stateful/ procedures

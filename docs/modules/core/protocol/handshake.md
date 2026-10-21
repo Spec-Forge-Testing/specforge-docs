@@ -84,8 +84,23 @@ neither. See [ADR-095](../adr/protocol.md#adr-095).
 ## Changelog
 
 The report document that `fuzz`, `replay` and `run_pipeline` answer with is
-`schema_version` 1.19. The protocol's own README holds the full entry for each
+`schema_version` 1.20. The protocol's own README holds the full entry for each
 version; the lines below are the summary.
+
+- **Report 1.20** — The report says where each endpoint's requests, findings and
+  examples went, phase by phase, confirms a load degradation before reporting it,
+  and names an incomplete contract. Additive; the protocol version does not
+  change. Each endpoint, in the report and in `get_run`, carries `by_phase`,
+  `findings_by_phase`, `by_attack_family` and `budget_by_phase` (`{planned,
+  carried_in}` per phase), each `{}` when nothing was counted
+  ([ADR-144](../../specforge-engine/adr/engine.md#adr-144)). Each `load_profile`
+  step carries `remeasured`, the confirmation window, `null` when the step was
+  measured once ([ADR-145](../../specforge-engine/adr/engine.md#adr-145)). The
+  invariant `contract_completeness` is a 400 or 422 to a request that conforms to
+  its contract, its declared rule naming the field the response blames as
+  `<zone>.<field>` or `request`, labelled "Incomplete contract", ranked last, and
+  explained by `explain_finding` with a fixed template
+  ([ADR-143](../../specforge-engine/adr/engine.md#adr-143)).
 
 - **Report 1.19** — The report names five security findings. Additive; the
   protocol version does not change. The invariants `information_disclosure`,

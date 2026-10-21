@@ -207,6 +207,10 @@ field, a [`LatencyRecord`](#value-objects), sampling only requests that reached 
 | `held_back_transitions` | TEXT | yes | — | JSON object: follow-up endpoint id the safety guard kept from being sent → why. |
 | `truncation_reason` | TEXT | yes | — | Why this endpoint's own pass was cut short (an engine reason token); NULL when it ran to completion or the mode has no per-endpoint pass. |
 | `truncation_detail` | TEXT | yes | — | What happened when this endpoint's own pass was cut short. |
+| `by_phase` | TEXT | yes | — | JSON object: phase → requests at this endpoint drawn for it; NULL when none were counted. |
+| `findings_by_phase` | TEXT | yes | — | JSON object: phase → raw findings at this endpoint raised by its traffic; NULL when none were counted. |
+| `by_attack_family` | TEXT | yes | — | JSON object: attack family → requests at this endpoint that carried it; NULL when none did. |
+| `budget_by_phase` | TEXT | yes | — | JSON object: phase → `{planned, carried_in}`, the examples planned for it and those an earlier phase of the same identity left it; NULL when the endpoint had no pass to plan. |
 
 Constraints: `UNIQUE (run_id, analysis_endpoint_id)`; `truncation_detail` only with a
 `truncation_reason`; `held_back_by` and `held_back_via` [paired](#paired-columns). A cancellation before the endpoint started is the run's cut, not its own.

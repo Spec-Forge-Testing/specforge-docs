@@ -355,7 +355,8 @@ OracleVerdict` — and precedence is a named `IntEnum` value, never a magic gap
 | `SENSITIVE_DATA_EXPOSURE` (32) | `sensitive_data_exposure` | a 2xx to a poisoned request that carries a secret-looking key its response schema does not declare (non-terminal) |
 | `INPUT_VALIDATION` (33) | `input_validation` | a 2xx to a request whose poisoned field was sent outside its declared schema (non-terminal) |
 | `REFLECTED_PAYLOAD` (34) | `reflected_payload` | an HTML response that echoes the active payload of a reflectable family unescaped (non-terminal) |
-| `STATUS_CODE` (35) | `status_code` | a status no response contract declared |
+| `CONTRACT_COMPLETENESS` (35) | `contract_completeness` | a 400 or 422 to an unpoisoned request that provably conforms to its declared contract (non-terminal) |
+| `STATUS_CODE` (36) | `status_code` | a status no response contract declared |
 | `CONTENT_TYPE` (40) | `content_type` | a body whose `Content-Type` misses the declared one |
 | `SCHEMA` (50) | `schema` | a body that fails the declared schema |
 | `LATENCY` (60) | `latency_sla` | a clean 2xx/3xx slower than the run's SLA |
@@ -367,7 +368,9 @@ not, so the chain reaches the rule before a deviation can stop it
 findings: the fold records one raw finding per `(invariant, rule_id)`, each
 grouped, shrunk and confirmed on its own ([ADR-137](adr/engine.md#adr-137)). A
 2xx that breaks a declared rule and also misses its declared status is a
-`semantic_property` finding and a `status_code_conformance` finding.
+`semantic_property` finding and a `status_code_conformance` finding, and an
+undeclared 400 to a conforming request is a `contract_completeness` finding and a
+`status_code_conformance` one.
 
 The security oracles are anchored on the intent and each states its limit; what
 each reads, and why `reflected_payload` reads HTML only, is in
@@ -385,8 +388,9 @@ naming the rule the response broke (a verdict that decides no violation —
 names its rule.** For a
 `semantic_property` or `access_control` finding the rule is *declared* by the
 contract — the business rule's own id and text, or the enforced access policy —
-for an `input_validation` finding it is the accepted field, `<zone>.<field>`, and
-for a security finding the poisoned field, `<zone>.<field>`, or the exposed key,
+for an `input_validation` finding it is the accepted field, `<zone>.<field>`, for a
+`contract_completeness` finding the rejected field the response names,
+`<zone>.<path>`, or `request`, and for a security finding the poisoned field, `<zone>.<field>`, or the exposed key,
 `response.<key>`. For
 every other invariant the rule is *intrinsic*: `intrinsic_verdict(invariant)`
 (built on `runtime/oracles/rules.py`) attaches a `ViolatedRule` whose id is the
@@ -417,7 +421,7 @@ the only one that passes an `access_expectation`, and outside an auth run it is
 runner passes `chaos`, the attack's `ChaosExpectation`: whether a dropped
 connection refuses that attack rather than crashing under it.
 
-All fifteen built-ins are registered explicitly by `register_builtin_oracles`,
+All sixteen built-ins are registered explicitly by `register_builtin_oracles`,
 never as a side effect of importing a runner, so the registered set is one
 readable function. `validate_value(value, contract)` (`shared/schema_check.py`,
 which the compiler's attack shape filter reads too) structurally checks a
@@ -425,7 +429,11 @@ value against a strategy-contract shape through a `SchemaType`-keyed table of
 checkers — a missing type is a lookup miss, not a silent pass. It holds a value
 declared `format: int32`, `int64` or `float` to that word, and an unformatted
 number to no word at all ([ADR-113](adr/compiler.md#adr-113)); the response schema
-oracle and the input-validation oracle both read it.
+oracle and the input-validation oracle both read it. Beside it,
+`meets_declared_shape(value, contract)` checks, at any depth, what `validate_value`
+leaves out: `pattern`, `format`, `uniqueItems`, `minProperties` and
+`maxProperties`. A format it cannot evaluate is never met, and `password` and
+`binary` restrict nothing. Only the contract-completeness oracle reads it.
 
 ### How input validation is judged
 
@@ -455,6 +463,31 @@ group by that id: one finding per endpoint and field. Because it is non-terminal
 and runs before `status_code`, a 2xx that accepts the poisoned value and also
 misses its declared status yields two findings, one per rule
 ([ADR-137](adr/engine.md#adr-137)).
+
+### How contract completeness is judged
+
+The `contract_completeness` oracle answers the opposite question: did the server
+reject, with a 400 or 422, a request the contract accepts? A yes means the server
+enforces a validation rule the contract does not declare
+([ADR-143](adr/engine.md#adr-143)).
+
+It speaks only on a sent request whose intent names no poisoned field, at an
+endpoint that declares response contracts. The request must provably conform,
+read field by field through `sent_in_declared_shape` (`runtime/oracles/sent_value.py`):
+`validate_value` on the value as the server reads it, then `meets_declared_shape`.
+It must break no declared input constraint (`breaks_an_input_constraint`,
+`runtime/oracles/semantic/input_constraints.py`). When the endpoint's declared
+access is anything but `public` (`CompiledExecutionEndpoint.requires_authentication`),
+it must carry a credential: an identity or a configured auth header. Whatever
+cannot be shown to conform leaves the oracle silent.
+
+The rule names a field only when the response does. The oracle walks the body's
+nested objects, skips the keys of the rejection's own declared schema, and keeps
+the keys whose value is a string or a list of strings. The first such key whose
+case-folded name is the leaf of exactly one declared request field, at any depth,
+gives `ViolatedRule(id="<zone>.<path>")`, such as `body.user.email`; otherwise the
+id is `request`. The verdict is non-terminal and runs before `status_code`, so an
+undeclared 400 also yields its `status_code_conformance` finding.
 
 ### How a semantic property is evaluated
 
@@ -750,8 +783,8 @@ group → shrink → materialize → dedupe → assemble → stats.
 - **Stats.** Four builders, one per lifecycle — `build_stats` (stateless),
   `build_stateful_stats`, `build_unshrunk_stats` (performance, resilience, auth)
   and `build_replay_stats` — all start from the shared `RequestBreakdown`:
-  per-endpoint request counts and latency, plus the run's `by_phase` and
-  `by_category` totals. Each builder counts `findings_raw` and
+  per-endpoint request counts, `by_phase`, `by_attack_family` and latency, plus the
+  run's `by_phase` and `by_category` totals. Each builder counts `findings_raw` and
   `findings_confirmed` per endpoint and takes the run's total as their sum, so the
   endpoint rows always add up to it; in a mode that never shrinks, a defect
   observed once counts as confirmed ([ADR-107](adr/engine.md#adr-107)). Latency percentiles are **nearest-rank** (P50/P95/P99):
@@ -790,6 +823,19 @@ payload of the pass's strategy as `Pass.minimal_payload`, and the driver runs it
 as an explicit `@example` that takes one place of the pass's share
 ([ADR-115](adr/compiler.md#adr-115)). A poisoning phase no zone of the endpoint can
 poison is not planned at all.
+
+**What a pass leaves unspent funds the next pass of its identity.** Hypothesis
+ends a pass silently once a strategy's choices run out, so a short `boundary`
+space spends a fraction of its share. A `CarryOverLedger`, owned by one call of
+`fuzz`, keeps each identity's unspent examples. Before a pass runs, `fund` raises
+its share by what its identity left pending, at most its own planned share; after
+it, `settle` keeps pending what it did not run, counted as the payloads
+Hypothesis handed over (`PassOutcome.examples_run`), sendable or not. A pass
+skipped because its phase was exhausted hands its whole share on. Passes run in
+phase order, so `valid` never receives, and a ladder step, which repeats payloads
+until full, never leaves a remainder. The ledger's `budget_by_phase` —
+`PhaseBudget(planned, carried_in)` per phase — lands on the endpoint's stats
+([ADR-142](adr/engine.md#adr-142)).
 
 **One stop signal crosses the `@given` boundary.** When folding decides the pass
 must stop, it sets a `Cut` on the shared state and raises a single

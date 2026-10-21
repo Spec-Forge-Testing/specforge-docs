@@ -367,13 +367,14 @@ class ResponseOracle(Protocol):
 gap. Oracles run as a Chain of Responsibility: the first terminal verdict
 short-circuits, non-terminal ones continue. All built-ins are registered
 explicitly in `runtime/oracles/builtin.py` — never as a side effect of importing
-a runner. The fifteen built-ins are, in precedence order: input-induced
+a runner. The sixteen built-ins are, in precedence order: input-induced
 timeout, infrastructure, resilience, server error, access control, mass
 assignment, semantic property, information disclosure, sensitive data exposure,
-input validation, reflected payload, status code, content type, response schema,
-latency ([ADR-036](adr/engine.md#adr-036), [ADR-048](adr/engine.md#adr-048),
-[ADR-050](adr/engine.md#adr-050), [ADR-104](adr/engine.md#adr-104),
-[ADR-118](adr/engine.md#adr-118), [ADR-131](adr/engine.md#adr-131)). A
+input validation, reflected payload, contract completeness, status code, content
+type, response schema, latency ([ADR-036](adr/engine.md#adr-036),
+[ADR-048](adr/engine.md#adr-048), [ADR-050](adr/engine.md#adr-050),
+[ADR-104](adr/engine.md#adr-104), [ADR-118](adr/engine.md#adr-118),
+[ADR-131](adr/engine.md#adr-131), [ADR-143](adr/engine.md#adr-143)). A
 non-terminal oracle placed early adds its violation and lets the rest judge the
 same response; the fold records one finding per violated rule
 ([ADR-137](adr/engine.md#adr-137)), and a terminal verdict decides which later

@@ -1701,7 +1701,7 @@ into a bundle carries it in the trace.
 
 ## ADR-061 — Latency degradation under load is a concurrency ladder on the performance options, anchored on a real request { #adr-061 }
 
-**Status:** accepted · `models/runtime/options.py`, `models/runtime/stats.py`, `runtime/runners/performance/ladder.py`, `runtime/runners/performance/degradation.py`, `runtime/runners/performance/runner.py`, `runtime/runners/performance/constants.py`, `models/runtime/crash_report.py`, `runtime/oracles/rules.py`
+**Status:** accepted · Superseded in part by [ADR-145](#adr-145) · `models/runtime/options.py`, `models/runtime/stats.py`, `runtime/runners/performance/ladder.py`, `runtime/runners/performance/degradation.py`, `runtime/runners/performance/runner.py`, `runtime/runners/performance/constants.py`, `models/runtime/crash_report.py`, `runtime/oracles/rules.py`
 
 ### Context
 
@@ -1729,7 +1729,9 @@ orchestrator's concurrency at that step's level, so "N in flight" is enforced by
 the same pool that governs every other mode rather than a parallel executor. Each
 step's budget is a stable floor rounded up to whole batches of `N × identities`,
 so every identity's share is a whole number of full-concurrency batches and the
-p95 is measured on enough samples to be meaningful.
+p95 is measured on enough samples to be meaningful. (Superseded in part by
+[ADR-145](#adr-145): a step sends a fixed 120 samples times the load factor,
+whatever the split.)
 
 **Judge each step against the first, and anchor the finding on a real request.**
 The first step is the baseline; a later step degrades when its p95 exceeds the
@@ -1738,7 +1740,9 @@ step's p95 is an observed sample — the runner keeps the actual `ExecutionResul
 at that index and anchors the `LATENCY_DEGRADATION` finding on it, with a synthetic
 `{"concurrency_step": N}` reproducer naming the step. The invariant carries an
 intrinsic rule (`runtime/oracles/rules.py`): *"a clean response's latency must not
-grow with concurrency beyond the run's tolerance."*
+grow with concurrency beyond the run's tolerance."* (Superseded in part by
+[ADR-145](#adr-145): a step is judged against the baseline's p95 scaled by its
+concurrency, and a degradation is confirmed by a second measurement.)
 
 **Record the full measurement as per-endpoint stats.** Every completed step lands
 on `EndpointStats.load_profile` as a `LoadStepStats` (its concurrency, its latency
@@ -1773,7 +1777,7 @@ options of **any** execution mode, not just stateful — so a performance run's
 ladder is persisted with its recipe. The engine facade exports `ConcurrencyLadder`,
 `LoadStepStats` and the typed `ConcurrencyLadderError`, raised before any request
 when a step exceeds the run's `max_concurrency` or an endpoint funds no valid
-baseline. Leaving the ladder unset changes nothing: the flat load run, an empty
+baseline (superseded in part by [ADR-145](#adr-145): only the first remains). Leaving the ladder unset changes nothing: the flat load run, an empty
 profile, no degradation findings.
 
 ---
@@ -3350,3 +3354,294 @@ gives a refuted finding its own name.
 A confirmed `mass_assignment` or `input_induced_timeout` finding names a cause the
 control ruled in. Each control is one more shrink request. The stateful mode sends
 no controls.
+
+---
+
+## ADR-142 — What a pass leaves unspent goes to the next pass of the same identity, up to its own share { #adr-142 }
+
+**Status:** accepted · `runtime/fuzzers/stateless/carry_over.py`, `runtime/fuzzers/stateless/fuzzer.py`, `runtime/fuzzers/stateless/exploration.py`, `models/runtime/stats.py`
+
+### Context
+
+A phase's share is planned before any request: `plan_passes` gives each `(phase,
+identity)` pass its slice of the budget. A pass can spend less. Hypothesis ends a
+test silently when it has exhausted a strategy's choices, so a `boundary` pass over
+a three-value enum runs three examples of a quota of fifty without raising
+anything. Measured at the default budget, `boundary` realizes 45 % of its plan on
+the lab target and 51 % on the RealWorld Go target, and `invalid` 47 % on the Go
+target. What a pass did not spend was lost.
+
+### Decision
+
+**A `CarryOverLedger` per exploration keeps each identity's unspent examples.**
+It belongs to one call of `StatelessFuzzer.fuzz`; nothing is global.
+
+- Before a pass runs, `fund` raises its share by what its identity left pending,
+  **at most its own planned share**, so no pass runs more than twice its plan.
+  What exceeds that stays pending for the identity's next pass.
+- After the pass, `settle` keeps pending what the funded pass did not run.
+  `explore_pass` returns a `PassOutcome(exhausted, examples_run)`, and
+  `examples_run` counts the payloads Hypothesis handed over, sendable or not: an
+  unsendable request still spent its example.
+- A pass skipped because its phase was exhausted for another identity hands its
+  whole share to its identity's pending count (`skip`).
+- Passes run in phase order, so the remainder only moves forward. `valid` is first
+  and never receives. A pass with `fill_budget` (a concurrency-ladder step)
+  repeats payloads until full and never leaves a remainder.
+
+**The budget each phase got is a value object.** `ledger.budget_by_phase` maps each
+planned phase to `PhaseBudget(planned, carried_in)`, summed across identities, and
+travels on `ExplorationOutcome.budget_by_phase` to the endpoint's stats
+([ADR-144](#adr-144)). What a phase left unspent is not stored; a reader derives it
+from `planned + carried_in` and the requests `by_phase` counts. Whatever is still
+pending after the last pass is unspent, and stays visible that way.
+
+### Rejected
+
+- **Re-planning the passes when a phase runs out.** More code for the same
+  effect, and the plan stops being a pure function of the endpoint.
+- **Counting the results the fold kept, or the requests sent.** The first couples
+  the count to what folding chooses to keep; the second misses an unsendable
+  request that did spend its example.
+- **Giving the remainder to the next pass of any identity.** It would cross the
+  quotas `share_budget` kept apart on purpose.
+- **No cap.** An empty `boundary` would double `invalid` and change the split
+  [ADR-141](measurement.md#adr-141) measured.
+
+### Consequences
+
+`examples_planned` and the progress total do not move: carry-over only moves a
+remainder, so the examples a run sends never exceed what it planned. A short phase
+now funds the next phase of the same caller instead of ending the endpoint early.
+A ledger that settles more examples than it funded is a bug and fails an
+assertion.
+
+---
+
+## ADR-143 — A 400 or 422 to a request that conforms to its contract is a `contract_completeness` finding { #adr-143 }
+
+**Status:** accepted · `runtime/oracles/contract_completeness.py`, `runtime/oracles/sent_value.py`, `runtime/oracles/semantic/input_constraints.py`, `shared/schema_check.py`, `runtime/oracles/precedence.py`, `models/runtime/crash_report.py`, `models/runtime/engine_input.py`
+
+### Context
+
+On the RealWorld Go target, 13 to 15 % of the `valid` phase's requests were
+answered 400 or 422. The engine sent what the OpenAPI document declares; the
+server enforced rules the document does not declare, such as an email format the
+validator requires on a field declared `string`. Read as noise, those answers hide
+a real defect of the API: its contract is incomplete, so no client can know what
+the server accepts.
+
+### Decision
+
+**A new invariant, `contract_completeness`,** with the declared rule "a request the
+contract accepts must not be rejected as invalid". It names the property that must
+hold, like the other hygiene invariants (`status_code_conformance`,
+`content_type_conformance`, `response_schema_conformance`).
+
+**It is judged only when the request provably conforms.** The oracle speaks on a
+response that is all of:
+
+- a 400 or 422 (401, 403 and 404 are about credentials, access and unknown ids,
+  which other oracles own);
+- to a request that was sent, with no poisoned field in its intent;
+- at an endpoint that declares response contracts (a replay, a transition probe
+  and a resilience base request are judged without one, and stay silent).
+
+The request must then conform, field by field and zone by zone, to what was
+declared, in the strict reading `sent_in_declared_shape` gives:
+
+| What is checked | How |
+| --- | --- |
+| type, range, length, `enum`, required | `validate_value`, on the value as the server reads it from its wire |
+| `pattern` | matched anywhere in the text, as JSON Schema does; a pattern that does not compile never matches |
+| `format` | checked by a format checker that covers the common formats (`email`, `date-time`, `uri`, `hostname`, …); a format it cannot evaluate means conformance cannot be shown, and the oracle stays silent; `password` and `binary` are presentation hints and restrict nothing |
+| `uniqueItems`, `minProperties`, `maxProperties` | checked at any depth |
+| input constraints | the request must not decidedly break one the endpoint declares (the semantic phase sends such requests without poisoning a field) |
+| credentials | when the declared access policy is anything but `public`, the request must carry a credential: an identity or a configured auth header |
+
+Anything not shown to conform makes the oracle return `CONTINUE`. It judges the
+request, never the phase it was drawn in.
+
+**The rule names a field only when the response names it as a message.** The
+oracle walks the response body's nested objects. It skips the keys the rejection's
+own declared response schema gives its envelope, and keeps the keys whose value
+is a message: a string, or a list of strings. Each key, case-folded, is matched
+against the leaf names of every declared request field at any depth. The first key
+whose leaf belongs to **exactly one** declared field gives the rule id
+`<zone>.<path>`, such as `body.user.email` for a body `{"errors": {"Email":
+[…]}}`. Otherwise the rule id is `request`. The rule's label in the report is
+"Incomplete contract".
+
+**It runs before `status_code_conformance` and is not terminal.** `OraclePrecedence`
+places `CONTRACT_COMPLETENESS` (35) after `REFLECTED_PAYLOAD` (34) and before
+`STATUS_CODE` (36), which is terminal and would end the chain on an undeclared
+400. A 400 the contract does not declare, to a conforming request, yields two
+findings, one per rule ([ADR-137](#adr-137)).
+
+### Rejected
+
+- **Attributing the field by the text of a message** (`"invalid email"`). Short
+  field names such as `name` or `id` match prose by chance.
+- **Trusting the phase** and judging every 4xx of `valid`. A bug in the generator
+  would be reported as a defect of the API, which is a false finding.
+- **Attributing by the shrink's delta** against the minimal payload. The shrink
+  minimizes the payload, not the cause.
+- **Naming it `undeclared_validation`.** It reads as a sibling of
+  `input_validation` while meaning its opposite: one accepts what is invalid, the
+  other rejects what is valid.
+- **Citing the whole request as `*`.** It reads as a wildcard.
+
+### Consequences
+
+Measured without inferred contracts, the Go target yields 10 signatures, all from
+`valid`, all but one attributed to a field: `body.user.email` on `POST /users` and
+`POST /users/login`; email, image, password and username on `PUT /user`; body,
+description and title on `POST /articles`; and `request` on `POST /articles`. With
+inferred contracts the count drops to 3, because the model declares what the
+validator enforces ([ADR-147](measurement.md#adr-147)). The three left are 422s
+`{"errors": {"database": …}}`: uniqueness violations, a state conflict the server
+answers as a validation error, which name no field and cite `request`. The lab
+target yields one, on `GET /search`, where a valid search term with a quote is
+rejected: the same root cause as its `information_disclosure` finding, reported
+under both rules. The Go target's signature count also stops varying between
+repetitions.
+
+A rejection body whose envelope the response contract declares under a field's
+name (an `errors.body` key) cites `request`, and so does one that names the field
+only inside a location list. An optional body left out while it declares a
+required field counts as not conforming, and the oracle stays silent. The report
+ranks the invariant last, below `content_type_conformance`, and `explain_finding`
+explains it with a fixed template.
+
+---
+
+## ADR-144 — Each endpoint reports its requests, raw findings, attack families and budget by phase { #adr-144 }
+
+**Status:** accepted · `models/runtime/stats.py`, `runtime/findings/request_breakdown.py`, `runtime/findings/stats.py`, `runtime/runners/loop.py`, `runtime/runners/performance/ladder.py`, `strategy_compiler/fields/attack/numeric_families.py`; storage `migrations/0004_endpoint_phase_breakdown.sql`; core `services/persistence/phase_breakdown.py`
+
+### Context
+
+How a run's budget was planned and spent, phase by phase and endpoint by endpoint,
+was visible only to an external measurement. The run's `by_phase` totals say which
+phases sent requests, but not at which endpoint, nor whether a phase got what it
+was planned, nor which attack families the `attack` phase exercised.
+
+### Decision
+
+**`EndpointStats` gains four maps,** filled where the counting already happens:
+
+| Field | Counts | Empty when |
+| --- | --- | --- |
+| `by_phase` | the endpoint's requests per phase; they sum to `requests` | nothing was sent |
+| `findings_by_phase` | the endpoint's raw findings per phase of the traffic that produced them; a load step's `latency_degradation` counts under `valid`, so it is not bounded by `by_phase` | the mode observes no raw findings (`stateful`, `replay`) |
+| `by_attack_family` | requests whose intent names an attack family, per family | no request carried a family |
+| `budget_by_phase` | each planned phase's `PhaseBudget(planned, carried_in)` ([ADR-142](#adr-142)) | the mode does not plan by phase |
+
+Two passes of one endpoint add up, and a ladder's steps merge into one budget.
+
+**Numeric attack payloads carry their family**, so `by_attack_family` counts them.
+An integer or number payload is tagged `business_logic` when it is a small
+magnitude (sign, zero, off by one) or an edge of the declared range, and
+`resource_abuse` from the 8-bit signed maximum (`WORD_OVERFLOW_MAGNITUDE`, 127) up,
+word-size overflow. A value both families claim takes `business_logic`, and only a
+family the request asked for is used.
+
+**The report carries them.** The report document is `schema_version` 1.20,
+additive over 1.19: each `endpoints[]` entry, and each endpoint of `get_run`,
+carries the four maps, `{}` when there is nothing to count, as `by_category` is.
+The protocol version does not move. Storage adds the four columns in migration
+`0004`, as nullable JSON text: an empty map is stored as `NULL` and read back as
+`{}`, and a row written before the migration reads `NULL`.
+
+### Rejected
+
+- **Three parallel maps** (`planned_by_phase`, `carried_by_phase`,
+  `unspent_by_phase`). Three structures to keep aligned for one concept; the value
+  object keeps planned and received together, and the unspent part is derived.
+- **Recording only what was carried over.** It cannot answer planned against
+  realized per phase and endpoint, which is the question the numbers exist for.
+- **Tagging every numeric payload with the type's first family.** It would call
+  an overflow probe a business-logic probe.
+
+### Consequences
+
+A reader of a stored run sees where each endpoint's budget went without any tool
+but the report. The measurement in [ADR-141](measurement.md#adr-141) can be
+repeated from report documents alone. A database at version 3 migrates to 4 when
+it opens; nothing is rewritten.
+
+---
+
+## ADR-145 — A load step has a fixed size, is judged against the latency its concurrency predicts, and is confirmed by measuring twice { #adr-145 }
+
+**Status:** accepted · Supersedes in part [ADR-061](#adr-061) · `runtime/runners/performance/ladder.py`, `runtime/runners/performance/degradation.py`, `runtime/runners/performance/runner.py`, `runtime/runners/performance/constants.py`, `models/runtime/stats.py`
+
+### Context
+
+The concurrency ladder judged a step degraded when its p95 exceeded the baseline's
+by more than the tolerance: with the default 0.5, more than 1.5 times. Measured on
+the lab target, ten runs with the steps `[1, 4, 8, 16]`, an endpoint with no bug
+(`/items`) was flagged degraded in **10 of 10** runs at 4, 8 and 16, with p95 of
+1.4, 5.5, 12.5 and 27 ms. The server queues requests: with one worker, latency
+grows linearly with the requests in flight, and that is not a degradation. The
+false positive is deterministic, so measuring twice under the same rule would
+confirm it twice. The planted quadratic endpoint (`/slow`) went 6.4, 67.5, 262.7
+and 918 ms.
+
+The step size also came from the endpoint's `valid` share of its split, so a
+change to a profile's split, its risk weighting or a contract's own budget changed
+how many samples a step measured.
+
+### Decision
+
+**A step sends a fixed number of samples.** `LADDER_STEP_SAMPLES` (120) times the
+run's `load_factor`, rounded up to whole batches of `concurrency × identities`, so
+each identity's share is whole batches. 120 leaves six samples in the nearest-rank
+p95 tail. The size depends on nothing in the split, the risk or the contract. The
+`valid` phase is compiled from the profile, not the split, so an endpoint whose
+split funds no `valid` examples still has a baseline; `ConcurrencyLadderError`
+remains for a step above `max_concurrency`.
+
+**A step degrades against the latency its concurrency predicts.** With `c` the
+step's concurrency and `c_base` the baseline's:
+
+```
+degraded  ⇔  p95 > p95_base × (c / c_base) × (1 + tolerance)
+```
+
+A server that queues linearly stays clean; a superlinear one does not.
+
+**A degradation is confirmed by measuring twice, the baseline included.** If the
+first round marks any step degraded, the runner measures the baseline and every
+degraded step once more, with the same size and concurrency. A step stays
+`degraded` only if it exceeds its baseline in both rounds, each round against its
+own baseline. `LoadStepStats.remeasured` carries the second window (`None` for a
+step measured once), and the `latency_degradation` finding is anchored on the
+sent request at the second window's p95. The number of rounds is the constant
+`DEGRADATION_CONFIRMATIONS` (1). A step the confirmation did not measure, because
+the run was cancelled or the round was truncated, is not degraded: what was not
+confirmed is not reported.
+
+### Rejected
+
+- **An absolute floor in milliseconds.** It depends on the machine and the
+  target.
+- **A statistical test between windows** (Mann-Whitney). Disproportionate
+  machinery for a decision on one percentile.
+- **Re-measuring only the degraded step.** A baseline that was anomalously fast
+  stays the reference, and the noise it carries is not corrected.
+- **A knob for the number of confirmations.** It is the engine's stability, not
+  a user's policy.
+- **Keeping the step size tied to the split.** A measurement's sample count
+  would move whenever a budget decision moves.
+
+### Consequences
+
+On the same ten runs, `/items` is degraded in **0 of 10**, and `/slow` is degraded
+and confirmed in **10 of 10** at 4, 8 and 16, its second window nearly identical
+to the first. Under the predicted-latency rule alone, one `/items` run of ten
+exceeds at 16 (26.8 times the baseline against an allowed 24); the confirmation
+removes it. Confirmation costs one window more per degraded step plus one for the
+baseline, and only when something degraded. Each step of a report's
+`load_profile` carries `remeasured` (report 1.20); a run stored earlier reads it
+`null`.

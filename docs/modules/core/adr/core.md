@@ -391,3 +391,66 @@ response that drifts from its contract.
 A client that renders the invariant vocabulary shows the five findings with the
 labels the report carries. A client that sorts by severity sees them near the top.
 The change is listed in the [changelog](../protocol/handshake.md#changelog).
+
+---
+
+## ADR-146 — The run's URL is composed once, with the specification's server path, and a follow-up keeps its trigger's server { #adr-146 }
+
+**Status:** accepted · `services/fuzz/target.py`, `controllers/execution/plan.py`, `services/fuzz/runner.py`, `services/fuzz/projection/transitions.py`, `controllers/execution/translation.py`; engine `runtime/fuzzers/stateful/transitions.py`, `runtime/fuzzers/stateful/probes.py`
+
+### Context
+
+An OpenAPI document can declare its server with a path, `servers: [{url:
+http://host/api}]`, and its paths under it: `/users` lives at `/api/users`. The
+user gives a target URL (`http://localhost:8000`, or `http://localhost:8000/api`).
+Two paths lead to the engine, the protocol's `plan_run` and the integrated REPL's
+`run_fuzzing`, and the engine's `EndpointSpec.base_url` already means "a full
+override URL for this endpoint". Adding the prefix in one path leaves the other
+without it; adding it per endpoint gives `base_url` two meanings. A stateful
+transition's follow-up path may also be written with the prefix, and its probe
+went to the run's URL even when its trigger had its own.
+
+### Decision
+
+**One pure function composes the run's URL, and both paths call it.**
+`run_target_url(target_url, endpoints)` takes the server path the run's endpoints
+share (`server_path_of`) and composes it into the target URL
+(`compose_target_url`):
+
+- the comparison is by whole path segments, never by string suffix: a target that
+  already ends in the server path (`/api`, `/v1/api`) is left as given, and
+  `/xapi` does not end in `/api`;
+- scheme, credentials, host, port, query and fragment are kept;
+- a target URL that cannot be split is handed to the engine as given, so the
+  engine's own validation names what is wrong with it;
+- endpoints that disagree on their server path are a contract the run cannot
+  address. `ConflictingServerPathError` is refused over the protocol as
+  `UNSUPPORTED_SCHEMA` at the location `servers`, and has its own report code,
+  `fuzz_conflicting_server_path`.
+
+`EndpointSpec.base_url` keeps its single meaning, a per-endpoint override, and
+the core no longer sets it.
+
+**A follow-up path is normalized once, where the transition is adopted.**
+`merge_transitions` strips a leading server path from the follow-up path, by whole
+segments, so the engine sees one spelling and its routing, its vetoes and its
+injector agree without change.
+
+**A follow-up goes to its trigger's server.** The probe of a transition inherits
+the triggering endpoint's `base_url`, and falls back to the run's URL when the
+trigger has none.
+
+### Rejected
+
+- **Composing in `plan_run` only.** The REPL path would run without the prefix.
+- **Composing per endpoint in the engine's injector.** `base_url` would mean two
+  things, and the engine's `BaseUrl` type rejects a bare path.
+- **Stripping the prefix in each of the engine's three route readers.** The same
+  rule in three places drifts apart; one normalization at the boundary does not.
+
+### Consequences
+
+`started` and `target_down` report `base_url` as the URL the run's requests go to,
+the server path included. The recipe stores that URL without credentials, and a
+replay re-sends the recorded URLs, so replay is unchanged. The inference cache key
+leaves the server path out, so a cached contract stays valid.

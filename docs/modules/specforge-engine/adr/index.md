@@ -27,7 +27,8 @@ missing here belongs to another module:
 Assembly's, [ADR-125](../../core/adr/core.md#adr-125), how the report labels
 `input_validation` and `engine_failure`, and
 [ADR-139](../../core/adr/core.md#adr-139), how it labels and ranks the security
-findings, are the core's, and
+findings, and [ADR-146](../../core/adr/core.md#adr-146), how the run's URL is
+composed, are the core's, and
 [ADR-136](../../semantic-inference/adr/prompts.md#adr-136), the plausible values
 the prompt asks for, is Semantic Inference's.
 
@@ -38,6 +39,7 @@ the prompt asks for, is Semantic Inference's.
 | [api.md](api.md) | facade / policy | What `run` takes, what the facade exports, how input is validated |
 | [compiler.md](compiler.md) | strategy_compiler | How a field becomes a strategy |
 | [engine.md](engine.md) | engine | Requests and their intent, oracles, findings, counters, runners, replay |
+| [measurement.md](measurement.md) | measurement | How the default numbers are measured and set, and what an inferred contract adds |
 
 ## Full index
 
@@ -147,3 +149,10 @@ the prompt asks for, is Semantic Inference's.
 | [ADR-135](engine.md#adr-135) | engine | A reflected payload is judged only in an HTML response |
 | [ADR-137](engine.md#adr-137) | engine | One raw finding per violated rule |
 | [ADR-138](engine.md#adr-138) | engine | An intent-anchored finding is confirmed against a control request |
+| [ADR-140](measurement.md#adr-140) | measurement | The engine's default numbers are set by measurement, under a decision rule written before measuring |
+| [ADR-141](measurement.md#adr-141) | measurement | The default budget stays at 200, `hacker` spends a quarter on attacks, and `deadline_ms` is a ceiling |
+| [ADR-142](engine.md#adr-142) | engine | What a pass leaves unspent goes to the next pass of the same identity, up to its own share |
+| [ADR-143](engine.md#adr-143) | engine | A 400 or 422 to a request that conforms to its contract is a `contract_completeness` finding |
+| [ADR-144](engine.md#adr-144) | engine | Each endpoint reports its requests, raw findings, attack families and budget by phase |
+| [ADR-145](engine.md#adr-145) | engine | A load step has a fixed size, is judged against the latency its concurrency predicts, and is confirmed by measuring twice |
+| [ADR-147](measurement.md#adr-147) | measurement | What the model-inferred contract adds is measured on bugs only the code shows, against a control and a hand-written ceiling |

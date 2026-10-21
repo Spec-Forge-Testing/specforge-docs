@@ -502,8 +502,11 @@ unexpectedly.
     are a comma-separated, strictly increasing progression (e.g. `1,4,8`); the
     first is the baseline every later step's p95 latency is compared against.
     `--degradation-tolerance <ratio>` sets how much slower a later step may be
-    before it counts as degraded — the ratio over the baseline's p95, so `0.25`
-    means "more than 25% slower" (the engine defaults it when omitted).
+    than its concurrency predicts before it counts as degraded: the baseline's p95
+    scaled by the ratio of concurrencies, so with `0.25` a step at 8 over a
+    baseline at 1 degrades above 10 times the baseline's p95 (the engine defaults
+    it to `0.5` when omitted). A step that degrades is measured again, with the
+    baseline, and is reported only if it degrades both times.
     `--degradation-tolerance` requires `--concurrency-steps`, and both apply only
     to `--mode performance`. `--max-concurrency` caps the ladder: a step above it
     is refused. A progression the engine rejects — fewer than two steps, or one

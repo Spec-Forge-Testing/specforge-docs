@@ -327,7 +327,7 @@ a new kernel attack field reaches the engine without a change to the compiler.
 
 ## ADR-051 — Mutation is a generation phase over hacker contracts, seeded from the valid strategy, with engine-owned operators { #adr-051 }
 
-**Status:** accepted · `models/phase.py`, `strategy_compiler/fields/hacker/mutation_operators.py`, `strategy_compiler/fields/hacker/builders.py`, `strategy_compiler/fields/builtin.py`, `profiles/builtin.py`
+**Status:** accepted · Superseded in part by [ADR-141](measurement.md#adr-141) · `models/phase.py`, `strategy_compiler/fields/hacker/mutation_operators.py`, `strategy_compiler/fields/hacker/builders.py`, `strategy_compiler/fields/builtin.py`, `profiles/builtin.py`
 
 ### Context
 
@@ -348,7 +348,8 @@ the mutated variant. The operators and their table are owned by the engine and
 gated by the existing `AttackToggles`; intensity comes from `mutation_depth`,
 which reaches only the structural operators. The share is taken from `valid` in
 the hacker split (`valid` 0.50), so `boundary`, `invalid` and `attack` keep their
-budget. On the base contract the phase falls back to the valid strategy, exactly
+budget. (Superseded in part by [ADR-141](measurement.md#adr-141): the measured
+hacker split gives `mutation` 0.05 and `valid` 0.40.) On the base contract the phase falls back to the valid strategy, exactly
 as `attack` does, so a plain field inside a hacker-mode compile still compiles.
 
 ### Rejected
@@ -1000,7 +1001,7 @@ with `boundary` and `invalid`.
 
 ## ADR-129 — Aggressiveness is one knob: the attack share of the budget { #adr-129 }
 
-**Status:** accepted · `budget/aggressiveness.py`, `strategy_compiler/planning.py`, `strategy_compiler/fields/context.py`, `strategy_compiler/fields/hacker/builders.py`
+**Status:** accepted · Superseded in part by [ADR-141](measurement.md#adr-141) · `budget/aggressiveness.py`, `strategy_compiler/planning.py`, `strategy_compiler/fields/context.py`, `strategy_compiler/fields/hacker/builders.py`
 
 ### Context
 
@@ -1028,7 +1029,9 @@ attacked per request, the rest of the request is already valid.
 
 More aggressiveness always means more attacking requests, and zero means no
 attack pass. The `HACKER` profile's split keeps `attack` at 0.05 of the budget;
-the `DEFAULT` profile has no attack pass.
+the `DEFAULT` profile has no attack pass. (Superseded in part by
+[ADR-141](measurement.md#adr-141): the measured `HACKER` split gives `attack`
+0.25.)
 
 ---
 

@@ -33,7 +33,7 @@ The engine-side outcome vocabularies follow the same rule:
 | Enum | Members (`.value`) |
 |---|---|
 | `ErrorCategory` | `success` · `client_error` · `server_error` · `contract_violation` · `timeout` · `availability` · `unsendable_request` · `connection_dropped` |
-| `InvariantViolation` | `not_a_server_error` · `status_code_conformance` · `response_schema_conformance` · `content_type_conformance` · `state_transition` · `latency_sla` · `latency_degradation` · `resilience_degradation` · `semantic_property` · `access_control` · `input_validation` |
+| `InvariantViolation` | `not_a_server_error` · `status_code_conformance` · `response_schema_conformance` · `content_type_conformance` · `state_transition` · `latency_sla` · `latency_degradation` · `resilience_degradation` · `semantic_property` · `access_control` · `input_validation` · `information_disclosure` · `sensitive_data_exposure` · `reflected_payload` · `mass_assignment` · `input_induced_timeout` · `contract_completeness` |
 | `TruncationReason` | `infrastructure_abort` · `deadline_exceeded` · `target_down` · `state_link_abort` · `generation_exhausted` · `cancelled` · `engine_failure` |
 | `FidelityLevel` | `exact` · `reduced` |
 
@@ -410,7 +410,18 @@ measured: `held_back_by` names the risk flag that kept the
 own flag did (both `None` for a probed one), and `load_profile` is a tuple of `LoadStepStats` — one per
 completed step of a performance run's
 [concurrency ladder](execution-modes.md#the-load-profile), empty in every other
-case. Last, `truncation` is the `EndpointTruncation` (a `reason` and an optional
+case; a step measured twice to confirm a degradation carries the second window as
+`remeasured`. Four maps say where the endpoint's traffic and budget went, phase by
+phase ([ADR-144](adr/engine.md#adr-144)):
+
+| Field | Holds |
+|---|---|
+| `by_phase` | the endpoint's requests per `Phase`; they sum to `requests` |
+| `findings_by_phase` | its `findings_raw` per phase of the traffic that produced them, a load step's verdict counted under `valid`; empty where raw findings are not observed (`stateful`, `replay`) |
+| `by_attack_family` | its requests whose intent names an attack family, per `AttackProfile` |
+| `budget_by_phase` | each planned phase's `PhaseBudget`: `planned`, the share it was planned, and `carried_in`, what an earlier pass of the same identity left it ([ADR-142](adr/engine.md#adr-142)); empty in modes that do not plan by phase |
+
+Last, `truncation` is the `EndpointTruncation` (a `reason` and an optional
 `detail`) that ended the endpoint's own pass; it is `None` when the pass ran to
 completion, and in the modes that do not explore endpoint by endpoint (`stateful`,
 `replay`).

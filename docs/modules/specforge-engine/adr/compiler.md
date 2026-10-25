@@ -912,7 +912,7 @@ field also needs families of its own: it carries no `attack_profiles`.
 
 ### Decision
 
-**`fields/attack/` is a peer package.** It holds the pools by `AttackProfile`
+**`fields/attack/` is a peer package.** It holds the pools by `AttackFamily`
 (`tables.py`), the base payloads per `SchemaType` and the toggle families
 (`payloads.py`), the pure `AttackRequest` and `AttackToggles` (`request.py`), the
 shape filter and the candidate builders (`builders.py`), the first-seen

@@ -11,7 +11,7 @@ the vocabularies, the contract package and the boundary DTOs in `models/`.
 
 ### Context
 
-`Zone`, `Criticality`, `Sensitivity` and `AttackProfile` are produced by the
+`Zone`, `Criticality`, `Sensitivity` and `AttackFamily` are produced by the
 semantic inference stage, read by the orchestrator and consumed by this
 engine. As string literals, every consumer keeps its own copy of the set and a
 typo is a runtime surprise. Some of them also travel as keys in serialized

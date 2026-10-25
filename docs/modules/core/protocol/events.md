@@ -45,7 +45,7 @@ which one framed the event.
 | `endpoint_started` | fact | `endpoint` (ref), `index`, `total` | An endpoint begins |
 | `phase_started` | fact | `endpoint` (ref), `phase` | A phase changes within the endpoint |
 | `tick` | state | `elapsed_s` always; on `fuzz`, `sent`, `total` and `findings`; on `analyze_endpoints`, `resolved` and `failed` | Absolute counters, ≤10/s |
-| `finding` | fact | `endpoint` (ref), `status`, `invariant`, `phase` | A finding is confirmed |
+| `finding` | fact | `endpoint` (ref), `status`, `invariant`, `phase`, `category` and `severity` (see [`category`](vocabularies.md#category) and [`severity`](vocabularies.md#severity)), `summary` | A finding is confirmed |
 | `infra_failure` | fact | `endpoint` (ref), `reason`, `streak`, `limit` | A timeout or transport failure |
 | `target_down` | fact | `base_url` (the URL the run's requests go to, server path included), `reason` | The run concluded the API is down: a liveness probe failed, or every circuit breaker opened; `reason` says which |
 | `truncated` | fact | `endpoint` (ref), `reason` | Cut short by budget |
@@ -56,9 +56,12 @@ which one framed the event.
 
 `finding` speaks the report's own vocabulary — `endpoint`, `status`, `invariant`
 and `phase` are exactly what identifies a defect in the persisted report — so a
-frontend correlates what it watched live with what it reads back. There is no
-`finding_id` or `severity`: an id exists only once a finding is persisted, and
-no categorical severity exists anywhere in the product.
+frontend correlates what it watched live with what it reads back. `category` and
+`severity` come from the engine's invariant registry, and `summary` is the
+finding's one-sentence account: the same three values the report's defect
+carries ([findings](../../specforge-engine/findings.md)). All three are absent
+when the core runs without the engine, and from a core older than `0.1.19`.
+There is no `finding_id`: an id exists only once a finding is persisted.
 
 Which operation emits which kind is published in `capabilities.event_kinds` and,
 per operation, in the catalog. Whether the engine emits `infra_failure` and

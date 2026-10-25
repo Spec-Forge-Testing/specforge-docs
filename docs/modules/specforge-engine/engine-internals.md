@@ -705,11 +705,14 @@ raised lower in the chain ([ADR-050](adr/engine.md#adr-050)).
 
 `runtime/findings/` turns raw findings into deduplicated crash reports, the
 public finding union and the run's statistics. A finding's life runs signature →
-group → shrink → materialize → dedupe → assemble → stats.
+group → shrink → materialize → dedupe → assemble → stats. How a finding is
+classified, what its observation and evidence hold, and what is withheld from them
+are in [Findings: taxonomy and evidence](findings.md).
 
 - **Signature.** `signature_of` builds a `FindingSignature` from what the
   failure looks like from the outside: endpoint, phase, primary violation,
-  status code, identity label, the `rule_id` of the rule the finding broke, and a
+  status code, identity label, the `rule_id` of the rule the finding broke, the
+  field the request poisoned (`poisoned`, when it poisoned one), and a
   *fingerprint of the body's shape* — never its values (an object becomes its keys
   mapped to JSON type names; free text is lowercased with digit runs masked, after
   the values of the credentials the request sent are erased from it, so a signature
@@ -731,26 +734,30 @@ group → shrink → materialize → dedupe → assemble → stats.
   for the group's untouched members (counted `collapsed`); a member that was
   never attempted counts `unverified`; one whose shrink did not reproduce counts
   `flaky` — **measured here, where it is observed, never derived by
-  subtraction** ([ADR-018](adr/engine.md#adr-018)).
+  subtraction** ([ADR-018](adr/engine.md#adr-018)). A reproduction its control
+  request also shows counts `refuted`, and one whose control got no answer counts
+  `unverified` ([ADR-151](adr/findings.md#adr-151)). In a group that poisoned no
+  field, the members the first representative's cause does not explain are probed
+  and, when the cause differs, shrunk on their own
+  ([ADR-150](adr/findings.md#adr-150)).
 - **Materialize.** `build_crash_report` is the single assembler of a
   `CrashReport`, from a `FindingFacts` — the source-agnostic subject of a report
   — plus the request and result. Redaction happens here and nowhere else: request
   headers (`Authorization`, `Cookie`, `X-Api-Key` and the config header names) and
-  the sensitive payload fields — the built-in names below, whatever the contract
-  declares, plus the declared ones — are replaced with `***`, and the
-  `response_body` is redacted by field name at any depth of a JSON body — objects
-  and arrays of objects alike. The response names come from two sources: a built-in
-  table of credential-bearing names (`password`, `token`, `access_token`, `secret`,
-  `api_key`, `cookie`, `session`, `private_key` and their siblings in
-  `SENSITIVE_BODY_FIELDS`) and the endpoint's own declared `sensitive_fields` — of
-  which only the last path segment counts, since a response has no zones. Matching
-  is exact after normalization (case-folded, `_` and `-` removed), so
-  `accessToken`, `access-token` and `access_token` all match; there is no suffix or
-  substring matching and no shape heuristic, so `next_page_token` and a
-  JWT-looking string in an unrelated field are left alone. Non-JSON text bodies,
+  the sensitive payload fields — every name `is_sensitive_field_name` calls a
+  secret, whatever the contract declares, plus the declared ones — are replaced
+  with `***`, and the `response_body` is redacted by field name at any depth of a
+  JSON body — objects and arrays of objects alike. Of a declared
+  `sensitive_fields` entry only the last path segment counts for the response,
+  since a response has no zones. The predicate and its exemptions (a token that
+  is a count or a cursor, such as `next_page_token`) are described in
+  [Redaction](findings.md#redaction); there is no shape heuristic, so a
+  JWT-looking string in an unrelated field is left alone. Non-JSON text bodies,
   scalars and `None` pass through name redaction unchanged, and the input body is
   never mutated — the trace keeps the raw body
-  ([ADR-060](adr/engine.md#adr-060)).
+  ([ADR-060](adr/engine.md#adr-060), [ADR-152](adr/findings.md#adr-152)).
+  The observation, the response headers and the request URL are redacted here
+  too, slot by slot.
   A second pass erases by **value**: the credentials the request actually sent —
   the identity's headers, `ExecutionConfig.headers`, and the `user:pass@`
   userinfo of the request URL — are replaced with `***` wherever they appear in a

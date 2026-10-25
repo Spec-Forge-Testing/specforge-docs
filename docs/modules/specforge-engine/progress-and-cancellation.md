@@ -161,15 +161,16 @@ listener switches on `kind` and never guesses a type:
 | `EndpointStarted` | `endpoint_started` | `endpoint_id`, `index`, `total` | Exploration of one endpoint began; `index` is 1-based. |
 | `PhaseStarted` | `phase_started` | `endpoint_id`, `phase` | The endpoint moved on to a new generation phase. |
 | `ProgressTick` | `tick` | `elapsed_s`, `sent`, `total`, `findings` | A snapshot of the run's absolute counters. |
-| `FindingObserved` | `finding` | `endpoint_id`, `status_code`, `invariant`, `phase` | A response broke an invariant. |
+| `FindingObserved` | `finding` | `report` (the `CrashReport`), read as `endpoint_id`, `status_code`, `invariant`, `phase` | A response broke an invariant. |
 | `InfraFailure` | `infra_failure` | `endpoint_id`, `reason`, `streak`, `limit` | A transport failure advanced an endpoint's infrastructure streak. |
 | `TargetDown` | `target_down` | `base_url`, `verdict` | The run concluded the target itself is down. |
 | `RunTruncated` | `truncated` | `endpoint_id`, `reason` | One endpoint's exploration was cut short before its plan was exhausted. |
 | `RunFinished` | `finished` | `status` | The run reached its terminal `RunStatus`. |
 
-`FindingObserved` is a *raw* observation: in stateless and performance it is
-emitted for each finding once shrinking has confirmed it, so it is unconfirmed
-until then; in stateful it fires the moment a defect is confirmed. `TargetDown`
+`FindingObserved` announces a confirmed finding, one per confirmed report: in
+stateless and performance once shrinking or judging has confirmed it, in stateful
+the moment a defect is confirmed. A flaky, refuted or unverified finding is never
+announced. `TargetDown`
 carries a `TargetDownVerdict` naming how the run decided —
 `LIVENESS_PROBE_FAILED` (a `HEAD` probe confirmed it: stateless, replay, the
 stateful run's own run-wide probe, or the resilience and auth runners' per-batch
@@ -255,9 +256,10 @@ event's, and fills in the fields the engine deliberately does not know:
 - **Endpoint numbers.** The engine names an endpoint by its canonical
   `"{METHOD}:{path}"` id; the short integer a person types is assigned and tracked
   by the listener, not the engine.
-- **Finding ids and severity.** `FindingObserved` reports the endpoint, status,
-  invariant and phase of a raw observation. The stable finding id and the severity
-  the frontend paints are the listener's to derive from the settled result.
+- **Finding ids and summary.** `FindingObserved` carries the finding's report;
+  the listener sends its endpoint, status, invariant and phase, its `category` and
+  `severity` from the [registry](findings.md#taxonomy), and the core's one-sentence
+  `summary`. The stable finding id exists only once the run is persisted.
 - **The wire status.** `RunFinished.status` is a `RunStatus`; the protocol's
   `finished` event narrows it to the values a frontend acts on — a `cancelled` run
   maps to `cancelled`, an `aborted` one to `failed`.

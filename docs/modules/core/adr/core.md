@@ -4,7 +4,8 @@ Part of the [Core decision records](index.md). Decisions about the headless
 core: how a run explains an endpoint it did not probe, how optional libraries
 are owned, how the busy guard is scoped, what a cancelled or a safety-breached
 run keeps, how a run's oracle scope bounds a comparison, how the engine options
-resolve, and when the inference gateway loads.
+resolve, when the inference gateway loads, how a finding's summary is told, and
+how a replay judges the defects it re-sends.
 
 ---
 
@@ -298,7 +299,7 @@ first use.
 
 ## ADR-125 — The report names an accepted invalid input and an endpoint the engine could not explore { #adr-125 }
 
-**Status:** accepted · `utils/constants.py`, `services/report/constants.py`, `repl/views/formatting.py`, `repl/views/fuzz.py`, `adapters/stdio/engine_log.py`, `adapters/stdio/server.py`; `protocol/README.md`
+**Status:** accepted · Superseded in part by [ADR-148](../../specforge-engine/adr/findings.md#adr-148) · `utils/constants.py`, `services/report/constants.py`, `repl/views/formatting.py`, `repl/views/fuzz.py`, `adapters/stdio/engine_log.py`, `adapters/stdio/server.py`; `protocol/README.md`
 
 ### Context
 
@@ -351,7 +352,7 @@ reason meets one more value, listed with the others in the
 
 ## ADR-139 — The report names five security findings and ranks them right after a server error { #adr-139 }
 
-**Status:** accepted · `utils/constants.py`, `services/report/ordering.py`, `repl/views/formatting.py`; `protocol/README.md`
+**Status:** accepted · Superseded in part by [ADR-148](../../specforge-engine/adr/findings.md#adr-148) · `utils/constants.py`, `services/report/ordering.py`, `repl/views/formatting.py`; `protocol/README.md`
 
 ### Context
 
@@ -454,3 +455,98 @@ trigger has none.
 the server path included. The recipe stores that URL without credentials, and a
 replay re-sends the recorded URLs, so replay is unchanged. The inference cache key
 leaves the server path out, so a cached contract stays valid.
+
+---
+
+## ADR-153 — A finding's one-sentence summary is told by the core when it reads the finding, by one strategy per invariant { #adr-153 }
+
+**Status:** accepted · `services/finding_summary/`, `services/report/builder.py`, `services/fuzz/observer.py`, `services/explanation/`
+
+### Context
+
+A finding's fields say what broke, but a person reads a sentence first: which
+endpoint, what it answered, to what. A frontend that composed that sentence
+would need to know every invariant's observation ([ADR-149](../../specforge-engine/adr/findings.md#adr-149)),
+and each frontend would tell it differently. The finding is read in four places,
+from four sources: the live `finding` event, the report a run answers with, and
+a stored confirmed or unconfirmed finding read back.
+
+### Decision
+
+**`finding_summary` tells the sentence from a `SummaryFacts`, when the finding is
+read.** One adapter per source builds the facts; `SENTENCES` maps each invariant
+to a `SentenceStrategy` over shared rendering helpers: the endpoint as
+`` `METHOD /path` ``, a value as compact JSON clipped to 48 characters, the
+request's poisoned field or trigger fields with the values the minimal payload
+sent. A finding that did not confirm ends with its state, and one with no
+observation, or of an invariant the core does not know, gets a fallback sentence
+built from its label and status. The sentence is never stored. The report
+document, `get_run`, `get_finding` and the `finding` event carry it as `summary`,
+and the fixed explanation templates use the same builder.
+
+### Rejected
+
+- **Storing the sentence.** A better template would never reach the runs stored
+  before it.
+- **Telling it in the engine.** Presentation is the core's: the engine does not
+  know the protocol's `METHOD /path` spelling, and the sentence is read from what
+  the engine already recorded.
+
+### Consequences
+
+The sentence is built only from observed, already redacted values, and never
+raises on a withheld or missing one. A new invariant reads the fallback sentence
+until it has a strategy. Every reader of a finding shows the same words.
+
+---
+
+## ADR-154 — A replay is judged per recorded defect, and a defect its oracles cannot see is never ruled resolved { #adr-154 }
+
+**Status:** accepted · `services/replay/rules.py`, `services/replay/service.py`, `services/report/builder.py`, `controllers/results.py`; engine `models/runtime/taxonomy.py`
+
+### Context
+
+A replay re-sends a recorded trace and judges the responses with contract-free
+oracles only ([ADR-087](#adr-087)). It ruled each recorded request that had
+violated something: `present`, `possibly_resolved` or `inconclusive`. Two things
+followed. A request that no longer returned a 500 read `possibly_resolved` even
+when the defect recorded there was a schema mismatch the replay cannot see at
+all, so a comparison could report a fix nobody had verified. And counting per
+request, a replay of a run with 26 defects reported hundreds of recorded
+"defects", and `compare_runs` gave `after_count` values that could not be set
+against `before_count`.
+
+### Decision
+
+**The engine says what a contract-free judgement can observe.** Each registry
+entry declares `contract_free`, and the rules it is blind to:
+`input_induced_timeout` on the whole request (`request`) needs a control request a
+replay never sends. `observable_without_contract(invariant, rule_id)` answers it.
+
+**A request verdict is `possibly_resolved` only where it could be seen.** A
+recorded request is `present` when the replay reproduced it or still violates an
+invariant, and `possibly_resolved` only when it changed and the recorded run kept,
+at its method, path and status, a finding a contract-free judgement can observe;
+`inconclusive` otherwise.
+
+**Then one verdict per recorded defect.** `defect_verdicts` has one entry per
+defect the recorded run confirmed: `present` when a recorded request at its
+method, path and status is `present`; `possibly_resolved` only when every such
+request is and the replay can observe the defect; `inconclusive` otherwise, also
+when no request matches it. `judged` sums them under the replay's oracle scope.
+`compare_runs` against a replay meets each defect with the verdicts on the
+recorded defects of its own identity, and `after_count` counts those the replay
+saw present.
+
+### Rejected
+
+- **Per-request verdicts only.** They count requests, not defects, and cannot be
+  compared with the run they replay.
+- **Trusting a changed status as a fix.** It turns a blind spot into a green.
+
+### Consequences
+
+A replay never reports a fix it could not have observed. A `present` verdict is
+keyed on where a request was recorded, not on its invariant: a defect can read
+present because another invariant at the same place still breaks, never resolved
+by mistake. `replay.verdicts` still rules each recorded request on its own.

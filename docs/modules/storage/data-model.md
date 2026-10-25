@@ -166,6 +166,7 @@ over `analysis_endpoints` and `run_endpoint_stats`.
 | `findings_confirmed` | INTEGER | no | — | Findings reproduced after shrinking, or observed once in a mode that never shrinks. |
 | `findings_unique` | INTEGER | no | — | Distinct defects found; equal to the run's confirmed rows in `findings`. |
 | `findings_flaky` | INTEGER | no | — | Findings that did not reproduce after shrinking. |
+| `findings_refuted` | INTEGER | no | `0` | Findings whose minimal payload reproduced but whose control request showed the same signal. |
 | `findings_collapsed` | INTEGER | no | `0` | Findings never shrunk because another with their signature was. |
 | `findings_unverified` | INTEGER | no | `0` | Findings never attempted: the run was cut before shrinking, or the strategy could not produce a candidate. |
 | `requests_shrink` | INTEGER | no | `0` | Requests sent while shrinking (in a stateful run, also while minimizing the sequence); not part of `total_requests`. |
@@ -234,16 +235,29 @@ reproducer: `status_code`, `minimal_payload`, `sanitized_headers` and `response_
 | `minimal_payload` | TEXT | yes | — | JSON minimal reproducible payload, keyed by zone; NULL with no reproducer. |
 | `sanitized_headers` | TEXT | yes | — | JSON request headers, secrets already redacted by the engine; NULL with no reproducer. |
 | `response_body` | TEXT | yes | — | The failing response body; NULL with no reproducer. |
-| `stack_trace` | TEXT | yes | — | The stack trace the engine attached to a confirmed finding, when it had one. |
 | `transition_sequence` | TEXT | yes | — | JSON request chain that built a stateful finding's state; NULL otherwise. |
 | `represented_findings` | INTEGER | no | `1` | Raw findings this row stands for, itself included: its unshrunk group mates and the duplicates it absorbed. The record requires it. |
 | `identity_label` | TEXT | yes | — | The identity the finding was observed under; NULL when the run declared none. It tells two findings apart only for `access_control`. |
 | `rule_id` | TEXT | yes | — | The rule the finding broke, declared by the contract or intrinsic to its invariant; NULL when the engine named none. |
 | `rule_description` | TEXT | yes | — | Human-readable text of `rule_id`. |
 | `body_fingerprint` | TEXT | yes | — | Shape, never values, of the response body behind an unconfirmed finding; `''` when there was no body, NULL for a confirmed finding. |
+| `attack_family` | TEXT | yes | — | The attack family the poisoned request carried; NULL when it carried none. |
+| `poisoned_zone` | TEXT | yes | — | The zone of the field the request poisoned; NULL when it poisoned none. |
+| `poisoned_field` | TEXT | yes | — | The field the request poisoned; NULL when it poisoned none. |
+| `request_url` | TEXT | yes | — | The URL the request was sent to, without userinfo, query or fragment. |
+| `trigger_fields` | TEXT | yes | — | JSON list of the `<zone>.<field>` addresses the reduced finding still needs. |
+| `response_content_type` | TEXT | yes | — | The Content-Type the response declared; NULL when it declared none. |
+| `response_headers` | TEXT | yes | — | JSON object of the response's headers, secrets already redacted by the engine. |
+| `latency_ms` | REAL | yes | — | How long the response took, in milliseconds. |
+| `observation` | TEXT | yes | — | JSON object of what the oracle expected and observed, where, and its marker. |
+| `control` | TEXT | yes | — | JSON object of the control request the finding was judged against: its status, latency and error; NULL unless a control was sent. |
 
 Constraints: `analysis_endpoint_id` is `ON DELETE SET NULL`. `phase` and `state` are free
-text: the engine owns those vocabularies, and storage does not CHECK them.
+text: the engine owns those vocabularies, and storage does not CHECK them. Neither a finding's
+category nor its severity is stored: both are fixed per invariant by the engine's registry and
+derived when the finding is read
+([ADR-148](../specforge-engine/adr/findings.md#adr-148)). The ten evidence columns, from
+`attack_family` to `control`, are NULL in a row written before they existed.
 
 ### `run_producer_exclusions` — `RunProducerExclusionRecord` { #run_producer_exclusions }
 

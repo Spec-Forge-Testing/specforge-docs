@@ -17,7 +17,7 @@ engine owns the ones that are its own.
 | `Zone` | kernel | `path` · `query` · `header` · `body` |
 | `Criticality` | kernel | `low` · `medium` · `high` · `critical` (declaration order is the rank) |
 | `Sensitivity` | kernel | `public` · `internal` · `pii` · `financial` · `auth` |
-| `AttackProfile` | kernel | `injection` · `ssrf_filesystem` · `auth_bypass` · `input_validation` · `deserialization` · `information_disclosure` · `resource_abuse` · `business_logic` · `headers_cookie` · `parser_compatibility` · `path_traversal` · `xss` · `sql_injection` |
+| `AttackFamily` | kernel | `injection` · `ssrf_filesystem` · `auth_bypass` · `input_validation` · `deserialization` · `information_disclosure` · `resource_abuse` · `business_logic` · `headers_cookie` · `parser_compatibility` · `path_traversal` · `xss` · `sql_injection` |
 | `ExecutionMode` | `models/execution_mode.py` | `stateless` · `stateful` · `replay` · `performance` · `resilience` · `auth` |
 | `StrategyMode` | `models/strategy_mode.py` | `Default` · `Hacker` (capitalized: the wire spelling the LLM emits) |
 | `Phase` | `models/phase.py` | `valid` · `boundary` · `invalid` · `attack` · `transition` · `mutation` · `semantic` |
@@ -367,10 +367,13 @@ the shrink reached within its request budget, not an absolute minimum), the
 `invariant_violated`, an optional `rule` (the `ViolatedRule` the response broke,
 with a `rule_id` shortcut to its id), `sanitized_headers`, the `identity_label`,
 the `status_code` and `response_body` (with sensitive field values redacted by
-name to `***`), an optional `stack_trace`, the
+name to `***`), the `observation` the oracle made, the `request`, `response` and
+`control` evidence ([Findings](findings.md#evidence)), the
 `transition_sequence` for stateful findings (the steps before the violating one,
 minimized to those it needs and verified on the wire), and `represented_findings` — how
-many raw findings it stands for, adjusted through `standing_for`.
+many raw findings it stands for, adjusted through `standing_for`. Its `category`
+and `severity` are properties read from `INVARIANT_TAXONOMY`, never stored
+([ADR-148](adr/findings.md#adr-148)).
 
 `RunStats` is the aggregated counter set of one run. Its three maps are
 `by_endpoint` (keyed by `endpoint_id`), `by_phase` (`Phase`-keyed) and
@@ -383,9 +386,10 @@ producer:
 | `findings_raw` | violations observed during exploration, before shrinking: a response that breaks two rules counts twice |
 | `findings_confirmed` | shrink attempts that reproduced and became a crash report; in a mode that never shrinks (`performance`, `resilience`, `auth`), each defect observed |
 | `findings_unique` | distinct defects after collapsing reports with the same minimal reproducer (and, for `access_control`, the same identity); equal to the count of `ConfirmedFinding`s, never above `findings_confirmed` |
-| `findings_flaky` | attempted during shrinking and did not reproduce, or refuted by a control request ([ADR-138](adr/engine.md#adr-138)) |
+| `findings_flaky` | attempted during shrinking and did not reproduce |
+| `findings_refuted` | reproduced, and so did the control request sent without the poison: the input was not the cause ([ADR-151](adr/findings.md#adr-151)) |
 | `findings_collapsed` | not shrunk because a faithful representative of their signature stands for them |
-| `findings_unverified` | never attempted: the run was cut before shrinking, or no candidate could be produced |
+| `findings_unverified` | never judged: the run was cut before shrinking, no candidate could be produced, or the control request got no answer |
 | `requests_shrink` | requests the shrinking phase put on the wire (in a stateful run, Hypothesis's shrink re-sends plus the sequence minimizer's); not part of `total_requests` |
 
 `EndpointStats` mirrors the per-endpoint subset (`requests`,
@@ -411,14 +415,14 @@ own flag did (both `None` for a probed one), and `load_profile` is a tuple of `L
 completed step of a performance run's
 [concurrency ladder](execution-modes.md#the-load-profile), empty in every other
 case; a step measured twice to confirm a degradation carries the second window as
-`remeasured`. Four maps say where the endpoint's traffic and budget went, phase by
+`remeasured`, and a step measured on no samples has `degraded` `None`. Four maps say where the endpoint's traffic and budget went, phase by
 phase ([ADR-144](adr/engine.md#adr-144)):
 
 | Field | Holds |
 |---|---|
 | `by_phase` | the endpoint's requests per `Phase`; they sum to `requests` |
 | `findings_by_phase` | its `findings_raw` per phase of the traffic that produced them, a load step's verdict counted under `valid`; empty where raw findings are not observed (`stateful`, `replay`) |
-| `by_attack_family` | its requests whose intent names an attack family, per `AttackProfile` |
+| `by_attack_family` | its requests whose intent names an attack family, per `AttackFamily` |
 | `budget_by_phase` | each planned phase's `PhaseBudget`: `planned`, the share it was planned, and `carried_in`, what an earlier pass of the same identity left it ([ADR-142](adr/engine.md#adr-142)); empty in modes that do not plan by phase |
 
 Last, `truncation` is the `EndpointTruncation` (a `reason` and an optional

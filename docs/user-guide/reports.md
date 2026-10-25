@@ -43,7 +43,15 @@ its metrics, endpoint stats and crashes stay queryable through `history` and
 
 `ReportDocument` is a frozen, `extra="forbid"` Pydantic model: a pure function
 of a run's persisted data, never a live object. It carries a `schema_version`
-("1.20" today), bumped when the shape changes in a way a reader cannot ignore.
+("1.21" today), bumped when the shape changes in a way a reader cannot ignore.
+1.21 removes `defects[].stack_trace`, which was always `null`, and is additive
+otherwise: each defect and each unconfirmed finding gains `category`, `severity`,
+`summary`, `observation`, `request`, `response` and `control` (see
+[What a finding says](#what-a-finding-says)), and both lists sort by severity;
+`metrics` gains `findings_refuted`; each step of a `transition_sequence` gains
+`payload`, `response_body` and `response_body_truncated`; a `load_profile` step's
+`degraded` is `null` when it was measured on no samples, and `signal_causes` gains
+`load_unjudged`; a replay's `replay` gains `defect_verdicts` and `judged`.
 1.20 is additive over 1.19: each `endpoints[]` entry gains `by_phase` (requests
 per phase), `findings_by_phase` (raw findings per phase, before confirmation),
 `by_attack_family` (requests per attack family) and `budget_by_phase` (each
@@ -136,13 +144,37 @@ rule the finding broke, when an oracle named one.
 | `project` | The analyzed project's name. |
 | `analysis` | The recipe the run executed: id, label, strategy mode, execution mode (`stateless`, `stateful`, `performance`, `resilience`, `auth`), and the repo hash it was generated against. |
 | `run` | The run's own identity and outcome: id, ordinal, origin (original/replay), `executed_at`, duration, [`status`](../modules/core/protocol/vocabularies.md#run-status), [`oracle_scope`](../modules/core/protocol/vocabularies.md#oracle-scope) - which oracles judged its responses - `fidelity`, its [comparability mark](../modules/core/protocol/vocabularies.md#comparability), `signal`/`signal_causes` (see below), and - when the run was cut short - `truncation` (`reason`, `endpoint_id`, `detail` and `target_down_verdict`), otherwise `null`. It always carries `production_duration_ms`, `contract_cache` and `inference_cost`, which are `null` without a contract producer (see [The run's inference](#the-runs-inference)). |
-| `metrics` | The finding funnel and request counters, `null` when a run recorded none. `total_requests` counts the requests the run built to explore the API; `requests_shrink` counts, apart, the requests shrinking put on the wire to reduce failures to their minimal form, in stateless and stateful runs alike, so the two never overlap. A liveness probe, the request a stateless run re-sends after a streak of server errors to check the target is still up, counts in neither. |
-| `endpoints` | One entry per endpoint touched: requests, `examples_planned`, raw findings, confirmed findings (`findings_confirmed`), its latency distribution, `starved_identities` - the labels of any declared identities the endpoint's budget could not fund, empty unless the run split budget by identity and ran short of it - and `undecided_rules` - the ids of any declared rules the oracle evaluated here and could never decide (a rule left undetermined on every response, e.g. a numeric rule on a header declared `integer`), empty unless the run's mode accounts for them (`stateless`, `performance`) and some rule stayed undecidable - and `held_back_by` - why the safety guard kept this endpoint out of the run (`external_side_effects`, `write_operation`, or `unsafe_method_outside_run` for a follow-up outside the run), `null` when it was probed - and `held_back_via` - the id of the endpoint whose risk flag held this one back (its own id when its own flag did; for a follow-up held outside the run, the endpoint that declared the transition), `null` exactly when `held_back_by` is. A held endpoint's entry carries zero requests unless the run breached the guard - and `load_profile` - the per-step latency a performance run's concurrency ladder measured here (`concurrency`, the step's `latency` distribution, whether that step `degraded`, and `remeasured`, the confirmation window's distribution or `null`), empty unless the run used a ladder - and `unprobed_reason` - why an `auth` run crossed nothing at a targeted endpoint (see [Unprobed endpoints](#unprobed-endpoints)), `null` when the endpoint was probed or held back for another reason. The HTML report shows this reason, or the safety guard's hold, in a **Not probed** column; a hold names the other endpoint (`via ...`) only when another endpoint's flag decided it. It also carries `truncation` - why this endpoint's own pass was cut short (`{reason, detail}`, see [the reasons](../modules/core/protocol/vocabularies.md#truncation-reason)), `null` when it ran to completion - `by_category` - the requests per outcome category - `held_back_transitions` - each follow-up endpoint the safety guard kept from being sent after this one, mapped to why - and four phase maps: `by_phase` (requests per phase), `findings_by_phase` (raw findings per phase; a load step's degradation counts under `valid`), `by_attack_family` (requests per attack family) and `budget_by_phase` (each phase's `planned` examples and the `carried_in` examples an earlier phase of the same identity left unspent), each `{}` when the run counted nothing for it; a mode that does not plan by phase leaves `budget_by_phase` `{}`. |
+| `metrics` | The finding funnel and request counters, `null` when a run recorded none. `findings_refuted` counts, apart from `findings_flaky`, the findings whose control request showed the same signal, so the input was not the cause. `total_requests` counts the requests the run built to explore the API; `requests_shrink` counts, apart, the requests shrinking put on the wire to reduce failures to their minimal form, in stateless and stateful runs alike, so the two never overlap. A liveness probe, the request a stateless run re-sends after a streak of server errors to check the target is still up, counts in neither. |
+| `endpoints` | One entry per endpoint touched: requests, `examples_planned`, raw findings, confirmed findings (`findings_confirmed`), its latency distribution, `starved_identities` - the labels of any declared identities the endpoint's budget could not fund, empty unless the run split budget by identity and ran short of it - and `undecided_rules` - the ids of any declared rules the oracle evaluated here and could never decide (a rule left undetermined on every response, e.g. a numeric rule on a header declared `integer`), empty unless the run's mode accounts for them (`stateless`, `performance`) and some rule stayed undecidable - and `held_back_by` - why the safety guard kept this endpoint out of the run (`external_side_effects`, `write_operation`, or `unsafe_method_outside_run` for a follow-up outside the run), `null` when it was probed - and `held_back_via` - the id of the endpoint whose risk flag held this one back (its own id when its own flag did; for a follow-up held outside the run, the endpoint that declared the transition), `null` exactly when `held_back_by` is. A held endpoint's entry carries zero requests unless the run breached the guard - and `load_profile` - the per-step latency a performance run's concurrency ladder measured here (`concurrency`, the step's `latency` distribution, whether that step `degraded` - `null` when the step or its baseline was measured on no samples - and `remeasured`, the confirmation window's distribution or `null`), empty unless the run used a ladder - and `unprobed_reason` - why an `auth` run crossed nothing at a targeted endpoint (see [Unprobed endpoints](#unprobed-endpoints)), `null` when the endpoint was probed or held back for another reason. The HTML report shows this reason, or the safety guard's hold, in a **Not probed** column; a hold names the other endpoint (`via ...`) only when another endpoint's flag decided it. It also carries `truncation` - why this endpoint's own pass was cut short (`{reason, detail}`, see [the reasons](../modules/core/protocol/vocabularies.md#truncation-reason)), `null` when it ran to completion - `by_category` - the requests per outcome category - `held_back_transitions` - each follow-up endpoint the safety guard kept from being sent after this one, mapped to why - and four phase maps: `by_phase` (requests per phase), `findings_by_phase` (raw findings per phase; a load step's degradation counts under `valid`), `by_attack_family` (requests per attack family) and `budget_by_phase` (each phase's `planned` examples and the `carried_in` examples an earlier phase of the same identity left unspent), each `{}` when the run counted nothing for it; a mode that does not plan by phase leaves `budget_by_phase` `{}`. |
 | `coverage` | The [endpoint dispositions](../modules/core/protocol/vocabularies.md#coverage) behind the run - `declared`/`targeted`/`excluded`/`filtered`/`reached_by_transition`/`exercised` counts plus `excluded_endpoints` (method, path, reason; a withheld endpoint's reason starts `withheld:`) and `reached_by_transition_endpoints` (`method`, `path`), the endpoints the spec never declared that a stateful transition reached, never counted in `declared` - `null` for a replay, which never compiles. |
 | `producer_exclusions` | One entry (`method`, `path`, `reason`, `disposition`) per endpoint whose contract the inference producer could not deliver or the run could not use - see [`fuzz`'s contract producer](cli-reference.md). The [`disposition`](../modules/core/protocol/vocabularies.md#producer-exclusion-disposition) says what became of it: `schema_only`, fuzzed from its schema alone, or `withheld`, never fuzzed as a target because its contract declared a risk flag and could not be used. Empty when no producer ran, when the fixture producer ran (it aborts rather than drop), or when nothing was dropped. |
-| `defects` | One entry per crash, ordered most-severe-first (the same order the live crash tables render): identity, reproducer and what the run observed - the same shape `inspect --crash <id>` and `compare` project a crash through. Every crash carries `rule_id` and `rule_description`: the business rule the contract declared for a business-rule or access-control finding, the accepted field (`<zone>.<field>`) for an input-validation finding, the rejected field the response names (`<zone>.<field>`, or `request`) for a contract-completeness finding, or the rule the invariant enforces on its own for every other one. The HTML report labels a declared rule by its kind: **Business rule**, **Declared schema** for an input-validation finding, or **Incomplete contract** for a contract-completeness one. |
+| `defects` | One entry per crash, ordered by [`severity`](../modules/core/protocol/vocabularies.md#severity), then by the invariant's place in the engine's registry (the same order the live crash tables render): identity, reproducer, its classification, summary and evidence (see [What a finding says](#what-a-finding-says)), and what the run observed - the same shape `inspect --crash <id>` and `compare` project a crash through. Every crash carries `rule_id` and `rule_description`: the business rule the contract declared for a business-rule or access-control finding, the accepted field (`<zone>.<field>`) for an input-validation finding, the rejected field the response names (`<zone>.<field>`, or `request`) for a contract-completeness finding, or the rule the invariant enforces on its own for every other one. The HTML report labels a declared rule by its kind: **Business rule**, **Declared schema** for an input-validation finding, or **Incomplete contract** for a contract-completeness one. |
 | `unconfirmed_findings` | One entry per finding the run saw but never confirmed as a crash - see below. Empty for a replay. |
-| `replay` | What only a replay knows - fidelity, divergences and a verdict per recorded defect - `null` for an original run. |
+| `replay` | What only a replay knows - `fidelity`, `divergences`, `verdicts` (one per recorded request that violated an invariant), `defect_verdicts` (one per defect the recorded run confirmed: `method`, `path`, `status_code`, `invariant_violated`, `rule_id`, `identity_label`, `verdict`) and `judged` (`oracle_scope`, `recorded_defects` and how many are `present`, `possibly_resolved` or `inconclusive`) - `null` for an original run. See [replay verdicts](../modules/core/protocol/vocabularies.md#replay-verdicts). |
+
+### What a finding says
+
+Every entry of `defects` and `unconfirmed_findings` carries the same seven fields,
+those of the first finding of its group for an unconfirmed one. How each is
+filled per invariant is in [Findings: taxonomy and
+evidence](../modules/specforge-engine/findings.md).
+
+| Field | Shape |
+| --- | --- |
+| `category` | The kind of defect ([values](../modules/core/protocol/vocabularies.md#category)), fixed per invariant; `null` without the engine. |
+| `severity` | How serious it is ([values](../modules/core/protocol/vocabularies.md#severity)); `null` without the engine. |
+| `summary` | What happened, in one sentence, built from the observation when the report is built. |
+| `observation` | `expected`, `observed`, `location` (`{scope, path}`, see [scopes](../modules/core/protocol/vocabularies.md#location-scope)) and `marker`. |
+| `request` | `url` (no userinfo, query or fragment), `poisoned_zone`, `poisoned_field`, `attack_family` and `trigger_fields`. |
+| `response` | `content_type`, `headers` (redacted) and `latency_ms`. |
+| `control` | `status_code`, `latency_ms` and `error` of the control request the finding was judged against; on an unconfirmed finding, the control that got no answer; `null` when none was sent. |
+
+A finding stored before 1.21 reads back `observation`, `request`, `response` and
+`control` as `null`; its `category`, `severity` and `summary` are derived when it
+is read, so they are always present. Each step of a stateful defect's
+`transition_sequence` carries its `payload` by zone and its `response_body`, both
+redacted; a body over 4096 characters is cut to its first 4096 as text, and
+`response_body_truncated` says whether it was.
 
 ### The run's inference
 
@@ -206,8 +238,9 @@ A **crash** (an entry in `defects`) is a finding the run reproduced. Not every
 finding gets that far: some are seen but never reproduce, and some are collected
 right before the run is cut short and never checked. `unconfirmed_findings`
 carries those, so the document reports what a run saw as well as what it proved.
-Each entry has no reproducer - there is no minimal payload, no headers, no
-response body to show - only the finding's signature and how often it was seen:
+Each entry has no reproducer - there is no minimal payload, no request headers,
+no response body to show - only the finding's signature, how often it was seen,
+and what its first occurrence observed:
 
 | Field | Description |
 | --- | --- |
@@ -219,14 +252,20 @@ response body to show - only the finding's signature and how often it was seen:
 | `state` | `"flaky"` or `"unverified"` (see below). |
 | `represented_findings` | How many raw findings this entry stands for. |
 | `body_fingerprint` | The shape of the response body that grouped the finding; `""` when the response had no body. |
+| `category`, `severity`, `summary`, `observation`, `request`, `response`, `control` | As on a defect (see [What a finding says](#what-a-finding-says)). |
 
-The list is ordered by severity first (the same order as `defects`), then by
-`represented_findings`, most first. The two **states** answer *why* a finding never became a crash:
+The list is ordered by severity first, then by the invariant's place in the
+engine's registry (the same order as `defects`), then by `represented_findings`,
+most first. The two **states** answer *why* a finding never became a crash:
 
 | State | Meaning |
 | --- | --- |
 | `flaky` | Seen, but it did not reproduce when the engine tried to confirm it. Both stateless and stateful runs report these, and `metrics.findings_flaky` counts every such event. |
-| `unverified` | Collected but never checked, because the run stopped before it could be confirmed. |
+| `unverified` | Collected but never checked: the run stopped before it could be confirmed, or its control request got no answer, so there was nothing to judge it against. Such an entry carries that control in `control`. |
+
+A finding whose minimal payload reproduced, but whose control request reproduced
+too, is **refuted**: the input was not the cause. It is not listed, and
+`metrics.findings_refuted` counts it.
 
 A flaky finding whose signature matches a confirmed crash is folded into that
 crash and shown once, as a defect - never twice. `compare` stays
@@ -252,10 +291,10 @@ the id there is dropped, since it would only repeat the invariant name.
 compilation-time fact a replay never produces, so trustworthiness there is
 read from `fidelity` instead); `run.signal_causes` lists why when degraded, in
 render order - `no_responses`, `endpoints_excluded`, `withheld_by_safety_guard`,
-`access_policy_undeclared`, `access_preconditions_unmet` (an `auth` run left a
-targeted endpoint with an access policy unprobed for one of the `owner_*` or
-`required_role_unheld` reasons above), `run_cancelled` and/or
-`endpoints_unreached`. See
+`access_policy_undeclared`, `access_preconditions_unmet` (an `auth` or
+`resilience` run left a targeted endpoint with an access policy unprobed for one
+of the `owner_*` or `required_role_unheld` reasons above), `run_cancelled`,
+`endpoints_unreached` and/or `load_unjudged` (a load profile judged no step). See
 [Coverage and the run's signal](cli-reference.md#coverage-and-the-runs-signal) for
 what each cause means and how it is derived.
 

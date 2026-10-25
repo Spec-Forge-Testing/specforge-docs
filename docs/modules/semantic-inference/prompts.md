@@ -184,7 +184,7 @@ value the kernel rejects, nor miss one it adds.
 | `ContractVocabulary` field | Read from |
 | --- | --- |
 | `schema_keywords` | `SchemaProperty`'s fields, by their JSON Schema alias where there is one |
-| `attack_profiles`, `criticalities`, `sensitivities`, `zones`, `access_policies`, `property_classes` | the members of `AttackProfile`, `Criticality`, `Sensitivity`, `Zone`, `AccessPolicy`, `PropertyClass` |
+| `attack_profiles`, `criticalities`, `sensitivities`, `zones`, `access_policies`, `property_classes` | the members of `AttackFamily`, `Criticality`, `Sensitivity`, `Zone`, `AccessPolicy`, `PropertyClass` |
 | `expression_kinds` | the `kind` discriminator of each `PropertyExpression` node |
 | `binary_operators`, `aggregation_functions`, `logical_operators` | the literals of `BinaryOperator`, `AggregationFunction`, `LogicalOperator` |
 | `risk_score` | the `ge`/`le` bounds of `EndpointRisk.risk_score` |

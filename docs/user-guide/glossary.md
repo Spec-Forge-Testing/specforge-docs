@@ -17,8 +17,12 @@ name, that name follows in `code font`.
 | **Crash** | A confirmed finding: a distinct defect the run reproduced, left after shrinking and de-duplication. |
 | **Shrinking / minimal reproducer** | Repeatedly simplifying a failing input to the smallest one that still fails. |
 | **Flaky** | A finding that could not be reproduced on a second try. Reported as an unconfirmed finding, not a crash. |
-| **Unverified** | A finding collected but never checked, because the run stopped first. Reported as an unconfirmed finding. |
-| **Unconfirmed finding** | A finding the run saw but never confirmed as a crash — flaky or unverified. Carries the signature but no reproducer. |
+| **Unverified** | A finding collected but never checked, because the run stopped first or its control request got no answer. Reported as an unconfirmed finding. |
+| **Refuted** | A finding whose control request, sent without the suspicious input, showed the same signal: the input was not the cause. Counted, never listed. |
+| **Control request** | A request sent beside a finding's minimal reproducer, without the value suspected of causing it, to check that value is the cause. |
+| **Unconfirmed finding** | A finding the run saw but never confirmed as a crash — flaky or unverified. Carries its signature and what its first occurrence observed, but no reproducer. |
+| **Category / severity** | What kind of defect a finding is (`crash`, `security`, `access`, `business_rule`, `contract_hygiene`, `performance`) and how serious (`critical` to `info`); fixed per invariant. |
+| **Summary** | A finding's one-sentence account of what happened, built from what it observed. |
 | **Unique crashes** | The count of genuinely distinct defects a run found — its bottom line. |
 | **Identity** | A named set of request headers (credentials) requests can be sent under, optionally with the role it acts under, declared in a TOML file. |
 | **Execution mode** | How the fuzzer explores the API: `stateless`, `stateful`, `performance`, `resilience` or `auth` (`--mode`). |

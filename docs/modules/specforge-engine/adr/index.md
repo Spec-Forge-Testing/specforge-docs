@@ -23,14 +23,18 @@ decisions that belong to no single area. Numbers stay global and are never
 reused across files — the number tells you when it was written, the file
 tells you what it governs. The sequence is shared by the whole site, so a number
 missing here belongs to another module:
-[ADR-064](../../contract-assembly/adr/foundations.md#adr-064) is Contract
-Assembly's, [ADR-125](../../core/adr/core.md#adr-125), how the report labels
-`input_validation` and `engine_failure`, and
-[ADR-139](../../core/adr/core.md#adr-139), how it labels and ranks the security
-findings, and [ADR-146](../../core/adr/core.md#adr-146), how the run's URL is
-composed, are the core's, and
-[ADR-136](../../semantic-inference/adr/prompts.md#adr-136), the plausible values
-the prompt asks for, is Semantic Inference's.
+
+- [ADR-064](../../contract-assembly/adr/foundations.md#adr-064) is Contract
+  Assembly's.
+- [ADR-125](../../core/adr/core.md#adr-125), how the report labels
+  `input_validation` and `engine_failure`;
+  [ADR-139](../../core/adr/core.md#adr-139), how it labels and ranks the security
+  findings; [ADR-146](../../core/adr/core.md#adr-146), how the run's URL is
+  composed; [ADR-153](../../core/adr/core.md#adr-153), how a finding's summary is
+  told; and [ADR-154](../../core/adr/core.md#adr-154), how a replay judges each
+  recorded defect, are the core's.
+- [ADR-136](../../semantic-inference/adr/prompts.md#adr-136), the plausible values
+  the prompt asks for, is Semantic Inference's.
 
 | File | Area | Covers |
 | --- | --- | --- |
@@ -40,6 +44,7 @@ the prompt asks for, is Semantic Inference's.
 | [compiler.md](compiler.md) | strategy_compiler | How a field becomes a strategy |
 | [engine.md](engine.md) | engine | Requests and their intent, oracles, findings, counters, runners, replay |
 | [measurement.md](measurement.md) | measurement | How the default numbers are measured and set, and what an inferred contract adds |
+| [findings.md](findings.md) | findings | How a finding is classified, what it observed, how findings are told apart, refuted and redacted |
 
 ## Full index
 
@@ -156,3 +161,8 @@ the prompt asks for, is Semantic Inference's.
 | [ADR-144](engine.md#adr-144) | engine | Each endpoint reports its requests, raw findings, attack families and budget by phase |
 | [ADR-145](engine.md#adr-145) | engine | A load step has a fixed size, is judged against the latency its concurrency predicts, and is confirmed by measuring twice |
 | [ADR-147](measurement.md#adr-147) | measurement | What the model-inferred contract adds is measured on bugs only the code shows, against a control and a hand-written ceiling |
+| [ADR-148](findings.md#adr-148) | findings | One registry in the engine classifies every invariant, and the core derives the classification when it reads |
+| [ADR-149](findings.md#adr-149) | findings | A verdict carries a typed observation: four slots and a location |
+| [ADR-150](findings.md#adr-150) | findings | Findings are told apart by the field they poisoned and, without one, by the cause a probe confirms |
+| [ADR-151](findings.md#adr-151) | findings | A finding its control request refutes is counted apart from a flaky one, and a control that gets no answer leaves it unverified |
+| [ADR-152](findings.md#adr-152) | findings | Evidence is redacted by what each slot holds, against one sensitive-name rule shared with the exposure oracle |

@@ -26,7 +26,7 @@ the AI layer, the fusion stage and the orchestrator speak exactly the same shape
 and the contract can never drift between them. The execution engine keeps its
 own request-shape models — the orchestrator projects the contract onto them —
 but takes its shared vocabulary from here: `EndpointRisk` (the engine's
-`EndpointRiskContract` is this very class), the `AttackProfile` literal,
+`EndpointRiskContract` is this very class), the `AttackFamily` enum,
 `TransitionInvariant`, `ZoneLocation`, `EndpointAccess`, the `SemanticProperty`
 expression tree and `EndpointAttack` itself (with its `FieldAttack` hints) are
 imported by `specforge_engine`, not copied, so the objects a producer emits
@@ -50,7 +50,7 @@ and acyclic.
 ```python
 from specforge_contracts import (
     EndpointContract, EndpointParameters, SchemaProperty,
-    EndpointRisk, EndpointAttack, FieldAttack, AttackProfile,
+    EndpointRisk, EndpointAttack, FieldAttack, AttackFamily,
     TransitionInvariant, ZoneLocation, SemanticProperty, PropertyClass,
     EndpointAccess, AccessPolicy,
 )

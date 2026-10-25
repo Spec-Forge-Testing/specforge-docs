@@ -58,6 +58,16 @@ ride `-32602`, the integer of `INVALID_PARAMS`:
 A frontend branches on `data.code` either way; the integer only tells a generic
 JSON-RPC client which class of failure it is.
 
+### `INVALID_PARAMS` for a base URL { #base-url-invalid-params }
+
+A run's or a replay's `base_url` is refused `INVALID_PARAMS` before any request
+is sent unless it is an `http` or `https` URL that names a host, writes any port
+from 1 to 65535, and carries no query and no fragment, not even a bare `?` or
+`#`. `data.reason` says what was wrong and never repeats the URL, since it may
+carry userinfo. A URL with a query never reached its target as written: the
+route was appended after the query, inside it. See
+[the target base URL](operations.md#base-url).
+
 ### `INVALID_PARAMS` from configuration { #config-invalid-params }
 
 A configuration value of the wrong type or outside its range is refused

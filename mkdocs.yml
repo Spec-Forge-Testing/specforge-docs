@@ -221,6 +221,7 @@ nav:
           - Strategy compiler: modules/specforge-engine/strategy-compiler.md
           - Requests: modules/specforge-engine/requests.md
           - Engine internals: modules/specforge-engine/engine-internals.md
+          - Findings: modules/specforge-engine/findings.md
           - Execution modes: modules/specforge-engine/execution-modes.md
           - Progress and cancellation: modules/specforge-engine/progress-and-cancellation.md
           - Extension guide: modules/specforge-engine/extension-guide.md
@@ -234,6 +235,7 @@ nav:
               - Strategy compiler: modules/specforge-engine/adr/compiler.md
               - Engine: modules/specforge-engine/adr/engine.md
               - Measurement: modules/specforge-engine/adr/measurement.md
+              - Findings: modules/specforge-engine/adr/findings.md
   - Test corpora:
       - Overview: testing/index.md
       - RealWorld corpus: testing/real-world.md

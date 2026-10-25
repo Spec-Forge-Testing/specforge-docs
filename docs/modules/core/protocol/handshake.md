@@ -4,18 +4,20 @@
 refused `HANDSHAKE_REQUIRED`.
 
 ```json
-{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.1.12"}}
+{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.1.19"}}
 ```
 
 The response carries the protocol version, the server's identity, what this
-build can do, and the whole operation catalog:
+build can do, the whole operation catalog, and the vocabulary findings are
+reported in:
 
 ```json
 {"jsonrpc":"2.0","id":1,"result":{
-  "protocol_version":"0.1.12",
+  "protocol_version":"0.1.19",
   "server":{"name":"specforge-core","version":"…","frozen":false},
   "capabilities":{…},
-  "catalog":{…}
+  "catalog":{…},
+  "vocabulary":{…}
 }}
 ```
 
@@ -31,15 +33,40 @@ build can do, and the whole operation catalog:
 
 The whole handshake is **derived, not declared**: `event_kinds` is exactly what
 the build's operations emit, `cancellation` is true when any operation reads a
-cancellation token, and the catalog is the same one `describe` publishes.
+cancellation token, the catalog is the same one `describe` publishes, and the
+vocabulary is read from the engine's registry.
+
+## Vocabulary { #vocabulary }
+
+`vocabulary` lists every closed vocabulary a finding is reported in, each value
+with the label a frontend shows for it, so a client renders findings without a
+table of its own. `describe` carries the same object beside `catalog`. It is
+optional in the schema, so a client validating against an older schema still
+accepts the handshake.
+
+| Key | Items | What it lists |
+| --- | --- | --- |
+| `categories` | strings | Every [`category`](vocabularies.md#category), in the engine's declaration order |
+| `severities` | strings | Every [`severity`](vocabularies.md#severity), most severe first |
+| `invariants` | `{value, label, category, severity, rule_source, description}` | Every invariant the engine checks, in registry order, the order that breaks ties within one severity. `rule_source` is `intrinsic` (the invariant states its rule, and `description` carries it) or `declared` (the contract states it; `description` is `null`) |
+| `truncation_reasons` | `{value, label}` | Every [`truncation.reason`](vocabularies.md#truncation-reason) |
+| `target_down_verdicts` | `{value, label}` | Every [`target_down_verdict`](vocabularies.md#target-down-verdict) |
+| `finding_states` | `{value, label}` | Every state a finding is reported in: `confirmed`, `flaky`, `unverified` |
+| `unprobed_reasons` | `{value, label}` | Every [`unprobed_reason`](vocabularies.md#unprobed-reason) |
+| `hold_reasons` | `{value, label}` | Every value of `held_back_by` |
+| `exclusion_dispositions` | `{value, label}` | The core's own: every [`producer_exclusions[].disposition`](vocabularies.md#producer-exclusion-disposition), plus `aborted`, a failed contract that stopped the run |
+
+Every list but `exclusion_dispositions` comes from the engine
+([ADR-148](../../specforge-engine/adr/findings.md#adr-148)). Without the engine
+the object is present with those lists empty, never missing.
 
 ## Versioning { #versioning }
 
 **The core serves a range within its own series.** A client is served when its
 `protocol_version` has the core's `major.minor` and a patch between a declared
 floor and the core's own. Each part compares as a number, never as text:
-`0.1.10` is newer than `0.1.9`. This core speaks `0.1.12` and serves `0.1.5` up
-to `0.1.12`. It always answers `hello` with its own version, and a frontend
+`0.1.10` is newer than `0.1.9`. This core speaks `0.1.19` and serves `0.1.5` up
+to `0.1.19`. It always answers `hello` with its own version, and a frontend
 ignores the keys it does not know.
 
 Anything else — another series, a patch outside the range, or a
@@ -84,8 +111,49 @@ neither. See [ADR-095](../adr/protocol.md#adr-095).
 ## Changelog
 
 The report document that `fuzz`, `replay` and `run_pipeline` answer with is
-`schema_version` 1.20. The protocol's own README holds the full entry for each
+`schema_version` 1.21. The protocol's own README holds the full entry for each
 version; the lines below are the summary.
+
+- **0.1.19** — A finding says what kind of defect it is, how serious, what
+  happened in one sentence and the evidence behind it, live and read back, and the
+  handshake carries the labels to show it with. Additive on the wire, with
+  semantic changes. Each finding of `get_run` and `get_finding` carries
+  `category`, `severity`, `summary`, `observation`, `request`, `response` and
+  `control`, as the report's defects do; `stack_trace` is always `null` there and
+  is deprecated, to be removed with the next minor. The `finding` event carries
+  `category`, `severity` and `summary`. `hello` and `describe` carry
+  [`vocabulary`](#vocabulary). `metrics.findings_refuted` is new. A load step
+  measured on no samples has `degraded` `null`, and a ladder that judged no step
+  makes the signal `degraded` with `load_unjudged`. A `resilience` run sends
+  nothing to a `role_only` endpoint whose role no identity holds
+  (`required_role_unheld`, `access_preconditions_unmet`). `settings.base_url` is
+  published with its password, query values and fragment as `***`.
+  `compare_runs` against a replay meets each defect with the replay's verdicts on
+  the recorded defects of its own identity, and `after_count` counts those seen
+  present. A run's or a replay's `base_url` with a query or a fragment is refused
+  `INVALID_PARAMS`: it never worked, since the route was appended after it
+  ([findings](../../specforge-engine/findings.md),
+  [ADR-148](../../specforge-engine/adr/findings.md#adr-148) to
+  [ADR-154](../adr/core.md#adr-154)).
+
+- **Report 1.21** — Each finding carries its classification, its summary and its
+  evidence, and the defects sort by severity. Breaking for a reader of
+  `stack_trace`; additive otherwise; it ships with protocol `0.1.19`. Each defect
+  and each unconfirmed finding carries `category`, `severity`, `summary`,
+  `observation` (`expected`, `observed`, `location` `{scope, path}`, `marker`),
+  `request` (`url`, `poisoned_zone`, `poisoned_field`, `attack_family`,
+  `trigger_fields`), `response` (`content_type`, `headers`, `latency_ms`) and
+  `control` (`status_code`, `latency_ms`, `error`); a finding stored earlier reads
+  the four evidence fields back `null`. A replay carries `defect_verdicts`, one
+  per defect the recorded run confirmed, and `judged` (`oracle_scope`,
+  `recorded_defects`, `present`, `possibly_resolved`, `inconclusive`); a request
+  verdict is `possibly_resolved` only where the replay could observe the recorded
+  finding. Each step of a `transition_sequence` carries `payload`,
+  `response_body` and `response_body_truncated`. `defects` and
+  `unconfirmed_findings` sort by `severity`, then registry order.
+  `metrics.findings_refuted`, `load_profile[].degraded` `null` and
+  `load_unjudged` as in `0.1.19`. `defects[].stack_trace` is removed; it was
+  always `null`. See the [Run Report](../../../user-guide/reports.md).
 
 - **Report 1.20** — The report says where each endpoint's requests, findings and
   examples went, phase by phase, confirms a load degradation before reporting it,

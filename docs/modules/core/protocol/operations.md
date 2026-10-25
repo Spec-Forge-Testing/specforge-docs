@@ -47,6 +47,12 @@ given over an existing file without `overwrite`, is refused `INVALID_PARAMS`
 `settings`, what `specforge.toml` declares afterwards in the shape
 `open_project` answers with, and `spec_found`, whether that spec exists.
 
+**A published `settings.base_url` is masked.** In `open_project`,
+`project_state`, `init_project` and `update_project`, the password in its
+userinfo, every query parameter's value and the fragment read `***`, each
+parameter keeping its name (`http://alice:***@host/api?api_key=***#***`). A run
+still uses the URL the file declares.
+
 ## `contract`
 
 | Operation | `requires` | Events |
@@ -177,10 +183,17 @@ any other recording the parameter is accepted and does nothing. See
 
 The base URL a run targets, whether it comes from the project or from the call's
 `base_url` (on `fuzz` or `replay`), must be an `http` or `https`
-URL that names a host and, when it writes a port, one from 1 to 65535. Anything
-else is refused `INVALID_PARAMS` before any request is sent, with a reason that
-names `base_url` and never repeats the URL, since it may carry `user:pass@`. The
-`started` event of a `fuzz` names the target without its userinfo.
+URL that names a host, writes any port from 1 to 65535, and carries no query and
+no fragment, not even a bare `?` or `#`: the route is appended to the URL's path,
+so a query would swallow it. Anything else is refused `INVALID_PARAMS` before any
+request is sent, with a reason that names `base_url` and never repeats the URL,
+since it may carry `user:pass@`. The `started` event of a `fuzz` names the target
+without its userinfo.
+
+The specification's server path is joined on once, by whole segments: a base
+URL whose path already ends or starts with it is kept as given, and otherwise the
+two are joined on their longest overlap, so `/api` and a server path `/api/v1`
+give `/api/v1`, never `/api/api/v1`.
 
 ## `results`
 
@@ -199,7 +212,28 @@ names `base_url` and never repeats the URL, since it may carry `user:pass@`. The
 `compare_runs` pairs two runs' defects by the engine's own rule for when an
 identity tells two defects apart (only for `access_control`), so it needs the
 execution engine installed; without it the call is refused
-`DEPENDENCY_UNAVAILABLE` with `data.dependency` `specforge_engine`.
+`DEPENDENCY_UNAVAILABLE` with `data.dependency` `specforge_engine`. Against a
+replay it reads the replay's verdicts per recorded defect; see
+[comparison caveats](vocabularies.md#caveats).
+
+### A finding in `get_run` and `get_finding` { #finding-fields }
+
+Each finding carries, beside its identity, reproducer and state, the same
+classification and evidence as a report's defect
+([Findings](../../specforge-engine/findings.md)):
+
+| Field | Holds |
+| --- | --- |
+| `category`, `severity` | The invariant's [category](vocabularies.md#category) and [severity](vocabularies.md#severity); `null` without the engine. |
+| `summary` | What happened, in one sentence, told when the finding is read. |
+| `observation` | `expected`, `observed`, `location` (`{scope, path}`, see [scopes](vocabularies.md#location-scope)) and `marker`; `null` for a finding stored before `0.1.19`. |
+| `request` | `url`, `poisoned_zone`, `poisoned_field`, `attack_family`, `trigger_fields`. |
+| `response` | `content_type`, `headers` (redacted), `latency_ms`. |
+| `control` | `status_code`, `latency_ms`, `error`: what the control request got back. On a confirmed finding, the control it was judged against; on an unverified one, the control that got no answer; `null` when none was sent. |
+| `stack_trace` | Always `null`. Deprecated; removed with the next minor. |
+
+`metrics.findings_refuted` counts, apart from `findings_flaky`, the findings a
+control request refuted.
 
 ## `config`
 
@@ -222,3 +256,6 @@ execution engine installed; without it the call is refused
 | --- | --- |
 | `describe` | none |
 | `describe_operations` | none |
+
+`describe` carries the same [`vocabulary`](handshake.md#vocabulary) as `hello`,
+beside `catalog`.

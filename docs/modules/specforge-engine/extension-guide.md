@@ -190,7 +190,7 @@ register_phase(
 ```
 
 A phase whose values belong to an attack family draws `PoisonCandidate(value,
-attack_family=AttackProfile.X)` directly, as `base_attack_candidates` does; the
+attack_family=AttackFamily.X)` directly, as `base_attack_candidates` does; the
 family then reaches the oracles through the intent
 ([ADR-130](adr/engine.md#adr-130)).
 
@@ -339,13 +339,13 @@ any is missing:
    A toggle whose effect is inside a base builder (like `include_nulls`) reads
    the flag off `request.toggles` there instead.
 
-## Add an attack profile pool
+## Add an attack family pool
 
-An attack profile's string payloads live in `PROFILE_STRING_PAYLOADS` in
-`strategy_compiler/fields/attack/tables.py`, keyed by `AttackProfile`. Add the
-`AttackProfile` member to the kernel vocabulary, then a row mapping it to its
+An attack family's string payloads live in `PROFILE_STRING_PAYLOADS` in
+`strategy_compiler/fields/attack/tables.py`, keyed by `AttackFamily`. Add the
+`AttackFamily` member to the kernel vocabulary, then a row mapping it to its
 payload tuple. The attack string builder draws that pool, each spelling tagged
-with the profile as its family, whenever the profile is on the field's
+with its family, whenever the family is in the field's
 `AttackRequest`. To attack every field of a type with it, add it to the type's
 row of `DEFAULT_ATTACK_PROFILES_BY_TYPE`; to make an endpoint's data earn it, add
 a row to `SENSITIVITY_ATTACK_PROFILES`. Both live in the compiler's `constants.py`

@@ -316,8 +316,11 @@ degraded  ⇔  p95 > p95_base × (concurrency / concurrency_base) × (1 + tolera
 A server that queues requests grows its latency linearly with the requests in
 flight; that is not a degradation, and the rule does not flag it. With the default
 `0.5`, a step at concurrency 16 over a baseline at 1 degrades above 24 times the
-baseline's p95. The baseline never degrades against itself, and a step that sent
-nothing (or a baseline that did) is never called degraded.
+baseline's p95. The baseline never degrades against itself. A step measured on no
+samples, or judged against a baseline measured on none, is **unjudged**: its
+`degraded` is `None`, never `False`, since nothing says it is healthy. When no step
+of an endpoint's ladder is judged, the run's signal is `degraded` with
+`load_unjudged`.
 
 **A degradation is confirmed by measuring twice.** When the first round marks a
 step degraded, the runner measures the baseline and every degraded step once more,
@@ -348,7 +351,8 @@ ones are simply absent.
 
 Whatever the ladder measures lands on the endpoint's stats as `load_profile`: a
 tuple of `LoadStepStats`, one per completed step, each carrying the step's
-`concurrency`, its full `LatencyStats` distribution, its `degraded` verdict and,
+`concurrency`, its full `LatencyStats` distribution, its `degraded` verdict
+(`True`, `False`, or `None` when unjudged) and,
 when the step was measured a second time, `remeasured`: the confirmation window's
 `LatencyStats` (`None` otherwise).
 This is where the per-step latencies live; the finding only points into it.
@@ -403,8 +407,15 @@ so a protected endpoint is attacked past its authentication instead of answering
 | The endpoint's access | The battery's identity |
 |---|---|
 | `role_only` | the first valid identity whose `role` is the required one |
-| `owner_only`, `authenticated`, none, or a role no identity holds | the first valid identity |
+| `role_only`, and no valid identity holds the role | none: the endpoint gets no request |
+| `owner_only`, `authenticated`, or none | the first valid identity |
 | no valid identity declared | anonymous |
+
+A battery sent under an identity the endpoint refuses would measure the
+authorization layer, not the endpoint's handling of a broken request. So a
+`role_only` endpoint whose role no identity holds is left unprobed with
+`unprobed_reason` `required_role_unheld`, and the run's signal is `degraded` with
+`access_preconditions_unmet`.
 
 Before the battery, the base request is sent **clean**, once, through the ordinary
 send path, and judged like any request outside chaos. A 5xx or a dropped

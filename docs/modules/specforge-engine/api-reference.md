@@ -85,7 +85,7 @@ Field names of this family are stable: they are persisted as columns.
 | `ConfirmedFinding` | a settled reproducer: carries its `report` |
 | `FlakyFinding`, `UnverifiedFinding` | a settled group: its `signature` and how many raw `occurrences` it stands for |
 | `RunStats`, `EndpointStats`, `LatencyStats` | run, endpoint and latency counters — `EndpointStats.unprobed_reason` names why a targeted endpoint drew no requests |
-| `LoadStepStats` | one concurrency-ladder step on an endpoint's `load_profile`: its `concurrency`, measured `latency`, `degraded` verdict and, when the step was measured twice to confirm a degradation, the second window as `remeasured` |
+| `LoadStepStats` | one concurrency-ladder step on an endpoint's `load_profile`: its `concurrency`, measured `latency`, `degraded` verdict (`None` when unjudged) and, when the step was measured twice to confirm a degradation, the second window as `remeasured` |
 | `UnprobedReason` | why the auth mode crossed nothing at a targeted endpoint: `declared_public` or `access_undeclared` (by design), `owner_producer_missing`, `owner_chain_cyclic`, `owner_resource_unprovisioned` or `required_role_unheld` (a precondition the run could not meet) — each one in [Execution modes](execution-modes.md#auth) |
 | `CrashReport`, `InvariantViolation` | a confirmed finding's reproducer and the invariant it broke — its `response_body` has sensitive field values redacted to `***` by name |
 | `ViolatedRule` | the rule a `CrashReport` broke (`id` + `description`) — declared by the contract for a `semantic_property` / `access_control` finding, the accepted field (`<zone>.<field>`, such as `query.limit` or `body.$`) for an `input_validation` finding, or intrinsic to the invariant for every other one |
@@ -119,7 +119,7 @@ See [Progress and cancellation](progress-and-cancellation.md) for how they behav
 | `EndpointStarted` | `endpoint_started`: `endpoint_id`, 1-based `index`, `total` |
 | `PhaseStarted` | `phase_started`: `endpoint_id`, `phase` |
 | `ProgressTick` | `tick`: absolute `elapsed_s`, `sent`, `total`, `findings` |
-| `FindingObserved` | `finding`: `endpoint_id`, `status_code`, `invariant`, `phase` |
+| `FindingObserved` | `finding`: the confirmed `report`, read as `endpoint_id`, `status_code`, `invariant`, `phase` |
 | `InfraFailure` | `infra_failure`: `endpoint_id`, `reason`, `streak`, `limit` |
 | `TargetDown` | `target_down`: `base_url`, `verdict` (`TargetDownVerdict`) |
 | `RunTruncated` | `truncated`: `endpoint_id`, `reason` |

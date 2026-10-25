@@ -11,6 +11,9 @@ Where the same concept appears in a reply and in the report document that
 same values in both. A missing fact is `null`, never an empty string; an empty
 collection is `[]` or `{}`.
 
+These tables are the human version. The machine version, with the label of every
+value, travels in the handshake's [`vocabulary`](handshake.md#vocabulary).
+
 ## `run.status` { #run-status }
 
 How a stored run ended. In `list_runs`, `get_run` and the report document's
@@ -124,9 +127,10 @@ constraint.
 
 ## `endpoints[].unprobed_reason` { #unprobed-reason }
 
-Why the `auth` mode crossed nothing at a targeted endpoint: by design, or for an
-access precondition the run could not meet. In `get_run` and the report
-document's `endpoints`; `null` when the endpoint was probed.
+Why the `auth` mode crossed nothing at a targeted endpoint, or the `resilience`
+mode sent it nothing: by design, or for an access precondition the run could not
+meet. `resilience` reports only `required_role_unheld`. In `get_run` and the
+report document's `endpoints`; `null` when the endpoint was probed.
 
 | Value | Meaning |
 | --- | --- |
@@ -155,10 +159,85 @@ the signal is not `degraded`.
 | `access_preconditions_unmet` | One or more targeted endpoints had an access policy the run could not cross: no producer, no role holder, or no resource it could create; each one's [`unprobed_reason`](#unprobed-reason) says which. |
 | `run_cancelled` | The run was cancelled before it reached every targeted endpoint. |
 | `endpoints_unreached` | One or more targeted endpoints never received a request. |
+| `load_unjudged` | One or more endpoints' load profiles judged no step: every `degraded` is `null`, because the baseline or every step was measured on no samples. |
 
 The signal and its causes are derived from the run's facts, both for the report
 a run answers with and when a stored run is read, so the persistence layer
 keeps no column for them.
+
+## `endpoints[].load_profile[].degraded` { #load-step-degraded }
+
+`true` or `false` when the step was judged; `null` when the step or its baseline
+(the ladder's first step) was measured on no samples, so it is unmeasured rather
+than healthy. A ladder with no step judged makes the run's signal `degraded` with
+[`load_unjudged`](#signal-causes).
+
+## `category` { #category }
+
+The kind of defect a finding reports. In each entry of the report document's
+`defects` and `unconfirmed_findings`, in `get_run`'s and `get_finding`'s findings,
+and in the [`finding` event](events.md#the-event-catalog). Fixed per invariant by
+the engine's [registry](../../specforge-engine/findings.md#taxonomy) and derived
+when the finding is read, so a run stored before reads back classified as the
+registry says today; `null` only when the core runs without the engine.
+
+| Value | Meaning |
+| --- | --- |
+| `crash` | The API failed: a 5xx, or a broken request it did not reject cleanly. |
+| `security` | The API leaked, accepted or reflected what it should not, or an input stalled it. |
+| `access` | A caller reached what its access policy forbids. |
+| `business_rule` | A rule the contract declares, or a state transition, did not hold. |
+| `contract_hygiene` | The API and its contract disagree: status, Content-Type, schema or validation. |
+| `performance` | A clean response was too slow, or slowed down under load. |
+
+## `severity` { #severity }
+
+How serious a finding is, beside `category` and wherever it is. Listed from the
+most severe; the report's `defects` and `unconfirmed_findings` sort by it first,
+then by the invariant's place in the engine's registry. `null` only without the
+engine, and then neither orders anything.
+
+| Value | Meaning |
+| --- | --- |
+| `critical` | An access boundary was crossed. |
+| `high` | A server error, a broken business rule or state transition, sensitive data exposed or a privileged field accepted. |
+| `medium` | Internal details leaked, input reflected or stalling the API, invalid input accepted, a response off its schema, a latency defect, a malformed request handled badly. |
+| `low` | A valid request rejected, or a Content-Type off its contract. |
+| `info` | A status the contract does not declare. |
+
+## `observation.location.scope` { #location-scope }
+
+Where in the exchange the value a finding observed lives, which fixes how
+`observation.location.path` reads. In each finding's `observation`; `location` is
+`null` when the observation names no place. What each invariant observes is in
+[the observation](../../specforge-engine/findings.md#observation).
+
+| Value | `path` is |
+| --- | --- |
+| `request_field` | `<zone>.<dotted.path>` of a request field, spelled as a rule id (`body.user.email`) |
+| `response_body` | An RFC 6901 pointer into the response body; `""` is the whole body |
+| `response_header` | The lower-case name of a response header |
+| `load_step` | The concurrency of the load step |
+| `caller` | The label of the identity that sent the request |
+| `follow_up` | `<METHOD> <path>` of the follow-up request |
+
+## Replay verdicts { #replay-verdicts }
+
+A replay rules each request the recorded run saw violate an invariant
+(`replay.verdicts`) and each defect the recorded run confirmed
+(`replay.defect_verdicts`), with the same three values:
+
+| Value | A recorded request is... | A recorded defect is... |
+| --- | --- | --- |
+| `present` | reproduced, or still violating an invariant | `present` when a recorded request at its method, path and status is |
+| `possibly_resolved` | changed, and the recorded run kept there a finding the replay's contract-free oracles can observe | `possibly_resolved` only when every such request is, and the replay can observe its invariant |
+| `inconclusive` | anything else | anything else, also when no recorded request matches it |
+
+`replay.judged` counts the defect verdicts under the replay's `oracle_scope`;
+`present`, `possibly_resolved` and `inconclusive` sum to `recorded_defects`. A
+defect of an invariant the replay cannot observe (a response schema, a declared
+rule, a timeout on the whole request, ...) is `inconclusive`, never resolved
+([ADR-154](../adr/core.md#adr-154)).
 
 ## Comparison caveats { #caveats }
 
@@ -185,6 +264,16 @@ Branch on `reason`, show `detail`.
 With any of the five `replay_report_*` reasons, every change but a `new` one is
 `inconclusive`: without the replay's verdicts, nothing can be ruled resolved or
 persisted.
+
+**Against a replay**, a defect meets the replay's `defect_verdicts` with its own
+identity: method, path, invariant, status and, for `access_control`, the identity
+that sent it. It is `persisted` when one of them is `present`, and its
+`after_count` is how many of them are: the recorded defects with that identity the
+replay saw present, counted the way `before_count` counts them. It is
+`possibly_resolved` only when every one of them is, and `inconclusive` otherwise.
+A `present` verdict is keyed on where the request was recorded, not on its
+invariant: a defect never reads resolved by mistake, but it can read present
+because another invariant at the same place still breaks.
 
 ## Operation status { #operation-status }
 

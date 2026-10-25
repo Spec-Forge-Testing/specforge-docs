@@ -19,11 +19,13 @@ is never edited to reflect a later change of mind — a new record supersedes it
 
 The records are split by area. Numbers stay global across the whole site and are
 never reused — the number tells you when it was written, the file tells you what
-it governs. A number missing here belongs to another module.
+it governs. A number missing here belongs to another module:
+[ADR-148](../../specforge-engine/adr/findings.md#adr-148), the engine's invariant
+registry, classifies what the report shows.
 
 | File | Area | Covers |
 | --- | --- | --- |
-| [core.md](core.md) | the headless core | Unprobed reasons, dependency gateways, the busy guard, cancelled-run evidence, oracle scope, breached-run evidence, engine option precedence, when the inference gateway loads, the report's labels for the engine's outcomes, the run's URL |
+| [core.md](core.md) | the headless core | Unprobed reasons, dependency gateways, the busy guard, cancelled-run evidence, oracle scope, breached-run evidence, engine option precedence, when the inference gateway loads, the report's labels for the engine's outcomes, the run's URL, a finding's summary, replay verdicts per defect |
 | [inference.md](inference.md) | contract production | Adopting a produced contract, the inference cache, approval and the spend cap, watching and cancelling production |
 | [protocol.md](protocol.md) | the wire | How fixtures are captured, how versions are matched, one name and `null` for every reader, how `shutdown` ends a session |
 
@@ -51,3 +53,5 @@ it governs. A number missing here belongs to another module.
 | [ADR-125](core.md#adr-125) | core | The report names an accepted invalid input and an endpoint the engine could not explore |
 | [ADR-139](core.md#adr-139) | core | The report names five security findings and ranks them right after a server error |
 | [ADR-146](core.md#adr-146) | core | The run's URL is composed once, with the specification's server path, and a follow-up keeps its trigger's server |
+| [ADR-153](core.md#adr-153) | core | A finding's one-sentence summary is told by the core when it reads the finding, by one strategy per invariant |
+| [ADR-154](core.md#adr-154) | core | A replay is judged per recorded defect, and a defect its oracles cannot see is never ruled resolved |

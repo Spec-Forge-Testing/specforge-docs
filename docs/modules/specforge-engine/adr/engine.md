@@ -1615,7 +1615,7 @@ there, and runs unchanged over `http://`.
 
 ## ADR-060 — A crash report's response body is redacted by field name, and a confirmed finding's identity is fixed where it is confirmed { #adr-060 }
 
-**Status:** accepted · Superseded in part by [ADR-103](#adr-103) · `runtime/findings/redaction.py`, `runtime/findings/constants.py`, `runtime/findings/materializer.py`, `runtime/fuzzers/stateful/supervisor.py`, `runtime/findings/assembler.py`, `models/runtime/results.py`
+**Status:** accepted · Superseded in part by [ADR-103](#adr-103), [ADR-152](findings.md#adr-152) · `runtime/findings/redaction.py`, `runtime/findings/constants.py`, `runtime/findings/materializer.py`, `runtime/fuzzers/stateful/supervisor.py`, `runtime/findings/assembler.py`, `models/runtime/results.py`
 
 ### Context
 
@@ -2346,7 +2346,7 @@ raises two exceptions, `AccessIdentityError` and `AccessUncrossableError`.
 
 ## ADR-103 — Findings redact the built-in sensitive names whatever the contract declares, and erase the credentials a request sent by value { #adr-103 }
 
-**Status:** accepted · Supersedes in part [ADR-060](#adr-060) · Superseded in part by [ADR-109](#adr-109) · `runtime/findings/redaction.py`, `runtime/findings/constants.py`, `runtime/findings/materializer.py`, `runtime/findings/grouper.py`
+**Status:** accepted · Supersedes in part [ADR-060](#adr-060) · Superseded in part by [ADR-109](#adr-109), [ADR-152](findings.md#adr-152) · `runtime/findings/redaction.py`, `runtime/findings/constants.py`, `runtime/findings/materializer.py`, `runtime/findings/grouper.py`
 
 ### Context
 
@@ -3100,7 +3100,7 @@ the runtime does not import the compiler.
 `ZoneDraw.attack_family` is set by the zone or body compiler from the drawn
 `PoisonCandidate`, and `ZonedPayload` copies it into `RequestIntent.attack_family`
 beside `poisoned_zone` and `poisoned_field`. Both values reject a family without a
-poisoned field. The type is the kernel's `AttackProfile`, which the models
+poisoned field. The type is the kernel's `AttackFamily`, which the models
 re-export, so the runtime reads it with no edge to the compiler.
 
 **The trace records it as `poisoned_family`, with a default.** A valid draw, a
@@ -3321,7 +3321,7 @@ leading with its own rule.
 
 ## ADR-138 — An intent-anchored finding is confirmed against a control request { #adr-138 }
 
-**Status:** accepted · `runtime/fuzzers/stateless/control.py`, `runtime/fuzzers/stateless/shrinking.py`, `runtime/harness/minimal.py`
+**Status:** accepted · Superseded in part by [ADR-151](findings.md#adr-151) · `runtime/fuzzers/stateless/control.py`, `runtime/fuzzers/stateless/shrinking.py`, `runtime/harness/minimal.py`
 
 ### Context
 

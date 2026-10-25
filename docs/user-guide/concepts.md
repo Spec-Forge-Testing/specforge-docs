@@ -128,9 +128,14 @@ flowchart TD
 | **Raw findings** | Every rule violation seen while exploring. |
 | **Confirmed** | Findings that still failed after shrinking — one per distinct symptom. In the modes that never shrink (`performance`, `resilience`, `auth`), each distinct defect observed counts as confirmed. |
 | **Collapsed** | Findings with the same symptom as a confirmed one, so not shrunk again. |
-| **Unverified** | Findings the run collected but never got to shrink (it was cut short first). |
+| **Unverified** | Findings the run collected but never got to shrink (it was cut short first), or whose control request got no answer. |
 | **Flaky** | Findings that could not be reproduced on a second try. |
 | **Unique crashes** | Distinct bugs left after removing duplicates — the number that matters. |
+
+Some findings are also checked against a **control request**: the same request
+without the value suspected of causing them. When the control shows the same
+signal, the finding is **refuted** and counted apart (`findings_refuted` in the
+[report](reports.md)), never listed as a defect.
 
 The bottom line of any run is its **unique crashes**: the count of genuinely distinct
 defects, after everything else has been de-duplicated away. A **crash** is a
@@ -141,7 +146,10 @@ findings**: the flaky ones (seen but not reproduced) and the unverified ones
 (collected before the run could check them). The `fuzz` report and
 `inspect --run` list them in a table of their own, after the crashes, so a run
 tells you what it saw as well as what it proved. They carry no reproducer, only
-the finding's signature and how often it was seen.
+the finding's signature, how often it was seen and what its first occurrence
+observed. Every finding, confirmed or not, says what kind of defect it is, how
+serious, and what happened in one sentence (see the
+[finding taxonomy](../modules/specforge-engine/findings.md)).
 
 ## The six ways to run
 

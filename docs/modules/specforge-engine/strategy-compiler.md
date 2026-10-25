@@ -290,7 +290,7 @@ builders ([ADR-016](adr/compiler.md#adr-016)).
 | `fields/default/formats.py` | the date-range builders `DATE_RANGE_STRATEGIES`, and `regex_strategy` over `FORMAT_PATTERNS` |
 | `fields/default/alphabet.py` | `TextAlphabet → character strategy` |
 | `fields/attack/payloads.py` | `SchemaType → base-payload builder`; the toggle-family table |
-| `fields/attack/tables.py` | `PROFILE_STRING_PAYLOADS`: `AttackProfile → string payload pool` |
+| `fields/attack/tables.py` | `PROFILE_STRING_PAYLOADS`: `AttackFamily → string payload pool` |
 | `constants.py` | `DEFAULT_ATTACK_PROFILES_BY_TYPE`: `SchemaType → default attack profiles` |
 
 Two overrides ride on top of the type dispatch. The boundary phase shrinks any

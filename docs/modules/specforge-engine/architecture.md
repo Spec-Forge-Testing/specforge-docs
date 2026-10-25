@@ -21,7 +21,7 @@ direction:
 
 The leaf of the whole graph is [`specforge_contracts`](../contracts/index.md),
 the shared kernel: it owns the closed vocabularies `Zone`, `Criticality`,
-`Sensitivity`, `AttackProfile` and the semantic DTOs `EndpointRisk`,
+`Sensitivity`, `AttackFamily` and the semantic DTOs `EndpointRisk`,
 `EndpointAttack`, `TransitionInvariant`, `SemanticProperty`. The engine imports
 the kernel; the kernel never imports the engine.
 

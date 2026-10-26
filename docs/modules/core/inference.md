@@ -72,8 +72,9 @@ For each producible endpoint the producer builds one inference request:
 | `openapi_endpoint` | The endpoint's OpenAPI definition |
 | `state_hints` | The state-link bundles the endpoint produces and consumes, when it has any |
 
-The run's strategy picks the agent profile: `default` asks the `qa` profile and
-`hacker` the `security` one. What the model is then told is in
+The run's strategy picks the agent profile: `default`, `conformance` and `smoke`
+ask the `qa` profile; `security` and `exposure` ask the `security` one, which also
+asks for attack payloads ([Fuzz options](protocol/fuzz-options.md)). What the model is then told is in
 [Semantic Inference › Inputs](../semantic-inference/index.md#inputs) and
 [Prompts](../semantic-inference/prompts.md).
 

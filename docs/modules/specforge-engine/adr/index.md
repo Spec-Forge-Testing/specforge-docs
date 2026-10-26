@@ -31,8 +31,11 @@ missing here belongs to another module:
   [ADR-139](../../core/adr/core.md#adr-139), how it labels and ranks the security
   findings; [ADR-146](../../core/adr/core.md#adr-146), how the run's URL is
   composed; [ADR-153](../../core/adr/core.md#adr-153), how a finding's summary is
-  told; and [ADR-154](../../core/adr/core.md#adr-154), how a replay judges each
-  recorded defect, are the core's.
+  told; [ADR-154](../../core/adr/core.md#adr-154), how a replay judges each
+  recorded defect; [ADR-155](../../core/adr/protocol.md#adr-155), the strategy's
+  one name and its alias; [ADR-160](../../core/adr/core.md#adr-160), presets; and
+  [ADR-161](../../core/adr/core.md#adr-161), how a run's examples per endpoint
+  resolve, are the core's.
 - [ADR-136](../../semantic-inference/adr/prompts.md#adr-136), the plausible values
   the prompt asks for, is Semantic Inference's.
 
@@ -45,6 +48,7 @@ missing here belongs to another module:
 | [engine.md](engine.md) | engine | Requests and their intent, oracles, findings, counters, runners, replay |
 | [measurement.md](measurement.md) | measurement | How the default numbers are measured and set, and what an inferred contract adds |
 | [findings.md](findings.md) | findings | How a finding is classified, what it observed, how findings are told apart, refuted and redacted |
+| [strategies.md](strategies.md) | strategies | What a strategy decides, the oracles it opts into, and the traits each runner declares |
 
 ## Full index
 
@@ -155,7 +159,7 @@ missing here belongs to another module:
 | [ADR-137](engine.md#adr-137) | engine | One raw finding per violated rule |
 | [ADR-138](engine.md#adr-138) | engine | An intent-anchored finding is confirmed against a control request |
 | [ADR-140](measurement.md#adr-140) | measurement | The engine's default numbers are set by measurement, under a decision rule written before measuring |
-| [ADR-141](measurement.md#adr-141) | measurement | The default budget stays at 200, `hacker` spends a quarter on attacks, and `deadline_ms` is a ceiling |
+| [ADR-141](measurement.md#adr-141) | measurement | The default budget stays at 200, `security` spends a quarter on attacks, and `deadline_ms` is a ceiling |
 | [ADR-142](engine.md#adr-142) | engine | What a pass leaves unspent goes to the next pass of the same identity, up to its own share |
 | [ADR-143](engine.md#adr-143) | engine | A 400 or 422 to a request that conforms to its contract is a `contract_completeness` finding |
 | [ADR-144](engine.md#adr-144) | engine | Each endpoint reports its requests, raw findings, attack families and budget by phase |
@@ -166,3 +170,7 @@ missing here belongs to another module:
 | [ADR-150](findings.md#adr-150) | findings | Findings are told apart by the field they poisoned and, without one, by the cause a probe confirms |
 | [ADR-151](findings.md#adr-151) | findings | A finding its control request refutes is counted apart from a flaky one, and a control that gets no answer leaves it unverified |
 | [ADR-152](findings.md#adr-152) | findings | Evidence is redacted by what each slot holds, against one sensitive-name rule shared with the exposure oracle |
+| [ADR-156](strategies.md#adr-156) | strategies | Under `security`, the mutation phase breaks every field, not only the hinted ones |
+| [ADR-157](strategies.md#adr-157) | strategies | A strategy opts into oracles, and `conformance` turns on the undeclared-field invariant |
+| [ADR-158](findings.md#adr-158) | findings | Sensitive data is judged on every successful response that declares a body, and a response's own secrets are withheld from its finding |
+| [ADR-159](strategies.md#adr-159) | strategies | Runners declare their traits, the effects matrix is derived from them, and `changes` is measured against `default` |

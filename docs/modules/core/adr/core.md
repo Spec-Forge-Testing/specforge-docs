@@ -550,3 +550,100 @@ A replay never reports a fix it could not have observed. A `present` verdict is
 keyed on where a request was recorded, not on its invariant: a defect can read
 present because another invariant at the same place still breaks, never resolved
 by mistake. `replay.verdicts` still rules each recorded request on its own.
+
+---
+
+## ADR-160 — Presets are catalog data a client chains, not a parameter { #adr-160 }
+
+**Status:** accepted · `services/catalog/presets.py`, `services/catalog/fuzz_options.py`, `models/catalog.py`
+
+### Context
+
+A user picks a run by intent more often than by its parts: a quick check, a
+contract audit, a security scan, a full pass. Some of those are more than one run:
+a full pass explores the endpoints one by one, then in sequences. One protocol
+operation is one run, with one cancellation, one persisted analysis and one
+report.
+
+### Decision
+
+**A preset is data.** `PRESETS` is a tuple of `Preset(name, runs)`, each run a
+`PresetRun(execution, strategy)` typed by `ExecutionKind` and `StrategyKind`, so a
+preset cannot name a mode or a strategy the core does not accept. The catalog
+publishes them in `fuzz_options.presets`: `quick-check`, `contract-audit`,
+`security-scan`, `exposure-scan`, `load` and `full`.
+
+**The client chains them.** No operation takes a `preset`. A client runs a
+preset's entries in order, each as its own `fuzz` with the strategy's default
+examples per endpoint.
+
+### Rejected
+
+- **A `preset` parameter on `fuzz`.** A preset can be several runs, so one call
+  would start several runs, with no single analysis, report or cancellation to
+  answer with.
+- **Presets kept by each client.** Two clients would offer two different
+  "security scans".
+
+### Consequences
+
+A new preset is one row. The protocol stays one operation per run, and the
+client owns what happens between two runs of a preset: whether to stop after a
+failure, and how to show progress across them.
+
+---
+
+## ADR-161 — Examples per endpoint resolve by one rule, and a count a runner ignores is refused { #adr-161 }
+
+**Status:** accepted · `services/fuzz/examples.py`, `controllers/execution/checks.py`, `controllers/execution/plan.py`, `services/fuzz/adapter.py`, `services/fuzz/runner.py`, `services/compare/rules.py`; engine `runtime/runners/registry.py`, `strategy_compiler/planning.py`; storage `migrations/0006_strategy_canonical.sql`
+
+### Context
+
+The core passed the engine no example count. Two defaults competed: the endpoint
+budget's 200 and the stateful runner's 100. A short strategy such as `smoke` needs
+fewer, and a user wants to choose. Some runners send a fixed set of requests
+whatever the count says: the `performance` ladder, `auth` and `resilience`.
+
+### Decision
+
+**One optional parameter.** `fuzz` and `run_pipeline` take
+`examples_per_endpoint`, an integer of at least 1.
+
+**One rule, in the core.** `resolve_examples_per_endpoint(requested,
+strategy_default, traits)` reads the traits of the variant the run takes
+(`runner_traits_for(mode, options)`): `null` when the runner honors no count;
+the requested count when there is one, over the runner's cap too; otherwise the
+strategy's `default_max_examples`, held under the runner's `examples_cap`.
+`stateful` keeps its cap of 100, so no stateful run gets slower unless asked to.
+
+**A count the runner would ignore is refused.** An explicit count for a runner
+that honors none answers `INVALID_PARAMS`, as `load` outside `performance` does;
+so does a count below 1.
+
+**Resolved once, carried with its strategy.** The core resolves the count when it
+configures the engine, keeps it with the strategy it was resolved for, and refuses
+to run a production prepared for another strategy. The count reaches the engine as
+the endpoint budget's `max_examples` and, in `stateful`, as
+`StatefulOptions.max_examples`. The engine's own compile, without a count in the
+budget, plans the profile's `default_max_examples`, the same default.
+
+**Recorded and compared.** Schema version 6 adds `analyses.examples_per_endpoint`
+(`NULL` for an earlier analysis); the analysis and the report carry it, and
+`compare_runs` flags two runs that recorded different counts with
+`examples_differs`.
+
+### Rejected
+
+- **Reading the count from `execution_options`.** Only `stateful` has one there;
+  every reader would have to know where each mode keeps it.
+- **Ignoring a count the runner cannot honor.** The run would report a number it
+  never used.
+- **Letting the strategy's default lift the stateful cap.** Every stateful run
+  would double its length without anyone asking.
+
+### Consequences
+
+`smoke` runs 20 examples per endpoint and finishes in seconds. The resolved count
+is persisted, so a replay or a comparison knows what a run asked. The endpoint's
+risk score still weights its budget, so one endpoint can plan more or fewer than
+the count.

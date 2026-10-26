@@ -63,7 +63,7 @@ their defaults. A constant typed with `Phase` — a phase split is a
 
 The three root leaves — `constants.py`, `exceptions.py`, `numeric.py` — import
 nothing from the package. Any layer, `models/` included, may import them. The
-two phase splits (`DEFAULT_PHASE_SPLIT`, `HACKER_PHASE_SPLIT`) are not shared
+two phase splits (`DEFAULT_PHASE_SPLIT`, `SECURITY_PHASE_SPLIT`) are not shared
 constants: they are the data with which `profiles/builtin.py` registers the
 built-in profiles, read-only `Mapping[Phase, float]`s. They belong to a
 profile, and a profile belongs to the profile registry.

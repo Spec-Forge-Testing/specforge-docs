@@ -22,7 +22,7 @@ where `str()` of the key is what lands on the wire.
 
 The shared vocabularies are `enum.StrEnum` in `specforge_contracts`, next to
 the semantic DTOs that use them. The engine's own vocabularies —
-`ExecutionMode`, `StrategyMode`, `Phase`, `SchemaType`, `SchemaKeyword`,
+`ExecutionMode`, `Strategy`, `Phase`, `SchemaType`, `SchemaKeyword`,
 `SchemaFormat`, `ErrorCategory`, `InvariantViolation`, `TruncationReason`,
 `FidelityLevel` — follow the same rule in `models/`.
 
@@ -95,7 +95,7 @@ the two folders would depend on each other.
 
 `models/contracts/` sits beside `models/compiler/` and `models/runtime/`. The
 direction is `models/compiler → models/runtime → models/contracts →
-specforge_contracts`, with the enums and `StrategyModeProfile` at the root of
+specforge_contracts`, with the enums and `StrategyProfile` at the root of
 `models/`. The contracts are the shared boundary vocabulary of both stages,
 not the compiler's.
 
@@ -234,7 +234,7 @@ LLM fills in, which is a boundary of a different module.
 
 ### Consequences
 
-`StrategyModeProfile.accepts()` is `isinstance` or an exact type check, never
+`StrategyProfile.accepts()` is `isinstance` or an exact type check, never
 a field inspection. A third contract type is a subclass and a registration.
 
 ---

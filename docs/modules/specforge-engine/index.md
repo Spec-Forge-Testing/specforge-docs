@@ -43,7 +43,7 @@ with the rest of the pipeline.
 ```python
 from specforge_engine import (
     BaseStrategyContract, CompilerInput, EndpointSpec, RequestZones,
-    ExecutionConfig, ExecutionMode, StrategyMode,
+    ExecutionConfig, ExecutionMode, Strategy,
     StatelessOptions, ReplayOptions,
     ConfirmedFinding,
     compile_strategies, run,
@@ -56,7 +56,7 @@ spec = EndpointSpec(
 )
 
 # 1. Compile the validated contract into an executable engine input.
-outcome = compile_strategies(CompilerInput(endpoints=[spec], strategy_mode=StrategyMode.DEFAULT))
+outcome = compile_strategies(CompilerInput(endpoints=[spec], strategy=Strategy.DEFAULT))
 for excluded in outcome.exclusions:
     print(excluded.method, excluded.path_url, excluded.reason)
 
@@ -97,13 +97,13 @@ was itself a replay.
 
 | Stage | Question it answers | Output |
 |---|---|---|
-| **1. policy** | Is this compiler input well-formed for the chosen strategy mode? | the same input, or a `PolicyError` |
+| **1. policy** | Is this compiler input well-formed for the chosen strategy? | the same input, or a `PolicyError` |
 | **2. strategy_compiler** | What values can each field take, per generation phase? | `CompilationOutcome` |
 | **3. engine** | Which of those values breaks the API, and what is the smallest one? | `EngineRunResult` |
 
 The policy stage does no HTTP and no LLM calls; the compiler does no HTTP and
 never re-validates; the engine consumes `EngineInput` alone and never sees a
-`StrategyMode`. Data flows one way through typed DTOs, so each stage is
+`Strategy`. Data flows one way through typed DTOs, so each stage is
 testable in isolation. See [Architecture](architecture.md).
 
 ## The public facade
@@ -160,6 +160,7 @@ decisions this rule produced are in the [decision records](adr/index.md).
 | Understand the layers and the package map | [Architecture](architecture.md) |
 | Follow a DTO from input to output | [Data flow](data-flow.md) |
 | See how contracts become strategies | [Strategy compiler](strategy-compiler.md) |
+| Pick a strategy, or see what a runner takes from it | [Strategies and runner traits](strategies.md) |
 | See what a request holds, which field it poisons, and how its body and headers go out | [Requests](requests.md) |
 | See how a request is sent, checked and reported | [Engine internals](engine-internals.md) |
 | Read a finding: its category, severity, observation, evidence and redaction | [Findings](findings.md) |

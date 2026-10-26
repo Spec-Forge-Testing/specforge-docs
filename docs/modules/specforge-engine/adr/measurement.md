@@ -31,7 +31,7 @@ the attack share. With no override set it changes nothing, so the control run is
 the product itself. It adds no knob to the engine.
 
 **The grid.** `max_examples` ∈ {50, 100, 200, 400, 800}, crossed with the
-`default` split and four candidate `hacker` splits, on two targets: a lab API with
+`default` split and four candidate `security` splits, on two targets: a lab API with
 a known list of planted bugs, each with a ground-truth check on the recorded
 traffic, and the [RealWorld](../../../testing/real-world.md) Go implementation.
 The point under test (200) runs three times; one run at ×25 (5 000) checks for a
@@ -47,11 +47,11 @@ that appear only in runs that include that phase, in every repetition.
 
 1. `max_examples` is the smallest N whose signatures reach 95 % of those at 800 on
    both targets, with every planted bug found in 3 of 3 repetitions.
-2. The `hacker` attack share is the smallest candidate that finds the
+2. The `security` attack share is the smallest candidate that finds the
    mass-assignment bug in 3 of 3 repetitions without losing another phase's own
    signatures beyond the measured variance (±3 signatures on the Go target).
 3. A phase with no own signatures on either target drops to 0.05. It stays present
-   and measurable. Its share goes to `attack` in `hacker` and to `invalid` in
+   and measurable. Its share goes to `attack` in `security` and to `invalid` in
    `default`.
 4. The attack share per aggressiveness point changes only if the grid is repeated
    with inferred contracts.
@@ -74,7 +74,7 @@ decision.
 
 ---
 
-## ADR-141 — The default budget stays at 200, `hacker` spends a quarter on attacks, and `deadline_ms` is a ceiling { #adr-141 }
+## ADR-141 — The default budget stays at 200, `security` spends a quarter on attacks, and `deadline_ms` is a ceiling { #adr-141 }
 
 **Status:** accepted · Supersedes in part [ADR-051](compiler.md#adr-051), [ADR-129](compiler.md#adr-129) · `profiles/builtin.py`, `models/phase.py`, `models/contracts/endpoint_controls.py`, `budget/aggressiveness.py`
 
@@ -107,7 +107,7 @@ Confirmed signatures by `max_examples` (three repetitions at 200):
 | Go · H3 | 16 | 22 | 22 / 22 / 21 | 22 | 22 | — |
 
 The `default` split finds ten of the planted bugs from 50 examples on.
-A `hacker` split reaches twelve from 200 on, two of them through `attack`: a
+A `security` split reaches twelve from 200 on, two of them through `attack`: a
 quote in a search term that leaks a SQL error, and an undeclared `role` key the
 server assigns. H0 finds the mass-assignment bug in 2 of 3 repetitions; H1, H2 and
 H3 find all twelve in 3 of 3.
@@ -123,12 +123,12 @@ target**. The ×25 run gives 21 (S0) and 24 (H0), the same as 800, for 53 493 an
 The rule applied clause by clause:
 
 1. **`max_examples` stays 200.** 100 fails the rule (Go S0 19 of 22, lab H0 21 of
-   24). At 200 the lab meets 95 % of 800 with S0 and with the new `hacker` split.
+   24). At 200 the lab meets 95 % of 800 with S0 and with the new `security` split.
    The Go S0 misses at 200 are `content_type_conformance` findings on paths to
    resources that do not exist, and they rotate between repetitions: one of the
    three equals 800 exactly. That spread is the path value's draw, not the budget,
    and it lies inside the ±3 variance.
-2. **`attack` takes 0.20 in `hacker`.** H1 and H3 (0.20) find the mass-assignment
+2. **`attack` takes 0.20 in `security`.** H1 and H3 (0.20) find the mass-assignment
    bug in 3 of 3 and lose no other phase's own signatures beyond the variance. H2
    (0.30) adds nothing over H1.
 3. **`mutation` drops to 0.05**, since it has no own signatures. Its other 0.05
@@ -143,7 +143,7 @@ The resulting constants:
 | Constant | Value |
 | --- | --- |
 | `DEFAULT_PHASE_SPLIT` | `valid` 0.60 · `boundary` 0.25 · `invalid` 0.15 (no phase drops under clause 3) |
-| `HACKER_PHASE_SPLIT` | `valid` 0.40 · `boundary` 0.20 · `invalid` 0.10 · `attack` 0.25 · `mutation` 0.05 |
+| `SECURITY_PHASE_SPLIT` | `valid` 0.40 · `boundary` 0.20 · `invalid` 0.10 · `attack` 0.25 · `mutation` 0.05 |
 | `EndpointBudgetContract.max_examples` default | 200 |
 | `deadline_ms` | a ceiling on an endpoint's pass, never a time budget to fill |
 
@@ -151,7 +151,7 @@ The resulting constants:
 contract declares `attack.aggressiveness` gets its attack share from
 `derive_attack_split`: 0.05 per point, capped at 0.5 by `MAX_AGGRESSIVENESS`, the
 other phases rescaled in the profile's proportions
-([ADR-129](compiler.md#adr-129)). The profile's 0.25 applies to a `hacker` run
+([ADR-129](compiler.md#adr-129)). The profile's 0.25 applies to a `security` run
 without an inferred contract, or with one that declares no aggressiveness.
 
 ### Rejected
@@ -174,12 +174,12 @@ Measured again with these constants, with [carry-over](engine.md#adr-142) and
 | Target · split | Confirmed signatures | Planted bugs |
 | --- | --- | --- |
 | lab · `default` | 22 / 21 / 22 | 10 of 10 in 3 of 3 |
-| lab · `hacker` | 25 / 25 / 25 | 12 of 12 in 3 of 3 |
+| lab · `security` | 25 / 25 / 25 | 12 of 12 in 3 of 3 |
 | Go · `default` | 32 / 32 / 32 | — |
-| Go · `hacker` | 34 / 32 / 33 | — |
+| Go · `security` | 34 / 32 / 33 | — |
 
 Every phase keeps its own signatures: `invalid` 8 to 10 in every cell, `boundary`
-3 on the lab, `attack` 3 on the lab under `hacker`. Most of the Go target's growth
+3 on the lab, `attack` 3 on the lab under `security`. Most of the Go target's growth
 is `contract_completeness`. The signatures that appear only above 200 come from
 three of the lab's 20 endpoints and two of the Go target's 19, mostly those with
 free text fields, with a weak rank correlation to the endpoint's input surface
@@ -207,7 +207,7 @@ OpenAPI document, each with a ground-truth check on the recorded traffic. Seven
 sit in handlers the static analysis traces; two sit in handlers it does not, as
 controls. A bug counts only if the run without the model does not trigger it.
 
-**Four runs**, all `hacker`:
+**Four runs**, all `security`:
 
 - **control**: the lab's hand-written fixture contracts, no model;
 - **model**: contracts inferred for the six traced handlers;

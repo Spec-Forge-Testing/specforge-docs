@@ -39,7 +39,7 @@ says whether a replay's contract-free oracles can see the invariant again
 | `not_a_server_error` | `crash` | `high` | Server error | intrinsic: a response must never be a 5xx server error | yes |
 | `access_control` | `access` | `critical` | Access control bypass | declared | no |
 | `mass_assignment` | `security` | `high` | Privileged field accepted | declared | no |
-| `sensitive_data_exposure` | `security` | `high` | Sensitive data in response | declared | yes |
+| `sensitive_data_exposure` | `security` | `high` | Sensitive data in response | declared | yes, when the request was poisoned |
 | `information_disclosure` | `security` | `medium` | Internal details leaked | declared | yes |
 | `reflected_payload` | `security` | `medium` | Input reflected unescaped | declared | yes |
 | `input_induced_timeout` | `security` | `medium` | Input-induced timeout | declared | yes, except rule `request` |
@@ -49,6 +49,7 @@ says whether a replay's contract-free oracles can see the invariant again
 | `response_schema_conformance` | `contract_hygiene` | `medium` | Response breaks its schema | intrinsic: a response body must match the schema declared for its status code | no |
 | `contract_completeness` | `contract_hygiene` | `low` | Valid request rejected | declared | no |
 | `content_type_conformance` | `contract_hygiene` | `low` | Content-Type mismatch | intrinsic: a response body must carry the declared Content-Type | no |
+| `undeclared_response_field` | `contract_hygiene` | `low` | Undeclared response field | declared | no |
 | `status_code_conformance` | `contract_hygiene` | `info` | Undeclared status | intrinsic: a response must carry a status code the contract declares | no |
 | `latency_sla` | `performance` | `medium` | SLA exceeded | intrinsic: a clean response must arrive within the run's latency SLA | no |
 | `latency_degradation` | `performance` | `medium` | Degrades under load | intrinsic: a clean response's latency must not grow with concurrency beyond the run's tolerance | no |
@@ -60,6 +61,23 @@ finding's `rule_id`, so one endpoint reports one finding per rule. An
 **intrinsic** rule is the invariant's own; its id repeats the invariant. Only
 `access_control` is **identity-scoped**: the identity that sent the request tells
 two of its findings apart ([ADR-106](adr/engine.md#adr-106)).
+
+`undeclared_response_field` is **opt-in**: it judges only under a strategy that
+turns it on, which among the built-ins is `conformance`
+([Strategies](strategies.md#opt-in-oracles)). A JSON response breaks it when an
+object whose declared schema names its properties, and does not admit extra ones,
+holds a key it does not declare; a secret-looking key is left to
+`sensitive_data_exposure`. Its rule is the schema path of the shallowest such
+object, built from declared names only: `response` for the body's root,
+`response.owner` for a declared nested object, never a key the server chose
+([ADR-157](adr/strategies.md#adr-157)).
+
+`sensitive_data_exposure` judges every successful response whose status declares
+a body schema, and the successful response to a poisoned request whether or not
+one is declared. A secret-looking key is undeclared when the object that holds it
+does not declare it. A replay, which judges without a contract, can see it again
+only when the recorded request was poisoned
+([ADR-158](adr/findings.md#adr-158)).
 
 `FindingCategory` and `Severity` are closed; their meanings are in the
 [result vocabularies](../core/protocol/vocabularies.md#category). `Severity` is
@@ -97,6 +115,7 @@ What each invariant puts in the slots:
 | `access_control` | `{policy, owner}`, `{policy, role}` or `{policy, invalid_credential}` | the status | `caller` (none when anonymous) | the policy |
 | `mass_assignment` | — | the value echoed back | `request_field` `body.<key>` | — |
 | `sensitive_data_exposure` | — | the pointer of every undeclared secret key, in order of appearance | `response_body` `""` | — |
+| `undeclared_response_field` | each schema path holding an undeclared key, with the property names it declares | `{pointers, omitted}`: the first 20 pointers of undeclared keys, and how many more | `response_body` `""` | — |
 | `information_disclosure` | — | the fragment that leaked | the poisoned field | the disclosure marker |
 | `reflected_payload` | — | the reflected text | the poisoned field | the attack family |
 | `input_induced_timeout` | — | the elapsed ms | the poisoned field (none for a valid value) | — |
@@ -118,6 +137,7 @@ finding ([ADR-153](../core/adr/core.md#adr-153)): in the report, in `get_run` an
 `get_finding`, and in the `finding` event. For example:
 
 - `` `GET /users/{id}` answered 200 with undeclared secret fields: `/password_hash`, `/user/tokens`. ``
+- `` `GET /articles` returned `/articles/0/body`, which its contract does not declare. ``
 - `` `GET /search` did not answer within 10007.5 ms to `query.factor = 127`; the control request answered 200 in 402.4 ms. ``
 
 A value is shown as compact JSON, clipped to 48 characters; a withheld value reads
@@ -155,6 +175,10 @@ Raw findings group by `FindingSignature`: endpoint, phase, invariant, status,
 identity (for `access_control` only), rule id, body fingerprint and the
 **poisoned field**. Two fields that break one endpoint the same way are two
 findings.
+
+A sent credential never reaches a signature: the body fingerprint reads a JSON
+body's top-level keys, and the rule id, with every credential the request sent
+scrubbed.
 
 A group whose requests poisoned no field (a finding of the `valid` phase, for
 instance) can still hide two causes. After the first faithful representative is
@@ -233,7 +257,7 @@ of one: neither is withheld, and neither is `secretary`. The endpoint's declared
 `location` names a sensitive request field, response pointer or response header,
 the slots that hold a value the exchange carried read `***`; a latency, a status,
 a declared keyword or an SLA is never withheld. `EXCHANGED_SLOTS`
-(`runtime/findings/exchanged_slots.py`) fixes, per invariant, which slots carry an
+(`runtime/findings/redaction/exchanged_slots.py`) fixes, per invariant, which slots carry an
 exchanged value: `observed` for `mass_assignment`, `reflected_payload`,
 `semantic_property`, `input_validation`, `response_schema_conformance` and
 `contract_completeness`; both for `state_transition`; none for the rest. A dotted
@@ -247,9 +271,13 @@ credential a request of the finding sent (its credential headers and URL userinf
 in every derived form and per-character encoding,
 [ADR-109](adr/engine.md#adr-109)) is scrubbed wherever it appears.
 
-**By value.** Every value withheld by name from the request, and from the earlier
-steps of a stateful finding (what they sent and what their responses returned,
-`Set-Cookie` included), is scrubbed from the rest of the finding. A text equal to
+**By value.** Every value withheld by name from the request, from the failing
+response (its body and its headers), and from the earlier steps of a stateful
+finding (what they sent and what their responses returned, `Set-Cookie`
+included), is scrubbed from the rest of the finding: a token the response returns
+under `token` and copies under a neutral key or into a `Location` header reads
+`***` in both places. A value the response returned is scrubbed by value only
+when it is a text of at least 8 characters; a shorter one stays withheld by name. A text equal to
 a withheld text is replaced whatever its length; a withheld value of at least 8
 characters is also scrubbed wherever a text spells it. A number or a boolean is
 never withheld for equalling one.
@@ -276,6 +304,9 @@ parameter reads `***` in the URL as it does in the payload.
 5. In the core, add the member to `finding_summary.Invariant` and a
    `SentenceStrategy` to `SENTENCES`. Without one, the finding reads the fallback
    sentence.
+6. If the invariant should judge only when a strategy asks for it, register its
+   oracle with `opt_in=True` and name it in that strategy's `optional_oracles`
+   ([Adding an opt-in oracle](strategies.md#adding-an-opt-in-oracle)).
 
 `TestNewInvariant`, in the engine's extensibility gate, fails while step 2 or 3 is
 missing, and a core test holds `finding_summary.Invariant` to the engine's

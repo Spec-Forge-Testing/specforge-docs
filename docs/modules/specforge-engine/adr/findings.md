@@ -10,7 +10,7 @@ withheld from its evidence. The behaviour is described in
 
 ## ADR-148 — One registry in the engine classifies every invariant, and the core derives the classification when it reads { #adr-148 }
 
-**Status:** accepted · Supersedes in part [ADR-125](../../core/adr/core.md#adr-125), [ADR-139](../../core/adr/core.md#adr-139) · `models/runtime/taxonomy.py`, `models/runtime/vocabulary.py`, `models/runtime/crash_report.py`; core `services/deps/engine_vocabulary.py`, `services/catalog/vocabulary.py`, `services/report/ordering.py`
+**Status:** accepted · Supersedes in part [ADR-125](../../core/adr/core.md#adr-125), [ADR-139](../../core/adr/core.md#adr-139) · `models/runtime/taxonomy.py`, `models/runtime/labels.py`, `models/runtime/crash_report.py`; core `services/deps/engine_vocabulary.py`, `services/catalog/vocabulary.py`, `services/report/ordering.py`
 
 ### Context
 
@@ -37,7 +37,7 @@ when it reads a finding, sorts the report by severity rank and then by registry
 order, and publishes the whole registry, with labels, as the handshake's
 `vocabulary`. The labels of the other closed vocabularies a run reports
 (truncation reasons, finding states, unprobed and hold reasons) live beside it,
-in `models/runtime/vocabulary.py`.
+in `models/runtime/labels.py`.
 
 **`resilience_degradation` is a `crash`.** It is a 5xx or a dropped connection
 on a malformed request. Its severity stays `medium`, below `not_a_server_error`,
@@ -111,7 +111,7 @@ the observation existed reads it back `null`.
 
 ## ADR-150 — Findings are told apart by the field they poisoned and, without one, by the cause a probe confirms { #adr-150 }
 
-**Status:** accepted · `models/runtime/findings.py`, `runtime/findings/grouper.py`, `runtime/findings/shrinker.py`, `runtime/findings/cause_walk.py`, `runtime/findings/causes.py`, `runtime/findings/constants.py`
+**Status:** accepted · `models/runtime/findings.py`, `runtime/findings/grouper.py`, `runtime/findings/shrinker.py`, `runtime/findings/causes/walk.py`, `runtime/findings/causes/triggers.py`, `runtime/findings/constants.py`
 
 ### Context
 
@@ -154,7 +154,7 @@ the walk. They are stability constants, not knobs.
 Measured over three repetitions per cell on the lab API and the RealWorld Go
 target, against the engine without either mechanism under the same conditions: the Go
 `default` cell's shrink requests stayed within noise (+2 % on the mean); the lab's
-`hacker` cell spent 19 % (median) to 31 % (mean) more shrink requests and 4 % more
+`security` cell spent 19 % (median) to 31 % (mean) more shrink requests and 4 % more
 wall time, for two or three more reports per run, every planted bug still found in
 all repetitions. Most of that cost is the poisoned field in the signature: more
 `attack` groups, each with its shrink. Restricting the walk to unpoisoned groups,
@@ -164,7 +164,7 @@ and halving the second shrink's budget, are what keep the walk itself cheap.
 
 ## ADR-151 — A finding its control request refutes is counted apart from a flaky one, and a control that gets no answer leaves it unverified { #adr-151 }
 
-**Status:** accepted · Supersedes in part [ADR-138](engine.md#adr-138) · `models/runtime/results.py`, `models/runtime/stats.py`, `runtime/fuzzers/stateless/shrinking.py`, `runtime/fuzzers/stateless/control.py`, `runtime/fuzzers/stateless/timeout_control.py`, `runtime/findings/shrinker.py`
+**Status:** accepted · Supersedes in part [ADR-138](engine.md#adr-138) · `models/runtime/results.py`, `models/runtime/stats.py`, `runtime/fuzzers/stateless/shrinking.py`, `runtime/fuzzers/stateless/control_checks.py`, `runtime/fuzzers/stateless/streak_timeout.py`, `runtime/findings/shrinker.py`
 
 ### Context
 
@@ -212,7 +212,7 @@ see a timeout ruled on the whole request again
 
 ## ADR-152 — Evidence is redacted by what each slot holds, against one sensitive-name rule shared with the exposure oracle { #adr-152 }
 
-**Status:** accepted · Supersedes in part [ADR-060](engine.md#adr-060), [ADR-103](engine.md#adr-103) · `shared/sensitive_names.py`, `runtime/findings/finding_redaction.py`, `runtime/findings/exchanged_slots.py`, `runtime/findings/redaction.py`, `runtime/findings/evidence_url.py`, `runtime/findings/materializer.py`, `runtime/oracles/security/sensitive_data.py`
+**Status:** accepted · Supersedes in part [ADR-060](engine.md#adr-060), [ADR-103](engine.md#adr-103) · Superseded in part by [ADR-158](#adr-158) · `shared/sensitive_names.py`, `runtime/findings/redaction/finding.py`, `runtime/findings/redaction/exchanged_slots.py`, `runtime/findings/redaction/sanitize.py`, `runtime/findings/redaction/url.py`, `runtime/findings/materializer.py`, `runtime/oracles/security/sensitive_data.py`
 
 ### Context
 
@@ -264,3 +264,64 @@ payload shows them.
 A name the predicate calls a secret is both reported and withheld. A new
 invariant declares its exchanged slots or the extensibility gate fails. The trace
 keeps the raw exchange: a replay sends what was recorded.
+
+---
+
+## ADR-158 — Sensitive data is judged on every successful response that declares a body, and a response's own secrets are withheld from its finding { #adr-158 }
+
+**Status:** accepted · Supersedes in part [ADR-152](#adr-152) · `runtime/oracles/security/sensitive_data.py`, `runtime/oracles/response_walk.py`, `models/runtime/taxonomy.py`, `runtime/findings/redaction/sanitize.py`, `runtime/findings/redaction/finding.py`, `runtime/findings/grouper.py`; core `services/replay/rules.py`
+
+### Context
+
+`sensitive_data_exposure` judged only the successful response to a poisoned
+request, and only `boundary`, `invalid` and `attack` poison. A plain `GET` that
+returns a password hash in a `valid`, `mutation` or stateful request was never
+judged, though a secret exposed is a defect with or without an attack. Judging
+every 2xx naively breaks a contract-free judgement: a replay judges with no
+declared responses, so every secret-looking key, `token` on a login response
+included, would read as undeclared. And once ordinary responses are judged, the
+secrets they return reach the finding's own evidence, which the redaction withheld
+only by name.
+
+### Decision
+
+**Judged where the contract can say what is declared.** The oracle judges a 2xx
+when its request was poisoned, as before, or when the response's status declares a
+body schema. A secret-looking key is undeclared when the object that holds it does
+not declare it, read through the same walker as `undeclared_response_field`
+([ADR-157](strategies.md#adr-157)). Without a contract, only a poisoned request is
+judged.
+
+**A replay knows what it cannot see.** The registry marks the invariant
+`contract_free_needs_poisoning`, and `observable_without_contract(invariant,
+rule_id, poisoned=...)` answers per finding: the replay of an unpoisoned exposure
+is `inconclusive`, never resolved.
+
+**What a response returns is withheld like what a request sent.** Every text of at
+least `MIN_SECRET_LENGTH` (8) characters that the body and header redaction
+withhold from the failing response is scrubbed wherever it reappears in the
+finding: a copy under a neutral key or in a `Location` header reads `***`.
+Shorter values stay withheld by name only, so `active` or `Bearer` never corrupt
+unrelated text.
+
+**A sent credential never reaches a signature.** The signature's body fingerprint
+reads a JSON body's top-level keys with every sent credential scrubbed, and so is
+its `rule_id`, which an unconfirmed finding stores.
+
+### Rejected
+
+- **Judging every 2xx, declared or not.** A replay and a stateful transition
+  probe would report declared tokens as leaks, and a replay's verdicts would be
+  wrong.
+- **Turning the oracle on only under `security` and `exposure`.** An exposed
+  secret does not depend on the input; on the RealWorld target `default` reported
+  no new exposure, so there was no noise to avoid.
+- **Scrubbing every received value by value.** Short values appear everywhere,
+  and the evidence would stop being readable.
+
+### Consequences
+
+Every strategy can report an exposed secret on an ordinary response, once per
+endpoint and rule. A response schema that declares no body leaves an unpoisoned
+2xx unjudged, since nothing says what it should contain. The reproducer keeps the
+failing request's own values, as [ADR-152](#adr-152) requires.

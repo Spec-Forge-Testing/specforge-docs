@@ -3,7 +3,8 @@
 `run(engine_input, config, mode, options=None, cancellation=..., observer=...)`
 selects a runner object from a registry by `ExecutionMode` — never a branch, never
 a boolean ([ADR-013](adr/api.md#adr-013)). Each runner satisfies the
-`ExecutionRunner` Protocol (`mode`, `options_type`, `run`). There are six built-in
+`ExecutionRunner` Protocol (`mode`, `options_type`, `run`, `variants`,
+`variant_for`). There are six built-in
 runners, registered explicitly by `register_builtin_runners`. The optional
 `cancellation` and `observer` signals — how a caller stops a run and watches it —
 are covered on their own page ([Progress and cancellation](progress-and-cancellation.md)).
@@ -42,6 +43,26 @@ the runner for the mode (raising `EngineError` for an unknown one), the second
 validates the caller's options against the runner's `options_type` and supplies
 that mode's defaults when `None` is passed, so no runner repeats the check
 ([ADR-021](adr/engine.md#adr-021)).
+
+## What each mode takes from a strategy
+
+The strategy is compiled before any runner starts, and each runner declares, per
+variant, which part of the compiled plan it sends
+([Strategies and runner traits](strategies.md#runner-traits)):
+
+| Mode · variant | Phases it sends | Honors a count | Opt-in oracles judge it |
+|---|---|---|---|
+| `STATELESS` | every phase the strategy plans | yes | yes |
+| `STATEFUL` | `valid`, `transition` | yes, 100 unless asked for more | yes |
+| `PERFORMANCE` flat | every phase the strategy plans | yes | yes |
+| `PERFORMANCE` ladder | `valid` | no: `LADDER_STEP_SAMPLES` per step | yes |
+| `RESILIENCE` | none: the chaos battery | no | yes |
+| `AUTH` | `valid` | no: one valid request, crossed between identities | yes |
+| `REPLAY` | none: the recorded trace | no | no |
+
+`runner_traits_for(mode, options)` returns the traits a run with those options
+takes; the `performance` variant is `ladder` exactly when the options carry a
+`concurrency_ladder`.
 
 ## Cancelling a run
 

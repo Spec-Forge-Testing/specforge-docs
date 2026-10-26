@@ -16,7 +16,7 @@ from specforge_engine import (
     compile_strategies, run,
     CompilerInput, EndpointSpec, RequestZones, BodySpec,
     BaseStrategyContract, HackerStrategyContract,
-    ExecutionConfig, Identity, ExecutionMode, StrategyMode,
+    ExecutionConfig, Identity, ExecutionMode, Strategy, StrategyProfile,
     CompilationOutcome, EngineRunResult, RunStatus,
     Finding, ConfirmedFinding, FlakyFinding, UnverifiedFinding,
     CrashReport, ViolatedRule,
@@ -33,8 +33,8 @@ outcome; the ones that can are the `EngineInput`. Named so that it does not
 hide the builtin `compile`.
 
 **Raises** `PolicyError` when the input itself is malformed for the chosen
-`StrategyMode`; a per-endpoint compile failure is an exclusion, not an
-exception.
+`Strategy`, or when that strategy's profile opts into an oracle that is unknown
+or not opt-in; a per-endpoint compile failure is an exclusion, not an exception.
 
 ### `run(engine_input, config, *, mode=ExecutionMode.STATELESS, options=None, cancellation=NULL_TOKEN, observer=NULL_OBSERVER) -> EngineRunResult`
 
@@ -57,16 +57,16 @@ invariant, `StatefulLinkError` when a state link cannot be honored.
 
 | Name | One line |
 |---|---|
-| `CompilerInput` | the endpoints plus a single global `strategy_mode`, and the `withheld` ones |
+| `CompilerInput` | the endpoints plus a single global `strategy` (default `Strategy.DEFAULT`), and the `withheld` ones |
 | `WithheldEndpoint` | an endpoint its caller keeps out of the run: `method`, `path_url`, `risk`, `reason`; compiled into an exclusion whose risk still vetoes its route |
 | `EndpointSpec` | one endpoint: identity, zones, and its endpoint-level controls |
 | `RequestZones` | the request zones of an `EndpointSpec`: `path`, `query` and `header` as `ParamMap`s, and `body` as a `BodySpec` or `None` |
 | `BodySpec` | the declared body: `media_type`, `required` (default `False`) and the `root` contract; `fields` is the root's properties (empty when the root is not an object) and `drawn_fields` what a body draw fills — its fields, or the root alone under `$`. A required body makes its root required ([Requests](requests.md#the-body)) |
 | `BaseStrategyContract` | per-value generation knobs, JSON Schema aliases |
-| `HackerStrategyContract` | subclass adding attack profiles and payload-variant toggles |
+| `HackerStrategyContract` | subclass adding the field's attack families (`attack_profiles`) and payload-variant toggles |
 | `ResponseContract` | expected `content_type` and `body_schema` for a status |
 | `EndpointRisk` | kernel semantic DTO: criticality, sensitivity, risk score |
-| `EndpointAttack` | kernel semantic DTO: attack profiles, focus and sensitive fields, hints |
+| `EndpointAttack` | kernel semantic DTO: focus and sensitive fields, aggressiveness, mutation depth, and per-field hints carrying attack families |
 | `EndpointAccess` | kernel semantic DTO: the access `policy`; for `owner_only`, the `owner_bundle` it consumes; for `role_only`, the `required_role` a caller must hold |
 | `EndpointBudgetContract` | adaptive example budget; engine-only |
 | `StateLinkContract`, `StateProduction`, `StateConsumption`, `TransitionInvariant` | stateful links |
@@ -79,7 +79,7 @@ Field names of this family are stable: they are persisted as columns.
 |---|---|
 | `CompilationOutcome` | Result: `engine_input` + `exclusions` |
 | `EndpointExclusion` | one rejected or withheld endpoint with its `reason` |
-| `EngineInput`, `CompiledExecutionEndpoint`, `CompiledEndpointStrategies` | the executable compile output; `CompiledEndpointStrategies` holds one compiled part per zone (`body` a `CompiledBody`), the `generation_plan`, and the `poisoning_phases` its contract type poisons |
+| `EngineInput`, `CompiledExecutionEndpoint`, `CompiledEndpointStrategies` | the executable compile output; `CompiledEndpointStrategies` holds one compiled part per zone (`body` a `CompiledBody`), the `generation_plan`, and the `poisoning_phases` its contract type poisons; `CompiledExecutionEndpoint.optional_oracles` names the opt-in oracles its strategy turns on |
 | `EngineRunResult` | `findings` + `status` + `stats` + `trace` + optional `fidelity` |
 | `Finding` | the discriminated union of `ConfirmedFinding`, `FlakyFinding`, `UnverifiedFinding` on `state` |
 | `ConfirmedFinding` | a settled reproducer: carries its `report` |
@@ -102,6 +102,22 @@ Field names of this family are stable: they are persisted as columns.
 | `Identity` | one caller identity: a `label`, its credential `headers`, an optional `role` (never empty) that only a `role_only` endpoint reads (`None` never satisfies a required role), and a `credential` (`CredentialKind`, default `VALID`) |
 | `StatelessOptions`, `StatefulOptions`, `PerformanceOptions`, `ReplayOptions` | passed to `run(options=...)` per mode |
 | `ConcurrencyLadder` | the value of `PerformanceOptions.concurrency_ladder`: strictly increasing `steps` plus the degradation `tolerance` (frozen) |
+
+## Strategies and runner traits
+
+What a strategy decides and what each runner takes from it
+([Strategies and runner traits](strategies.md)).
+
+| Name | One line |
+|---|---|
+| `Strategy` | the strategy a compile runs under: `DEFAULT` / `SECURITY` / `CONFORMANCE` / `SMOKE` / `EXPOSURE`, valued by their wire spellings (global on `CompilerInput`) |
+| `StrategyProfile` | what one strategy decides: `phase_split`, `allowed_fields_by_type`, `contract_type`, `allow_contract_subclasses`, `default_max_examples`, `optional_oracles`, `attack_families`, `omits_read_only`, and the derived `promotes_attack_hints` |
+| `profile_for(strategy) -> StrategyProfile` | the registered profile, or `PolicyError` when none is |
+| `registered_strategies() -> frozenset[Strategy]` | the strategies with a profile registered |
+| `RunnerTraits` | what one runner variant takes from a plan: `consumes`, `honors_examples_per_endpoint`, `examples_cap`, `judges_opt_in_oracles` |
+| `PlanPhases` | `ALL`: the `consumes` of a runner that takes every phase the strategy plans |
+| `runner_traits()` | the `RunnerTraits` of every variant of every registered runner, keyed by `(mode, variant)` |
+| `runner_traits_for(mode, options) -> RunnerTraits` | the traits of the variant a run in that mode, with those options resolved, takes |
 
 ## Cancellation and progress
 
@@ -131,12 +147,11 @@ See [Progress and cancellation](progress-and-cancellation.md) for how they behav
 | Name | One line |
 |---|---|
 | `ExecutionMode` | `STATELESS` / `STATEFUL` / `REPLAY` / `PERFORMANCE` / `RESILIENCE` / `AUTH` |
-| `StrategyMode` | `DEFAULT` / `HACKER` (global on `CompilerInput`) |
 | `RunStatus` | a run's terminal outcome: `COMPLETED` / `TRUNCATED` / `ABORTED` / `CANCELLED` |
 | `FindingState` | a finding's settled state: `CONFIRMED` / `FLAKY` / `UNVERIFIED` |
 | `ErrorCategory` | the outcome category of one request |
 | `TruncationReason` | why a run, or one endpoint, was cut short (includes `TARGET_DOWN`, `INFRASTRUCTURE_ABORT`, `CANCELLED`, and `ENGINE_FAILURE` for an endpoint the engine itself failed on and isolated) |
-| `InvariantViolation` | the invariant a finding broke (includes `INPUT_VALIDATION`: a 2xx accepted the poisoned field outside its declared schema; and the security invariants `INFORMATION_DISCLOSURE`, `SENSITIVE_DATA_EXPOSURE`, `REFLECTED_PAYLOAD`, `MASS_ASSIGNMENT`, `INPUT_INDUCED_TIMEOUT`) |
+| `InvariantViolation` | the invariant a finding broke (includes `INPUT_VALIDATION`: a 2xx accepted the poisoned field outside its declared schema; and the security invariants `INFORMATION_DISCLOSURE`, `SENSITIVE_DATA_EXPOSURE`, `REFLECTED_PAYLOAD`, `MASS_ASSIGNMENT`, `INPUT_INDUCED_TIMEOUT`; and the opt-in `UNDECLARED_RESPONSE_FIELD`) |
 | `FidelityLevel` | `EXACT` / `REDUCED` |
 | `CredentialKind` | whether an identity's credentials are ones the target should accept: `VALID` / `INVALID` |
 
@@ -165,7 +180,7 @@ kernel's from `specforge_contracts`.
 
 | Name | One line |
 |---|---|
-| `validate_endpoint_spec(spec, *, strategy_mode)` | the ordered per-endpoint checks — types, allowed fields, ranges, phase split, focus fields, and the owner bundle — the first `PolicyError` wins ([ADR-015](adr/api.md#adr-015)). The range check covers numeric bounds and ISO `date` / `date-time` string bounds, which are parsed and compared chronologically so an inverted or incomparable date range is rejected. The owner-bundle check requires an `owner_only` endpoint's `owner_bundle` to be among the bundles it consumes, naming the consumed bundles otherwise. A `role_only` endpoint has no check here: a role cannot be judged against the compiled endpoint, so its coherence lives in the kernel and its holder check in the auth runner's precondition |
+| `validate_endpoint_spec(spec, *, strategy)` | the ordered per-endpoint checks — types, allowed fields, ranges, phase split, focus fields, and the owner bundle — the first `PolicyError` wins ([ADR-015](adr/api.md#adr-015)). The range check covers numeric bounds and ISO `date` / `date-time` string bounds, which are parsed and compared chronologically so an inverted or incomparable date range is rejected. The owner-bundle check requires an `owner_only` endpoint's `owner_bundle` to be among the bundles it consumes, naming the consumed bundles otherwise. A `role_only` endpoint has no check here: a role cannot be judged against the compiled endpoint, so its coherence lives in the kernel and its holder check in the auth runner's precondition |
 | `validate_property_field_references(semantic_property, *, known_fields)` | raises `PolicyError` when a `SemanticProperty`'s expression references a field outside `known_fields` |
 
 ## Domain exceptions
@@ -223,7 +238,7 @@ tests exercise, documented for that reason
 | Name | One line |
 |---|---|
 | `compile(compiler_input) -> CompilationOutcome` | the whole compile; the facade re-exports it as `compile_strategies` |
-| `build_generation_plan(endpoint, strategy_mode) -> GenerationPlan` | the per-endpoint example budget: totals, phase split (with any applicable phase extension's share reserved), combination limits |
+| `build_generation_plan(endpoint, profile) -> GenerationPlan` | the per-endpoint example budget: totals (the budget's `max_examples`, else the profile's `default_max_examples`), phase split (with any applicable phase extension's share reserved), combination limits |
 | `estimate_parameter_space(parameters) -> int` | the estimated combination count for a parameter map, capped at 10⁹ |
 | `effective_phases(endpoint, base_phases) -> tuple[Phase, ...]` (`effective_phases.py`) | the profile's phases plus every phase extension the endpoint activates |
 | `effective_split(endpoint, base_split) -> Mapping[Phase, float]` (`effective_phases.py`) | a phase split with each activated extension's share reserved; unchanged when none applies |
@@ -254,7 +269,7 @@ tests exercise, documented for that reason
 | `poisoning_phases(phases, contract_types)` | the phases that carry candidates for at least one of the types |
 | `poisoning_strategy(contract, phase, *, context)` | the phase's candidates for the field, or `None` when the phase cannot poison it |
 | `zone_variants_for(phase, zone, contract_types)` | the distinct zone-variant sources the phase resolves for the types on that zone |
-| `GenerationContext` | endpoint-wide generation knobs a builder may read |
+| `GenerationContext` | endpoint-wide generation knobs a builder may read, the strategy's `attack_families` among them (`allows(family)`) |
 | `EMPTY_CONTEXT` | the shared context for an endpoint with no attack knobs |
 | `SchemaView` | typed, read-only view over a strategy contract (below) |
 
@@ -288,19 +303,27 @@ key:
 | `sample_attack_payloads(payloads)` | the sampled-from strategy over deduplicated payloads, or `st.none()` when empty |
 | `mass_assignment_variant(params, valid, always_sent)` | the body zone variant: the valid body plus one undeclared privileged key |
 | `AttackRequest` | everything a base-payload builder or toggle family needs for a field |
-| `AttackToggles` | the eight payload-variant flags, pinned to the contract by a guard test; `DEFAULT_ATTACK_TOGGLES` (`attack/request.py`) is the untuned set |
+| `AttackToggles` | the eight payload-variant flags, pinned to the contract by a guard test; `AttackToggles.from_contract(contract)` reads an attack contract's, and `DEFAULT_ATTACK_TOGGLES` (`attack/request.py`) is the untuned set |
+| `allowed_profiles(context, *sources)` · `allowed_candidates(candidates, context)` | the families, or the candidates, whose attack family the context allows |
 
-### `strategy_compiler.fields.hacker`
+### `strategy_compiler.fields.mutation`
 
 | Name | One line |
 |---|---|
-| `hacker_attack_candidates(contract, *, context)` | the attack candidates of the contract's declared profiles and toggles that fit the field's shape |
-| `build_hacker_attack(contract, *, context)` | the sampled hacker payloads, as bare values |
-| `build_hacker_mutation(contract, *, context)` | the mutation-phase strategy: a non-null valid seed with one sampled operator applied |
-| `toggles_of(contract)` | the `AttackToggles` a hacker contract declares |
+| `build_mutation(contract, toggles, *, context)` | the mutation-phase strategy: a non-null valid seed with one operator the toggles enable applied, or the valid strategy when none applies |
+| `build_base_mutation(contract, *, context)` | the mutation phase of a field no contract tunes, with `DEFAULT_ATTACK_TOGGLES` |
+| `resolve_mutation_depth(context)` | the context's `mutation_depth`, or `DEFAULT_MUTATION_DEPTH` |
 | `mutation_operators(value_type, toggles)` | the gate-enabled mutation operators for a schema type |
 | `MutationOperator` | a frozen `(name, gate, apply)` mutation transform |
 | `mutate_object(obj, depth)` | layered object mutation for prototype-pollution and overflow probing |
+
+### `strategy_compiler.fields.security`
+
+| Name | One line |
+|---|---|
+| `hacker_attack_candidates(contract, *, context)` | the attack candidates of the contract's declared families and toggles that the context allows and that fit the field's shape |
+| `build_hacker_attack(contract, *, context)` | the sampled attack payloads of an attack contract, as bare values |
+| `build_hacker_mutation(contract, *, context)` | `build_mutation` with the toggles the contract declares (`AttackToggles.from_contract`) |
 
 ### `shared`
 

@@ -7,7 +7,7 @@ how a validated field becomes a Hypothesis strategy.
 
 ## ADR-016 — Field builders are functions in tables, not implementations of a Protocol { #adr-016 }
 
-**Status:** accepted · `strategy_compiler/fields/default/`, `strategy_compiler/fields/hacker/`
+**Status:** accepted · `strategy_compiler/fields/default/`, `strategy_compiler/fields/security.py`
 
 ### Context
 
@@ -76,7 +76,7 @@ enums; and the raw dump has exactly two call sites instead of many.
 ### Context
 
 Some phase builders read endpoint-wide knobs — aggressiveness, mutation depth,
-the attack profiles an endpoint's risk inherits — and most do not. The knobs
+the attack families an endpoint's risk inherits — and most do not. The knobs
 could be passed only when they exist.
 
 ### Decision
@@ -154,7 +154,7 @@ entry it cannot call.
 
 ## ADR-027 — `AttackToggles` are explicit fields, pinned by a test { #adr-027 }
 
-**Status:** accepted · `strategy_compiler/fields/hacker/request.py`
+**Status:** accepted · `strategy_compiler/fields/attack/request.py`
 
 ### Context
 
@@ -183,7 +183,7 @@ field fails the guard; the one unconsumed flag is excluded on purpose, in view.
 
 ## ADR-028 — The attack builder takes the type, defaulted by its caller { #adr-028 }
 
-**Status:** accepted · `strategy_compiler/fields/hacker/builders.py`
+**Status:** accepted · `strategy_compiler/fields/security.py`
 
 ### Context
 
@@ -327,7 +327,7 @@ a new kernel attack field reaches the engine without a change to the compiler.
 
 ## ADR-051 — Mutation is a generation phase over hacker contracts, seeded from the valid strategy, with engine-owned operators { #adr-051 }
 
-**Status:** accepted · Superseded in part by [ADR-141](measurement.md#adr-141) · `models/phase.py`, `strategy_compiler/fields/hacker/mutation_operators.py`, `strategy_compiler/fields/hacker/builders.py`, `strategy_compiler/fields/builtin.py`, `profiles/builtin.py`
+**Status:** accepted · Superseded in part by [ADR-141](measurement.md#adr-141), [ADR-156](strategies.md#adr-156) · `models/phase.py`, `strategy_compiler/fields/mutation/operators.py`, `strategy_compiler/fields/security.py`, `strategy_compiler/fields/builtin.py`, `profiles/builtin.py`
 
 ### Context
 
@@ -341,35 +341,36 @@ and a budget, none of which the attack pools provide.
 ### Decision
 
 Mutation is a `Phase.MUTATION` registered in the phase registry by contract type,
-not a new `StrategyMode`. On a hacker contract the builder draws a **non-null
+not a new `Strategy`. On a hacker contract the builder draws a **non-null
 valid seed** and applies **one operator per draw**, sampled from a table keyed by
 the field's `SchemaType`; the seed is drawn per example so Hypothesis can shrink
 the mutated variant. The operators and their table are owned by the engine and
 gated by the existing `AttackToggles`; intensity comes from `mutation_depth`,
 which reaches only the structural operators. The share is taken from `valid` in
-the hacker split (`valid` 0.50), so `boundary`, `invalid` and `attack` keep their
+the `security` split (`valid` 0.50), so `boundary`, `invalid` and `attack` keep their
 budget. (Superseded in part by [ADR-141](measurement.md#adr-141): the measured
-hacker split gives `mutation` 0.05 and `valid` 0.40.) On the base contract the phase falls back to the valid strategy, exactly
-as `attack` does, so a plain field inside a hacker-mode compile still compiles.
+`security` split gives `mutation` 0.05 and `valid` 0.40.) On the base contract the phase falls back to the valid strategy, exactly
+as `attack` does, so a plain field inside a `security` compile still compiles. (Superseded in part by
+[ADR-156](strategies.md#adr-156): the base contract mutates too, with the default toggles.)
 
 ### Rejected
 
-- **A `StrategyMode.MUTATION`.** The mode is a closed, persisted vocabulary, and
-  mutation intensifies the hacker mode rather than being orthogonal to it — a new
-  mode would fork the whole profile for what is one more phase.
+- **A `Strategy.MUTATION`.** The strategy is a closed, persisted vocabulary, and
+  mutation intensifies the `security` strategy rather than being orthogonal to it — a new
+  strategy would fork the whole profile for what is one more phase.
 - **Producer-declared seeds and operators.** No kernel field is needed: the
   producer already carries intensity through `mutation_depth`, and the operator
   catalogue is an engine concern, not part of the boundary contract.
 - **A whole-payload mutation at zone level.** The compiler is per-field; "drop a
   required field" is simply an operator of the parent object field, so no
   payload-level pass is warranted.
-- **Hacker-only registration.** A base-contract field met inside a hacker compile
+- **Hacker-only registration.** A base-contract field met inside a `security` compile
   would then fail to compile when the mutation phase ran — hence the base
   fallback.
 
 ### Consequences
 
-Hacker compiles gain a fifth phase for every field; `RunStats.by_phase` reports
+`security` compiles gain a fifth phase for every field; `RunStats.by_phase` reports
 `mutation` separately; nullable seeds are filtered so an operator always receives
 a typed value; storage's phase description lists `mutation`.
 
@@ -457,7 +458,7 @@ field, and a new zone that needs its own alphabet is a row in
 
 ## ADR-111 — Numbers stay finite, and the boundary phase stays inside the declared range { #adr-111 }
 
-**Status:** accepted · Superseded in part by [ADR-113](#adr-113) and [ADR-128](#adr-128) · `strategy_compiler/constants.py`, `strategy_compiler/fields/default/constraints.py`, `strategy_compiler/fields/default/boundary.py`, `strategy_compiler/fields/hacker/payloads.py`; engine `runtime/http/wire_body.py`
+**Status:** accepted · Superseded in part by [ADR-113](#adr-113) and [ADR-128](#adr-128) · `strategy_compiler/constants.py`, `strategy_compiler/fields/default/constraints.py`, `strategy_compiler/fields/default/boundary.py`, `strategy_compiler/fields/attack/payloads.py`; engine `runtime/http/wire_body.py`
 
 ### Context
 
@@ -852,7 +853,7 @@ phases would have spent stays unspent.
 
 `attack` drew attack payloads only for a field whose contract was a
 `HackerStrategyContract`, which a field becomes when the producer hints it. A
-plain field under the `HACKER` profile compiled `attack` with the valid builder,
+plain field under the `security` profile compiled `attack` with the valid builder,
 so a run without an inferred contract sent valid requests in its attack pass and
 could find nothing an attack finds. Where it did attack, every field of the
 request was hostile at once, and a finding could not be pinned on any of them.
@@ -890,7 +891,7 @@ yields a wrapper.
 
 ### Consequences
 
-The `HACKER` profile attacks every string field with family-tagged payloads
+The `security` profile attacks every string field with family-tagged payloads
 whether or not a producer ran; the producer narrows and tunes the attack, it does
 not enable it. A field outside the endpoint's `focus_fields` is never the
 attacked one. The fields `attack` leaves valid draw from the valid builder, seeds
@@ -900,7 +901,7 @@ included.
 
 ## ADR-127 — The attack payloads live in a package any contract uses, with default families per type { #adr-127 }
 
-**Status:** accepted · `strategy_compiler/fields/attack/`, `strategy_compiler/fields/hacker/`, `strategy_compiler/constants.py`; `tests/strategy_compiler/fields/test_layering.py`
+**Status:** accepted · Superseded in part by [ADR-156](strategies.md#adr-156) · `strategy_compiler/fields/attack/`, `strategy_compiler/fields/security.py`, `strategy_compiler/constants.py`; `tests/strategy_compiler/fields/test_layering.py`
 
 ### Context
 
@@ -921,6 +922,9 @@ deduplication (`sampling.py`) and the mass-assignment variant
 `toggles_of(contract)`, the extra-fields object mutation, the `mutation` phase and
 its operators, and the hacker candidates composed over the generic payloads. The
 layers point one way, `hacker` → `attack` → `default`, pinned by a layering test.
+(Superseded in part by [ADR-156](strategies.md#adr-156): the hacker tuning is
+`fields/security.py`, the mutation phase is `fields/mutation/`, and the layers are
+`security` → `mutation` → `attack` → `default`.)
 
 **A field with no declared profiles is attacked with its type's defaults.**
 `DEFAULT_ATTACK_PROFILES_BY_TYPE` maps a string to `injection`, `xss`,
@@ -947,7 +951,7 @@ family.
 
 ### Consequences
 
-A new attack profile pool is a row of `PROFILE_STRING_PAYLOADS`; a new default
+A new attack family pool is a row of `PROFILE_STRING_PAYLOADS`; a new default
 for a type is a row of `DEFAULT_ATTACK_PROFILES_BY_TYPE`. Integer and number
 payloads are sent without a family label, so an oracle that gates on the family
 does not see them.
@@ -1001,7 +1005,7 @@ with `boundary` and `invalid`.
 
 ## ADR-129 — Aggressiveness is one knob: the attack share of the budget { #adr-129 }
 
-**Status:** accepted · Superseded in part by [ADR-141](measurement.md#adr-141) · `budget/aggressiveness.py`, `strategy_compiler/planning.py`, `strategy_compiler/fields/context.py`, `strategy_compiler/fields/hacker/builders.py`
+**Status:** accepted · Superseded in part by [ADR-141](measurement.md#adr-141) · `budget/aggressiveness.py`, `strategy_compiler/planning.py`, `strategy_compiler/fields/context.py`, `strategy_compiler/fields/security.py`
 
 ### Context
 
@@ -1028,9 +1032,9 @@ attacked per request, the rest of the request is already valid.
 ### Consequences
 
 More aggressiveness always means more attacking requests, and zero means no
-attack pass. The `HACKER` profile's split keeps `attack` at 0.05 of the budget;
-the `DEFAULT` profile has no attack pass. (Superseded in part by
-[ADR-141](measurement.md#adr-141): the measured `HACKER` split gives `attack`
+attack pass. The `security` profile's split keeps `attack` at 0.05 of the budget;
+the `default` profile has no attack pass. (Superseded in part by
+[ADR-141](measurement.md#adr-141): the measured `security` split gives `attack`
 0.25.)
 
 ---

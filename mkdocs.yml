@@ -154,6 +154,7 @@ nav:
           - Protocol:
               - Overview: modules/core/protocol/index.md
               - Handshake and versioning: modules/core/protocol/handshake.md
+              - Fuzz options: modules/core/protocol/fuzz-options.md
               - Events and cancellation: modules/core/protocol/events.md
               - Operations: modules/core/protocol/operations.md
               - Result vocabularies: modules/core/protocol/vocabularies.md
@@ -219,6 +220,7 @@ nav:
           - Architecture: modules/specforge-engine/architecture.md
           - Data flow: modules/specforge-engine/data-flow.md
           - Strategy compiler: modules/specforge-engine/strategy-compiler.md
+          - Strategies and runner traits: modules/specforge-engine/strategies.md
           - Requests: modules/specforge-engine/requests.md
           - Engine internals: modules/specforge-engine/engine-internals.md
           - Findings: modules/specforge-engine/findings.md
@@ -236,6 +238,7 @@ nav:
               - Engine: modules/specforge-engine/adr/engine.md
               - Measurement: modules/specforge-engine/adr/measurement.md
               - Findings: modules/specforge-engine/adr/findings.md
+              - Strategies: modules/specforge-engine/adr/strategies.md
   - Test corpora:
       - Overview: testing/index.md
       - RealWorld corpus: testing/real-world.md

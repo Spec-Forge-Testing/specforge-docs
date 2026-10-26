@@ -10,13 +10,14 @@ output; dependencies point one way only.
 |---|---|---|---|
 | **policy** | `policy/` | validate the compiler input at the boundary | HTTP, LLM calls |
 | **strategy_compiler** | `strategy_compiler/` | validated contracts → `SearchStrategy`s | HTTP, re-validation |
-| **engine** | `runtime/` | execute, check, minimize, report | see a `StrategyMode` |
+| **engine** | `runtime/` | execute, check, minimize, report | see a `Strategy` or a profile |
 
 Three leaf packages sit under the stages and are shared without inverting the
 direction:
 
 - **`models/`** — the single owner of every domain DTO and vocabulary enum.
-- **`profiles/`** — the strategy-mode registry (`DEFAULT`, `HACKER`).
+- **`profiles/`** — the strategy profile registry (`default`, `security`,
+  `conformance`, `smoke`, `exposure`).
 - **`budget/`** — the single home of example-budget arithmetic.
 
 The leaf of the whole graph is [`specforge_contracts`](../contracts/index.md),
@@ -43,7 +44,7 @@ src/specforge_engine/
 │   ├── sensitive_names.py # is_sensitive_field_name: the names the redaction and the sensitive-data oracle share
 │   └── phase_extensions.py # PhaseExtension value object + its registry (isolated, register, lookup)
 ├── models/                # DTOs and enums (see below)
-├── profiles/              # Strategy-mode profiles: registry, builtin DEFAULT / HACKER
+├── profiles/              # Strategy profiles: registry, the five built-ins
 ├── budget/                # Example allocation, aggressiveness, risk weighting, shares
 ├── policy/                # validate_endpoint_spec, field-reference checks
 ├── strategy_compiler/     # Per-endpoint compile, zones, planning, fields/
@@ -53,7 +54,7 @@ src/specforge_engine/
 │   ├── body.py            # compile_body: object fields as a zone, or the root as the field `$`
 │   ├── planning.py        # build_generation_plan, estimate_parameter_space
 │   ├── effective_phases.py # effective_phases / effective_split: read the extension registry
-│   ├── constants.py       # boundary tables, alphabets per phase, seed share, choice counts, attack-profile maps
+│   ├── constants.py       # boundary tables, alphabets per phase, seed share, choice counts, attack-family maps
 │   └── fields/            # Field → SearchStrategy
 │       ├── context.py     # GenerationContext, EMPTY_CONTEXT
 │       ├── schema_view.py # SchemaView: typed reader over a contract
@@ -62,7 +63,8 @@ src/specforge_engine/
 │       ├── builtin.py     # the built-in phase registrations
 │       ├── default/       # valid · boundary · invalid · constraints · formats · alphabet
 │       ├── attack/        # payloads and candidates any contract uses: tables · payloads · request · builders · sampling · mass_assignment
-│       └── hacker/        # the hacker tuning: builders (toggles_of, candidates) · mutation · mutation_operators · tables
+│       ├── mutation/      # the mutation phase: builders · operators · objects · tables
+│       └── security.py    # the attack contract's tuning of the attack and mutation builders
 └── runtime/                # Execution
     ├── facade.py          # run(): resolve the mode, open one client, dispatch, hold safe endpoints
     ├── safety_guard.py    # partition_by_safety: hold declared side-effect endpoints back
@@ -72,14 +74,14 @@ src/specforge_engine/
     ├── progress/          # Throttled counters and lifecycle events pushed to an observer
     ├── http/              # Async orchestrator, request injection, body encoders, credentials, reserved headers, error classifier
     ├── harness/           # The Hypothesis bridge: one event loop, settings, identity strategy, minimal draw, settled gather
-    ├── oracles/           # Response oracles: verdict leaf, intrinsic rules, registry, precedence, the sixteen builtins
+    ├── oracles/           # Response oracles: verdict leaf, intrinsic rules, registry, precedence, response walk, the seventeen builtins
     │   └── security/      # the five intent-anchored security oracles
-    ├── findings/          # Group, deduplicate, materialize, shrink, stats
+    ├── findings/          # Group, deduplicate, materialize, shrink, stats; redaction/ and causes/
     ├── fuzzers/           # stateless/ and stateful/ procedures
     ├── state_link/        # Shared bundle capture and status matching (stateful + auth)
     ├── trace/             # Record, rehydrate, canonical JSON, URL userinfo
     ├── replay/            # Fidelity assessment, pacing
-    └── runners/           # One runner per ExecutionMode, the shared loop, resilience/, auth/
+    └── runners/           # One runner per ExecutionMode and its traits, the shared loop, resilience/, auth/
 ```
 
 The two root leaves — `constants.py` and `exceptions.py` — import nothing from
@@ -89,7 +91,7 @@ the package, so any layer, `models/` included, can import them without a cycle.
 `CANCELLATION_POLL_INTERVAL_S`); every stage keeps its own
 `constants.py` for what only it uses. The two phase splits are not shared
 constants: they are the data with which `profiles/builtin.py` registers the
-`DEFAULT` and `HACKER` profiles
+built-in profiles
 ([ADR-002](adr/foundations.md#adr-002)).
 
 ## The models package
@@ -99,9 +101,9 @@ declares a domain type.
 
 ```text
 models/
-├── execution_mode.py · strategy_mode.py · phase.py · schema.py   # vocabulary enums (StrEnum), numeric word ranges
+├── execution_mode.py · strategy.py · phase.py · schema.py   # vocabulary enums (StrEnum), numeric word ranges
 ├── wire.py · media_type.py   # ZoneWire, TextAlphabet, the wire literals; is_json_media_type
-├── profile.py          # StrategyModeProfile: what one strategy mode decides
+├── strategy_profile.py # StrategyProfile: what one strategy decides
 ├── contracts/          # the contract vocabulary: kernel re-exports + the engine's own contracts
 │   ├── dialect.py · normalization.py · response.py · state_link.py · endpoint_controls.py
 │   └── strategies/     # BaseStrategyContract, HackerStrategyContract
@@ -110,16 +112,16 @@ models/
 ```
 
 The enums sit at the package root because both the compiler and the engine key
-on them. `StrategyModeProfile` (a frozen dataclass) also sits at the root: it
-binds a `StrategyMode` to its phase split, allowed-field matrix and contract
-type, and belongs to neither stage. The registry that holds the profiles is in
+on them. `StrategyProfile` (a frozen dataclass) also sits at the root: it
+binds a `Strategy` to its phase split, allowed-field matrix, contract type,
+example count, opt-in oracles and attack families, and belongs to neither stage. The registry that holds the profiles is in
 `profiles/`, so `models/` stays purely DTOs and enums.
 
 Dependencies inside `models/` are acyclic and point downward:
 
 ```mermaid
 graph TD
-    root["models/*.py<br/>(enums · StrategyModeProfile)"] --> contracts
+    root["models/*.py<br/>(enums · StrategyProfile)"] --> contracts
     compiler["models/compiler"] --> engine["models/runtime"]
     engine --> contracts["models/contracts"]
     contracts --> kernel["specforge_contracts (kernel, leaf)"]
@@ -184,10 +186,11 @@ graph TD
   sanctioned module-level state is a registry, populated at import and reset
   through a public `isolated()` seam ([Extension guide](extension-guide.md)).
 - The engine consumes `EngineInput` alone and knows nothing about contracts or
-  `StrategyMode`.
-- Inside `strategy_compiler/fields/`, the layers point one way: `hacker/` may
-  import `attack/` and `default/`, and `attack/` may import `default/`, never
-  the reverse.
+  `Strategy`: what a strategy decides reaches it compiled, as the plan and each
+  endpoint's `optional_oracles`. What a runner takes from that plan it declares
+  as its traits ([Strategies and runner traits](strategies.md#runner-traits)).
+- Inside `strategy_compiler/fields/`, the layers point one way: `security.py`
+  over `mutation/` over `attack/` over `default/`, never the reverse.
 - Every vocabulary enum is `enum.StrEnum`, so an enum-keyed map serializes to
   its wire strings ([ADR-004](adr/models.md#adr-004)).
 

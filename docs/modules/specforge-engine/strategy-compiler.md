@@ -38,13 +38,13 @@ Each endpoint is compiled in this order:
 5. **`compile_body` for the body.** A `BodySpec` becomes a `CompiledBody`: its
    object fields compiled as a zone, or its root as the single field `$`, with the
    body's media type deciding its wire ([Requests](requests.md#the-body)).
-6. **`build_generation_plan`.** The endpoint's budget, risk and aggressiveness
-   become a concrete `GenerationPlan`.
+6. **`build_generation_plan`.** The endpoint's budget, risk and aggressiveness,
+   and the profile, become a concrete `GenerationPlan`.
 
 The compiled parts and the plan become a `CompiledEndpointStrategies`, with the
-`poisoning_phases` the mode's contract type poisons, wrapped with the endpoint's
-risk, attack, budget, responses and state link into a
-`CompiledExecutionEndpoint`.
+`poisoning_phases` the strategy's contract type poisons, wrapped with the
+endpoint's risk, attack, budget, responses, state link and the profile's
+`optional_oracles` into a `CompiledExecutionEndpoint`.
 
 ### One parameter, one zone
 
@@ -78,40 +78,46 @@ as an `EndpointCompilationError` — which `compile` turns into an
 `EndpointExclusion`. A `PolicyError` is **not** caught, and the compiler raises
 none of its own: a foreign phase split (below) is rejected earlier, at the policy
 boundary, by `validate_endpoint_spec`, because it means the input itself is
-malformed for the mode, not that this one endpoint is uncompilable
+malformed for the strategy, not that this one endpoint is uncompilable
 ([ADR-031](adr/compiler.md#adr-031)).
 
 ## Which contracts and phases apply: the profile
 
-What a compile generates is decided by a `StrategyModeProfile`, resolved from
-the `profiles/` registry by the `StrategyMode` on `CompilerInput`.
-`strategy_mode` is global on the input, never per-endpoint. A profile is a
-frozen value object with five fields:
+What a compile generates is decided by a `StrategyProfile`, resolved from the
+`profiles/` registry by the `Strategy` on `CompilerInput`, once per endpoint.
+`CompilerInput.strategy` is global on the input, never per-endpoint.
+`profile_for(strategy)` returns the profile and raises `PolicyError` when none is
+registered.
 
-| Field | Meaning |
+The compiler reads these fields of it:
+
+| Field | What the compile does with it |
 |---|---|
-| `mode` | the `StrategyMode` it describes |
-| `phase_split` | `Mapping[Phase, float]`: the phases to compile and the fraction of the budget each gets; `phases` lists them in allocation order |
+| `phase_split` | the phases to compile and each one's share of the budget; `phases` lists them in allocation order |
+| `default_max_examples` | the endpoint's example count when its budget sets no `max_examples` |
 | `allowed_fields_by_type` | the allowed-field matrix the policy layer checks against |
-| `contract_type` | the `BaseStrategyContract` subclass this mode requires |
-| `allow_contract_subclasses` | whether `accepts(contract)` uses `isinstance` (`True`) or an exact type match (`False`) |
+| `contract_type` · `allow_contract_subclasses` | the contract type the strategy requires, and whether `accepts(contract)` takes its subclasses |
+| `attack_families` | the families an attack payload may come from, carried on the `GenerationContext` |
+| `optional_oracles` | the opt-in oracles sealed on the `CompiledExecutionEndpoint` |
 
-`profile_for(mode)` returns the profile for a `StrategyMode` and raises
-`PolicyError` when none is registered.
+| Profile | Contract type | Phase split | Examples | Subclasses |
+|---|---|---|---|---|
+| `default` | `BaseStrategyContract` | `valid` 0.60 · `boundary` 0.25 · `invalid` 0.15 | 200 | exact type only |
+| `security` | `HackerStrategyContract` | `valid` 0.40 · `boundary` 0.20 · `invalid` 0.10 · `attack` 0.25 · `mutation` 0.05 | 200 | accepted |
+| `conformance` | `BaseStrategyContract` | `valid` 0.70 · `boundary` 0.30 | 200 | exact type only |
+| `smoke` | `BaseStrategyContract` | `valid` 1.0 | 20 | exact type only |
+| `exposure` | `HackerStrategyContract` | `valid` 0.50 · `attack` 0.50 | 100 | accepted |
 
-| Profile | Contract type | Phase split | Subclasses |
-|---|---|---|---|
-| `DEFAULT` | `BaseStrategyContract` | `valid` 0.60 · `boundary` 0.25 · `invalid` 0.15 | exact type only |
-| `HACKER` | `HackerStrategyContract` | `valid` 0.40 · `boundary` 0.20 · `invalid` 0.10 · `attack` 0.25 · `mutation` 0.05 | accepted |
+The `default` and `security` splits, and the default budget of 200 examples, are
+measured: a grid of budgets and candidate splits on two targets, judged by a
+decision rule written before the first run ([ADR-140](adr/measurement.md#adr-140),
+[ADR-141](adr/measurement.md#adr-141)). The `security` attack share applies when
+the endpoint declares no aggressiveness; with one, `derive_attack_split` sets it.
+What each strategy is for, its other fields and the opt-in oracles are on
+[Strategies and runner traits](strategies.md).
 
-Both splits, and the default budget of 200 examples, are measured: a grid of
-budgets and candidate splits on two targets, judged by a decision rule written
-before the first run ([ADR-140](adr/measurement.md#adr-140),
-[ADR-141](adr/measurement.md#adr-141)). The `HACKER` attack share applies when the
-endpoint declares no aggressiveness; with one, `derive_attack_split` sets it.
-
-Adding a profile is one registration call — see the
-[Extension guide](extension-guide.md#add-a-profile).
+Adding a profile is one registration call — see
+[Adding a strategy](strategies.md#adding-a-strategy).
 
 ## `GenerationContext`: the endpoint's knobs
 
@@ -121,8 +127,9 @@ never guards for `None` ([ADR-024](adr/compiler.md#adr-024)):
 
 | Field | Holds |
 |---|---|
-| `mutation_depth` | how deep object mutation recurses (hacker) |
-| `extra_profiles` | attack profiles the endpoint's risk earns, added to the field's own |
+| `mutation_depth` | how deep object mutation recurses |
+| `extra_profiles` | attack families the endpoint's risk earns, added to the field's own |
+| `attack_families` | the families the strategy allows an attack payload to come from; `None` allows every family, and `allows(family)` refuses a payload with no family under a restriction |
 | `text_alphabet` | the `TextAlphabet` a compiled string draws from — `OPEN`, `PRINTABLE` or `WIRE_SENDABLE` — set per zone and phase by `compile_parameter` |
 | `zone_wire` | the `ZoneWire` of the destination zone — `STRUCTURED`, `TEXT` or `SEGMENT` — which decides what the invalid phase can tell apart |
 
@@ -132,10 +139,10 @@ its only reader, and it sets the size of the `attack` pass, not what a field
 draws in it ([ADR-129](adr/compiler.md#adr-129)).
 
 The risk-to-profile mapping is a table. An endpoint's data sensitivity earns a
-profile for every hacker field, and an auth-surface endpoint earns
+family for every field it attacks, and an auth-surface endpoint earns
 `AUTH_BYPASS` on top, order-preserving and de-duplicated:
 
-| `Sensitivity` | Profile earned |
+| `Sensitivity` | Family earned |
 |---|---|
 | `PII` | `INFORMATION_DISCLOSURE` |
 | `FINANCIAL` | `INFORMATION_DISCLOSURE` |
@@ -214,15 +221,16 @@ never as a side effect of importing a builder module
 | `invalid` | base | `build_invalid_strategy` | `untagged(invalid_candidates)` | — |
 | `attack` | base | `build_base_attack` | `base_attack_candidates` | body: `mass_assignment_variant` |
 | `attack` | hacker | `build_hacker_attack` | `hacker_attack_candidates` | body: `mass_assignment_variant` |
-| `mutation` | base | `build_valid_strategy` | — | — |
+| `mutation` | base | `build_base_mutation` | — | — |
 | `mutation` | hacker | `build_hacker_mutation` | — | — |
 | `semantic` | base | `build_valid_strategy` | — | — |
 
 `attack` poisons on every contract: each attack request attacks one field and
-draws every other one valid ([The attack side](#the-attack-side)). `mutation` and
-`semantic` on the base contract fall back to valid values: a field draws in-spec
-values for those phases. `semantic` needs no
-hacker builder at all — its work is not per-field. It compiles a valid value
+draws every other one valid ([The attack side](#the-attack-side)). `mutation`
+breaks a valid value on every contract, with the default toggles on the base
+one ([The mutation phase](#the-mutation-phase)). `semantic` on the base contract
+falls back to valid values: a field draws in-spec values for it. `semantic` needs no
+builder of its own at all — its work is not per-field. It compiles a valid value
 for each parameter, and the engine refines the whole assembled payload once per
 endpoint (see [Engine internals](engine-internals.md#how-a-semantic-property-is-evaluated)).
 
@@ -232,7 +240,7 @@ Adding a phase is registering a `GenerationPhase` — see the
 ## The semantic phase
 
 A phase carried in a profile's `phase_split` compiles for **every** endpoint the
-mode runs. Some phases only mean something for an endpoint that carries a
+strategy runs. Some phases only mean something for an endpoint that carries a
 particular datum, and adding them to every split would spend budget where there
 is nothing to test and pad every endpoint's report with a phase that could not
 find anything. A **phase extension** is the answer: a phase compiled and
@@ -264,7 +272,7 @@ compile, or the reverse:
   `(1 - share)`, and the phase added at exactly its share. Reservation runs over
   whatever split was resolved first — the profile's static split, a custom
   `phase_split` (even one summing below 1, or one without a `valid` row), or the
-  aggressiveness-derived hacker split — so the semantic phase always lands at 10%
+  aggressiveness-derived `security` split — so the semantic phase always lands at 10%
   of the endpoint's budget and the other phases keep their proportions among the
   remaining 90%. As with any phase, a very small budget can round its share to
   zero.
@@ -291,7 +299,7 @@ builders ([ADR-016](adr/compiler.md#adr-016)).
 | `fields/default/alphabet.py` | `TextAlphabet → character strategy` |
 | `fields/attack/payloads.py` | `SchemaType → base-payload builder`; the toggle-family table |
 | `fields/attack/tables.py` | `PROFILE_STRING_PAYLOADS`: `AttackFamily → string payload pool` |
-| `constants.py` | `DEFAULT_ATTACK_PROFILES_BY_TYPE`: `SchemaType → default attack profiles` |
+| `constants.py` | `DEFAULT_ATTACK_PROFILES_BY_TYPE`: `SchemaType → default attack families` |
 
 Two overrides ride on top of the type dispatch. The boundary phase shrinks any
 array to a size-0..1 envelope through `_ARRAY_SIZE_OVERRIDE` instead of
@@ -431,26 +439,28 @@ or `attack` never seeds.
 
 `attack` is a poisoning phase on every contract
 ([ADR-126](adr/compiler.md#adr-126)). The payload machinery lives in
-`fields/attack/`, a package any contract uses; `fields/hacker/` keeps only what
-tunes it from a `HackerStrategyContract`. The layers point one way, `hacker` →
-`attack` → `default`, pinned by a layering test
-([ADR-127](adr/compiler.md#adr-127)).
+`fields/attack/`, a package any contract uses; `fields/security.py` keeps only
+what tunes the attack and mutation builders from a `HackerStrategyContract`. The
+layers point one way, `security` → `mutation` → `attack` → `default`, pinned by
+a layering test ([ADR-127](adr/compiler.md#adr-127),
+[ADR-156](adr/strategies.md#adr-156)).
 
 | Contract | Candidates | Profiles | Toggles |
 |---|---|---|---|
 | base | `base_attack_candidates` | `DEFAULT_ATTACK_PROFILES_BY_TYPE` for the field's type, then the context's `extra_profiles` | `DEFAULT_ATTACK_TOGGLES` |
-| hacker | `hacker_attack_candidates` | the contract's own `attack_profiles`, then the context's `extra_profiles` | `toggles_of(contract)` |
+| hacker | `hacker_attack_candidates` | the contract's own `attack_profiles`, then the context's `extra_profiles` | `AttackToggles.from_contract(contract)` |
 
 Both assemble an `AttackRequest`, the one value object a base-payload builder or
 toggle family needs for a field, and hand the tagged payloads to
-`fitting_candidates`:
+`fitting_candidates`, after `allowed_candidates` drops every payload whose family
+the context does not allow:
 
 | `AttackRequest` field | From |
 |---|---|
-| `profiles` | the profiles of the table above, deduplicated in order |
+| `profiles` | the families of the table above that the context allows, deduplicated in order |
 | `toggles` | the `AttackToggles` of the table above |
 | `minimum` · `maximum` | the field's numeric bounds |
-| `mutation_depth` | the context's (hacker), or `DEFAULT_MUTATION_DEPTH` |
+| `mutation_depth` | the context's, or `DEFAULT_MUTATION_DEPTH` |
 
 `DEFAULT_ATTACK_PROFILES_BY_TYPE` gives a string `injection`, `xss`,
 `path_traversal`, `input_validation` and `information_disclosure`, an integer or
@@ -526,12 +536,25 @@ key is chosen inside the one branch, so the probe is one variant of the body's
 `one_of`, never one per key. Only a body whose root is an object carries it, and
 a focus list that addresses no field of the body keeps it away.
 
-`hacker/` may import `attack/` and `default/`, and `attack/` may import
-`default/`; never the reverse.
+Under a strategy whose `attack_families` leaves out `auth_bypass`, the variant is
+not drawn.
 
-## The hacker mutation phase
+`security.py` may import `mutation/`, `attack/` and `default/`; `mutation/` may
+import `attack/` and `default/`; `attack/` may import `default/`; never the
+reverse.
 
-`build_hacker_mutation` is the `mutation` builder for a `HackerStrategyContract`.
+## The mutation phase
+
+`mutation` is planned by `security` only, and it compiles on every field
+([ADR-156](adr/strategies.md#adr-156)). `fields/mutation/` holds it:
+`build_mutation(contract, toggles, *, context)` is the one builder, the operator
+table is `operators.py`, and the object mutation is `objects.py`. Two
+registrations call it: `build_base_mutation` on a `BaseStrategyContract`, with
+`DEFAULT_ATTACK_TOGGLES`, and `build_hacker_mutation` (`fields/security.py`) on a
+`HackerStrategyContract`, with the toggles the contract declares. A mutated
+request poisons no field: `mutation` declares no candidates, because an operator
+can return a value that is still valid.
+
 Where the attack phase samples from fixed hostile pools, mutation starts from a
 value the endpoint would accept and breaks it in exactly one place. It draws a
 **non-null valid seed** (`build_non_null_valid_strategy` — the valid strategy
@@ -569,7 +592,7 @@ gets its plain valid strategy instead.
 | `object` | `pollute` | `include_nested_objects` | layer prototype-pollution and overflow keys (`mutate_object`) |
 
 The gates are the same `AttackToggles` flags the attack phase reads, so one set
-of contract knobs governs both hacker phases. `mutation_depth` (from
+of contract knobs governs both phases. `mutation_depth` (from
 `GenerationContext`, carrying the kernel's `EndpointAttack.mutation_depth`, or
 `DEFAULT_MUTATION_DEPTH` when unset) reaches only the structural operators — the
 object `pollute` operator recurses through `mutate_object` to that depth. It
@@ -585,25 +608,27 @@ field name, or a zone-qualified `zone.name`:
   does not address is compiled in the `valid` phase instead of `attack`. The
   attack effort concentrates on the named fields. A `focus_fields` entry that
   addresses no declared field would silently move every field out of the attack
-  phase, so the policy boundary rejects it as a `PolicyError` under an attack
-  profile — a producer typo fails loudly instead of disabling the attack.
+  phase, so the policy boundary rejects it as a `PolicyError` under a strategy
+  that plans `attack` — a producer typo fails loudly instead of disabling the attack.
 - **Sensitivity.** A parameter the `sensitive_fields` list addresses has
   `INFORMATION_DISCLOSURE` and `AUTH_BYPASS` added to its context profiles, so
   its attack payloads bias toward disclosure and auth-bypass pools.
 
 ## The plan arithmetic
 
-`build_generation_plan` produces a `GenerationPlan` directly — a frozen value
+`build_generation_plan(endpoint, profile)` produces a `GenerationPlan` directly — a frozen value
 object, built in one place, never mutated afterwards
 ([ADR-030](adr/compiler.md#adr-030)):
 
-- `max_examples` is the budget's, scaled by the endpoint's risk score through
-  `weight_by_risk`.
+- `max_examples` is the budget's when the budget sets it, otherwise the profile's
+  `default_max_examples`, then scaled by the endpoint's risk score through
+  `weight_by_risk`. The core always sets it to the run's resolved
+  [examples per endpoint](../core/protocol/fuzz-options.md#examples-per-endpoint).
 - `phase_split` is the budget's own split when it declares one, otherwise the
   profile's — with the `attack` share set by the endpoint's declared aggressiveness
-  through `derive_attack_split` when the mode has an attack phase and the contract
-  declares one. A budget that
-  declares a phase outside the mode's split is a `PolicyError` raised by
+  through `derive_attack_split` when the strategy has an attack phase and the
+  contract declares one. A budget that declares a phase outside the strategy's
+  split is a `PolicyError` raised by
   `validate_endpoint_spec` at the policy boundary; the planner takes a declared
   split as already validated.
 - `estimated_combinations` is `estimate_parameter_space` over every zone's

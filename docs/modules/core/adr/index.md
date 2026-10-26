@@ -21,13 +21,15 @@ The records are split by area. Numbers stay global across the whole site and are
 never reused — the number tells you when it was written, the file tells you what
 it governs. A number missing here belongs to another module:
 [ADR-148](../../specforge-engine/adr/findings.md#adr-148), the engine's invariant
-registry, classifies what the report shows.
+registry, classifies what the report shows, and
+[ADR-159](../../specforge-engine/adr/strategies.md#adr-159), the runner traits the
+effects matrix is derived from, is the engine's.
 
 | File | Area | Covers |
 | --- | --- | --- |
-| [core.md](core.md) | the headless core | Unprobed reasons, dependency gateways, the busy guard, cancelled-run evidence, oracle scope, breached-run evidence, engine option precedence, when the inference gateway loads, the report's labels for the engine's outcomes, the run's URL, a finding's summary, replay verdicts per defect |
+| [core.md](core.md) | the headless core | Unprobed reasons, dependency gateways, the busy guard, cancelled-run evidence, oracle scope, breached-run evidence, engine option precedence, when the inference gateway loads, the report's labels for the engine's outcomes, the run's URL, a finding's summary, replay verdicts per defect, presets, examples per endpoint |
 | [inference.md](inference.md) | contract production | Adopting a produced contract, the inference cache, approval and the spend cap, watching and cancelling production |
-| [protocol.md](protocol.md) | the wire | How fixtures are captured, how versions are matched, one name and `null` for every reader, how `shutdown` ends a session |
+| [protocol.md](protocol.md) | the wire | How fixtures are captured, how versions are matched, one name and `null` for every reader, how `shutdown` ends a session, the strategy's one name and its alias |
 
 ## Full index
 
@@ -55,3 +57,6 @@ registry, classifies what the report shows.
 | [ADR-146](core.md#adr-146) | core | The run's URL is composed once, with the specification's server path, and a follow-up keeps its trigger's server |
 | [ADR-153](core.md#adr-153) | core | A finding's one-sentence summary is told by the core when it reads the finding, by one strategy per invariant |
 | [ADR-154](core.md#adr-154) | core | A replay is judged per recorded defect, and a defect its oracles cannot see is never ruled resolved |
+| [ADR-155](protocol.md#adr-155) | protocol | One strategy name inside, the former name only at the border |
+| [ADR-160](core.md#adr-160) | core | Presets are catalog data a client chains, not a parameter |
+| [ADR-161](core.md#adr-161) | core | Examples per endpoint resolve by one rule, and a count a runner ignores is refused |

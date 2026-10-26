@@ -132,6 +132,17 @@ What each stage of `run_pipeline` works on:
   would carry as an error, and the stages after it are not reported. Without a
   `producer` the stage ends `skipped`.
 
+### Strategy and examples { #strategy-and-examples }
+
+`fuzz` and `run_pipeline` take `strategy` (one of the five
+[strategies](vocabularies.md#strategy), `default` when omitted; `hacker` is
+accepted as `security`) and `examples_per_endpoint`, an integer of at least 1.
+Without a count, a run asks each endpoint the strategy's own default, held under
+the runner's cap; a count asked of a runner that honors none (the `performance`
+ladder, `auth`, `resilience`) is refused `INVALID_PARAMS`. What each choice
+changes in each mode, and the presets a client chains, are published in the
+handshake's [`fuzz_options`](fuzz-options.md).
+
 ### The `producer` object { #producer }
 
 `fuzz` and `run_pipeline` take an optional `producer`; `estimate_inference`
@@ -153,6 +164,8 @@ another `kind` they are refused `INVALID_PARAMS`.
 
 `estimate_inference` takes the same selection as `fuzz` (`target`, `endpoint`,
 `method`, `strategy`) and a `producer` of kind `inference`, and calls no model.
+The strategy picks the LLM profile the contracts would be inferred with; the
+example count does not change the estimate.
 
 | Field | Meaning |
 | --- | --- |
@@ -257,5 +270,5 @@ control request refuted.
 | `describe` | none |
 | `describe_operations` | none |
 
-`describe` carries the same [`vocabulary`](handshake.md#vocabulary) as `hello`,
-beside `catalog`.
+`describe` carries the same [`vocabulary`](handshake.md#vocabulary) and
+[`fuzz_options`](fuzz-options.md) as `hello`, beside `catalog`.

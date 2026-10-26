@@ -39,13 +39,15 @@ name, that name follows in `code font`.
 | **Project / analysis / run** | The three storage levels: the API you test, a replayable recipe, and one execution of that recipe. |
 | **Artifact** | A file a run leaves on disk — its reports and the trace file — indexed in storage. |
 | **Fidelity** | How closely a replay reproduced the original run, i.e. how much to trust its result. |
-| **Strategy family** | Which set of generators the engine uses: `default` (schema-only) or `hacker` (widened toward adversarial values). |
+| **Strategy** | What a run generates and which extra checks judge the answers: `default` (schema-only), `security` (widened toward adversarial values), `conformance` (schema-only, also flagging response fields the contract does not declare), `smoke` (a short run of valid requests) or `exposure` (read-only fields and mass assignment). `hacker` is accepted as `security`. |
+| **Examples per endpoint** | How many generated requests a run asks of each endpoint (`examples_per_endpoint`); without it, the strategy's own default, held under the mode's cap. |
+| **Preset** | A named sequence of runs the core publishes (`quick-check`, `contract-audit`, `security-scan`, `exposure-scan`, `load`, `full`); a client runs them one after the other. |
 | **Producer contract** | An extra per-endpoint contract you supply (`--contracts`) that enriches the run beyond the OpenAPI schema. |
 | **State link** | A data dependency between operations derived from the spec, letting a stateful sequence carry a value from one request into the next. |
 | **Handler** | The function in your source code that serves an endpoint. |
 | **Coverage of declared endpoints** | Which endpoints a run actually tested and which it left out (targeted, excluded or filtered), plus those the spec never declared that only a stateful transition reached (`reached_by_transition`). |
 | **Inference producer** | The contract producer that asks an LLM for each endpoint's contract, from its spec entry and its traced source code (`producer.kind` `inference`). |
-| **Agent profile** | The lens the LLM infers a contract through: `qa` for a `default` strategy run, `security` for a `hacker` one, which also asks for attack payloads. |
+| **Agent profile** | The lens the LLM infers a contract through: `qa` for a `default`, `conformance` or `smoke` run, `security` for a `security` or `exposure` one, which also asks for attack payloads. |
 | **Contract cache** | The inferred contracts kept in storage, keyed by everything that shaped the prompt, so a later run reuses them without calling the model (`run.contract_cache`). |
 | **Cost estimate** | What a run's inferences would cost, priced before any model is called (`estimate_inference`). |
 | **Approval token** | The token an estimate returns; a run that has inferences to pay for passes it to show those exact inferences were approved (`producer.approval_token`). |

@@ -1120,7 +1120,7 @@ It is **conditional**, not a static split row. `CONDITIONAL_PHASES` maps
 compiles the phase only for an applicable endpoint, and `effective_split` reserves
 its 10% out of whatever split was already resolved (`reserve_share` normalizes the
 rest and rescales it by `(1 - share)`), so it works for a profile split, a custom `phase_split`, or
-the aggressiveness-derived hacker split alike. An endpoint with no such rule is
+the aggressiveness-derived `security` split alike. An endpoint with no such rule is
 compiled exactly as before. At the field level the phase is a valid strategy; the
 whole-payload direction lives in the engine, applied once per endpoint through
 `refine_for_phase`, because a cross-field relation is a property of the assembled
@@ -1615,7 +1615,7 @@ there, and runs unchanged over `http://`.
 
 ## ADR-060 — A crash report's response body is redacted by field name, and a confirmed finding's identity is fixed where it is confirmed { #adr-060 }
 
-**Status:** accepted · Superseded in part by [ADR-103](#adr-103), [ADR-152](findings.md#adr-152) · `runtime/findings/redaction.py`, `runtime/findings/constants.py`, `runtime/findings/materializer.py`, `runtime/fuzzers/stateful/supervisor.py`, `runtime/findings/assembler.py`, `models/runtime/results.py`
+**Status:** accepted · Superseded in part by [ADR-103](#adr-103), [ADR-152](findings.md#adr-152) · `runtime/findings/redaction/sanitize.py`, `runtime/findings/constants.py`, `runtime/findings/materializer.py`, `runtime/fuzzers/stateful/supervisor.py`, `runtime/findings/assembler.py`, `models/runtime/results.py`
 
 ### Context
 
@@ -2346,7 +2346,7 @@ raises two exceptions, `AccessIdentityError` and `AccessUncrossableError`.
 
 ## ADR-103 — Findings redact the built-in sensitive names whatever the contract declares, and erase the credentials a request sent by value { #adr-103 }
 
-**Status:** accepted · Supersedes in part [ADR-060](#adr-060) · Superseded in part by [ADR-109](#adr-109), [ADR-152](findings.md#adr-152) · `runtime/findings/redaction.py`, `runtime/findings/constants.py`, `runtime/findings/materializer.py`, `runtime/findings/grouper.py`
+**Status:** accepted · Supersedes in part [ADR-060](#adr-060) · Superseded in part by [ADR-109](#adr-109), [ADR-152](findings.md#adr-152) · `runtime/findings/redaction/sanitize.py`, `runtime/findings/constants.py`, `runtime/findings/materializer.py`, `runtime/findings/grouper.py`
 
 ### Context
 
@@ -2687,7 +2687,7 @@ owner's identity on the placeholder path.
 
 ## ADR-109 — An echoed credential is matched in any per-character encoding a server writes { #adr-109 }
 
-**Status:** accepted · Supersedes in part [ADR-103](#adr-103) · Superseded in part by [ADR-123](#adr-123) · `runtime/findings/redaction.py`, `runtime/findings/credential_forms.py`, `runtime/findings/echo_patterns.py`, `runtime/findings/constants.py`, `runtime/trace/url_userinfo.py`
+**Status:** accepted · Supersedes in part [ADR-103](#adr-103) · Superseded in part by [ADR-123](#adr-123) · `runtime/findings/redaction/sanitize.py`, `runtime/findings/redaction/credential_forms.py`, `runtime/findings/redaction/echo_patterns.py`, `runtime/findings/constants.py`, `runtime/trace/url_userinfo.py`
 
 ### Context
 
@@ -3035,7 +3035,7 @@ and explores no endpoint, so it has no bulkhead.
 
 ## ADR-123 — Credential redaction covers one encoding layer per character over the whole echo { #adr-123 }
 
-**Status:** accepted · Supersedes in part [ADR-109](#adr-109) · `runtime/findings/redaction.py`, `runtime/findings/credential_forms.py`, `runtime/findings/constants.py`, `models/base_url.py`
+**Status:** accepted · Supersedes in part [ADR-109](#adr-109) · `runtime/findings/redaction/sanitize.py`, `runtime/findings/redaction/credential_forms.py`, `runtime/findings/constants.py`, `models/base_url.py`
 
 ### Context
 
@@ -3321,7 +3321,7 @@ leading with its own rule.
 
 ## ADR-138 — An intent-anchored finding is confirmed against a control request { #adr-138 }
 
-**Status:** accepted · Superseded in part by [ADR-151](findings.md#adr-151) · `runtime/fuzzers/stateless/control.py`, `runtime/fuzzers/stateless/shrinking.py`, `runtime/harness/minimal.py`
+**Status:** accepted · Superseded in part by [ADR-151](findings.md#adr-151) · `runtime/fuzzers/stateless/control_checks.py`, `runtime/fuzzers/stateless/shrinking.py`, `runtime/harness/minimal.py`
 
 ### Context
 

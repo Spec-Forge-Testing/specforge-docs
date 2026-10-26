@@ -96,7 +96,7 @@ no hierarchy, so `admin` is not satisfied by `Admin` or by a broader role.
 - **Pure JSON Schema vocabulary in `SchemaProperty`** (`type`, `minimum`,
   `maximum`, `pattern`, `enum`, `minLength`/`maxLength`, `minItems`/`maxItems`,
   `items`, `properties`, `required`, `format`) so engines compile it natively.
-- **Closed vocabularies everywhere else**: attack profiles, risk levels, zones,
+- **Closed vocabularies everywhere else**: attack families (`AttackFamily`), risk levels, zones,
   operators and node kinds are `Literal` sets, so an unknown value fails
   validation instead of reaching the engine.
 - **`extra="forbid"`** on every model, so a hallucinated keyword fails

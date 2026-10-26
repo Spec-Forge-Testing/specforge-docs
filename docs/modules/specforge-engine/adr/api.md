@@ -58,7 +58,7 @@ default mode.
 `__all__` holds: the two entry points; the input DTOs, including every type a
 field of one names; the output DTOs; `ExecutionConfig`, `Identity` and the
 complete `*Options` family; the five enums a consumer touches
-(`ExecutionMode`, `StrategyMode`, `ErrorCategory`, `TruncationReason`,
+(`ExecutionMode`, `Strategy`, `ErrorCategory`, `TruncationReason`,
 `FidelityLevel`); `canonical_json`, `split_userinfo` and
 `validate_replayable`; the three exception branches; and the two validation
 entry points. The kernel's vocabularies are imported from
@@ -83,14 +83,14 @@ A test pins `__all__`. Internal module paths may move without notice.
 ### Context
 
 Before compiling, an endpoint spec passes three checks: the value types, the
-fields each type may carry under the chosen strategy mode, and the consistency
+fields each type may carry under the chosen strategy, and the consistency
 of its ranges. The orchestrator always runs them together, in that order. A
 fourth check, `validate_property_field_references`, runs per semantic property
 with a different signature and granularity.
 
 ### Decision
 
-`validate_endpoint_spec(spec, *, strategy_mode)` calls the three in order:
+`validate_endpoint_spec(spec, *, strategy)` calls the three in order:
 types, then allowed fields, then range consistency. The first `PolicyError`
 wins — the exception is the short-circuit, and there is no verdict object.
 The per-property check stays a separate function. The order is part of the
@@ -112,6 +112,6 @@ The decision — one ordered chain behind `validate_endpoint_spec`, first
 `PolicyError` wins, the per-property check kept separate — is unchanged as the
 chain grows. Two more checks have since joined it, in order after range
 consistency: phase-split validation (a budget may only name phases the mode's
-profile allocates), then focus-fields validation (under an attack profile, a
+profile allocates), then focus-fields validation (under a strategy that plans an attack phase, a
 `focus_fields` entry must address a field the endpoint declares). New checks
 append to the chain; they do not change its shape.

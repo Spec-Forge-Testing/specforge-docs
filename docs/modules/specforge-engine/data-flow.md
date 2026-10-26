@@ -19,7 +19,7 @@ engine owns the ones that are its own.
 | `Sensitivity` | kernel | `public` · `internal` · `pii` · `financial` · `auth` |
 | `AttackFamily` | kernel | `injection` · `ssrf_filesystem` · `auth_bypass` · `input_validation` · `deserialization` · `information_disclosure` · `resource_abuse` · `business_logic` · `headers_cookie` · `parser_compatibility` · `path_traversal` · `xss` · `sql_injection` |
 | `ExecutionMode` | `models/execution_mode.py` | `stateless` · `stateful` · `replay` · `performance` · `resilience` · `auth` |
-| `StrategyMode` | `models/strategy_mode.py` | `Default` · `Hacker` (capitalized: the wire spelling the LLM emits) |
+| `Strategy` | `models/strategy.py` | `default` · `security` · `conformance` · `smoke` · `exposure` ([Strategies](strategies.md)) |
 | `Phase` | `models/phase.py` | `valid` · `boundary` · `invalid` · `attack` · `transition` · `mutation` · `semantic` |
 | `SchemaType` | `models/schema.py` | `string` · `integer` · `number` · `boolean` · `array` · `object` · `null` |
 | `SchemaKeyword` | `models/schema.py` | the 24 JSON Schema keywords the engine reads, by wire spelling: `type` · `enum` · `const` · `nullable` · `required` · `properties` · `items` · `format` · `pattern` · `multipleOf` · `minimum` · `maximum` · `exclusiveMinimum` · `exclusiveMaximum` · `minLength` · `maxLength` · `minItems` · `maxItems` · `minProperties` · `maxProperties` · `allowExtraFields` · `default` · `examples` · `example` |
@@ -33,7 +33,7 @@ The engine-side outcome vocabularies follow the same rule:
 | Enum | Members (`.value`) |
 |---|---|
 | `ErrorCategory` | `success` · `client_error` · `server_error` · `contract_violation` · `timeout` · `availability` · `unsendable_request` · `connection_dropped` |
-| `InvariantViolation` | `not_a_server_error` · `status_code_conformance` · `response_schema_conformance` · `content_type_conformance` · `state_transition` · `latency_sla` · `latency_degradation` · `resilience_degradation` · `semantic_property` · `access_control` · `input_validation` · `information_disclosure` · `sensitive_data_exposure` · `reflected_payload` · `mass_assignment` · `input_induced_timeout` · `contract_completeness` |
+| `InvariantViolation` | `not_a_server_error` · `status_code_conformance` · `response_schema_conformance` · `content_type_conformance` · `state_transition` · `latency_sla` · `latency_degradation` · `resilience_degradation` · `semantic_property` · `access_control` · `input_validation` · `information_disclosure` · `sensitive_data_exposure` · `reflected_payload` · `mass_assignment` · `input_induced_timeout` · `contract_completeness` · `undeclared_response_field` |
 | `TruncationReason` | `infrastructure_abort` · `deadline_exceeded` · `target_down` · `state_link_abort` · `generation_exhausted` · `cancelled` · `engine_failure` |
 | `FidelityLevel` | `exact` · `reduced` |
 
@@ -53,7 +53,7 @@ The types that cross a stage line, all validated with `extra="forbid"`:
 
 | DTO | Direction | Notes |
 |---|---|---|
-| `CompilerInput` | in | endpoints plus a single global `strategy_mode` (never per-endpoint), and the `withheld` endpoints the caller keeps out of the run |
+| `CompilerInput` | in | endpoints plus a single global `strategy` (never per-endpoint), and the `withheld` endpoints the caller keeps out of the run |
 | `EndpointSpec` | in | one endpoint; its request zones are a `RequestZones` value object, the body a `BodySpec` |
 | `BaseStrategyContract` / `HackerStrategyContract` | in | per-value generation knobs (hacker is a pydantic subclass, dispatched by type) |
 | `ResponseContract`, `StateLinkContract` (+ `StateProduction` / `StateConsumption`) | in | expected responses, stateful links |
@@ -125,7 +125,8 @@ The two kernel DTOs an endpoint may carry:
 | `EndpointAttack` | `focus_fields`, `sensitive_fields`, `aggressiveness` (0–10), `mutation_depth` (0–10), `field_hints` keyed by zone-qualified field path — each hint carries that field's `attack_profiles` |
 
 `EndpointBudgetContract` is the engine's own: `max_examples` (default
-200), an optional `phase_split` (`dict[Phase, float]`,
+200; left unset, the compile plans the strategy's `default_max_examples`
+instead), an optional `phase_split` (`dict[Phase, float]`,
 fractions ≥ 0 summing to at most 1), `max_combinations_per_case`, and an
 optional `deadline_ms`.
 
@@ -221,7 +222,8 @@ non-empty zone — `path_parameters`, `query_parameters`, `header_parameters`,
 `media_type` and `file_fields` — plus the `generation_plan` and the endpoint's
 `poisoning_phases`) and the contract DTOs the engine still
 needs (`risk`, `attack`, `budget`, `responses`, `state_link`,
-`semantic_properties`, `access`). Its
+`semantic_properties`, `access`), and the `optional_oracles` its strategy turns
+on ([Strategies](strategies.md#opt-in-oracles)). Its
 `endpoint_id` is `format_endpoint_id(method, path_url)` —
 `"{METHOD}:{path_url}"`, method uppercased — the stable key that groups every
 result, stat and trace row. `CompiledRequestPart` raises

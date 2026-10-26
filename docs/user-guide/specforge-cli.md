@@ -564,7 +564,8 @@ contract; needs a target to send requests to (the project's own configured
 | `--deadline-ms` | integer | no | — | Per-endpoint time budget; past it the engine truncates with `deadline_exceeded` |
 | `--identities-path` | path | no | — | |
 | `--execution` | enum: `stateless`, `stateful`, `performance`, `resilience`, `auth` | no | `stateless` | |
-| `--strategy` | enum: `default`, `hacker` | no | `default` | |
+| `--strategy` | enum: `default`, `security`, `conformance`, `smoke`, `exposure` | no | `default` | What the run generates and which extra checks judge it ([strategies](../modules/core/protocol/vocabularies.md#strategy)) |
+| `--examples-per-endpoint` | integer | no | the strategy's default, under the mode's cap | At least 1; refused for the `performance` ladder, `auth` and `resilience` ([examples per endpoint](../modules/core/protocol/fuzz-options.md#examples-per-endpoint)) |
 | `--load` | object | no | — | `{latency_sla_ms, concurrency_steps[], degradation_tolerance}` |
 | `--allow-side-effects` / `--no-allow-side-effects` | boolean | no | `false` | Lifts the guard that holds back probes on endpoints the contract marks as writing |
 | `--producer` | object | no | schema-only | `{kind: "fixture"|"inference", contracts_dir, source_repo, refresh, approval_token, max_cost_usd}`; the last three are for `inference` only |

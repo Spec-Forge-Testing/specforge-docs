@@ -172,6 +172,44 @@ keeps no column for them.
 than healthy. A ladder with no step judged makes the run's signal `degraded` with
 [`load_unjudged`](#signal-causes).
 
+## `strategy` { #strategy }
+
+Which family of values a run generates, and which extra checks judge the
+answers. The `strategy` parameter of `fuzz`, `run_pipeline` and
+`estimate_inference` takes one of these values, the `started` event of a run
+carries the one it runs with, and an analysis carries it as `strategy` in
+`list_analyses`, `get_analysis`, `get_run`'s `analysis` and the report document's
+`analysis`. `hacker`, spelled exactly so, is accepted as input and means
+`security`; it is never listed and never sent back. Beside `strategy`, an analysis
+carries `strategy_mode`, its label for older clients: `Hacker` for
+`security`, every other value capitalized.
+
+| Value | Meaning |
+| --- | --- |
+| `default` | Schema-only generation. |
+| `security` | Generation widened toward adversarial values. |
+| `conformance` | Schema-only generation that also flags response fields the contract does not declare. |
+| `smoke` | A short run of valid requests only. |
+| `exposure` | Writes the fields the contract marks read-only and probes mass assignment. |
+
+An analysis also carries `examples_per_endpoint`: the count the run asked of each
+endpoint, `null` when its runner honors no count or for an analysis stored before
+it was recorded ([Examples per endpoint](fuzz-options.md#examples-per-endpoint)).
+
+## `fuzz_options.effects[].changes` { #changes }
+
+What a strategy changes against `default` in one runner variant under one
+producer ([the effects matrix](fuzz-options.md#effects)), listed in this order;
+`[]` means nothing.
+
+| Value | When |
+| --- | --- |
+| `payloads` | The runner draws from the plan, and the strategy's phases restricted to what it takes differ from `default`'s (with their shares, when it takes every planned phase), or its attack families, its contract type or whether it omits read-only fields differ. |
+| `oracles` | The strategy turns on oracles `default` does not, and the runner's opt-in oracles judge what it sends. |
+| `examples` | The examples the run would ask of each endpoint differ from `default`'s, after the runner's own cap; never for a runner that honors no count. |
+| `llm_profile` | The producer is `inference` and the strategy's LLM profile differs from `default`'s. |
+| `field_hints` | The producer is `fixture` or `inference`, the runner draws from the plan, and the strategy promotes the fields its contracts hint at where `default` does not. |
+
 ## `category` { #category }
 
 The kind of defect a finding reports. In each entry of the report document's
@@ -187,7 +225,7 @@ registry says today; `null` only when the core runs without the engine.
 | `security` | The API leaked, accepted or reflected what it should not, or an input stalled it. |
 | `access` | A caller reached what its access policy forbids. |
 | `business_rule` | A rule the contract declares, or a state transition, did not hold. |
-| `contract_hygiene` | The API and its contract disagree: status, Content-Type, schema or validation. |
+| `contract_hygiene` | The API and its contract disagree: status, Content-Type, schema, validation, or a response field the contract does not declare. |
 | `performance` | A clean response was too slow, or slowed down under load. |
 
 ## `severity` { #severity }
@@ -202,7 +240,7 @@ engine, and then neither orders anything.
 | `critical` | An access boundary was crossed. |
 | `high` | A server error, a broken business rule or state transition, sensitive data exposed or a privileged field accepted. |
 | `medium` | Internal details leaked, input reflected or stalling the API, invalid input accepted, a response off its schema, a latency defect, a malformed request handled badly. |
-| `low` | A valid request rejected, or a Content-Type off its contract. |
+| `low` | A valid request rejected, a Content-Type off its contract, or a response field the contract does not declare. |
 | `info` | A status the contract does not declare. |
 
 ## `observation.location.scope` { #location-scope }
@@ -254,6 +292,8 @@ Branch on `reason`, show `detail`.
 | `spec_differs` | `pair` | The analyses were generated against different spec revisions. |
 | `execution_mode_differs` | `pair` | The analyses were generated in different execution modes. |
 | `oracle_scope_differs` | `pair` | Different oracles judged the two runs. |
+| `strategy_differs` | `pair` | The analyses ran different [strategies](#strategy), so one may have judged with oracles or drawn values the other never did. |
+| `examples_differs` | `pair` | The analyses asked a different number of examples of each endpoint; silent when either recorded none. |
 | `replay` | `after` | The later run is a replay: it records verdicts per recorded request, not crashes. |
 | `replay_report_not_indexed` | `after` | The replay's report was never recorded. |
 | `replay_report_missing` | `after` | The replay's report is missing from disk. |

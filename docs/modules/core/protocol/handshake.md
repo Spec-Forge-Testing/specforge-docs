@@ -4,20 +4,21 @@
 refused `HANDSHAKE_REQUIRED`.
 
 ```json
-{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.1.19"}}
+{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.1.20"}}
 ```
 
 The response carries the protocol version, the server's identity, what this
-build can do, the whole operation catalog, and the vocabulary findings are
-reported in:
+build can do, the whole operation catalog, the vocabulary findings are reported
+in, and the options a run can be asked for:
 
 ```json
 {"jsonrpc":"2.0","id":1,"result":{
-  "protocol_version":"0.1.19",
+  "protocol_version":"0.1.20",
   "server":{"name":"specforge-core","version":"…","frozen":false},
   "capabilities":{…},
   "catalog":{…},
-  "vocabulary":{…}
+  "vocabulary":{…},
+  "fuzz_options":{…}
 }}
 ```
 
@@ -33,16 +34,16 @@ reported in:
 
 The whole handshake is **derived, not declared**: `event_kinds` is exactly what
 the build's operations emit, `cancellation` is true when any operation reads a
-cancellation token, the catalog is the same one `describe` publishes, and the
-vocabulary is read from the engine's registry.
+cancellation token, the catalog is the same one `describe` publishes, the
+vocabulary is read from the engine's registry, and the fuzz options are derived
+from the engine's strategy profiles and runner traits.
 
 ## Vocabulary { #vocabulary }
 
 `vocabulary` lists every closed vocabulary a finding is reported in, each value
 with the label a frontend shows for it, so a client renders findings without a
-table of its own. `describe` carries the same object beside `catalog`. It is
-optional in the schema, so a client validating against an older schema still
-accepts the handshake.
+table of its own. `describe` carries the same object beside `catalog`. The schema
+lists it among the result's required fields.
 
 | Key | Items | What it lists |
 | --- | --- | --- |
@@ -60,13 +61,21 @@ Every list but `exclusion_dispositions` comes from the engine
 ([ADR-148](../../specforge-engine/adr/findings.md#adr-148)). Without the engine
 the object is present with those lists empty, never missing.
 
+## Fuzz options { #fuzz-options }
+
+`fuzz_options` lists the execution modes and their runner variants, the
+strategies, the producers, what each strategy changes against `default` in each
+variant under each producer, and the presets a client chains. `describe` carries
+the same object, and the schema requires it in `hello`. Its keys, the effects
+matrix and how it is derived are on [Fuzz options](fuzz-options.md).
+
 ## Versioning { #versioning }
 
 **The core serves a range within its own series.** A client is served when its
 `protocol_version` has the core's `major.minor` and a patch between a declared
 floor and the core's own. Each part compares as a number, never as text:
-`0.1.10` is newer than `0.1.9`. This core speaks `0.1.19` and serves `0.1.5` up
-to `0.1.19`. It always answers `hello` with its own version, and a frontend
+`0.1.10` is newer than `0.1.9`. This core speaks `0.1.20` and serves `0.1.5` up
+to `0.1.20`. It always answers `hello` with its own version, and a frontend
 ignores the keys it does not know.
 
 Anything else — another series, a patch outside the range, or a
@@ -111,8 +120,41 @@ neither. See [ADR-095](../adr/protocol.md#adr-095).
 ## Changelog
 
 The report document that `fuzz`, `replay` and `run_pipeline` answer with is
-`schema_version` 1.21. The protocol's own README holds the full entry for each
+`schema_version` 1.22. The protocol's own README holds the full entry for each
 version; the lines below are the summary.
+
+- **0.1.20** — A run picks one of five strategies by its canonical name and how
+  many examples it asks of each endpoint, and the handshake says what each mode,
+  strategy and producer changes. Additive on the wire, with semantic changes.
+  `strategy` on `fuzz`, `run_pipeline` and `estimate_inference` takes `default`,
+  `security`, `conformance`, `smoke` or `exposure`; `hacker` is still accepted as
+  `security`, never listed and never sent back, and the `started` event carries
+  the canonical value. An analysis carries `strategy` beside `strategy_mode`, its
+  label for older clients. `examples_per_endpoint` on `fuzz` and `run_pipeline`, at least 1;
+  a smaller one, or one asked of a runner that honors no count (the `performance`
+  ladder, `auth`, `resilience`), is refused `INVALID_PARAMS`. `hello` and
+  `describe` carry [`fuzz_options`](fuzz-options.md); the schema now requires
+  `vocabulary` and `fuzz_options` in `hello`. The opt-in invariant
+  `undeclared_response_field` (`contract_hygiene`, `low`), turned on by
+  `conformance`. Under `security`, mutation breaks every field.
+  `sensitive_data_exposure` judges every successful response whose status
+  declares a body schema; the replay of an unpoisoned exposure is
+  `inconclusive`. An object whose `type` is missing or a list naming `object`
+  honors its `additionalProperties`. A secret a response returns is redacted from
+  its own finding, and a sent credential never reaches a signature or a
+  `rule_id`. `compare_runs` gains the caveats `strategy_differs` and
+  `examples_differs`. A refused strategy's message names its canonical value
+  ([Strategies](../../specforge-engine/strategies.md),
+  [ADR-155](../adr/protocol.md#adr-155) to
+  [ADR-161](../adr/core.md#adr-161)).
+
+- **Report 1.22** — The analysis names its strategy canonically and the examples
+  it asked of each endpoint. Additive; it ships with protocol `0.1.20`.
+  `analysis.strategy`, the canonical strategy, right before
+  `analysis.strategy_mode`, which keeps its label for older clients; and
+  `analysis.examples_per_endpoint`, `null` when the runner honors no count or for
+  an analysis stored before it was recorded. See the
+  [Run Report](../../../user-guide/reports.md).
 
 - **0.1.19** — A finding says what kind of defect it is, how serious, what
   happened in one sentence and the evidence behind it, live and read back, and the

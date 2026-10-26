@@ -7,7 +7,7 @@ extension axes, each a registry populated at import time, each with a public
 | Axis | Add one by | Registry | Test seam |
 |---|---|---|---|
 | **Runner** (how a run executes) | an `ExecutionRunner` + `register_runner(...)` | `runtime/runners/registry.py` | `isolated()` + `registered_modes()` |
-| **Profile** (what gets generated) | a `StrategyMode` member + `register_profile(StrategyModeProfile(...))` | `profiles/registry.py` | `isolated()` + `registered_strategy_modes()` |
+| **Profile** (what a strategy generates and judges) | a `Strategy` member + `register_profile(StrategyProfile(...))` | `profiles/registry.py` | `isolated()` + `registered_strategies()` |
 | **Phase** (a generation phase, poisoning when it declares candidates) | a `GenerationPhase(name=Phase.X, ..., candidates=...)` + `register_phase(...)` | `strategy_compiler/fields/registry.py` | `isolated()` + `registered_phases()` |
 | **Phase extension** (an extra phase that activates on a datum) | a `PhaseExtension(phase, applies, share, refiner)` + `register_phase_extension(...)` | `shared/phase_extensions.py` | `isolated()` + `registered_phase_extensions()` |
 | **Oracle** (a response check) | a class satisfying `ResponseOracle` + `register_oracle(...)` | `runtime/oracles/registry.py` | `isolated()` + `registered_oracle_names()` |
@@ -33,7 +33,18 @@ class ExecutionRunner(Protocol):
     options_type: type[BaseModel] | None
 
     def run(self, request: RunRequest, orchestrator: AsyncOrchestrator) -> EngineRunResult: ...
+
+    def variants(self) -> Mapping[str, RunnerTraits]: ...
+
+    def variant_for(self, options: BaseModel | None) -> str: ...
 ```
+
+`variants()` declares what each way the runner runs takes from a strategy's plan,
+and `variant_for(options)` names the one a run takes; a runner that runs one way
+returns `only_variant(RunnerTraits(...))` and `DEFAULT_VARIANT`
+([Declaring a new runner's traits](strategies.md#declaring-a-new-runners-traits)).
+The runner-traits gate drives every registered variant and fails when what it
+sends differs from what it declares.
 
 Register it beside the built-ins in `runtime/runners/__init__.py`:
 
@@ -58,20 +69,22 @@ registry — the dispatcher never changes.
 
 ## Add a profile
 
-A `StrategyModeProfile` is a frozen value object naming what one strategy mode
-decides: its `mode`, `phase_split`, `allowed_fields_by_type`, `contract_type`
-and `allow_contract_subclasses` ([Strategy compiler](strategy-compiler.md)).
-The built-ins are registered in `profiles/builtin.py`. A new one is a
-`StrategyMode` member plus one call:
+A `StrategyProfile` is a frozen value object naming what one strategy decides:
+its `strategy`, `phase_split`, `allowed_fields_by_type`, `contract_type`,
+`allow_contract_subclasses`, `default_max_examples`, `optional_oracles`,
+`attack_families` and `omits_read_only`
+([Strategies and runner traits](strategies.md#the-profile)). The built-ins are
+registered in `profiles/builtin.py`. A new one is a `Strategy` member plus one
+call:
 
 ```python
-from specforge_engine.models import Phase, StrategyMode, StrategyModeProfile
+from specforge_engine.models import Phase, Strategy, StrategyProfile
 from specforge_engine.models.contracts import ALLOWED_FIELDS_BY_TYPE, BaseStrategyContract
 from specforge_engine.profiles import register_profile
 
 register_profile(
-    StrategyModeProfile(
-        mode=StrategyMode.MY_MODE,  # the member you added to StrategyMode
+    StrategyProfile(
+        strategy=Strategy.MY_STRATEGY,  # the member you added to Strategy
         phase_split={Phase.VALID: 0.7, Phase.BOUNDARY: 0.3},
         allowed_fields_by_type=ALLOWED_FIELDS_BY_TYPE,
         contract_type=BaseStrategyContract,
@@ -80,8 +93,12 @@ register_profile(
 )
 ```
 
+The core has to know the new strategy too: its `StrategyKind` and its LLM
+profile ([Adding a strategy](strategies.md#adding-a-strategy)).
+
 Runner and profile are independent axes — they do not know about each other,
-which is what keeps the engine ignorant of `StrategyMode`.
+which is what keeps the engine ignorant of `Strategy`. A runner says what it
+takes from any strategy through its traits, never by naming one.
 
 ## Add a phase
 
@@ -111,30 +128,30 @@ step; the `StrEnum` keeps every enum-keyed map serializing correctly. The
 a `context` keyword — a builder that ignores the endpoint's knobs stays
 one-argument. A non-callable `build` is rejected at registration.
 
-The built-in `mutation` phase is the worked example. It is meaningful only for a
-hacker contract — it seeds from a valid value and applies one hostile operator —
-but it must still compile for a plain field inside a hacker-mode compile. So it
-is registered twice: the real builder on the hacker contract, and a valid-value
-fallback on the base contract:
+The built-in `mutation` phase is the worked example. It seeds from a valid value
+and applies one hostile operator, and an attack contract tunes which operators it
+may apply. So it is registered twice: a builder with the default toggles on the
+base contract, so every field mutates, and one that reads the contract's own
+toggles on the attack contract ([ADR-156](adr/strategies.md#adr-156)):
 
 ```python
 from specforge_engine.models.contracts import BaseStrategyContract, HackerStrategyContract
 from specforge_engine.models.phase import Phase
 from specforge_engine.strategy_compiler.fields import GenerationPhase, register_phase
-from specforge_engine.strategy_compiler.fields.default import build_valid_strategy
-from specforge_engine.strategy_compiler.fields.hacker import build_hacker_mutation
+from specforge_engine.strategy_compiler.fields.mutation import build_base_mutation
+from specforge_engine.strategy_compiler.fields.security import build_hacker_mutation
 
 register_phase(
-    GenerationPhase(name=Phase.MUTATION, contract_type=BaseStrategyContract, build=build_valid_strategy)
+    GenerationPhase(name=Phase.MUTATION, contract_type=BaseStrategyContract, build=build_base_mutation)
 )
 register_phase(
     GenerationPhase(name=Phase.MUTATION, contract_type=HackerStrategyContract, build=build_hacker_mutation)
 )
 ```
 
-Register the base fallback whenever the new phase carries the risk of meeting a
-base-contract field: without it, that field would fail to compile the moment the
-phase runs. The share the phase draws from the budget is a row of the mode's
+Register a base-contract builder whenever the new phase can meet a base-contract
+field: without it, that field would fail to compile the moment the phase runs.
+The share the phase draws from the budget is a row of the strategy's
 `phase_split` ([Add a profile](#add-a-profile)); it does not come from
 registration.
 
@@ -329,8 +346,8 @@ any is missing:
    `HackerStrategyContract`.
 2. **`AttackToggles`.** Add a field of the same name to the `AttackToggles`
    value object (`strategy_compiler/fields/attack/request.py`), give it a value in
-   `DEFAULT_ATTACK_TOGGLES`, and read it in `toggles_of(contract)`
-   (`strategy_compiler/fields/hacker/builders.py`). The pinning test asserts the
+   `DEFAULT_ATTACK_TOGGLES`, and read it in `AttackToggles.from_contract(contract)`
+   in the same module. The pinning test asserts the
    toggle set equals the contract's `include_*` flags, so this step is not
    optional.
 3. **A toggle family.** Add a row to the toggle-family table in
@@ -367,11 +384,11 @@ class ResponseOracle(Protocol):
 gap. Oracles run as a Chain of Responsibility: the first terminal verdict
 short-circuits, non-terminal ones continue. All built-ins are registered
 explicitly in `runtime/oracles/builtin.py` — never as a side effect of importing
-a runner. The sixteen built-ins are, in precedence order: input-induced
+a runner. The seventeen built-ins are, in precedence order: input-induced
 timeout, infrastructure, resilience, server error, access control, mass
 assignment, semantic property, information disclosure, sensitive data exposure,
 input validation, reflected payload, contract completeness, status code, content
-type, response schema, latency ([ADR-036](adr/engine.md#adr-036),
+type, response schema, undeclared response field, latency ([ADR-036](adr/engine.md#adr-036),
 [ADR-048](adr/engine.md#adr-048), [ADR-050](adr/engine.md#adr-050),
 [ADR-104](adr/engine.md#adr-104), [ADR-118](adr/engine.md#adr-118),
 [ADR-131](adr/engine.md#adr-131), [ADR-143](adr/engine.md#adr-143)). A
@@ -395,9 +412,15 @@ only when `context.intent` names a poisoned field. An oracle that judges what a
 request was drawn to test reads `context.intent`, never the phase, and gates on
 `context.intent.attack_family` when its signal depends on the payload's family.
 An oracle whose signal can be the endpoint's normal behaviour also adds a row to
-`CONTROL_CHECKS` (`runtime/fuzzers/stateless/control.py`): how to build the
+`CONTROL_CHECKS` (`runtime/fuzzers/stateless/control_checks.py`): how to build the
 control payload, and whether the control's response shows the same signal
 ([ADR-138](adr/engine.md#adr-138)).
+
+`register_oracle` takes two flags. `requires_contract=True` marks an oracle that
+judges against the endpoint's declarations, so a contract-free judgement (a
+replay's) skips it. `opt_in=True` makes it run only on an endpoint whose strategy
+names it in `optional_oracles`; how to add one is in
+[Adding an opt-in oracle](strategies.md#adding-an-opt-in-oracle).
 
 ## Add a chaos transport
 
@@ -510,7 +533,7 @@ from specforge_engine import profiles
 def test_custom_profile_is_resolvable():
     with profiles.isolated():
         profiles.register_profile(my_profile)
-        assert my_profile.mode in profiles.registered_strategy_modes()
-        assert profiles.profile_for(my_profile.mode) is my_profile
+        assert my_profile.strategy in profiles.registered_strategies()
+        assert profiles.profile_for(my_profile.strategy) is my_profile
     # outside the block the registry is back to the built-ins
 ```

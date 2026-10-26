@@ -344,22 +344,23 @@ OracleVerdict` — and precedence is a named `IntEnum` value, never a magic gap
 
 | Precedence | Oracle `name` | Fires on |
 |---|---|---|
-| `INPUT_INDUCED_TIMEOUT` (5) | `input_induced_timeout` | a timeout on a request whose intent names a poisoned field (terminal) |
-| `INFRA` (10) | `infra` | an infrastructure failure — suppresses everything below it |
-| `RESILIENCE` (15) | `resilience_degradation` | under a chaos request, a 5xx or a dropped connection the attack does not tolerate |
-| `SERVER_ERROR` (20) | `server_error` | any 5xx, or a connection the server dropped |
-| `ACCESS_CONTROL` (25) | `access_control` | a 2xx a caller should not have obtained, judged against the auth runner's expectation (non-terminal) |
-| `MASS_ASSIGNMENT` (28) | `mass_assignment` | a 2xx that echoes an undeclared body key the request poisoned, with the value sent (non-terminal) |
-| `SEMANTIC` (30) | `semantic_property` | a 2xx that breaks a declared business rule (non-terminal) |
-| `INFORMATION_DISCLOSURE` (31) | `information_disclosure` | a non-2xx to a poisoned request whose body shows a leak marker outside the echo of the sent value (non-terminal) |
-| `SENSITIVE_DATA_EXPOSURE` (32) | `sensitive_data_exposure` | a 2xx to a poisoned request that carries a secret-looking key its response schema does not declare (non-terminal) |
-| `INPUT_VALIDATION` (33) | `input_validation` | a 2xx to a request whose poisoned field was sent outside its declared schema (non-terminal) |
-| `REFLECTED_PAYLOAD` (34) | `reflected_payload` | an HTML response that echoes the active payload of a reflectable family unescaped (non-terminal) |
-| `CONTRACT_COMPLETENESS` (35) | `contract_completeness` | a 400 or 422 to an unpoisoned request that provably conforms to its declared contract (non-terminal) |
-| `STATUS_CODE` (36) | `status_code` | a status no response contract declared |
-| `CONTENT_TYPE` (40) | `content_type` | a body whose `Content-Type` misses the declared one |
-| `SCHEMA` (50) | `schema` | a body that fails the declared schema |
-| `LATENCY` (60) | `latency_sla` | a clean 2xx/3xx slower than the run's SLA |
+| `INPUT_INDUCED_TIMEOUT` (100) | `input_induced_timeout` | a timeout on a request whose intent names a poisoned field (terminal) |
+| `INFRA` (110) | `infra` | an infrastructure failure — suppresses everything below it |
+| `RESILIENCE` (200) | `resilience_degradation` | under a chaos request, a 5xx or a dropped connection the attack does not tolerate |
+| `SERVER_ERROR` (210) | `server_error` | any 5xx, or a connection the server dropped |
+| `ACCESS_CONTROL` (300) | `access_control` | a 2xx a caller should not have obtained, judged against the auth runner's expectation (non-terminal) |
+| `MASS_ASSIGNMENT` (400) | `mass_assignment` | a 2xx that echoes an undeclared body key the request poisoned, with the value sent (non-terminal) |
+| `SEMANTIC` (410) | `semantic_property` | a 2xx that breaks a declared business rule (non-terminal) |
+| `INFORMATION_DISCLOSURE` (420) | `information_disclosure` | a non-2xx to a poisoned request whose body shows a leak marker outside the echo of the sent value (non-terminal) |
+| `SENSITIVE_DATA_EXPOSURE` (430) | `sensitive_data_exposure` | a 2xx, to a poisoned request or under a declared body schema, that carries a secret-looking key the object holding it does not declare (non-terminal) |
+| `INPUT_VALIDATION` (440) | `input_validation` | a 2xx to a request whose poisoned field was sent outside its declared schema (non-terminal) |
+| `REFLECTED_PAYLOAD` (450) | `reflected_payload` | an HTML response that echoes the active payload of a reflectable family unescaped (non-terminal) |
+| `CONTRACT_COMPLETENESS` (460) | `contract_completeness` | a 400 or 422 to an unpoisoned request that provably conforms to its declared contract (non-terminal) |
+| `STATUS_CODE` (500) | `status_code` | a status no response contract declared |
+| `CONTENT_TYPE` (510) | `content_type` | a body whose `Content-Type` misses the declared one |
+| `SCHEMA` (520) | `schema` | a body that fails the declared schema |
+| `UNDECLARED_RESPONSE_FIELD` (530) | `undeclared_response_field` | **opt-in**, only where the strategy names it: a JSON body holding a key a closed declared object does not declare (non-terminal) |
+| `LATENCY` (600) | `latency_sla` | a clean 2xx/3xx slower than the run's SLA |
 
 The business rule and the security oracles run before the status, content-type
 and schema checks on purpose. Those three are terminal; the oracles before them are
@@ -412,7 +413,10 @@ the endpoint's response contract for the status by exact code → status class �
 `default`, once, for the whole pipeline, and carrying the endpoint's
 `semantic_properties` onto the context — and evaluates it;
 `evaluate_contract_free(result)` evaluates against no contract, which is what a
-replay and a transition probe use. `build_context(result, responses, *,
+replay and a transition probe use; it runs only the intrinsic oracles, those
+registered neither `opt_in` nor `requires_contract`. `check_response` passes the
+endpoint's `optional_oracles` on, and `evaluate` keeps an opt-in oracle only when
+its name is among them ([Strategies](strategies.md#opt-in-oracles)). `build_context(result, responses, *,
 latency_sla_ms=, chaos=None, semantic_properties=(), access_expectation=None)` is
 the single builder: every optional beyond the response body and its contracts is
 keyword-only, so a caller supplies only the data its run has — the auth runner is
@@ -421,7 +425,7 @@ the only one that passes an `access_expectation`, and outside an auth run it is
 runner passes `chaos`, the attack's `ChaosExpectation`: whether a dropped
 connection refuses that attack rather than crashing under it.
 
-All sixteen built-ins are registered explicitly by `register_builtin_oracles`,
+All seventeen built-ins are registered explicitly by `register_builtin_oracles`,
 never as a side effect of importing a runner, so the registered set is one
 readable function. `validate_value(value, contract)` (`shared/schema_check.py`,
 which the compiler's attack shape filter reads too) structurally checks a

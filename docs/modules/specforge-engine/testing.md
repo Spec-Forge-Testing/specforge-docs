@@ -11,12 +11,13 @@ an explicit, reviewed change to one of these.
 | **Characterization goldens** | the compiled output and the replay projection, field by field | seven goldens in `tests/characterization/golden/*.json` (6 compiler + 1 replay), plus `tests/characterization/fixtures/replay_trace.json` |
 | **Projection guard** | the goldens' projection rules: enum keys stringify to their wire value, a strategy map collapses to its sorted keys | `tests/characterization/test_projection_guard.py` |
 | **Enum contract** | every vocabulary enum is a `StrEnum` whose `str()` is its `.value` | `tests/models/test_enum_contract.py` |
-| **Extensibility suite** | the five registry axes each accept a new row via `isolated()` + `registered_*()`: a phase, a re-pointed strategy-mode profile, an oracle, a runner (a new mode driven end to end through the facade) and a chaos transport | `tests/test_extensibility_gate.py` |
+| **Extensibility suite** | the registry axes each accept a new row via `isolated()` + `registered_*()`: a phase, a re-pointed strategy profile, a strategy whose opt-in oracle reaches the compiled endpoint, an oracle, an opt-in oracle that judges only where a strategy names it and never contract-free, a runner (a new mode driven end to end through the facade, its variants listed by `runner_traits()`) and a chaos transport | `tests/test_extensibility_gate.py` |
+| **Runner-traits gate** | every registered runner variant sends what its `RunnerTraits` declare: the phases (equal under `security` on an endpoint built to draw them all), whether a count changes what it sends, its cap, and whether an opted-in oracle judges it | `tests/test_runner_traits_gate.py` |
 | **Public-surface guard** | `specforge_engine.__all__` equals a frozen list written out in the test — adding or removing an export fails it by name; every export resolves, internal helpers such as `sanitize_headers` stay unexported, `EndpointRisk`/`EndpointAttack` are the kernel classes from `specforge_contracts`, and the `StatefulOptions` field reserve (`max_examples`, `step_count`, `max_distinct_bugs`) round-trips through `model_dump`/`model_validate` because the orchestrator persists that dump | `tests/test_public_api.py` |
 | **Entry-point surface** | `main.__all__` lists exactly the two entry points, each importable and callable, and `compile` never hides the builtin | `tests/test_main.py` |
 | **Field-consumer guard** | every field of the 18 contract models exported by `models.contracts` (derived from its `__all__`) is either registered against the module that reads it or excepted with a written reason; an unregistered field, a stale entry for a removed field, or a blank justification fails the suite | `tests/models/contracts/test_field_consumers.py` |
 | **Toggle-field guard** | every attack toggle maps to a contract include-flag, so no knob is dead | `tests/strategy_compiler/fields/attack/test_request.py`, `test_payloads.py` |
-| **Field-layering guard** | the field packages import one way, `hacker` over `attack` over `default` | `tests/strategy_compiler/fields/test_layering.py` |
+| **Field-layering guard** | the field packages import one way, `security` over `mutation` over `attack` over `default` | `tests/strategy_compiler/fields/test_layering.py` |
 | **Fixtures API** | a small versioned API with known defects, for end-to-end runs | `tests/support/fixtures_api/` |
 
 ## Running it
@@ -27,7 +28,7 @@ Locally, from the package directory:
 
 ```bash
 cd lib/specforge_engine
-python -m pytest -q                                  # full suite, coverage gate at 75%
+python -m pytest -q -n auto                          # full suite in parallel (pytest-xdist), coverage gate at 75%
 python -m pytest tests/characterization -q           # goldens only
 ```
 

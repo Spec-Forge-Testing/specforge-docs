@@ -282,7 +282,7 @@ unexpectedly.
     SpecForge ❯ fuzz -f openapi.yaml --base-url http://localhost:8000
     SpecForge ❯ fuzz -f openapi.yaml --base-url http://localhost:8000 --mode stateful
     SpecForge ❯ fuzz -f openapi.yaml --base-url http://localhost:8000 --identities identities.toml
-    SpecForge ❯ fuzz -f openapi.yaml --base-url http://localhost:8000 --strategy hacker --contracts contracts/
+    SpecForge ❯ fuzz -f openapi.yaml --base-url http://localhost:8000 --strategy security --contracts contracts/
     SpecForge ❯ fuzz -f openapi.yaml --base-url http://localhost:8000 --producer inference --source-repo ../my-api
     ```
 
@@ -388,7 +388,7 @@ unexpectedly.
       shares its symptom with a `Confirmed` one, so it doesn't add to `Unique`.
       `Unique` is the number worth reading first.
     - **Phase** — which generation phase produced the request (`valid`, `boundary`,
-      `invalid`, or `attack`/`mutation` under `--strategy hacker`).
+      `invalid`, `attack` or `mutation`, depending on the strategy).
     - **Prior steps** — `—` for a stateless finding; a number for a stateful one,
       meaning "this many requests ran first to set up the state that triggered it"
       — the cue to open `inspect --crash <id>` for the full sequence.
@@ -540,11 +540,16 @@ unexpectedly.
     the declared hand-off from one request's response into the next request — cannot
     be honored; the engine's diagnosis is reported with it.
 
-    `--strategy {default,hacker}` selects which **strategy family** the engine
-    compiles, orthogonally to `--mode`: `default` (the default) is schema-only —
-    the `valid`, `boundary` and `invalid` phases; `hacker` adds the `attack` and
-    `mutation` phases and widens generation toward adversarial values. The two words are the
-    engine's own `StrategyMode` values, so a new mode needs no second list here.
+    `--strategy {default,security,conformance,smoke,exposure}` selects which
+    **strategy** the engine compiles, orthogonally to `--mode`: `default` (the
+    default) is schema-only — the `valid`, `boundary` and `invalid` phases;
+    `security` adds the `attack` and `mutation` phases and widens generation toward
+    adversarial values; `conformance` stays schema-only and also flags response
+    fields the contract does not declare; `smoke` sends a short run of valid
+    requests only; `exposure` writes the fields the contract marks read-only and
+    probes mass assignment. `hacker` is still accepted and runs `security`. The
+    choices are the engine's own `Strategy` values, so a new strategy needs no
+    second list here ([Strategies](../modules/specforge-engine/strategies.md)).
 
     A **safety guard** decides which endpoints a run may actually probe. By
     default the engine holds back any endpoint a producer's contract marks with a
@@ -621,7 +626,7 @@ unexpectedly.
     `field_hints["zone.field"]` entry promotes the
     addressed parameter or dotted body field to the engine's per-value hacker
     contract with the hint's payload families and toggles, **under `--strategy
-    hacker` only** — `default` ignores the hints. Each `transitions` entry is
+    security` or `exposure` only** — the other strategies ignore the hints. Each `transitions` entry is
     attached to the endpoint's stateful state link, bound to the deterministic
     capture (from the spec's `links` or the sibling convention above) whose bundle
     name or captured field matches its `bundle`. `semantic_properties` are
@@ -668,7 +673,7 @@ unexpectedly.
 
     A contract that fuses but does not compile — a hint on a zone or field the
     endpoint does not declare, a `focus_fields` entry that names no declared field
-    under `--strategy hacker`, a transition whose `bundle` matches no deterministic
+    under a strategy with an attack phase, a transition whose `bundle` matches no deterministic
     capture or more than one — follows the producer's own policy: under `drop` the
     endpoint keeps its schema alone and is listed in `producer_exclusions`; under
     `abort` the run stops with an **Unsupported Schema Construct** panel naming the
@@ -714,7 +719,7 @@ unexpectedly.
     Navigates everything the fuzzer has persisted, in the three levels the storage
     schema is built around: with no flags it lists every **project** (with its
     analysis count); `--project <id>` lists that project's **analyses** — the
-    replayable recipes, each with its label, strategy mode, whether it was stateful,
+    replayable recipes, each with its label, strategy, whether it was stateful,
     engine version, run count and an **Endpoints** column (`targeted/declared`, plus
     `(+N excl)` when the compiler excluded any — see *[Coverage and the run's
     signal](#coverage-and-the-runs-signal)*); `--analysis <id>` lists that

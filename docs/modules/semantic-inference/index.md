@@ -72,8 +72,8 @@ sections, and the engine keeps exactly those.
 | `semantic_properties` | ✓ | ✓ | business rules as closed expression trees |
 | `access` | ✓ | ✓ | who may call the endpoint |
 
-`qa` never asks for `attack`: the engine reads that section for hacker-mode
-payloads and for the fields a finding redacts, and redaction already covers its
+`qa` never asks for `attack`: the engine reads that section for the attack
+payloads of the `security` and `exposure` strategies and for the fields a finding redacts, and redaction already covers its
 built-in list without it.
 
 ## Public surface

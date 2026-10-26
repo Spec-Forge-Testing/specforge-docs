@@ -66,13 +66,14 @@ The replicable recipe a run executes: resolved contracts, strategy and execution
 | `created_at` | DATETIME | yes | `CURRENT_TIMESTAMP` | When the analysis was created; set by the database. |
 | `label` | TEXT | yes | — | An optional human-readable label. |
 | `generated_against_repo_hash` | TEXT | no | — | Repository hash the analysis, and its recorded trace, was generated against. |
-| `strategy_mode` | TEXT | no | — | The strategy mode the trace was generated with. |
+| `strategy_mode` | TEXT | no | — | The strategy the trace was generated with, by its canonical name (`default`, `security`, `conformance`, `smoke`, `exposure`); schema version 6 rewrote earlier labels (`Hacker` to `security`, the rest lower-cased). The core refuses to read any other value. |
 | `execution_mode` | TEXT | no | — | How the trace was generated: `stateless`, `stateful`, `performance`, `resilience` or `auth`. Replay is never an analysis's mode: a replay re-sends an existing analysis's trace. |
 | `execution_options` | TEXT | yes | — | The execution mode's effective options as JSON; NULL for a mode without options. |
 | `execution_config` | TEXT | no | — | The execution configuration as JSON, headers already sanitized. |
 | `engine_version` | TEXT | yes | — | Engine version that produced the analysis; provenance only. |
 | `contracts_hash` | TEXT | yes | — | Hash of the produced contracts, ordered by (method, path); NULL when the analysis is schema-only. |
 | `producer` | TEXT | yes | — | JSON provenance of the contract producer; NULL when the analysis is schema-only. |
+| `examples_per_endpoint` | INTEGER | yes | — | The examples the run asked of each endpoint; NULL when its runner honors no count, and in a row written before schema version 6. |
 
 Constraints: none beyond the foreign key; `execution_mode` is not CHECKed.
 

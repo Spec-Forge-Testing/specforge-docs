@@ -193,3 +193,56 @@ operation that cannot be cancelled, or the slowest inference still in flight.
 A script piped into the core keeps stdin open until its answers have arrived:
 closing it early cancels what has not finished. See
 [Lifecycle](../protocol/handshake.md#lifecycle).
+
+---
+
+## ADR-155 — One strategy name inside, the former name only at the border { #adr-155 }
+
+**Status:** accepted · `schemas/strategy.py`, `services/persistence/stored_strategy.py`, `services/fuzz/constants.py`, `services/report/builder/run.py`, `controllers/results/browse.py`; engine `models/strategy.py`; storage `migrations/0006_strategy_canonical.sql`
+
+### Context
+
+A run's strategy was written two ways: a client sent `hacker` and read back
+`strategy_mode: "Hacker"`, and the core kept an enum of its own beside the
+engine's, written by hand. Stored analyses carried the capitalized label. Adding
+strategies would multiply the spellings, and every reader would have to know
+which one it was holding. Older clients still compare `strategy_mode` with
+`"Hacker"`, and older scripts still send `hacker`.
+
+### Decision
+
+**The engine has one name per strategy, the wire's.** `Strategy` is a `StrEnum`
+of `default`, `security`, `conformance`, `smoke` and `exposure`; the engine never
+knew another name.
+
+**The core mirrors it and owns the alias.** `StrategyKind` has the same members,
+held to the engine's by a parity test, and its `_missing_` accepts exactly
+`hacker` as `security`. The catalog lists the canonical values only. Inside the
+core the strategy is always canonical: the `started` event carries it, and so do
+the messages of a refused strategy.
+
+**Storage holds the canonical value.** Schema version 6 rewrites the stored labels
+(`Hacker` and `hacker` become `security`, every other value is lower-cased). A
+stored value that is not canonical fails to decode, loudly, at the two places that
+read it.
+
+**The older label is derived at the outputs.** An analysis carries `strategy`,
+canonical, beside `strategy_mode`, whose label the core derives from the enum
+(`schemas/strategy.py`): `Hacker` for `security`, every other value capitalized.
+
+### Rejected
+
+- **Renaming `hacker` everywhere.** Every older client and script breaks for a
+  name.
+- **Keeping both spellings inside.** Every reader, the comparison and the
+  persistence included, would have to normalize, and one would forget.
+- **Storing the label and projecting it on read.** The database would keep two
+  spellings, and each new reader would need the projection.
+
+### Consequences
+
+A client that compares `strategy_mode` with `"Hacker"` keeps working. A client
+that sends `hacker` sees `started.strategy` read `security`: a semantic change,
+stated in the changelog. A client that builds its strategy choices from the
+catalog never offers the alias. A new strategy is a member in each enum, which the
+parity test keeps in step.

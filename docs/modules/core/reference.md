@@ -65,6 +65,13 @@ signature and docstring:
 Because there is no hand-written second list, the catalog cannot drift from the
 code. `describe` publishes it, and the handshake embeds the same catalog.
 
+Two more objects travel beside the catalog, derived the same way. `vocabulary`
+reads the engine's invariant registry. `fuzz_options` reads the engine's strategy
+profiles and runner traits through the engine gateway: `services/catalog/effects.py`
+derives what each strategy changes against `default` in each runner variant,
+`fuzz_options.py` assembles the object, and `presets.py` holds the presets as
+data ([Fuzz options](protocol/fuzz-options.md)).
+
 ## Preconditions
 
 An operation declares the readiness it needs. The set is closed:
@@ -142,7 +149,9 @@ added in place reads as blocking as a missing one until the core is restarted.
 ## The fuzz seam
 
 `services/fuzz/` is the one place that knows both Contract Assembly and the
-engine. It loads and selects endpoints, optionally asks a **contract producer**
+engine. It loads and selects endpoints, resolves the run's examples per endpoint
+([one rule](protocol/fuzz-options.md#examples-per-endpoint), `fuzz/examples.py`),
+optionally asks a **contract producer**
 for each endpoint's enriched contract, and hands everything to the engine. The
 producer's failures are handled by intent: a producer that cannot honor an
 explicit request aborts the run, while an inference producer that cannot enrich

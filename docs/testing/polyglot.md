@@ -47,7 +47,7 @@ Only one candidate at a time, same port 8000 as `real-world/` and `emb/`.
 | C# | [Jellyfin](https://github.com/jellyfin/jellyfin) | GPL-3.0 | Native Swashbuckle `/api-docs/openapi.json` — captured live (first request takes ~9s, generated on demand) |
 | Ruby | [Mastodon](https://github.com/mastodon/mastodon) | AGPL-3.0 | **Not served at runtime** (`/openapi.json`, `/openapi.yaml`, `/api-docs` all 404, verified live) — captured from a community spec sourced from the official docs; no official OpenAPI exists |
 | PHP | [InvoiceNinja](https://github.com/invoiceninja/invoiceninja) *(replaces BookStack — its `/api/docs.json` turned out to be a proprietary JSON, not OpenAPI under any angle)* | Elastic License 2.0 (source-available; permits internal/research use) | **Not served at runtime** (checked the full route list, no match) — a real build artifact (`openapi/api-docs.yaml`, generated from the app's own `@OA` annotations), pulled from the running container |
-| Rust | [Meilisearch](https://github.com/meilisearch/meilisearch) | MIT | **Not served at runtime** — published as a GitHub release asset, committed static |
+| Rust | [Qdrant](https://github.com/qdrant/qdrant) *(replaces Meilisearch — its `AGENTS.md` asks agents not to engage with the repository, and both the hand-written reference and Spec Forge's pipeline read the code with an LLM)* | Apache-2.0 | **Not served at runtime** (verified live) — `docs/redoc/master/openapi.json` from the pinned tag, committed static |
 | Kotlin | [Komga](https://github.com/gotson/komga) | MIT | Native Springdoc `/v3/api-docs` — captured live |
 | Swift | — | — | **Closed without a candidate.** Three real Vapor apps were evaluated (Feather CMS, Penny, SteamPress); none is a standalone REST server with genuine OpenAPI generation, and none has a maintained official Docker image. **10/11 languages is the corpus' final result.** |
 
@@ -79,8 +79,8 @@ named Docker volumes instead — still local, still torn down on
 (Ruby, PHP, Rust) don't serve their OpenAPI contract at runtime at all —
 confirmed live, not assumed from documentation. For those, `specs/<language>.json`
 comes from the closest real source instead: a community spec sourced from
-official docs, a build artifact pulled from the running container, or a
-GitHub release asset. Never inferred from examples — if a candidate only
+official docs, a build artifact pulled from the running container, or the
+spec file in the repository at the pinned tag. Never inferred from examples — if a candidate only
 exposed examples with no real type/constraint information (BookStack's case),
 it was rejected as a candidate instead of "converting" it into a fake
 contract.

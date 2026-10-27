@@ -1053,6 +1053,21 @@ confirmation before it is sent.
 Every operation the core exposes, every event it emits, every code it can
 fail with — the document this whole page is derived from. No parameters.
 
+The CLI draws it as a manual:
+
+- **Operations**, grouped as `help` groups them. Under each group, a line says what its
+  `requires` values mean (`requires contract: a project must be open and its contract
+  loaded`), so the column needs no lookup.
+- **Notes**, a column that appears when some operation has something to say about how it
+  behaves: `progress` (it streams progress while it runs), `cancellable` (`Ctrl+C` stops it) and
+  `destructive` (it asks for confirmation before it is sent).
+- **Events**, with the operations that emit each and whether it is a state (a droppable
+  snapshot) or a fact.
+- **Error codes**, in two blocks. A `Code | Try` table lists the codes the CLI knows what to do
+  about, each with the call that usually fixes it — the same step the CLI adds when it fails
+  with that code. Below, under "Without a suggested step:", the remaining codes, which are
+  explained by the core's message alone.
+
 #### `describe_operations`
 
 Just the operations, for a caller that wants nothing else (no event or error

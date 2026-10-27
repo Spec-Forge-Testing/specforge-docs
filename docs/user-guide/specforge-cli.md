@@ -356,6 +356,7 @@ same questions on a [screen](#questions).
 | --- | --- | --- |
 | Destructive operations (`apply_fix_plan`, `apply_prune_plan`, `apply_finding_fix`) | Before they are sent. | `--yes` |
 | A run that would pay for LLM inference | The core refuses and returns its estimate (contracts to infer, tokens, cost). The CLI shows it, asks, and resends with the approval token. | `--yes`, but only with `producer.max_cost_usd` set; without a cap it stops with exit `2`. |
+| Generating a contract with the model (`generate_contract --use-llm`) | The core refuses and returns its estimate; the CLI shows it, asks, and resends with the approval token. It can ask a second time if discovery finds more routes than were priced. | `--yes`, but only with `--max-cost-usd` set; without a cap it stops with exit `2`. |
 | Asking a model to explain a finding (`explain_finding`) | The core refuses and returns that one finding's price. The CLI shows it, asks, and resends with the approval token. | `--yes`: the token approves exactly the price shown, so no cap is needed. |
 | Asking a model for a fix (`propose_fix`) | The same, with the fix's price. | Never. `--yes` stops with exit `2` and sends nothing: a person reads the price. |
 | Applying a fix that was just proposed | After its diff is shown: which files change, and the `.bak` copies kept outside Git. | Never, even with `--yes`. |
@@ -591,6 +592,66 @@ load_contract: starting
 
 Emits progress (`started`/`finished`); see
 [Events and cancellation](../modules/core/protocol/events.md).
+
+#### `generate_contract`
+
+Writes an OpenAPI contract from the project's source code and loads it, for a
+project that has none. Requires a project.
+
+| Flag | Type | Required | Default |
+| --- | --- | --- | --- |
+| `--repo-root` | path | no | the project's root |
+| `--use-llm` | boolean | no | `false` |
+| `--approval-token` | string | no | — |
+| `--max-cost-usd` | number | no | no cap |
+| `--destination` | path | no | `openapi.generated.yaml` in the project |
+| `--overwrite` | boolean | no | `false` |
+| `--adopt` | boolean | no | `false` |
+
+By default the scan is static and free: it finds the routes (with the prefixes
+the code mounts them under), their path parameters and, when a handler binds a
+validated Go struct, a body. With `--use-llm` a model also finds the routes the
+scan misses and infers parameters, bodies, responses and `security`. That
+spends money, so it is approved like any other [paid call](#asking-before-it-matters):
+the core answers with its estimate and the CLI asks before sending the call
+again with the token. When discovery finds more routes than were priced, it
+asks a second time; what was already discovered is not paid for again.
+`--approval-token` and `--max-cost-usd` are what that resend carries; you
+rarely type them.
+
+The file is loaded for the session, and `specforge.toml` is untouched unless
+`--adopt` is given, which declares it as the project's `openapi_spec`. An
+existing `--destination` is refused unless `--overwrite` is given.
+
+```text
+specforge ❯ generate_contract
+
+  ✓  Contract generated · 2 endpoints · /home/dev/my-api/openapi.generated.yaml
+     The project still uses its own spec; this one is loaded for this session only.
+
+routes found: 2 by scan · 0 by the model
+openapi_version: 3.1.0
+security: none declared
+adopted: no
+
+  Routes (2)
+
+Method  Path                   Handler      File            Found by
+GET     /account/{account_id}  get_account  handlers.py:22  scan
+POST    /transfer              transfer     handlers.py:31  scan
+
+  → list_endpoints · get_contract · update_project openapi_spec=/home/dev/my-api/openapi.generated.yaml
+```
+
+The answer lists every route with the handler and file that declared it, and
+says which were found by the scan and which by the model. A route the model
+could not refine is kept as the scan found it, and the answer says why. When
+`--repo-root` is not a folder, or has no routes in it, the call fails with
+`CONTRACT_GENERATION_FAILED`; point `--repo-root` at the folder with the code.
+Emits progress and can be cancelled; see
+[Events and cancellation](../modules/core/protocol/events.md). The full
+parameter and result reference is in
+[Operations](../modules/core/protocol/operations.md#generate-contract).
 
 #### `get_contract`
 
@@ -1024,6 +1085,28 @@ Returns options to their defaults, by key or all of them. Requires a project. Li
 ```bash
 specforge reset_config --keys base_url --keys timeout_s
 ```
+
+#### `list_llm_models`
+
+The chat models a provider offers, to choose `llm.primary_model` (or
+`LLM_MODEL`) from. Needs no project.
+
+| Flag | Type | Required | Default |
+| --- | --- | --- | --- |
+| `--provider` | string | no | every known provider, asked in parallel |
+| `--refresh` | boolean | no | `false` |
+
+With the provider's key set, its own API is asked and the list is what that
+account can call. Without a key, or when the provider fails, the list is
+litellm's catalog and the answer says why. Each model carries its price per
+million tokens, its context window and whether it supports structured output.
+Lists are kept for an hour per provider and key; `--refresh` asks again.
+
+The CLI draws one section per provider, says where its list came from, and
+marks the model in use (read from `llm.primary_model`; `--json-output` prints
+the core's answer without that mark). A provider with no key set gets a
+warning that its key is needed to see what the account can call. To choose a model from the list, use the
+`model` command (see [`help setup`](#finding-a-command-with-help)).
 
 ### Environment
 

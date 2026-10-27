@@ -83,7 +83,9 @@ A view only draws the result it is handed, so a fact the core did not put in it 
 before drawing, by `session/enrichment.py`, for the REPL, the full-screen app and a one-shot
 call alike. Today that is the model in use beside a `list_llm_models` listing (the
 `llm.primary_model` option, read with `get_config`), the configuration as it was before a
-`set_config` or `reset_config`, and the finding an applied fix was for (read with `get_finding`,
+`set_config` or `reset_config`, the model in use and the latest run beside a project's state
+(`open_project`, `project_state`; the run is read with `list_analyses` and `list_runs`, only when
+the store holds runs), and the finding an applied fix was for (read with `get_finding`,
 so the next steps can name the endpoint to run again and the run to compare against). It is an extra: if the core cannot answer it, the result is
 drawn without it. `--json-output` never gets it, and the extra request is not made.
 

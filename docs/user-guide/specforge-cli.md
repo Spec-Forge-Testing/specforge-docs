@@ -480,7 +480,8 @@ worked example.
 
 Opens a project, or switches the active one to it, and returns its whole
 state — root, contract (loaded or explaining why not), and whatever the
-store already holds for it.
+store already holds for it. It is drawn as a card: what the project is, what
+it still lacks, and what to do next.
 
 | Flag | Type | Required | Default |
 | --- | --- | --- | --- |
@@ -489,18 +490,46 @@ store already holds for it.
 ```text
 specforge ❯ open_project path=/home/dev/my-api
 
-root: /home/dev/my-api
-contract: not loaded
+name: my-api
+folder: /home/dev/my-api
+contract: My API v1.2.0 · 14 endpoints
+target: http://localhost:8000
+model: openai/gpt-5-nano
+history: 2 analyses · 5 runs
+last run: run #12 completed · 2 problems · 2026-10-27 14:42
+
+  → fuzz · get_run run_id=12
 ```
 
+| Line | What it says |
+| --- | --- |
+| `name` | The name `specforge.toml` declares; left out when there is none. |
+| `folder` | The project's root, whole. |
+| `contract` | Title, version and size of the contract, or `not loaded` with the reason. |
+| `target` | The `base_url` the project declares, or `not set`. |
+| `model` | The model inference asks first, or `not chosen`. Left out when the core could not be asked. |
+| `history` | The analyses and runs the store holds for the project. Left out when it holds none. |
+| `last run` | Id, status, confirmed problems and time of the latest run. Left out when there is none. |
+
+What the project lacks is shown in yellow, and the line under the card names
+the call that fills it, in the order to give them: `load_contract` (or
+`generate_contract`) for a missing contract, `update_project base_url=<url>`
+for a missing target, `analyze_endpoints` for a project never analyzed, and
+`model` when no model is chosen. Once nothing is missing the step is `fuzz`.
+
 A project with no `specforge.toml` opens with no contract loaded (`contract:
-not loaded` above is honest, not an error) — load one explicitly with
+not loaded` is honest, not an error) — load one explicitly with
 [`load_contract`](#load_contract).
+
+The model and the latest run are not part of the core's answer: the CLI asks
+for them right after it (`get_config`, and `list_analyses` plus `list_runs`
+when the store holds runs). If any of those fails, the card is drawn without
+that line. `--json-output` prints the core's answer as it came, without them.
 
 #### `project_state`
 
 The active project's state, without re-opening anything. Same shape and view
-as `open_project`. No parameters. Requires a project.
+as `open_project`, the card included. No parameters. Requires a project.
 
 #### `close_project`
 

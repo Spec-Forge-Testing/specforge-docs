@@ -151,13 +151,13 @@ variant, `default` (`DEFAULT_VARIANT`, built with `only_variant(traits)`);
 | `stateful` | `default` | `valid`, `transition` | yes | 100 | yes |
 | `performance` | `flat` | every planned phase | yes | — | yes |
 | `performance` | `ladder` | `valid` | no | — | yes |
-| `resilience` | `default` | nothing | no | — | yes |
+| `resilience` | `default` | `valid` | no | — | yes |
 | `auth` | `default` | `valid` | no | — | yes |
 | `replay` | `default` | nothing | no | — | no |
 
 The ladder sends a fixed `LADDER_STEP_SAMPLES` per step, `auth` crosses one valid
-request per identity, `resilience` sends its chaos battery, and a replay re-sends a
-trace, so none of them honors a count. The stateful cap is
+request per identity, `resilience` attacks one valid base request per endpoint with
+its chaos battery, and a replay re-sends a trace, so none of them honors a count. The stateful cap is
 `DEFAULT_STATEFUL_MAX_EXAMPLES`, the default of `StatefulOptions.max_examples`.
 
 Two public functions read the declarations:
@@ -169,8 +169,7 @@ Two public functions read the declarations:
 
 **The declaration is held to what the runner does.** `tests/test_runner_traits_gate.py`
 drives every registered variant over an endpoint built to draw every phase, under
-`security`, and checks that the phases sent equal `consumes`; that `resilience`
-sends the same requests under `default` and `security`; that a larger count
+`security`, and checks that the phases sent equal `consumes`; that a larger count
 changes what is sent exactly when `honors_examples_per_endpoint` says so; that
 `examples_cap` is the runner's default `max_examples`; and that an opted-in oracle
 judges only where `judges_opt_in_oracles` says so. Each runner's own tests also

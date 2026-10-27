@@ -94,6 +94,16 @@ consumes that parent's bundle at its own path parameter, unless a native link or
 a by-id sibling already fills that parameter. A contract's `transitions` and
 `access.owner_bundle` may cite only these names.
 
+The same topology gives a run two rules with no model involved
+([ADR-168](adr/core.md#adr-168)). A `DELETE` that consumes a bundle through a native
+link or its by-id sibling **invalidates** it, so a stateful run never draws a
+deleted resource again; a nested consumption does not invalidate the parent. And
+when a `DELETE`'s only placeholder is its last path segment and the `GET` on the
+same path declares `404` or `410`, the state link carries a **deleted-resource
+transition**: after a successful `DELETE`, that `GET` must answer one of those
+statuses. A transition the model infers for the same route replaces the derived
+one.
+
 ## Adoption
 
 A produced contract is used only if it fits its endpoint. Three checks run in

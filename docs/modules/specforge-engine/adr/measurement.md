@@ -277,3 +277,50 @@ judges only a poisoned field. Two distinct 500s of one endpoint collapse into on
 signature. A replaced fixture also drops what only the fixture declared: the
 inferred run loses a business rule on an untraced handler, and the
 `contract_completeness` finding on `GET /search`.
+
+---
+
+## ADR-172 — Targeted generation was measured and is not adopted { #adr-172 }
+
+**Status:** accepted · measurement only; no code ships
+
+### Context
+
+Hypothesis's `target()` steers generation toward inputs that raise a score. The
+question was whether steering the `valid` phase toward error responses finds
+defects that the run corpus ([ADR-165](runners.md#adr-165)), which already feeds
+the phase real identifiers, does not.
+
+### Decision
+
+**The rule, written before measuring:** targeted generation ships only if its arm
+finds confirmed signatures no control run finds, in at least 2 of 3 repetitions on
+some target.
+
+**What was measured.** A prototype outside the product made the `valid` pass
+targeted: batches of one request, Hypothesis's `target` phase enabled, and
+`target()` called inside the test with a score that is stable for an input: the
+rank of the response's status class, plus one when the response carries keys its
+contract does not declare. Two arms, three repetitions per target: the engine with
+the run corpus, and the same engine with targeted generation.
+
+| Target | Control arm | Targeted arm |
+| --- | --- | --- |
+| RealWorld Go | union of 34 signatures over 6 runs | union of 30; one signature of its own (`POST /articles/{slug}/comments` 500), in 1 of 3 runs; the 404 share of `valid` rose to 32 % |
+| Lab API | union of 23 signatures; planted bugs found 11, 13, 12 | union of 23, none of its own; planted bugs found 12, 12, 12 |
+
+Wall time was the same in both arms (42 to 49 seconds on the Go target).
+
+**It is not adopted.** With about 60 `valid` examples per endpoint, the optimizer
+has too few to climb on; the corpus is the feedback that pays.
+
+### Rejected
+
+- **Shipping it for the one extra signature.** It appeared in 1 of 3 runs, below
+  the rule fixed beforehand, and the optimizer pushes requests toward 4xx and 5xx
+  at the cost of the 2xx answers the corpus gains.
+
+### Consequences
+
+No code ships. The measurement is worth repeating if the examples per endpoint grow
+by an order of magnitude.

@@ -242,11 +242,11 @@ classification and evidence as a report's defect
 | `observation` | `expected`, `observed`, `location` (`{scope, path}`, see [scopes](vocabularies.md#location-scope)) and `marker`; `null` for a finding stored before `0.1.19`. |
 | `request` | `url`, `poisoned_zone`, `poisoned_field`, `attack_family`, `trigger_fields`. |
 | `response` | `content_type`, `headers` (redacted), `latency_ms`. |
-| `control` | `status_code`, `latency_ms`, `error`: what the control request got back. On a confirmed finding, the control it was judged against; on an unverified one, the control that got no answer; `null` when none was sent. |
+| `control` | `status_code`, `latency_ms`, `error`: what the control request got back. On a confirmed finding, the control it was judged against (for `resilience`, the clean base request sent after the attack was confirmed); on an unverified one, the control that got no answer; on a refuted one, the control that refuted it (for a whole-request rejection, the request that was accepted); `null` when none was sent. |
 | `stack_trace` | Always `null`. Deprecated; removed with the next minor. |
 
 `metrics.findings_refuted` counts, apart from `findings_flaky`, the findings a
-control request refuted.
+control request refuted; each is also listed, with `state` `refuted` and its `control`.
 
 ## `config`
 

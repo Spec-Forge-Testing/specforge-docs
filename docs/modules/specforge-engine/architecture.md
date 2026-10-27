@@ -70,7 +70,7 @@ src/specforge_engine/
     ├── safety_guard.py    # partition_by_safety: hold declared side-effect endpoints back
     ├── payload.py         # ZonedPayload: the value object a strategy draws, with its intent
     ├── bulkhead.py        # guard_endpoint: an endpoint whose exploration raises becomes an engine_failure cut
-    ├── ordering.py        # order_by_risk: most-risky-first, before dispatch
+    ├── ordering.py        # order_by_risk: most-risky-first; order_by_state_flow: producers first, deletes last (stateless)
     ├── progress/          # Throttled counters and lifecycle events pushed to an observer
     ├── http/              # Async orchestrator, request injection, body encoders, credentials, reserved headers, error classifier
     ├── harness/           # The Hypothesis bridge: one event loop, settings, identity strategy, minimal draw, settled gather
@@ -78,10 +78,10 @@ src/specforge_engine/
     │   └── security/      # the five intent-anchored security oracles
     ├── findings/          # Group, deduplicate, materialize, shrink, stats; redaction/ and causes/
     ├── fuzzers/           # stateless/ and stateful/ procedures
-    ├── state_link/        # Shared bundle capture and status matching (stateful + auth)
+    ├── state_link/        # Shared bundle capture, status matching and bound-value writing (stateful, auth, resilience)
     ├── trace/             # Record, rehydrate, canonical JSON, URL userinfo
     ├── replay/            # Fidelity assessment, pacing
-    └── runners/           # One runner per ExecutionMode and its traits, the shared loop, resilience/, auth/
+    └── runners/           # One runner per ExecutionMode and its traits, the shared loop, resilience/, auth/, provisioning/
 ```
 
 The two root leaves — `constants.py` and `exceptions.py` — import nothing from

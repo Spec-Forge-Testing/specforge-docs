@@ -21,13 +21,15 @@ The records are split by area. Numbers stay global across the whole site and are
 never reused — the number tells you when it was written, the file tells you what
 it governs. A number missing here belongs to another module:
 [ADR-148](../../specforge-engine/adr/findings.md#adr-148), the engine's invariant
-registry, classifies what the report shows, and
+registry, classifies what the report shows;
 [ADR-159](../../specforge-engine/adr/strategies.md#adr-159), the runner traits the
-effects matrix is derived from, is the engine's.
+effects matrix is derived from; and
+[ADR-167](../../specforge-engine/adr/findings.md#adr-167), the refuted finding the
+report lists, are the engine's.
 
 | File | Area | Covers |
 | --- | --- | --- |
-| [core.md](core.md) | the headless core | Unprobed reasons, dependency gateways, the busy guard, cancelled-run evidence, oracle scope, breached-run evidence, engine option precedence, when the inference gateway loads, the report's labels for the engine's outcomes, the run's URL, a finding's summary, replay verdicts per defect, presets, examples per endpoint |
+| [core.md](core.md) | the headless core | Unprobed reasons, dependency gateways, the busy guard, cancelled-run evidence, oracle scope, breached-run evidence, engine option precedence, when the inference gateway loads, the report's labels for the engine's outcomes, the run's URL, a finding's summary, replay verdicts per defect, presets, examples per endpoint, the deleted-resource transition |
 | [inference.md](inference.md) | contract production | Adopting a produced contract, the inference cache, approval and the spend cap, watching and cancelling production |
 | [protocol.md](protocol.md) | the wire | How fixtures are captured, how versions are matched, one name and `null` for every reader, how `shutdown` ends a session, the strategy's one name and its alias |
 
@@ -60,3 +62,4 @@ effects matrix is derived from, is the engine's.
 | [ADR-155](protocol.md#adr-155) | protocol | One strategy name inside, the former name only at the border |
 | [ADR-160](core.md#adr-160) | core | Presets are catalog data a client chains, not a parameter |
 | [ADR-161](core.md#adr-161) | core | Examples per endpoint resolve by one rule, and a count a runner ignores is refused |
+| [ADR-168](core.md#adr-168) | core | A `DELETE` invalidates what it consumes, and a deleted-resource transition is derived from the contract where its probe can be built |

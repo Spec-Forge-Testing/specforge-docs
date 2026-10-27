@@ -43,7 +43,10 @@ its metrics, endpoint stats and crashes stay queryable through `history` and
 
 `ReportDocument` is a frozen, `extra="forbid"` Pydantic model: a pure function
 of a run's persisted data, never a live object. It carries a `schema_version`
-("1.22" today), bumped when the shape changes in a way a reader cannot ignore.
+("1.23" today), bumped when the shape changes in a way a reader cannot ignore.
+1.23 is additive over 1.22: an `unconfirmed_findings` entry can carry `state`
+`refuted`, with the `control` that refuted it and a `summary` that says so (see
+[Unconfirmed findings](#unconfirmed-findings)).
 1.22 is additive over 1.21: `analysis` gains `strategy`, the canonical
 [strategy](../modules/core/protocol/vocabularies.md#strategy), right before
 `strategy_mode`, which keeps its label for older clients (`Hacker` for `security`, every other
@@ -199,8 +202,8 @@ either. A run the cache answered whole carries real zeros.
 
 ### Unprobed endpoints
 
-`endpoints[].unprobed_reason` says why an `auth` run crossed nothing at a targeted
-endpoint:
+`endpoints[].unprobed_reason` says why an `auth` run crossed nothing, or a
+`resilience` run sent nothing, at a targeted endpoint:
 
 | Value | Meaning |
 | --- | --- |
@@ -210,6 +213,7 @@ endpoint:
 | `owner_chain_cyclic` | The owner's resource depends on itself through its producers. |
 | `owner_resource_unprovisioned` | Every attempt to create the owner's resource failed, or its producer has no payload; the attempts are in the trace. |
 | `required_role_unheld` | No declared identity holds the required role. |
+| `owner_identity_missing` | `resilience` only: no valid identity is declared to own the resource, so the owner-only endpoint was not attacked. |
 
 ### Endpoints that degrade under load
 
@@ -241,8 +245,9 @@ with why.
 ### Unconfirmed findings
 
 A **crash** (an entry in `defects`) is a finding the run reproduced. Not every
-finding gets that far: some are seen but never reproduce, and some are collected
-right before the run is cut short and never checked. `unconfirmed_findings`
+finding gets that far: some are seen but never reproduce, some are collected
+right before the run is cut short and never checked, and some reproduce but a
+control request shows they are not defects. `unconfirmed_findings`
 carries those, so the document reports what a run saw as well as what it proved.
 Each entry has no reproducer - there is no minimal payload, no request headers,
 no response body to show - only the finding's signature, how often it was seen,
@@ -255,23 +260,24 @@ and what its first occurrence observed:
 | `rule_id` | The rule the finding broke: the business rule the contract declared, the accepted field for an input-validation finding, or the rule intrinsic to the invariant. There is no `rule_description` here - an unconfirmed finding has no reproducer to carry it. |
 | `status_code` | The failing response's status, or `null` when none was recorded. `0` means the request got no response at all (a transport failure). |
 | `identity_label` | The identity the finding was observed under, or `null` when the run declared none. |
-| `state` | `"flaky"` or `"unverified"` (see below). |
+| `state` | `"flaky"`, `"unverified"` or `"refuted"` (see below). |
 | `represented_findings` | How many raw findings this entry stands for. |
 | `body_fingerprint` | The shape of the response body that grouped the finding; `""` when the response had no body. |
 | `category`, `severity`, `summary`, `observation`, `request`, `response`, `control` | As on a defect (see [What a finding says](#what-a-finding-says)). |
 
 The list is ordered by severity first, then by the invariant's place in the
 engine's registry (the same order as `defects`), then by `represented_findings`,
-most first. The two **states** answer *why* a finding never became a crash:
+most first. The three **states** answer *why* a finding never became a crash:
 
 | State | Meaning |
 | --- | --- |
-| `flaky` | Seen, but it did not reproduce when the engine tried to confirm it. Both stateless and stateful runs report these, and `metrics.findings_flaky` counts every such event. |
+| `flaky` | Seen, but it did not reproduce when the engine tried to confirm it. Stateless, stateful and resilience runs report these (a resilience server error is flaky when its attack, resent twice, does not get it back every time), and `metrics.findings_flaky` counts every such event. |
 | `unverified` | Collected but never checked: the run stopped before it could be confirmed, or its control request got no answer, so there was nothing to judge it against. Such an entry carries that control in `control`. |
+| `refuted` | It reproduced, but its control request showed it is not a defect: the same request without the suspicious input showed the same signal, or, for a rejection that names no field, the same request with fresh values was accepted once and rejected the same way when sent again, a conflict with stored state such as a unique field. Its `control` is the request that refuted it (the accepted one, for a state conflict), and `metrics.findings_refuted` counts it. A refutation can be wrong: check the control. |
 
-A finding whose minimal payload reproduced, but whose control request reproduced
-too, is **refuted**: the input was not the cause. It is not listed, and
-`metrics.findings_refuted` counts it.
+A confirmed resilience defect also carries a `control`: the clean base request
+sent after its attack was confirmed, and its `summary` says whether the attack
+left the endpoint broken or the endpoint recovered.
 
 A flaky finding whose signature matches a confirmed crash is folded into that
 crash and shown once, as a defect - never twice. `compare` stays
@@ -282,7 +288,8 @@ regression or a fix.
 The HTML report gains a matching **Unconfirmed findings** section, listing the
 same entries with a one-line explanation of each state: a flaky finding reads
 *"seen N time(s) but could not be reproduced"*, an unverified one *"never
-checked because the run stopped"*. That table carries a **Rule** column, showing
+checked because the run stopped"*, a refuted one that a control request showed it
+is not a defect and that the control is worth checking. That table carries a **Rule** column, showing
 the rule id only for a finding whose rule the contract declared (a business-rule
 or access-control finding) and a placeholder for every intrinsic invariant, whose
 rule id merely repeats the invariant.
@@ -316,8 +323,8 @@ what each cause means and how it is derived.
 `--json-output` (see [CLI Reference](cli-reference.md)). It wraps the same building
 blocks - the run report document, a single defect or unconfirmed finding, a
 listing, a comparison - in one envelope. `inspect --crash <id>` projects the
-finding through its own shape: a confirmed id yields the defect above, a flaky
-or unverified id yields the `unconfirmed_findings` entry shape instead:
+finding through its own shape: a confirmed id yields the defect above, a flaky,
+unverified or refuted id yields the `unconfirmed_findings` entry shape instead:
 
 | Field | Description |
 | --- | --- |

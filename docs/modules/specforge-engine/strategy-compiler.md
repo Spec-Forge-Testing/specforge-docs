@@ -22,7 +22,10 @@ Each endpoint is compiled in this order:
    `path_url` placeholders and rejects any the endpoint will not supply at
    request time. The supplied set is the path-zone parameter names plus the
    path fields a state link consumes. A placeholder nobody fills, or a template
-   that will not parse, is a `StrategyCompilationError`.
+   that will not parse, is a `StrategyCompilationError`. Then
+   `require_fillable_follow_ups` checks every transition the state link declares:
+   a follow-up path with a placeholder other than the transition's own path field
+   could never be probed, and is a `StrategyCompilationError` too.
 2. **Generation context.** `_build_generation_context` reads the endpoint's
    attack knobs and risk into a `GenerationContext` (below). An endpoint with
    neither attack nor a risk-derived profile gets the shared `EMPTY_CONTEXT`.
@@ -54,6 +57,13 @@ address compiles `valid` under `attack`), the sensitive-field profiles, and the
 alphabet and wire of its zone, then drops the values a path segment cannot carry.
 `poison_parameter` compiles the same parameter to poison it, or returns `None`
 when the phase has no candidate for it.
+
+In `valid`, before compiling, `with_name_conventions` lets a string's name stand in
+for a constraint its contract left out: a field named like an email gets
+`format: email`, one named `username` or `password` a minimum length of 1, never
+past a declared `maxLength` ([Run depth](run-depth.md#credential-fields),
+[ADR-171](adr/compiler.md#adr-171)). The valid object builder applies the same rule
+to each property of a body.
 
 `compile_zone` builds every phase of the zone:
 

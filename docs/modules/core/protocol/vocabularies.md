@@ -129,8 +129,10 @@ constraint.
 
 Why the `auth` mode crossed nothing at a targeted endpoint, or the `resilience`
 mode sent it nothing: by design, or for an access precondition the run could not
-meet. `resilience` reports only `required_role_unheld`. In `get_run` and the
-report document's `endpoints`; `null` when the endpoint was probed.
+meet. `resilience` reports `required_role_unheld`, `owner_identity_missing` and
+the three `owner_*` reasons; `auth` reports every value but
+`owner_identity_missing`. In `get_run` and the report document's `endpoints`;
+`null` when the endpoint was probed.
 
 | Value | Meaning |
 | --- | --- |
@@ -140,8 +142,9 @@ report document's `endpoints`; `null` when the endpoint was probed.
 | `owner_chain_cyclic` | The owner's resource depends on itself through its producers, in every candidate. |
 | `owner_resource_unprovisioned` | Every attempt to create the owner's resource failed, or its producer has no payload; the attempts are in the trace. |
 | `required_role_unheld` | No declared identity holds the required role. |
+| `owner_identity_missing` | No valid identity is declared to own the resource, so `resilience` sends the `owner_only` endpoint nothing. |
 
-The last four are access preconditions the run could not meet; each one makes
+The last five are access preconditions the run could not meet; each one makes
 the run's signal `degraded` with [`access_preconditions_unmet`](#signal-causes).
 
 ## `run.signal_causes` { #signal-causes }
@@ -156,7 +159,7 @@ the signal is not `degraded`.
 | `endpoints_excluded` | One or more declared endpoints were excluded from this run. |
 | `withheld_by_safety_guard` | The safety guard held back one or more targeted endpoints, so they were never probed. |
 | `access_policy_undeclared` | One or more targeted endpoints declare no access policy, so the `auth` run verified nothing there. |
-| `access_preconditions_unmet` | One or more targeted endpoints had an access policy the run could not cross: no producer, no role holder, or no resource it could create; each one's [`unprobed_reason`](#unprobed-reason) says which. |
+| `access_preconditions_unmet` | One or more targeted endpoints had an access policy the run could not cross: no producer, no role holder, no owner, or no resource it could create; each one's [`unprobed_reason`](#unprobed-reason) says which. |
 | `run_cancelled` | The run was cancelled before it reached every targeted endpoint. |
 | `endpoints_unreached` | One or more targeted endpoints never received a request. |
 | `load_unjudged` | One or more endpoints' load profiles judged no step: every `degraded` is `null`, because the baseline or every step was measured on no samples. |

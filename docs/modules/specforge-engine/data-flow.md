@@ -63,7 +63,7 @@ The types that cross a stage line, all validated with `extra="forbid"`:
 | `EngineInput` | out → in | `CompiledExecutionEndpoint[]`; the engine consumes this alone |
 | `RunRequest` | in | one run's inputs: `engine_input` + `ExecutionConfig` + mode `options` |
 | `EngineRunResult` | out | the `findings` union, terminal `status`, `RunStats`, `ExecutionTrace`, optional `ReplayFidelity` |
-| `Finding` (`ConfirmedFinding` / `FlakyFinding` / `UnverifiedFinding`) | out | discriminated union on `state`; a confirmed finding carries a `CrashReport`, the other two a `signature` and their `occurrences` |
+| `Finding` (`ConfirmedFinding` / `FlakyFinding` / `UnverifiedFinding` / `RefutedFinding`) | out | discriminated union on `state`; a confirmed finding carries a `CrashReport`, the other three a `signature` and their `occurrences`, a refuted one also the `control` that refuted it |
 | `CrashReport`, `ViolatedRule`, `RunStats`, `EndpointStats`, `LatencyStats` | out | serialized to columns by `core/` — field names are stable; `ViolatedRule` is the rule a `CrashReport` broke, declared by the contract or intrinsic to its invariant |
 | `ExecutionTrace`, `TracedRequest`, `TruncationRecord` | out | the replayable record |
 | `ReplayReadiness` | out | outcome of the pre-replay readiness check |
@@ -309,7 +309,7 @@ parameter per mode. `None` means the mode's defaults.
 | Options | Fields |
 |---|---|
 | `StatelessOptions` | `include_repeated_requests` (validated, not yet wired to generation) |
-| `StatefulOptions` | `max_examples` and `step_count` bound the breadth and length of each generated sequence; `max_distinct_bugs` controls the loop-until-dry depth (`1`, the default, runs one pass and reports the first defect; higher values keep re-running, suppressing each found defect, at a proportional cost in requests) |
+| `StatefulOptions` | `max_examples` and `step_count` bound the breadth and length of each generated sequence; `max_distinct_bugs` caps the loop-until-dry depth: the run keeps passing until one finds nothing new, and stops early once that many distinct defects, or distinct flaky signatures, are found (default `STATEFUL_MAX_DISTINCT_BUGS`, 25; `1` reports the first defect only) |
 | `PerformanceOptions` | `latency_sla_ms` (the SLA the oracle enforces) and `load_factor`, a multiplier applied to each phase's example budget to sustain load; `concurrency_ladder` (a `ConcurrencyLadder` of strictly increasing `steps` and a degradation `tolerance`) replays the valid phase once per step and flags latency that grows with concurrency |
 | `ReplayOptions` | `trace` to re-send and `preserve_timing` (wait between requests to match the recorded schedule) |
 
@@ -388,11 +388,11 @@ producer:
 | `findings_raw` | violations observed during exploration, before shrinking: a response that breaks two rules counts twice |
 | `findings_confirmed` | shrink attempts that reproduced and became a crash report; in a mode that never shrinks (`performance`, `resilience`, `auth`), each defect observed |
 | `findings_unique` | distinct defects after collapsing reports with the same minimal reproducer (and, for `access_control`, the same identity); equal to the count of `ConfirmedFinding`s, never above `findings_confirmed` |
-| `findings_flaky` | attempted during shrinking and did not reproduce |
-| `findings_refuted` | reproduced, and so did the control request sent without the poison: the input was not the cause ([ADR-151](adr/findings.md#adr-151)) |
+| `findings_flaky` | attempted during shrinking and did not reproduce; in `resilience`, a server error its resent attacks did not get back on every resend |
+| `findings_refuted` | reproduced, and its control request showed it is not a defect: the input was not the cause, or the rejection was a state conflict ([ADR-151](adr/findings.md#adr-151), [ADR-167](adr/findings.md#adr-167)) |
 | `findings_collapsed` | not shrunk because a faithful representative of their signature stands for them |
 | `findings_unverified` | never judged: the run was cut before shrinking, no candidate could be produced, or the control request got no answer |
-| `requests_shrink` | requests the shrinking phase put on the wire (in a stateful run, Hypothesis's shrink re-sends plus the sequence minimizer's); not part of `total_requests` |
+| `requests_shrink` | requests the shrinking phase put on the wire (in a stateful run, Hypothesis's shrink re-sends plus the sequence minimizer's; in `resilience`, the confirmation's resends, controls and provisioning); not part of `total_requests` |
 
 `EndpointStats` mirrors the per-endpoint subset (`requests`,
 `examples_planned`, `findings_raw`, `findings_confirmed`; the rows of the last two
@@ -439,11 +439,13 @@ pipeline ([Engine internals](engine-internals.md#the-finding-pipeline),
 
 `EngineRunResult.findings` reifies those counters as a closed union. `Finding`
 is discriminated on `state` (`FindingState`): a `ConfirmedFinding` wraps its
-`CrashReport`; a `FlakyFinding` and an `UnverifiedFinding` each carry a
-`FindingSignature` and the raw `occurrences` they stand for — one object per
-signature. The confirmed findings are the deduplicated reproducers
-(`findings_unique`), the summed flaky occurrences are `findings_flaky`, and the
-summed unverified occurrences are `findings_unverified`; `findings_collapsed`
+`CrashReport`; a `FlakyFinding`, an `UnverifiedFinding` and a `RefutedFinding`
+each carry a `FindingSignature` and the raw `occurrences` they stand for — one
+object per signature — and a refuted one also the `ControlEvidence` that refuted
+it. The confirmed findings are the deduplicated reproducers
+(`findings_unique`), the summed flaky occurrences are `findings_flaky`, the
+summed unverified occurrences are `findings_unverified`, and the summed refuted
+occurrences are `findings_refuted`; `findings_collapsed`
 stays a counter only, since a collapsed finding is a duplicate a confirmed
 reproducer already stands for ([ADR-044](adr/engine.md#adr-044)).
 

@@ -4,8 +4,9 @@ Part of the [Core decision records](index.md). Decisions about the headless
 core: how a run explains an endpoint it did not probe, how optional libraries
 are owned, how the busy guard is scoped, what a cancelled or a safety-breached
 run keeps, how a run's oracle scope bounds a comparison, how the engine options
-resolve, when the inference gateway loads, how a finding's summary is told, and
-how a replay judges the defects it re-sends.
+resolve, when the inference gateway loads, how a finding's summary is told, how
+a replay judges the defects it re-sends, and how a deleted resource is checked
+without a model.
 
 ---
 
@@ -647,3 +648,61 @@ budget, plans the profile's `default_max_examples`, the same default.
 is persisted, so a replay or a comparison knows what a run asked. The endpoint's
 risk score still weights its budget, so one endpoint can plan more or fewer than
 the count.
+
+---
+
+## ADR-168 — A `DELETE` invalidates what it consumes, and a deleted-resource transition is derived from the contract where its probe can be built { #adr-168 }
+
+**Status:** accepted · `services/fuzz/state_link.py`, `utils/constants.py`; engine `strategy_compiler/path_template.py`, `strategy_compiler/compiler.py`
+
+### Context
+
+A transition invariant (a follow-up read that must find the resource gone, or
+changed) came only from a model-inferred contract. Without one, a soft delete, a
+`DELETE` answered 204 after which the same `GET` still answers 200, went unseen.
+And the stateful machine kept a deleted resource's value in its bundle, so later
+steps drew an identifier that no longer existed.
+
+### Decision
+
+**A `DELETE` invalidates the bundle it consumes.** `INVALIDATING_METHODS` holds
+`delete`. A state link sets `invalidates` on the consumption of a `DELETE`, through
+a native OpenAPI link or the by-id sibling heuristic, and the engine removes the
+value from the bundle when the step draws it. A nested consumption does not
+invalidate: `DELETE /articles/{slug}/comments/{id}` removes the comment, not the
+article.
+
+**The deleted-resource transition is derived from sibling routes.** For a `DELETE`
+whose path has exactly one placeholder, its last segment, and a `GET` on the
+identical path template that declares `404` or `410`, each bundle the `DELETE`
+consumes at that parameter gets a `TransitionInvariant`: follow up with that `GET`,
+the parameter in the path, and expect the declared statuses among
+`DELETED_RESOURCE_STATUSES` (404, 410). When a model-inferred contract states the
+same transition, `merge_transitions` keeps the model's, which can also name
+`echoed_fields`.
+
+**The engine refuses a transition its probe cannot address.** At compile time,
+`require_fillable_follow_ups` rejects an endpoint whose transition's follow-up path
+names a placeholder other than the transition's own path field, with a
+`StrategyCompilationError` that lists it in `excluded_endpoints`. The contract
+boundary fails, not the run.
+
+### Rejected
+
+- **Deriving the transition when the read declares no 404 or 410.** An archived
+  resource may legitimately stay readable; the finding would be false.
+- **Deriving it on a nested path.** The probe cannot fill the parent's
+  placeholder, so the first successful `DELETE` would cut the run as
+  `engine_failure`.
+- **Invalidating the parent of a nested consumption.** Deleting a comment does not
+  delete its article.
+- **Matching the read's path loosely.** Only the identical template reads the same
+  resource.
+
+### Consequences
+
+On the lab API, the soft delete is confirmed as `state_transition` in every
+repetition, with no model involved. On the RealWorld Go target nothing is derived:
+its `GET /articles/{slug}` declares no 404. The invalidation acts when the step
+draws the value, whatever the `DELETE` answers, so a `DELETE` that fails still
+empties the bundle until a producer fills it again.

@@ -126,24 +126,28 @@ flowchart TD
 | **Requests** | How many requests the run sent. |
 | **Shrink requests** | Extra requests spent shrinking failures to their minimal form (not counted in Requests). |
 | **Raw findings** | Every rule violation seen while exploring. |
-| **Confirmed** | Findings that still failed after shrinking — one per distinct symptom. In the modes that never shrink (`performance`, `resilience`, `auth`), each distinct defect observed counts as confirmed. |
+| **Confirmed** | Findings that still failed after shrinking — one per distinct symptom. In the modes that never shrink (`performance`, `resilience`, `auth`), each distinct defect observed counts as confirmed; in `resilience`, once its resent attack got it back every time. |
 | **Collapsed** | Findings with the same symptom as a confirmed one, so not shrunk again. |
 | **Unverified** | Findings the run collected but never got to shrink (it was cut short first), or whose control request got no answer. |
 | **Flaky** | Findings that could not be reproduced on a second try. |
 | **Unique crashes** | Distinct bugs left after removing duplicates — the number that matters. |
 
 Some findings are also checked against a **control request**: the same request
-without the value suspected of causing them. When the control shows the same
-signal, the finding is **refuted** and counted apart (`findings_refuted` in the
-[report](reports.md)), never listed as a defect.
+without the value suspected of causing them, or, for a rejection that names no
+field, the same request with fresh values, sent twice. When the control shows the
+finding is not a defect, the finding is **refuted**: counted apart
+(`findings_refuted` in the [report](reports.md)) and listed with that control,
+never as a defect. A server error under the `resilience` mode is checked by
+resending its attack instead, and is flaky unless it comes back every time.
 
 The bottom line of any run is its **unique crashes**: the count of genuinely distinct
 defects, after everything else has been de-duplicated away. A **crash** is a
 confirmed finding — one the run reproduced.
 
 Findings that never reach that bar are still reported, as **unconfirmed
-findings**: the flaky ones (seen but not reproduced) and the unverified ones
-(collected before the run could check them). The `fuzz` report and
+findings**: the flaky ones (seen but not reproduced), the unverified ones
+(collected before the run could check them) and the refuted ones (shown by a
+control request not to be defects). The `fuzz` report and
 `inspect --run` list them in a table of their own, after the crashes, so a run
 tells you what it saw as well as what it proved. They carry no reproducer, only
 the finding's signature, how often it was seen and what its first occurrence
@@ -155,16 +159,20 @@ serious, and what happened in one sentence (see the
 
 The `fuzz` command has five modes, chosen with `--mode`, plus the separate `replay` command:
 
-- **`--mode stateless`** (the default) fuzzes each endpoint on its own, one request at a time.
+- **`--mode stateless`** (the default) fuzzes each endpoint on its own, one request at a time,
+  reusing the identifiers earlier responses returned so its requests address real resources.
 - **`--mode stateful`** chains requests into sequences, surfacing bugs that only appear when
-  operations run in a certain order.
+  operations run in a certain order. It keeps running new sequences, past each bug it
+  reports, until one finds nothing new.
 - **`--mode performance`** sustains load and, with `--latency-sla-ms`, fails any endpoint
   slower than the threshold you set. With `--concurrency-steps` it instead climbs a
   concurrency ladder — replaying each endpoint across increasing load levels — and flags any
   whose latency grows as the load grows.
 - **`--mode resilience`** sends a fixed battery of malformed-transport requests (slow, partial,
-  oversized, deeply nested, wrong content type) and flags any endpoint that answers with a
-  server error, hangs or crashes instead of refusing cleanly.
+  oversized, deeply nested, wrong content type) against a valid request to each endpoint, and
+  flags any endpoint that answers with a server error, hangs or crashes instead of refusing
+  cleanly. A server error is resent before it is reported, so an endpoint that fails at random
+  is reported flaky.
 - **`--mode auth`** crosses the identities you declare against each endpoint's access policy
   and flags a caller that succeeds where the policy forbids it. An API whose contract
   declares no access policy gives it nothing to check.

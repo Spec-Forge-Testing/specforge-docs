@@ -22,7 +22,9 @@ Before any runner starts, endpoints are ordered by risk (`order_by_risk`, on
 `risk_score` then `Criticality` rank, most-risky-first and stable), so the most
 critical endpoints are explored first and survive a deadline or target-down cut.
 An endpoint with no risk metadata sorts as the neutral default, so a schema-only
-run keeps its original order.
+run keeps its original order. The stateless runner then orders them by state flow,
+producers before their consumers and deletes last, with risk breaking ties
+([Run depth](run-depth.md#producers-first-deletes-last)).
 
 ## Options per mode
 
@@ -56,7 +58,7 @@ variant, which part of the compiled plan it sends
 | `STATEFUL` | `valid`, `transition` | yes, 100 unless asked for more | yes |
 | `PERFORMANCE` flat | every phase the strategy plans | yes | yes |
 | `PERFORMANCE` ladder | `valid` | no: `LADDER_STEP_SAMPLES` per step | yes |
-| `RESILIENCE` | none: the chaos battery | no | yes |
+| `RESILIENCE` | `valid`: the base request the chaos battery attacks | no | yes |
 | `AUTH` | `valid` | no: one valid request, crossed between identities | yes |
 | `REPLAY` | none: the recorded trace | no | no |
 
@@ -140,6 +142,14 @@ or a timeout the poisoned field induced) and the probe answers, the endpoint is
 failing in a way the run reports, and the pass keeps exploring
 ([ADR-132](adr/engine.md#adr-132)).
 
+The `valid` phase draws its path and query values partly from a **run corpus**:
+the identifiers and produced values the run's own 2xx responses returned. A path
+field takes one in 80 % of its draws, a query field in 20 %, and a request that
+changes data takes only values the run itself created, unless the run allows side
+effects, when it may also reuse values it only read; never a value a finding
+pins. How the corpus is kept,
+pinned and evicted is on [Run depth](run-depth.md#run-corpus).
+
 ## Stateful
 
 Drive sequences of linked operations as a dynamically built
@@ -193,11 +203,15 @@ flaky finding. The mechanism is laid out in
 [Engine internals](engine-internals.md#shrinking-and-minimizing-a-stateful-finding)
 and the choice in [ADR-089](adr/engine.md#adr-089).
 
-A stateful run that reaches `max_distinct_bugs` stops; each found defect is
-suppressed before the next pass. With the default of `1`, one violating sequence
-ends the run. A flaky pass outcome becomes a flaky finding,
-counted in `findings_flaky` by occurrence and folded away when a confirmed report
-already covers its signature ([ADR-047](adr/engine.md#adr-047)). When a state
+A stateful run keeps running passes until one finds nothing new: each reported
+defect is suppressed, by its signature and its trigger fields, before the next
+pass. It stops early once the distinct defects, or the distinct flaky signatures,
+reach `max_distinct_bugs` (default 25); `1` reports the first defect only. A
+`DELETE` removes the value it consumes from its bundle, and a read that declares
+404 or 410 is probed after a delete of the same route. The rules are on
+[Run depth](run-depth.md#stateful-depth). A flaky pass outcome becomes a flaky
+finding, counted in `findings_flaky` by occurrence and folded away when a
+confirmed report already covers its signature ([ADR-047](adr/engine.md#adr-047)). When a state
 link cannot be honored the run raises `StatefulLinkError` carrying the partial
 exploration.
 
@@ -405,7 +419,8 @@ sequenceDiagram
     participant Or as oracles
 
     loop per endpoint
-        RN->>RN: base blueprint (deterministic payload, battery identity)
+        RN->>RN: battery identity, or unprobed_reason
+        RN->>RN: base payload (minimal valid draw), owner's resource bound
         RN->>Orch: execute the clean base request
         RN->>Or: evaluate_contract_free → 5xx or drop is a finding
         loop per registered chaos attack
@@ -414,29 +429,39 @@ sequenceDiagram
             RN->>Or: check_response(chaos=attack.expectation) → degradation?
         end
         RN->>RN: base request failed → no attack is blamed
+        RN->>Orch: resend each blamed 5xx's attacks → confirmed or flaky
     end
-    RN->>RN: group → materialize → dedupe → build_unshrunk_stats
+    RN->>RN: group → materialize (with control) → dedupe → build_unshrunk_stats
 ```
 
 ### The base request and its identity
 
-Every attack targets one **base request** per endpoint: its path parameters are
-placeholders, and it goes out under the identity the endpoint's access demands,
-so a protected endpoint is attacked past its authentication instead of answering
-`401` to the whole battery:
+Every attack targets one **base request** per endpoint. Its values are the
+endpoint's minimal valid request, in every zone; a path parameter that draw
+leaves out keeps a placeholder. For an `owner_only` endpoint the owner's resource
+is provisioned first, through the provisioning package `auth` uses, and its values
+are written into the request, so the battery attacks a resource its identity owns
+([Run depth](run-depth.md#the-base-request)). It goes out under the identity the
+endpoint's access demands, so a protected endpoint is attacked past its
+authentication instead of answering `401` to the whole battery:
 
 | The endpoint's access | The battery's identity |
 |---|---|
 | `role_only` | the first valid identity whose `role` is the required one |
 | `role_only`, and no valid identity holds the role | none: the endpoint gets no request |
-| `owner_only`, `authenticated`, or none | the first valid identity |
+| `owner_only` | the first valid identity, which owns the provisioned resource |
+| `owner_only`, and no valid identity declared | none: the endpoint gets no request |
+| `authenticated`, or none | the first valid identity |
 | no valid identity declared | anonymous |
 
 A battery sent under an identity the endpoint refuses would measure the
 authorization layer, not the endpoint's handling of a broken request. So a
 `role_only` endpoint whose role no identity holds is left unprobed with
-`unprobed_reason` `required_role_unheld`, and the run's signal is `degraded` with
-`access_preconditions_unmet`.
+`unprobed_reason` `required_role_unheld`, an `owner_only` endpoint with no valid
+identity with `owner_identity_missing`, and one whose resource could not be
+provisioned with the provisioning's reason (`owner_producer_missing`,
+`owner_chain_cyclic`, `owner_resource_unprovisioned`). Each makes the run's signal
+`degraded` with `access_preconditions_unmet`.
 
 Before the battery, the base request is sent **clean**, once, through the ordinary
 send path, and judged like any request outside chaos. A 5xx or a dropped
@@ -509,6 +534,18 @@ shape it uses for an unsupported scheme or a base URL whose host or port it
 cannot parse). No finding is produced and the request is counted as
 infrastructure in the endpoint's stats. Over `http://` the attack runs as usual.
 
+### Confirming a server error
+
+A 5xx blamed on an attack is confirmed before it is reported. After the battery is
+recorded, and when the target is still answering, every distinct attack behind the
+signature is resent twice (`RESILIENCE_RESENDS`) on a fresh base request. One
+attack that gets the signature back on every resend confirms it, and the clean
+base request sent afterwards becomes the finding's `control`; when every attack
+misses it on some answered resend, the finding is `flaky`; a resend that gets no
+answer leaves it confirmed. A resilience finding is never refuted. The full table
+is on [Run depth](run-depth.md#confirming-a-server-error); the requests count in
+`requests_shrink`, outside the trace.
+
 ### Stopping on a dead target
 
 A resilience run does not walk every endpoint against a target that has stopped
@@ -556,7 +593,9 @@ typed reason into `EndpointStats.unprobed_reason` (`UnprobedReason`):
 
 The first two are by-design skips; the other four are access preconditions the
 run could not meet. Either way the endpoint is recorded and the run moves on to
-the next one.
+the next one. `UnprobedReason` has one more member, `owner_identity_missing`,
+which only `resilience` reports: an auth run without a valid identity stops before
+any request instead.
 
 The run **fails fast before any request** on one condition only: no **valid**
 identity is declared (`AccessIdentityError`). Everything else degrades per
@@ -585,12 +624,20 @@ The package `runtime/runners/auth/` is split by the question each module answers
 | `crossing.py` | `EndpointCrosser`: crosses one endpoint — plans it, binds its owner resources, sends its crossings and judges them |
 | `plan.py` | the vocabulary of one endpoint's access plan, and the request builders that produce it; no Hypothesis |
 | `planners.py` | one planner per access policy: which bundles it needs, and which identities it crosses |
-| `payloads.py` | the Hypothesis draws of the valid payloads a plan crosses and provisions with |
-| `preconditions.py` | the run's producer index, and the precondition checked before anything is sent |
+| `preconditions.py` | the precondition checked before anything is sent |
+
+Owner-resource provisioning is shared with `resilience`, in
+`runtime/runners/provisioning/`; neither runner imports the other:
+
+| Module | Role |
+|---|---|
+| `owner_resources.py` | the run's owner resources: one per bundle, provisioned once and reused by every consumer |
 | `chain.py` | orders the producers an owner resource needs, dependencies first, before anything is sent |
-| `provisioning.py` | the run's owner resources: one per bundle, provisioned once and reused by every consumer |
-| `producer_watch.py` | watches the provisioning's producer requests as the run watches its crossings |
-| `constants.py` | the constants the auth runner owns |
+| `payloads.py` | the Hypothesis draws of the valid payloads a plan crosses and provisions with, and the minimal one |
+| `plan.py` | the shared inputs of a provisioning plan, its owner bundle, and how one request is built |
+| `producers.py` | the run's producer index: every endpoint that produces each bundle |
+| `producer_watch.py` | watches the provisioning's producer requests as the run watches its own |
+| `constants.py` | `PROVISIONING_ATTEMPTS` and the other provisioning constants |
 
 ```mermaid
 sequenceDiagram

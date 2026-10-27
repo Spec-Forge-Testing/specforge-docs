@@ -111,14 +111,13 @@ The matrix this core publishes, under the `none` producer:
 | `stateful` · `default` | `payloads` | `oracles` | `examples` | `payloads` |
 | `performance` · `flat` | `payloads` | `payloads`, `oracles` | `payloads`, `examples` | `payloads`, `examples` |
 | `performance` · `ladder` | `payloads` | `oracles` | — | `payloads` |
-| `resilience` · `default` | — | `oracles` | — | — |
+| `resilience` · `default` | `payloads` | `oracles` | — | `payloads` |
 | `auth` · `default` | `payloads` | `oracles` | — | `payloads` |
 
 The producers add to it. Under `fixture`, `security` and `exposure` gain
-`field_hints` wherever the runner draws from the plan. Under `inference` they
-also gain `llm_profile` in every row, `resilience` included: the contracts are
-inferred with the `security` profile even where the runner then sends a fixed
-battery. Under `security`, a runner that sends only `valid` values still reads
+`field_hints` wherever the runner draws from the plan, `resilience` included: its
+base request is the endpoint's minimal valid request. Under `inference` they also
+gain `llm_profile` in every row. Under `security`, a runner that sends only `valid` values still reads
 `payloads`, because the attack contract type widens the fields a valid value may
 carry. `exposure` in `stateful` reads no `examples`: the stateful cap of 100
 holds both strategies at the same count.

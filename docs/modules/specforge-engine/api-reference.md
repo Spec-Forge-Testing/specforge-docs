@@ -18,7 +18,7 @@ from specforge_engine import (
     BaseStrategyContract, HackerStrategyContract,
     ExecutionConfig, Identity, ExecutionMode, Strategy, StrategyProfile,
     CompilationOutcome, EngineRunResult, RunStatus,
-    Finding, ConfirmedFinding, FlakyFinding, UnverifiedFinding,
+    Finding, ConfirmedFinding, FlakyFinding, UnverifiedFinding, RefutedFinding,
     CrashReport, ViolatedRule,
 )
 ```
@@ -81,12 +81,13 @@ Field names of this family are stable: they are persisted as columns.
 | `EndpointExclusion` | one rejected or withheld endpoint with its `reason` |
 | `EngineInput`, `CompiledExecutionEndpoint`, `CompiledEndpointStrategies` | the executable compile output; `CompiledEndpointStrategies` holds one compiled part per zone (`body` a `CompiledBody`), the `generation_plan`, and the `poisoning_phases` its contract type poisons; `CompiledExecutionEndpoint.optional_oracles` names the opt-in oracles its strategy turns on |
 | `EngineRunResult` | `findings` + `status` + `stats` + `trace` + optional `fidelity` |
-| `Finding` | the discriminated union of `ConfirmedFinding`, `FlakyFinding`, `UnverifiedFinding` on `state` |
+| `Finding` | the discriminated union of `ConfirmedFinding`, `FlakyFinding`, `UnverifiedFinding`, `RefutedFinding` on `state` |
 | `ConfirmedFinding` | a settled reproducer: carries its `report` |
 | `FlakyFinding`, `UnverifiedFinding` | a settled group: its `signature` and how many raw `occurrences` it stands for |
+| `RefutedFinding` | a group a control request showed is not a defect: its `signature`, `occurrences`, `first_seen` and the `control` that refuted it |
 | `RunStats`, `EndpointStats`, `LatencyStats` | run, endpoint and latency counters — `EndpointStats.unprobed_reason` names why a targeted endpoint drew no requests |
 | `LoadStepStats` | one concurrency-ladder step on an endpoint's `load_profile`: its `concurrency`, measured `latency`, `degraded` verdict (`None` when unjudged) and, when the step was measured twice to confirm a degradation, the second window as `remeasured` |
-| `UnprobedReason` | why the auth mode crossed nothing at a targeted endpoint: `declared_public` or `access_undeclared` (by design), `owner_producer_missing`, `owner_chain_cyclic`, `owner_resource_unprovisioned` or `required_role_unheld` (a precondition the run could not meet) — each one in [Execution modes](execution-modes.md#auth) |
+| `UnprobedReason` | why the auth mode crossed nothing, or resilience sent nothing, at a targeted endpoint: `declared_public` or `access_undeclared` (by design), `owner_producer_missing`, `owner_chain_cyclic`, `owner_resource_unprovisioned`, `required_role_unheld` or `owner_identity_missing` (a precondition the run could not meet) — each one in [Execution modes](execution-modes.md#auth) |
 | `CrashReport`, `InvariantViolation` | a confirmed finding's reproducer and the invariant it broke — its `response_body` has sensitive field values redacted to `***` by name |
 | `ViolatedRule` | the rule a `CrashReport` broke (`id` + `description`) — declared by the contract for a `semantic_property` / `access_control` finding, the accepted field (`<zone>.<field>`, such as `query.limit` or `body.$`) for an `input_validation` finding, or intrinsic to the invariant for every other one |
 | `keyed_identity(invariant, identity_label) -> str \| None` | the identity that tells two findings of `invariant` apart: the label for `access_control`, `None` for every other invariant ([ADR-106](adr/engine.md#adr-106)) |
@@ -148,7 +149,7 @@ See [Progress and cancellation](progress-and-cancellation.md) for how they behav
 |---|---|
 | `ExecutionMode` | `STATELESS` / `STATEFUL` / `REPLAY` / `PERFORMANCE` / `RESILIENCE` / `AUTH` |
 | `RunStatus` | a run's terminal outcome: `COMPLETED` / `TRUNCATED` / `ABORTED` / `CANCELLED` |
-| `FindingState` | a finding's settled state: `CONFIRMED` / `FLAKY` / `UNVERIFIED` |
+| `FindingState` | a finding's settled state: `CONFIRMED` / `FLAKY` / `UNVERIFIED` / `REFUTED` |
 | `ErrorCategory` | the outcome category of one request |
 | `TruncationReason` | why a run, or one endpoint, was cut short (includes `TARGET_DOWN`, `INFRASTRUCTURE_ABORT`, `CANCELLED`, and `ENGINE_FAILURE` for an endpoint the engine itself failed on and isolated) |
 | `InvariantViolation` | the invariant a finding broke (includes `INPUT_VALIDATION`: a 2xx accepted the poisoned field outside its declared schema; and the security invariants `INFORMATION_DISCLOSURE`, `SENSITIVE_DATA_EXPOSURE`, `REFLECTED_PAYLOAD`, `MASS_ASSIGNMENT`, `INPUT_INDUCED_TIMEOUT`; and the opt-in `UNDECLARED_RESPONSE_FIELD`) |

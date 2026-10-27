@@ -1082,3 +1082,62 @@ The `mass_assignment` oracle judges the echo ([ADR-131](engine.md#adr-131)), and
 control request confirms it ([ADR-138](engine.md#adr-138)). Only a body whose root
 is an object carries the variant, and only at its top level: a key slipped beside
 a wrapping object is a key the server may ignore.
+
+---
+
+## ADR-171 — A string named like a credential gets a usable value in `valid` when its contract says nothing else { #adr-171 }
+
+**Status:** accepted · `strategy_compiler/constants.py`, `strategy_compiler/fields/name_conventions.py`, `strategy_compiler/parameter.py`, `strategy_compiler/fields/default/valid_collections.py`
+
+### Context
+
+The RealWorld Go target's OpenAPI document declares `username`, `email` and
+`password` as plain strings, with no `minLength` and no `format`. The simplest
+valid value is the empty string, and the first step of a stateful run sends the
+simplest draw. Registration and login were answered 422 on every request, and the
+stateful run stopped at its first step: nothing behind a logged-in user was ever
+reached.
+
+### Decision
+
+**A table of name conventions.** `NAME_CONVENTIONS` maps a pattern on the field's
+name to an update of its contract:
+
+| A name matching, whole | Gets |
+| --- | --- |
+| `email`, `*_email`, `*-email`, `*Email` | `format: email` |
+| `username`, `user_name`, `user-name` | `minLength: 1` |
+| `password` | `minLength: 1` |
+
+The match is on the whole name, so `voicemail` is not an email. Matching ignores
+case, except for the camel-case suffix `Email`.
+
+**It applies only where the contract is silent.** The update is made in the
+`valid` phase only, which also compiles the off-focus fields of a poisoning phase,
+and only to a string that declares no `format` beyond a display-only one, no
+`pattern`, no `minLength` and no `enum`. `format: password` is display-only
+(`DISPLAY_ONLY_FORMATS`): it tells a client to mask the value and constrains no
+draw. Under a declared `maxLength`, the email convention is not applied, and a
+minimum length only when it fits. A poisoned field is never updated.
+
+`with_name_conventions` rewrites the contract before it is compiled, from both
+places that compile a field: `compile_parameter` and the valid object builder.
+
+The pattern is a rule table: a new convention is a new row.
+
+### Rejected
+
+- **A minimum length for every unconstrained string.** It changes the contract of
+  fields where an empty string is valid.
+- **Matching a substring of the name.** `voicemail` is not an email.
+- **Treating `format: password` as a constraint.** The login would keep sending
+  `""`.
+- **Going past a declared `maxLength`.** The `valid` phase would violate its own
+  contract, and `contract_completeness` could no longer judge it.
+
+### Consequences
+
+On the Go target, registration and login answer 2xx, and the stateful run goes past
+its first step. The rejection on `body.user.email` turns into one on
+`body.user.password`, which the server validates against a minimum length it does
+not declare: a real incomplete contract.

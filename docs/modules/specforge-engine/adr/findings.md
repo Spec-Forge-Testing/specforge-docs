@@ -164,7 +164,7 @@ and halving the second shrink's budget, are what keep the walk itself cheap.
 
 ## ADR-151 — A finding its control request refutes is counted apart from a flaky one, and a control that gets no answer leaves it unverified { #adr-151 }
 
-**Status:** accepted · Supersedes in part [ADR-138](engine.md#adr-138) · `models/runtime/results.py`, `models/runtime/stats.py`, `runtime/fuzzers/stateless/shrinking.py`, `runtime/fuzzers/stateless/control_checks.py`, `runtime/fuzzers/stateless/streak_timeout.py`, `runtime/findings/shrinker.py`
+**Status:** accepted · Supersedes in part [ADR-138](engine.md#adr-138) · Superseded in part by [ADR-167](#adr-167) · `models/runtime/results.py`, `models/runtime/stats.py`, `runtime/fuzzers/stateless/shrinking.py`, `runtime/fuzzers/stateless/control_checks.py`, `runtime/fuzzers/stateless/streak_timeout.py`, `runtime/findings/shrinker.py`
 
 ### Context
 
@@ -325,3 +325,59 @@ Every strategy can report an exposed secret on an ordinary response, once per
 endpoint and rule. A response schema that declares no body leaves an unpoisoned
 2xx unjudged, since nothing says what it should contain. The reproducer keeps the
 failing request's own values, as [ADR-152](#adr-152) requires.
+
+---
+
+## ADR-167 — A refuted finding is listed with the control that refuted it { #adr-167 }
+
+**Status:** accepted · Supersedes in part [ADR-151](#adr-151) · `models/runtime/findings.py`, `models/runtime/results.py`, `runtime/findings/shrinker.py`, `runtime/findings/assembler.py`, `runtime/fuzzers/stateless/shrinking.py`; core `services/persistence/`, `services/report/constants.py`, `services/finding_summary/render.py`, `services/finding_summary/sentences/security.py`
+
+### Context
+
+A refuted finding was only counted, in `findings_refuted`
+([ADR-151](#adr-151)). A whole-request rejection can now be refuted as a conflict
+with stored state ([ADR-166](runners.md#adr-166)), and that refutation can be wrong
+in one narrow case: a server with one generic body for every rejection. A count
+gives the reader nothing to check. The same holds for a `mass_assignment` or
+`input_induced_timeout` finding its control refuted.
+
+### Decision
+
+**`refuted` is a finding state.** `FindingState.REFUTED` joins the closed union as
+`RefutedFinding(signature, occurrences, first_seen, control)`; the control is
+required, since it is the evidence. The shrinker emits one per signature group
+that had a refuting control, carrying the first one, and `findings_refuted` stays
+the sum of their occurrences.
+
+**The control is what refuted it.** For a whole-request rejection it is the request
+that was **accepted**, not the resend that was rejected, which would contradict the
+verdict. For `mass_assignment` it is the request without the smuggled key that
+echoed it all the same; for `input_induced_timeout`, the valid request that timed
+out too.
+
+**A refuted group whose signature another member confirmed is kept.** Mixed
+evidence is exactly what a reader must see.
+
+**The core lists it and says why.** The core persists the state and its control
+(the state column is free text, so no migration), reads them back in `get_run` and
+`get_finding`, and the report lists the finding in `unconfirmed_findings` with
+`state` `refuted`, its `control`, and a summary ending *"refuted: its control
+request showed it is not a defect"*. The report's explanation of the state says a
+refutation can be wrong and points at the control. The mass-assignment sentence of
+a refuted finding says the response without the key echoed it too. Protocol
+`0.1.23` adds `refuted` to `finding_states`; the report is `schema_version` 1.23.
+
+### Rejected
+
+- **Counting only.** It leaves nothing to check a refutation against. The concern
+  that made [ADR-151](#adr-151) count only, that the entry would read as a defect,
+  is met by where it is listed: among the unconfirmed findings, never in
+  `defects`, labelled refuted.
+- **Dropping a refuted group whose signature is also confirmed.** It hides the
+  evidence that disagrees.
+
+### Consequences
+
+A client that branches on `state` sees a fourth value; the protocol change is
+additive. `compare_runs` still diffs confirmed defects only, and a refuted finding
+is never announced as `FindingObserved`.

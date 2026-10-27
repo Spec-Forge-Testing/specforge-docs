@@ -4,7 +4,7 @@
 refused `HANDSHAKE_REQUIRED`.
 
 ```json
-{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.1.20"}}
+{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.1.23"}}
 ```
 
 The response carries the protocol version, the server's identity, what this
@@ -13,7 +13,7 @@ in, and the options a run can be asked for:
 
 ```json
 {"jsonrpc":"2.0","id":1,"result":{
-  "protocol_version":"0.1.20",
+  "protocol_version":"0.1.23",
   "server":{"name":"specforge-core","version":"…","frozen":false},
   "capabilities":{…},
   "catalog":{…},
@@ -52,7 +52,7 @@ lists it among the result's required fields.
 | `invariants` | `{value, label, category, severity, rule_source, description}` | Every invariant the engine checks, in registry order, the order that breaks ties within one severity. `rule_source` is `intrinsic` (the invariant states its rule, and `description` carries it) or `declared` (the contract states it; `description` is `null`) |
 | `truncation_reasons` | `{value, label}` | Every [`truncation.reason`](vocabularies.md#truncation-reason) |
 | `target_down_verdicts` | `{value, label}` | Every [`target_down_verdict`](vocabularies.md#target-down-verdict) |
-| `finding_states` | `{value, label}` | Every state a finding is reported in: `confirmed`, `flaky`, `unverified` |
+| `finding_states` | `{value, label}` | Every state a finding is reported in: `confirmed`, `flaky`, `unverified`, `refuted` |
 | `unprobed_reasons` | `{value, label}` | Every [`unprobed_reason`](vocabularies.md#unprobed-reason) |
 | `hold_reasons` | `{value, label}` | Every value of `held_back_by` |
 | `exclusion_dispositions` | `{value, label}` | The core's own: every [`producer_exclusions[].disposition`](vocabularies.md#producer-exclusion-disposition), plus `aborted`, a failed contract that stopped the run |
@@ -74,8 +74,8 @@ matrix and how it is derived are on [Fuzz options](fuzz-options.md).
 **The core serves a range within its own series.** A client is served when its
 `protocol_version` has the core's `major.minor` and a patch between a declared
 floor and the core's own. Each part compares as a number, never as text:
-`0.1.10` is newer than `0.1.9`. This core speaks `0.1.20` and serves `0.1.5` up
-to `0.1.20`. It always answers `hello` with its own version, and a frontend
+`0.1.10` is newer than `0.1.9`. This core speaks `0.1.23` and serves `0.1.5` up
+to `0.1.23`. It always answers `hello` with its own version, and a frontend
 ignores the keys it does not know.
 
 Anything else — another series, a patch outside the range, or a
@@ -120,8 +120,67 @@ neither. See [ADR-095](../adr/protocol.md#adr-095).
 ## Changelog
 
 The report document that `fuzz`, `replay` and `run_pipeline` answer with is
-`schema_version` 1.22. The protocol's own README holds the full entry for each
+`schema_version` 1.23. The protocol's own README holds the full entry for each
 version; the lines below are the summary.
+
+- **0.1.23** — A finding a control request refuted is listed with that control, a
+  `resilience` server error is confirmed by resending its attack, and the runs go
+  deeper. Additive on the wire, with semantic changes. `finding_states` gains
+  `refuted`: a finding a control request showed is not a defect, listed in
+  `unconfirmed_findings` with its `control`. A stateless `contract_completeness`
+  finding whose rule is `request` can be refuted: the same request with fresh
+  string values was accepted once and rejected the same way when sent again, a
+  conflict with stored state; its `control` is the accepted request.
+  `unprobed_reasons` gains `owner_identity_missing`: a `resilience` run with no
+  valid identity sends an `owner_only` endpoint nothing, counted under
+  `access_preconditions_unmet`. `resilience` builds its attacks on the endpoint's
+  minimal valid request, on a resource provisioned for the owner of an
+  `owner_only` endpoint; its variant's `phases` is `["valid"]`, and `security` and
+  `exposure` gain `payloads` in its `effects` rows (and `field_hints` with the
+  `fixture` or `inference` producer). A `resilience` server error is resent twice:
+  one that does not come back on both resends is `flaky`; a confirmed one carries
+  the clean base request sent afterwards as its `control`, and its `summary` says
+  whether the attack left the endpoint broken. A `stateful` run continues past its
+  first defect, until a pass finds nothing new or 25 distinct defects, or 25
+  distinct flaky ones, are found; its defects carry `request.trigger_fields`, and
+  two defects with one signature but different trigger fields are reported apart.
+  A `DELETE` removes the resource it consumes from what later steps draw, and a
+  deleted-resource transition is derived when the resource's read declares 404 or
+  410, only where the deleting path has a single placeholder, its last segment; a
+  transition whose follow-up path has a placeholder its probe does not fill is
+  rejected and listed in `excluded_endpoints`. A `stateless` run sends producers
+  first and deletes last, and draws path identifiers mostly, and query values
+  sometimes, from what the run's successful responses returned; a request whose
+  method is not safe draws only values the run created, unless the run allows side
+  effects (`allow_side_effects`), when it may also reuse values it only read; a
+  value a finding holds is never reused by such a request. In `valid`, a string named
+  like an email, a username or a password gets a usable value when its contract
+  constrains it in no other way. An object parameter's examples seed its
+  properties ([Run depth](../../specforge-engine/run-depth.md),
+  [ADR-162](../../specforge-engine/adr/runners.md#adr-162) to
+  [ADR-172](../../specforge-engine/adr/measurement.md#adr-172)).
+
+- **Report 1.23** — A finding a control request refuted is listed, with the
+  control that refuted it. Additive; it ships with protocol `0.1.23`. An entry of
+  `unconfirmed_findings` can carry `state` `refuted`, with its `control` and a
+  `summary` that says it was refuted. See the
+  [Run Report](../../../user-guide/reports.md#unconfirmed-findings).
+
+- **0.1.22** — A replayed crash says whether it now answers as its fix was asked
+  to, and explanations and fixes start from what the fuzzer measured. Additive on
+  the wire, with semantic changes. `replay_finding` answers `acceptance` for a
+  finding recorded as a crash: the 4xx statuses the contract declares for the
+  operation, the status observed, and whether it `met` one of them. `explain_finding`
+  and `propose_fix` send the model the facts the fuzzer measured, and `propose_fix`
+  applies a fix whole or not at all, asking once more when an edit is refused.
+
+- **0.1.21** — A finding's request can be re-sent alone to check a fix, and the
+  stack trace its server logged meanwhile is kept and reaches the explanation and
+  the fix. Additive. `replay_finding` sends the one recorded request a finding was
+  reported from, under its analysis's recipe, and rules it `present`,
+  `possibly_resolved` or `inconclusive`. The option `replay.log_container` names the
+  Docker container the API runs in, whose log is read for the stack trace while
+  the request is in flight.
 
 - **0.1.20** — A run picks one of five strategies by its canonical name and how
   many examples it asks of each endpoint, and the handshake says what each mode,

@@ -33,9 +33,11 @@ missing here belongs to another module:
   composed; [ADR-153](../../core/adr/core.md#adr-153), how a finding's summary is
   told; [ADR-154](../../core/adr/core.md#adr-154), how a replay judges each
   recorded defect; [ADR-155](../../core/adr/protocol.md#adr-155), the strategy's
-  one name and its alias; [ADR-160](../../core/adr/core.md#adr-160), presets; and
+  one name and its alias; [ADR-160](../../core/adr/core.md#adr-160), presets;
   [ADR-161](../../core/adr/core.md#adr-161), how a run's examples per endpoint
-  resolve, are the core's.
+  resolve; and [ADR-168](../../core/adr/core.md#adr-168), how a `DELETE`
+  invalidates what it consumes and how a deleted-resource transition is derived,
+  are the core's.
 - [ADR-136](../../semantic-inference/adr/prompts.md#adr-136), the plausible values
   the prompt asks for, is Semantic Inference's.
 
@@ -49,6 +51,7 @@ missing here belongs to another module:
 | [measurement.md](measurement.md) | measurement | How the default numbers are measured and set, and what an inferred contract adds |
 | [findings.md](findings.md) | findings | How a finding is classified, what it observed, how findings are told apart, refuted and redacted |
 | [strategies.md](strategies.md) | strategies | What a strategy decides, the oracles it opts into, and the traits each runner declares |
+| [runners.md](runners.md) | runners | How far each runner reaches: when a stateful run stops and how it tells defects apart, the stateless run corpus, refuting a whole-request rejection, the resilience base request and its confirmation |
 
 ## Full index
 
@@ -174,3 +177,13 @@ missing here belongs to another module:
 | [ADR-157](strategies.md#adr-157) | strategies | A strategy opts into oracles, and `conformance` turns on the undeclared-field invariant |
 | [ADR-158](findings.md#adr-158) | findings | Sensitive data is judged on every successful response that declares a body, and a response's own secrets are withheld from its finding |
 | [ADR-159](strategies.md#adr-159) | strategies | Runners declare their traits, the effects matrix is derived from them, and `changes` is measured against `default` |
+| [ADR-162](runners.md#adr-162) | runners | A stateful run continues until a pass finds nothing new, under a ceiling of 25 distinct defects |
+| [ADR-163](runners.md#adr-163) | runners | A stateful defect is suppressed by its report's signature and the fields that triggered it, and a range defect widens its suppression once |
+| [ADR-164](runners.md#adr-164) | runners | A shrink that fails inside Hypothesis keeps its witness, and the engine requires the Hypothesis release that shrinks narrow strings safely |
+| [ADR-165](runners.md#adr-165) | runners | Stateless draws path and query values from what the run's successful responses returned, and runs producers first and deletes last |
+| [ADR-166](runners.md#adr-166) | runners | A whole-request rejection is refuted only by positive proof of a state conflict |
+| [ADR-167](findings.md#adr-167) | findings | A refuted finding is listed with the control that refuted it |
+| [ADR-169](runners.md#adr-169) | runners | Resilience attacks a real resource of the owner with a valid base request, and sends nothing to an owner-only endpoint no valid identity can own |
+| [ADR-170](runners.md#adr-170) | runners | A resilience server error is confirmed by resending its attack, and is never refuted |
+| [ADR-171](compiler.md#adr-171) | strategy_compiler | A string named like a credential gets a usable value in `valid` when its contract says nothing else |
+| [ADR-172](measurement.md#adr-172) | measurement | Targeted generation was measured and is not adopted |

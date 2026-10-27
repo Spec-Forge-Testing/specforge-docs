@@ -339,9 +339,10 @@ unexpectedly.
       invariant (a business-rule, access-control or input-validation finding
       again appending the declared rule's id to its label, e.g. `business rule
       violated · <rule id>`), status (a dash when none was recorded), the identity it was found
-      under (when any), its **State** (`flaky` or `unverified`) and how many times
+      under (when any), its **State** (`flaky`, `unverified` or `refuted`) and how many times
       it was **Seen**. A flaky finding was seen but did not reproduce; an
-      unverified one was collected before the run could check it. The section is
+      unverified one was collected before the run could check it; a refuted one
+      reproduced, but a control request showed it is not a defect. The section is
       absent when a run confirmed everything it saw. These are the same findings
       `report.json` carries in `unconfirmed_findings` (see [Run report](reports.md)).
     - **Identities the budget could not reach** — a table, endpoint → labels,
@@ -777,7 +778,7 @@ unexpectedly.
     reproduces it**, so a saved run shows no less than the report printed when the
     fuzzing finished; every **unconfirmed finding** — a table after the crashes,
     with each finding's stored **ID**, method, path, phase, invariant, status,
-    identity (when any), **State** (`flaky` or `unverified`) and how many times it
+    identity (when any), **State** (`flaky`, `unverified` or `refuted`) and how many times it
     was **Seen**; an **Identities the budget could not reach** table (endpoint →
     labels) when the run left any declared identity unfunded — the same
     `starved_identities` the fuzz report shows; a **Rules the run could not decide**
@@ -801,7 +802,7 @@ unexpectedly.
     access-control crash shows a **Business rule** row reading `<id> —
     <description>`, the rule the contract declared; every other crash shows a
     **Rule** row spelling out the requirement the invariant enforces on its own.
-    For a **flaky or unverified** finding there is no reproducer to show,
+    For a **flaky, unverified or refuted** finding there is no reproducer to show,
     so it renders a short detail instead — the state, how many times it was seen,
     the endpoint, the invariant, the status (or *not recorded*) and the identity —
     with no payload, headers or body. An id that matches no finding still errors as

@@ -231,7 +231,7 @@ reproducer: `status_code`, `minimal_payload`, `sanitized_headers` and `response_
 | `path` | TEXT | no | — | URL path, e.g. `/api/v1/users`. |
 | `phase` | TEXT | no | — | Generation phase: `valid`, `boundary`, `invalid`, `attack`, `mutation`, `semantic` or `transition`. |
 | `invariant_violated` | TEXT | no | — | The invariant the finding violated. |
-| `state` | TEXT | no | — | The finding's outcome: `confirmed`, `flaky` or `unverified`. |
+| `state` | TEXT | no | — | The finding's outcome: `confirmed`, `flaky`, `unverified` or `refuted`. |
 | `status_code` | INTEGER | yes | — | HTTP status code of the failing response. |
 | `minimal_payload` | TEXT | yes | — | JSON minimal reproducible payload, keyed by zone; NULL with no reproducer. |
 | `sanitized_headers` | TEXT | yes | — | JSON request headers, secrets already redacted by the engine; NULL with no reproducer. |

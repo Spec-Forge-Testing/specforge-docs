@@ -14,11 +14,12 @@ flowchart LR
     G --> S["shrink<br/>+ control request"]
     S -->|reproduced| C["CrashReport<br/><i>redacted evidence</i>"]
     S -->|did not reproduce| F[flaky]
-    S -->|control shows the signal| X["refuted<br/><i>counted only</i>"]
+    S -->|control shows the signal| X["refuted<br/><i>with its control</i>"]
     S -->|never tried, or control unanswered| U[unverified]
     C --> K["core reads it<br/><i>category · severity · summary</i>"]
     F --> K
     U --> K
+    X --> K
 ```
 
 ## One registry classifies every invariant { #taxonomy }
@@ -203,18 +204,34 @@ counts in `requests_shrink`.
 | `confirmed` | The shrunk payload reproduced the finding, and a control request, when its invariant has one, did not show the same signal. | `findings_confirmed` |
 | `flaky` | The shrunk payload did not reproduce it. | `findings_flaky` |
 | `unverified` | Never checked: the run stopped first or the member was never attempted, or its control request got no answer (a timeout, a refused connection), so there is nothing to judge it against. | `findings_unverified` |
-| refuted | The shrunk payload reproduced it, and so did the control request: the input was not the cause. Never listed as a finding. | `findings_refuted` |
+| `refuted` | The shrunk payload reproduced it, and its control request showed it is not a defect: the input was not the cause, or the rejection was a conflict with stored state. Listed as a `RefutedFinding` with that control, never as a defect. | `findings_refuted` |
 
-**Control requests** ([ADR-151](adr/findings.md#adr-151)). Two invariants are
-confirmed against one, in the stateless mode:
+The four states are the members of `FindingState`. A `resilience` finding is
+`confirmed` or `flaky` by resending its attack, and is never `refuted`
+([Run depth](run-depth.md#confirming-a-server-error)).
 
-| Invariant | Control payload | Refuted when the control |
-| --- | --- | --- |
-| `mass_assignment` | The minimal payload without the smuggled key | Echoes the key all the same |
-| `input_induced_timeout` | The poisoned field at its minimal valid value; without a poisoned field, the endpoint's minimal valid payload | Times out too |
+**Control requests** ([ADR-151](adr/findings.md#adr-151)). Three invariants are
+confirmed against one, in the stateless mode, each a row of `CONTROL_CHECKS`:
 
-An unverified finding whose control got no answer carries that control's
-`ControlEvidence`, so a reader sees why it stayed unverified.
+| Invariant | Applies to | Control payload | Refuted when the control |
+| --- | --- | --- | --- |
+| `mass_assignment` | every finding | The minimal payload without the smuggled key | Echoes the key all the same |
+| `input_induced_timeout` | every finding | The poisoned field at its minimal valid value; without a poisoned field, the endpoint's minimal valid payload | Times out too |
+| `contract_completeness` | rule `request` only | The payload with its open body and query strings rotated within their character class | Is accepted, and the same control sent again is rejected the same way, in a body of the same shape |
+
+The `contract_completeness` control looks for a conflict with stored state, such
+as a unique field. Each letter or digit becomes the next of its class (`a`→`b`,
+`9`→`0`), so a string keeps its length and classes; an empty string stays empty.
+Strings that declare `enum`, `const`, `format` or `pattern`, anything under a
+composed schema, files, and path or header values are kept. When nothing rotates
+there is no control and the finding stands. A control accepted twice means the
+rejection depended on the value, and the finding is confirmed
+([ADR-166](adr/runners.md#adr-166)).
+
+A refuted finding carries the control that refuted it: for a whole-request
+rejection, the request that was accepted. An unverified finding whose control got
+no answer carries that control's `ControlEvidence`, so a reader sees why it stayed
+unverified ([ADR-167](adr/findings.md#adr-167)).
 
 **A timeout on a valid value.** When a streak of timeouts no oracle judged reaches
 the infrastructure threshold with the target alive, the engine sends the

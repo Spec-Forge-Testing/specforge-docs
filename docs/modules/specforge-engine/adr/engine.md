@@ -1876,7 +1876,7 @@ the narrowed wire status — so a new event never touches the protocol's routing
 
 ## ADR-065 — The stateful suppression key carries the response status code, and progress ticks every executed step { #adr-065 }
 
-**Status:** accepted · `runtime/fuzzers/stateful/violation.py`, `runtime/fuzzers/stateful/rule.py`, `runtime/fuzzers/stateful/probes.py`, `runtime/findings/deduplicator.py`, `models/runtime/findings.py`
+**Status:** accepted · Superseded in part by [ADR-163](runners.md#adr-163) · `runtime/fuzzers/stateful/violation.py`, `runtime/fuzzers/stateful/rule.py`, `runtime/fuzzers/stateful/probes.py`, `runtime/findings/deduplicator.py`, `models/runtime/findings.py`
 
 ### Context
 
@@ -2610,7 +2610,7 @@ unchanged.
 
 ## ADR-108 — Resilience judges the endpoint unattacked first, and sends the battery as a real caller { #adr-108 }
 
-**Status:** accepted · Supersedes in part [ADR-052](#adr-052) · `runtime/runners/resilience/runner.py`, `runtime/runners/resilience/identity.py`, `runtime/runners/resilience/raw_headers.py`, `runtime/runners/resilience/raw_attacks.py`, `runtime/runners/resilience/raw_socket.py`, `runtime/runners/resilience/attack.py`, `models/runtime/chaos.py`, `runtime/oracles/resilience.py`
+**Status:** accepted · Supersedes in part [ADR-052](#adr-052) · Superseded in part by [ADR-169](runners.md#adr-169) · `runtime/runners/resilience/runner.py`, `runtime/runners/resilience/identity.py`, `runtime/runners/resilience/raw_headers.py`, `runtime/runners/resilience/raw_attacks.py`, `runtime/runners/resilience/raw_socket.py`, `runtime/runners/resilience/attack.py`, `models/runtime/chaos.py`, `runtime/oracles/resilience.py`
 
 ### Context
 

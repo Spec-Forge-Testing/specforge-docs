@@ -225,6 +225,7 @@ nav:
           - Engine internals: modules/specforge-engine/engine-internals.md
           - Findings: modules/specforge-engine/findings.md
           - Execution modes: modules/specforge-engine/execution-modes.md
+          - Run depth: modules/specforge-engine/run-depth.md
           - Progress and cancellation: modules/specforge-engine/progress-and-cancellation.md
           - Extension guide: modules/specforge-engine/extension-guide.md
           - API Reference: modules/specforge-engine/api-reference.md
@@ -239,6 +240,7 @@ nav:
               - Measurement: modules/specforge-engine/adr/measurement.md
               - Findings: modules/specforge-engine/adr/findings.md
               - Strategies: modules/specforge-engine/adr/strategies.md
+              - Runners: modules/specforge-engine/adr/runners.md
   - Test corpora:
       - Overview: testing/index.md
       - RealWorld corpus: testing/real-world.md

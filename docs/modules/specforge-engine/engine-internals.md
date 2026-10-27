@@ -739,8 +739,10 @@ are in [Findings: taxonomy and evidence](findings.md).
   never attempted counts `unverified`; one whose shrink did not reproduce counts
   `flaky` — **measured here, where it is observed, never derived by
   subtraction** ([ADR-018](adr/engine.md#adr-018)). A reproduction its control
-  request also shows counts `refuted`, and one whose control got no answer counts
-  `unverified` ([ADR-151](adr/findings.md#adr-151)). In a group that poisoned no
+  request also shows counts `refuted`, and the group yields one `RefutedFinding`
+  carrying the first control that refuted it; one whose control got no answer
+  counts `unverified` ([ADR-151](adr/findings.md#adr-151),
+  [ADR-167](adr/findings.md#adr-167)). In a group that poisoned no
   field, the members the first representative's cause does not explain are probed
   and, when the cause differs, shrunk on their own
   ([ADR-150](adr/findings.md#adr-150)).
@@ -787,9 +789,9 @@ are in [Findings: taxonomy and evidence](findings.md).
   the identity it was observed under.
 - **Assemble.** `assemble_findings` reifies the outcomes as the closed `Finding`
   union `EngineRunResult.findings` carries: one `ConfirmedFinding` per
-  deduplicated report, then the shrinker's own `FlakyFinding`s and
-  `UnverifiedFinding`s — each an entry per signature carrying the raw
-  `occurrences` it stands for. The counters stay the measurement; the union
+  deduplicated report, then the shrinker's own `FlakyFinding`s,
+  `UnverifiedFinding`s and `RefutedFinding`s — each an entry per signature
+  carrying the raw `occurrences` it stands for, a refuted one also its control. The counters stay the measurement; the union
   reifies them ([ADR-044](adr/engine.md#adr-044)).
 - **Stats.** Four builders, one per lifecycle — `build_stats` (stateless),
   `build_stateful_stats`, `build_unshrunk_stats` (performance, resilience, auth)
@@ -798,7 +800,9 @@ are in [Findings: taxonomy and evidence](findings.md).
   run's `by_phase` and `by_category` totals. Each builder counts `findings_raw` and
   `findings_confirmed` per endpoint and takes the run's total as their sum, so the
   endpoint rows always add up to it; in a mode that never shrinks, a defect
-  observed once counts as confirmed ([ADR-107](adr/engine.md#adr-107)). Latency percentiles are **nearest-rank** (P50/P95/P99):
+  observed once counts as confirmed ([ADR-107](adr/engine.md#adr-107)), unless
+  resilience's confirmation found it flaky, which `build_unshrunk_stats` counts in
+  `findings_flaky` with the confirmation's requests in `requests_shrink`. Latency percentiles are **nearest-rank** (P50/P95/P99):
   always an observed sample, never interpolated, and an unsent request is never
   sampled into a latency it never took.
 
@@ -891,11 +895,15 @@ requests stay out of the trace. It first re-sends the finding's own payload to
 confirm it still reproduces, then `find`s the smallest payload that still does,
 then re-executes that minimal payload to package it; a minimal payload that does
 not reproduce on re-execution is flaky and yields no report. A `mass_assignment`
-or `input_induced_timeout` finding is then checked against a **control request**
-(`CONTROL_CHECKS`, `control.py`): the payload without the poisoned key, or with
-the poisoned field at its minimal valid value. A control that shows the same
-signal refutes the finding, which counts as flaky
-([ADR-138](adr/engine.md#adr-138)). Reproduction is
+or `input_induced_timeout` finding, and a `contract_completeness` finding that
+blames the whole request, is then checked against a **control request**
+(`CONTROL_CHECKS`, `control_checks.py`): the payload without the poisoned key,
+with the poisoned field at its minimal valid value, or with its open strings
+rotated and sent twice. A control that shows the same signal refutes the finding,
+which becomes a `RefutedFinding` carrying that control
+([Findings](findings.md#states), [ADR-167](adr/findings.md#adr-167)). The shrink
+holds the fields a draw took from the run corpus, and never counts them as trigger
+fields ([Run depth](run-depth.md#run-corpus)). Reproduction is
 judged **by the finding's identity**: `_still_violates` accepts a re-executed
 response only when it breaks the same invariant *and* the same rule id as the
 original finding (and the search additionally holds the status fixed). That rule
@@ -918,7 +926,8 @@ dotted `response_field` out of a response body once its status matches, and
 `matches_declared_statuses` — lives in `runtime/state_link/`, the shared home for
 state-link mechanics used by both the stateful machine and the auth runner.
 A state link also optionally `invalidates` the bundle so a deleted resource is not
-operated on again, and declares **transition invariants** — a follow-up probe
+operated on again (the core sets it on every `DELETE` consumption but a nested
+one), and declares **transition invariants** — a follow-up probe
 whose observed status must fall in an expected set, and whose body must reflect
 the request's `echoed_fields`. A response that breaks its endpoint's own
 invariant, or a transition probe that breaks its own, raises a
@@ -936,18 +945,28 @@ pass ends in a closed union, isolated in one small function around the single
 whose shrink spent its budget. `settle_outcome` turns that into a `PassOutcome` on the wire (below),
 and the supervisor reacts to it:
 
-- `Reported` appends a minimized crash report and **suppresses** that defect's
-  signature, so the next pass looks past it; the run keeps going until
-  `max_distinct_bugs` distinct defects are reported or the machine draws dry.
+- `Reported` appends a minimized crash report, unless a report already holds its
+  signature and trigger fields, which then stands for one more finding, and
+  **suppresses** that defect in `SuppressedDefects`, so the next pass looks past
+  it. A defect found again on another value widens its suppression once. The run
+  keeps going until a pass changes nothing, or `max_distinct_bugs` (25) distinct
+  defects or flaky signatures are found
+  ([Run depth](run-depth.md#stateful-depth)).
 - `LinkBroken` raises `StatefulLinkError` carrying the partial exploration.
 - `MachineFailed` — the engine itself raised inside the pass, with an exception
   the outcome table does not classify — ends the machine with an `engine_failure`
   cut owned by the endpoint whose rule raised (the first endpoint otherwise), and
   keeps every result ([Isolating a failing endpoint](#isolating-a-failing-endpoint)).
+  An error raised inside Hypothesis's own code while the pass holds a shrink
+  witness is the exception: `keep_shrink_witness` ends that pass as
+  `ShrinkCutShort(witness)` and logs the error
+  ([ADR-164](adr/runners.md#adr-164)).
 - `Flaky` — a shrink replay that stopped reproducing with no link error inside
   it — becomes a `FlakyFinding`: the recovered violation is turned into a
   `FindingSignature` and its occurrences are accumulated, or, when no violation
-  could be recovered, the event is still tallied. `build_stateful_stats` sums
+  could be recovered, the event is still tallied. A new flaky signature is
+  suppressed like a reported defect and counts as progress; so do the first two
+  flaky passes with no violation. `build_stateful_stats` sums
   both into `findings_flaky`, and `reconcile_flaky_with_confirmed` folds away any
   flaky finding a confirmed report already stands for
   ([ADR-047](adr/engine.md#adr-047)). A pass whose *rule set* diverged between the

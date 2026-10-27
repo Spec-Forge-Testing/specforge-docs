@@ -21,7 +21,14 @@ One table is **closed** on purpose and is not a registry: the body encoders. An
 encoder decides what a request carries on the wire and how the input-validation
 oracle reads it back, so a new media type is a new row in
 `runtime/http/body_encoders.py`, reviewed with that oracle
-([Add a body encoder](#add-a-body-encoder)).
+([Add a body encoder](#add-a-body-encoder)). Two smaller closed tables follow the
+same rule. `NAME_CONVENTIONS` gives an unconstrained string a constraint from its
+name ([Add a name convention](#add-a-name-convention)). `CONTROL_CHECKS`
+(`runtime/fuzzers/stateless/control_checks.py`) maps an invariant to the
+`ControlCheck` that can refute it: how its control payload is built, what
+refutes, which findings it applies to, and whether the refutation needs a resend
+that repeats the rejection. A row there decides when a finding is ruled not a
+defect, so it is reviewed as a change to what the engine reports.
 
 ## Add a runner
 
@@ -336,6 +343,32 @@ the `json_schema` fallback, so an unknown format degrades rather than failing.
 A numeric format (`int32`, `int64`, `float`, `double`) is not a string format:
 it is a `NumericFormat` member, and a bounded one is a row of `NUMERIC_WORD_RANGE`
 in `models/schema.py` ([ADR-113](adr/compiler.md#adr-113)).
+
+## Add a name convention
+
+A string whose contract constrains it in no other way can take a constraint from
+its name in the `valid` phase ([Run depth](run-depth.md#credential-fields)). The
+conventions are rows of `NAME_CONVENTIONS` in `strategy_compiler/constants.py`: a
+compiled pattern the whole field name must match, mapped to the contract fields it
+sets.
+
+```python
+NAME_CONVENTIONS = MappingProxyType(
+    {
+        ...,
+        re.compile(r"(?i:phone)|.*[_-](?i:phone)"): MappingProxyType(
+            {"min_length": CREDENTIAL_MIN_LENGTH}
+        ),
+    }
+)
+```
+
+The keys of the update are `BaseStrategyContract` field names (`format`,
+`min_length`). The first matching row wins. `with_name_conventions` applies a row
+only to an unconstrained string and never past a declared `maxLength`, so a row
+cannot override what a contract declares. Add a test beside
+`tests/strategy_compiler/fields/test_name_conventions.py` for a name that matches
+and one that must not.
 
 ## Add an attack toggle
 

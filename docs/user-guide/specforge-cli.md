@@ -308,6 +308,7 @@ catalog never lists them:
 | `--project PATH` | Opens the project at `PATH` before the operation. Needed by any operation that `requires` a project or a contract, since a one-shot call starts with nothing open. |
 | `--contract PATH` | Loads the contract at `PATH` once the project is open, for a project that declares none. Needs `--project`. |
 | `--yes` | Answers yes to confirmations up front. See [Asking before it matters](#asking-before-it-matters) for what it does not cover. |
+| `--fix` | On `fuzz` and `run_pipeline`: when the run finds a server error, offers a fix for it and applies it if you approve. Asks at every step, so it needs a terminal. See [Fixing a finding](#fixing-a-finding). |
 | `--json-output` | The raw result as one JSON object on real stdout — no banner, no progress, no human render share that stream. A domain error renders to stderr as usual and stdout stays empty, so a script can always `> file.json` unconditionally. Long operations subscribe to no progress token at all in this mode. |
 | `--ci` | No color (sets `NO_COLOR` before anything renders); exits `1` if the operation's own result carries findings (`fuzz`, `replay`, `run_pipeline`), if the operation itself failed, **or** if a run did not finish with status `completed` (`cancelled`, `failed`, `safety_breached`, or a report with no status). Exits `0` on a clean run. Combine with `--json-output` to get a script-friendly result and a pipeline-friendly exit code at once. |
 | `--junit-xml PATH` | Also writes the result as JUnit XML at `PATH`, alongside whatever else rendered — one `<testsuite>` per endpoint, one `<testcase>` per defect (or a single passing one if the endpoint had none). Only `fuzz`/`replay`/`run_pipeline` results produce anything; anything else writes an empty `<testsuites/>`. |
@@ -332,8 +333,11 @@ same questions on a [screen](#questions).
 
 | What | When it asks | Answering up front |
 | --- | --- | --- |
-| Destructive operations (`apply_fix_plan`, `apply_prune_plan`) | Before they are sent. | `--yes` |
+| Destructive operations (`apply_fix_plan`, `apply_prune_plan`, `apply_finding_fix`) | Before they are sent. | `--yes` |
 | A run that would pay for LLM inference | The core refuses and returns its estimate (contracts to infer, tokens, cost). The CLI shows it, asks, and resends with the approval token. | `--yes`, but only with `producer.max_cost_usd` set; without a cap it stops with exit `2`. |
+| Asking a model to explain a finding (`explain_finding`) | The core refuses and returns that one finding's price. The CLI shows it, asks, and resends with the approval token. | `--yes`: the token approves exactly the price shown, so no cap is needed. |
+| Asking a model for a fix (`propose_fix`) | The same, with the fix's price. | Never. `--yes` stops with exit `2` and sends nothing: a person reads the price. |
+| Applying a fix that was just proposed | After its diff is shown: which files change, and the `.bak` copies kept outside Git. | Never, even with `--yes`. |
 | A replay that could change the target | The CLI explains why (recorded with side effects, or its run reached routes the safety guard held back) and asks. | `--allow-side-effects`. `--yes` does not cover it, and `--no-allow-side-effects` is never overridden. |
 
 In the text REPL, a call that needs approval shows its estimate or reason and waits:
@@ -345,13 +349,89 @@ goes to stderr so stdout stays clean. Git Bash (mintty) does not present itself
 to Python as a terminal, so there a one-shot call never asks: use PowerShell or
 `winpty`, or pass `--yes`.
 
+## Fixing a finding
+
+When a run finds a server error (a `5xx` the contract says the API must never answer with), the
+CLI can take it from there: price a fix, ask a model for it, show you the diff, and apply it to
+your code if you say so. Each step asks before it does anything, because two of them are not
+free: one spends money, and one changes your files.
+
+```text
+fuzz            →  "Finding #4: GET:/export answered 500, ×116. A fix can be proposed for it."
+                    the price of asking, and `approve`                     (spends)
+propose_fix     →  the diff. Nothing has touched your code.
+                    "Applying this fix changes app/export.py.", and `approve`   (changes files)
+apply_finding_fix → the files that changed, and what to run next
+```
+
+### In the interactive session
+
+After `fuzz`, `run_pipeline` or `get_run` shows a confirmed server error, the session leaves a
+fix waiting. It takes the one the run repeated most and shows its price, taken from
+[`estimate_finding_fix`](#estimate_finding_fix) — which sends nothing to a model:
+
+1. Type `approve` to be asked about the spend. Only `y` approves. The model's answer comes
+   back as a diff, with the reason for it and the edits that were left out.
+2. The session then leaves the next question waiting: apply it? It lists the files it would
+   change. Type `approve` again to be asked; nothing is written before that.
+3. After it is applied, the suggestions are to run the endpoint again (`fuzz target=…`) and to
+   compare that run with the one that found the problem (`compare_runs`).
+
+Carrying on with any other line drops whatever was waiting, and nothing was sent. You can also
+start from the price yourself: `estimate_finding_fix finding_id=4` or
+`estimate_finding_explanation finding_id=4` leaves the matching `propose_fix` or
+`explain_finding` waiting for `approve`, so the token is never copied by hand.
+
+No fix is offered, and nothing is said, when the run found no server error, when the
+finding's handler code cannot be reached (the run traced no folder, or its endpoint was not in
+it: see `STATIC_ANALYSIS_REQUIRED` below), or when no model is configured. Only the worst
+problem of a run is offered; for another one, read the ids with `get_run` and type
+`propose_fix finding_id=<#>`.
+
+### From a shell: `--fix`
+
+```bash
+specforge fuzz --project ./my-api --base-url http://localhost:8000 --fix
+```
+
+Runs the same chain in one call: the run, then each step shown and asked in turn. Answering no
+at any step stops there, leaves your code as it was and does not fail the command. `--fix`
+asks you, so it cannot go with `--yes`, `--ci` or `--json-output`, nor without a terminal, and
+it applies only to `fuzz` and `run_pipeline`: all of those are refused with exit `2` **before the
+run starts**, so a call that could never finish does not spend one first.
+
+`specforge estimate_finding_fix --finding-id 4` on its own stays a free read: it prints the
+price and asks nothing.
+
+### What it spends and what it changes
+
+- **Spending.** `estimate_*` sends nothing to a model. `explain_finding` and `propose_fix` send
+  one request each, at the price the estimate showed: the approval token stands for exactly that
+  estimate, so if the code or the finding changed in between, the core asks again with the new
+  price. A fix already paid for (an equivalent finding's) is reused and costs nothing.
+- **Changing files.** Only `apply_finding_fix` writes, and only to the tree the finding's run
+  traced. In a Git work tree it goes through `git apply` and the way back is Git; elsewhere each
+  file keeps a `.bak` copy. If the tree changed since, it answers `conflict` and touches nothing.
+- **A fix is a model's proposal.** A diff can apply cleanly and still not fix the problem, for
+  example by using a name it never imported. Read it, and after applying run the endpoint again.
+
+### Errors on this path
+
+| Code | What it means | What the CLI suggests |
+| --- | --- | --- |
+| `STATIC_ANALYSIS_REQUIRED` | The finding's handler code cannot be reached: its run traced no folder that still exists, or tracing found no handler for the endpoint. Pointing `repo_root` at the wrong folder is the usual cause. | `analyze_endpoints repo_root=<folder with the API's code>`, then run the endpoint again: a finding keeps the tree its own run traced. |
+| `REPO_ROOT_INVALID` | `repo_root` does not exist or is not a folder. | `analyze_endpoints repo_root=<folder with the API's code>` |
+| `FINDING_FIX_FAILED`, `FINDING_EXPLANATION_FAILED` | No model could be asked, or the one asked gave nothing usable. When it ran out of time, the message says how to allow more: `set_config values={"llm.timeout_seconds": 120}`, or choose a faster model with `model`. | `diagnose`, `get_config` |
+| `FIX_EMPTY_OR_UNAPPLICABLE` | None of the fix's edits held when it was proposed. | `propose_fix finding_id=<#> refresh=true` |
+| `FIX_APPLY_FAILED` | Applying failed for a reason other than a conflict. The tree is as it was. | `get_finding_fix_patch finding_id=<#>`, to apply it by hand |
+
 ## Exit codes (argv form)
 
 | Code | Meaning |
 | --- | --- |
 | `0` | The operation completed, and (under `--ci`) found nothing. |
 | `1` | A domain or protocol error, a confirmation you answered no to (or an estimate that kept changing), or (under `--ci` only) a finding or a run that did not complete. |
-| `2` | A usage error caught before the request was sent: an unknown operation, a missing required flag (`--project` included), a value outside an enum, JSON that failed to parse, or a confirmation nobody could give. |
+| `2` | A usage error caught before the request was sent: an unknown operation, a missing required flag (`--project` included), a value outside an enum, JSON that failed to parse, a confirmation nobody could give, or `--fix` on an operation or a call that cannot take it. |
 | `130` | Interrupted with Ctrl-C (also with `--ci`), or ended by `SIGTERM`/`SIGHUP` (`128` plus the signal number). |
 
 ## Operations
@@ -657,8 +737,9 @@ it's the one operation designed to run cold.
 
 ### Results
 
-All nine results operations resolve by id against the central store, so none
-of them are limited to the currently open project.
+These resolve by id against the central store, so none of them is limited to the currently
+open project — except the ones that ask a model about a finding, or write its fix, which say
+they need one: they read the code the finding's run traced.
 
 #### `list_projects`
 
@@ -716,6 +797,107 @@ one that never confirmed keeps no request and shows only the shape of the respon
 | Flag | Type | Required |
 | --- | --- | --- |
 | `--finding-id` | integer | yes |
+
+#### `estimate_finding_explanation`
+
+What explaining a finding would cost, without sending anything. `source` says how it would be
+explained: `template` and `cache` are free, `model` is priced and carries the `approval_token`
+[`explain_finding`](#explain_finding) takes. Needs an open project.
+
+| Flag | Type | Required | Default |
+| --- | --- | --- | --- |
+| `--finding-id` | integer | yes | — |
+| `--include-code` | boolean | no | `false` |
+| `--refresh` | boolean | no | `false` |
+
+`--include-code` prices the explanation with the handler's code in the prompt; `--refresh` prices
+a new one even when one is already stored.
+
+#### `explain_finding`
+
+A finding in plain language, kept as the finding's current explanation: what happened, the
+probable cause, a suggested fix and the lines of code it points at. A finding about the
+contract's own hygiene gets a fixed text for free, and an equivalent finding already explained
+is reused for free; otherwise a model is asked. An explanation is a model's reading of the
+evidence, not something the run measured, and the view says so.
+
+| Flag | Type | Required | Default |
+| --- | --- | --- | --- |
+| `--finding-id` | integer | yes | — |
+| `--include-code` | boolean | no | `false` |
+| `--approval-token` | string | no | — |
+| `--refresh` | boolean | no | `false` |
+
+With `inference.require_approval` on (the default), asking a model needs the token of the
+estimate that priced exactly this call; without it the core refuses with
+`INFERENCE_APPROVAL_REQUIRED` and the estimate. Needs an open project. Emits progress and is
+cancellable. A code reference to code the model was not shown is dropped, and lowers the
+confidence the view reports.
+
+#### `estimate_finding_fix`
+
+What proposing a fix for a finding would cost, without sending anything to a model.
+
+| Flag | Type | Required | Default |
+| --- | --- | --- | --- |
+| `--finding-id` | integer | yes | — |
+| `--refresh` | boolean | no | `false` |
+
+`source` says where the fix would come from: `cache` is an equivalent finding's fix, already
+paid for and free; `model` is priced and carries the `approval_token` [`propose_fix`](#propose_fix)
+takes. It needs the handler's code behind the finding, so a finding whose run traced no code
+answers `STATIC_ANALYSIS_REQUIRED` here, before anything is spent. Needs an open project.
+
+#### `propose_fix`
+
+A fix for a finding, as a unified diff — **never applied**. The model reads the finding's
+evidence (with the credentials redacted) and its handler's code, and answers edits that are
+checked before they become the diff: an edit whose search text does not occur exactly once in
+its file, or that touches a file the model was not shown, is left out and listed with its reason.
+The result is kept as the finding's current fix.
+
+| Flag | Type | Required | Default |
+| --- | --- | --- | --- |
+| `--finding-id` | integer | yes | — |
+| `--approval-token` | string | no | — |
+| `--refresh` | boolean | no | `false` |
+
+The token is the one [`estimate_finding_fix`](#estimate_finding_fix) returned; without it the
+core refuses with the estimate. Needs an open project. Emits progress and is cancellable.
+Reading the diff is what a person is for: a diff can apply cleanly and still be incomplete.
+
+#### `get_finding_fix_patch`
+
+A finding's proposed fix as a `.patch` file — its current one, or `--fix-id`. Nothing is written
+to disk: the diff is shown under the name to save it as, and applies with `git apply` from the
+root of the tree the finding's run traced. Like the other results it resolves by id against the
+central store.
+
+| Flag | Type | Required |
+| --- | --- | --- |
+| `--finding-id` | integer | yes |
+| `--fix-id` | integer | no |
+
+#### `apply_finding_fix`
+
+Writes a finding's proposed fix, its current one or `--fix-id`, to the source files of the tree
+its run traced. This is the one operation of the group that changes your code, and it is
+**destructive**: it is confirmed before it is sent.
+
+| Flag | Type | Required | Default |
+| --- | --- | --- | --- |
+| `--finding-id` | integer | yes | — |
+| `--fix-id` | integer | no | the finding's current fix |
+| `--create-backup` | boolean | no | `true` |
+
+In a Git work tree the diff is checked with `git apply --check` and then applied, and the way
+back is Git. Anywhere else (or without `git` installed) each edit is checked again against its
+file and replaced in it, with a `.bak` copy beside each file unless `--create-backup` is off. A
+tree that no longer takes the fix answers `status: conflict` and **nothing is touched**; a fix
+with nothing left to apply is `FIX_EMPTY_OR_UNAPPLICABLE`, and any other failure to write is
+`FIX_APPLY_FAILED`, which leaves the tree as it was. The result says which files changed and
+which backups were left. Needs an open project. For the guided way through all of this, see
+[Fixing a finding](#fixing-a-finding).
 
 #### `compare_runs`
 

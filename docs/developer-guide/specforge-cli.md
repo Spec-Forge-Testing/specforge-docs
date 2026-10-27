@@ -11,7 +11,7 @@ publishes in its handshake.
 ```text
 src/specforge_cli/
 ├── __main__.py        # routing only: update, delete, credentials, one-shot or interactive
-├── cli/               # the command-line modes: one-shot, interactive, argv parser, CI outcome
+├── cli/               # the command-line modes: one-shot, interactive, argv parser, CI outcome, `--fix`
 ├── startup/           # which core to launch, startup timeout, clean exit on SIGTERM
 ├── maintenance/       # looking after the install: credentials, update, uninstall
 ├── protocol/          # the client: transport, handshake, requests, events, cancellation
@@ -19,7 +19,7 @@ src/specforge_cli/
 ├── session/           # what the REPL and the TUI share: controller, parsing, history, header
 ├── repl/              # the text interface: a line reader over the session controller
 ├── tui/               # the full-screen interface (see below)
-├── approval/          # confirmations: destructive calls, inference cost, replay side effects
+├── approval/          # confirmations: destructive calls, inference cost, replay, applying a fix
 ├── shell/             # the `!<command>` escape
 ├── views/             # operation results, error codes and progress events as terminal output
 └── ui/                # theme, design tokens, components, banner
@@ -82,9 +82,51 @@ never touches stdout directly, so it works in every interface and in `--json-out
 A view only draws the result it is handed, so a fact the core did not put in it is fetched
 before drawing, by `session/enrichment.py`, for the REPL, the full-screen app and a one-shot
 call alike. Today that is the model in use beside a `list_llm_models` listing (the
-`llm.primary_model` option, read with `get_config`) and the configuration as it was before a
-`set_config` or `reset_config`. It is an extra: if the core cannot answer it, the result is
+`llm.primary_model` option, read with `get_config`), the configuration as it was before a
+`set_config` or `reset_config`, and the finding an applied fix was for (read with `get_finding`,
+so the next steps can name the endpoint to run again and the run to compare against). It is an extra: if the core cannot answer it, the result is
 drawn without it. `--json-output` never gets it, and the extra request is not made.
+
+### How an approval leads to the next step
+
+Anything that must be asked before it happens is an `ApprovalRequest` (`approval/request.py`):
+the `operation` to send once approved (which need not be the one that produced the request),
+its `retry_params`, the `question`, and a `show` that draws what is being approved. Three flags
+say who may answer it: `needs_spending_cap` (money is at stake, so an answer given up front is
+valid only under a cap), `explicit_flag` (it must be asked for by its own flag, as with a
+replay's side effects) and `needs_person` (only someone looking at the question; not even
+`--yes` stands in). `decide()` is the one place those are enforced.
+
+A request comes from one of two places, and which one is the design decision when adding a step:
+
+- **A detector in `approval/`**, when the core's own answer asks for it. Each is a pure
+  `request_from(operation, params, error, result)` returning a request or `None` — `cost.py`
+  (the core refused a paid call and sent its estimate), `fixes.py` (a proposed fix that has
+  files to change and is not applied), `consent.py` and `overwrite.py`. `detect()` in
+  `negotiation.py` tries them in order, on a refusal and also on a result that succeeded, so
+  a detector can answer a good result with the next step. Register a new one there.
+- **An offer in `session/offer.py`**, when the CLI is the one proposing, because nothing was
+  refused. `fix_offer(operation, result, request)` reads a run that found a server error, asks
+  the core for the finding's price (an extra request, like `enrichment`, silent if it fails) and
+  returns the same `ApprovalRequest`, which the controller holds for `approve`. It stays out of
+  `detect` on purpose: `detect` also runs in a one-shot call, and a one-shot
+  `estimate_finding_fix` has to stay a free read that asks nothing.
+
+Sending is `run_with_approvals(send, operation, params, approver, on_result=…)` with
+`send(operation, params)`: each time a request is approved it sends *that request's* operation,
+so a chain (`estimate` → `propose_fix` → `apply_finding_fix`) is a loop of detect, decide and
+send. `on_result` is given the result of a step that led to a question, before it is asked —
+that is how `--fix` shows the diff before asking whether to apply it. The REPL does the same
+with `approve`: the controller holds the request, and each `approve` sends one step, draws its
+result and holds the next request.
+
+`cli/fix_flow.py` is `--fix`: `misuse_of_fix` rejects, before anything is sent, a call that
+could never finish (not `fuzz` or `run_pipeline`, or no one to ask), and `run_fix_flow` walks
+the chain after the run was drawn. Declining any step is not a failure; a core error is.
+
+Whatever touches the target uses `needs_person`. A step that writes to the user's code must
+never be answerable by a flag, and a new one that does should say so the same way and add its
+row to the table in the user guide.
 
 ### Explaining a section once
 
@@ -132,3 +174,9 @@ with `scripts/generate_operation_reference.py` — a test fails if it drifts. Th
 tests start an actual core and run only where it is installed. The full-screen interface is
 tested against a virtual terminal (`pyte`), so its tests need no real console; coverage of
 `tui/` is expected to stay at 95 % or above.
+
+No recorded session holds the fix flow, because an estimate carries a model's price and would go
+stale. The shapes its tests use (`finding_estimate`, `finding_refusal` in
+`tests/approval/estimates.py`) come from the core's code and were checked once against a real
+core, so when the core changes `estimate_finding_fix`, `propose_fix` or `apply_finding_fix`,
+that is where to update them.

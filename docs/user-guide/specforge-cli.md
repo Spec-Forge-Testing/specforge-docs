@@ -78,10 +78,11 @@ closest commands; `Enter` still sends it, and the core answers like any other er
 
 | Local command | What it does |
 | --- | --- |
-| `help [family\|operation]` | Opens a panel with a tab per family of operations, the operations in it, and each one's parameters. `←`/`→` change tab, `↑`/`↓` choose, `Enter` shows the details, `Esc` closes it. |
+| `help [group\|operation]` | Opens a panel with a tab per [group of commands](#finding-a-command-with-help), the commands in it, and each operation's parameters. `←`/`→` change tab, `↑`/`↓` choose, `Enter` shows the details, `Esc` closes it. |
 | `clear` | Clears the screen, leaving the banner and the input. A run still going keeps going. |
 | `approve` | Approves what the core just asked to be approved. |
-| `credentials <file.env>` | Gives the core the LLM model and key from your own `.env`. |
+| `credentials [file.env]` | Saves your LLM API key: pick a provider and paste the key, or give it a `.env` of your own to copy from. |
+| `model [id]` | Chooses the LLM model: pick one from your provider's list, or name it (`provider/model`). It is saved as `LLM_MODEL` in the same env file as the key, and `get_config` shows it as `llm.primary_model` from the `environment` layer. |
 | `!<command>` | Runs a [system command](#system-commands-with). |
 | `exit`, `quit` | Leaves. |
 
@@ -171,6 +172,26 @@ stays in view above it. Three kinds come up:
 - **The spec.** In a trusted folder with no `openapi.yaml`, `.yml` or `.json`, a line asks for
   the spec as a file path or a URL (a URL is downloaded into the folder). A path with no file,
   or a URL that cannot be fetched, says why and asks again; an empty line or `Esc` cancels.
+
+### Finding a command with `help`
+
+`help` groups what can be typed the way a session goes, not the way the core's code is
+organized. A command that sets the LLM up sits with the other setup commands, whether the CLI
+answers it itself (`credentials`, `model`) or the core does (`list_llm_models`).
+
+| Group | What it holds |
+| --- | --- |
+| `project` | Create, open, close and switch projects, and list the ones saved. |
+| `contract` | Load the OpenAPI spec, explore its endpoints and analyze the code behind them. |
+| `run` | Fuzz the API, estimate inference cost, replay runs and browse their history. |
+| `finding` | Read a finding, have it explained, and have a fix proposed and applied. |
+| `setup` | Set up the LLM (`credentials`, `model`, `list_llm_models`), the options and the environment. |
+
+`help` lists the groups, `help setup` lists the commands of one, and `help <operation>` shows an
+operation's parameters. The names `help` used before (`results`, `execution`, `config`, and the
+rest of the core's families) still answer, saying which group their operations are in now.
+`help` is a command of the interactive session; from a shell, `specforge --help` lists the
+operations.
 
 ## The text REPL
 
@@ -436,7 +457,8 @@ price and asks nothing.
 
 ## Operations
 
-`describe` publishes 33 operations across eight families. `requires` says
+`describe` publishes the operations in the core's own families, and this reference follows
+them (`help` groups them differently, [above](#finding-a-command-with-help)). `requires` says
 what must already be true for the call to succeed: `none`, `project` (a
 project must be open — see [`open_project`](#open_project)), `contract` (a
 contract must also be loaded — see [`load_contract`](#load_contract), which

@@ -214,6 +214,7 @@ either. A run the cache answered whole carries real zeros.
 | `owner_resource_unprovisioned` | Every attempt to create the owner's resource failed, or its producer has no payload; the attempts are in the trace. |
 | `required_role_unheld` | No declared identity holds the required role. |
 | `owner_identity_missing` | `resilience` only: no valid identity is declared to own the resource, so the owner-only endpoint was not attacked. |
+| `link_target_reserved` | A state link of the endpoint, or of every producer of the owner's resource, writes a bound value into a credential or `Content-Type` header, so nothing was sent. |
 
 ### Endpoints that degrade under load
 
@@ -272,7 +273,7 @@ most first. The three **states** answer *why* a finding never became a crash:
 | State | Meaning |
 | --- | --- |
 | `flaky` | Seen, but it did not reproduce when the engine tried to confirm it. Stateless, stateful and resilience runs report these (a resilience server error is flaky when its attack, resent twice, does not get it back every time), and `metrics.findings_flaky` counts every such event. |
-| `unverified` | Collected but never checked: the run stopped before it could be confirmed, or its control request got no answer, so there was nothing to judge it against. Such an entry carries that control in `control`. |
+| `unverified` | Collected but never checked: the run stopped before it could be confirmed, or its control request got no answer, or an answer that cannot judge it (a rejection, a success with nothing to echo in), so there was nothing to judge it against. Such an entry carries that control in `control`. |
 | `refuted` | It reproduced, but its control request showed it is not a defect: the same request without the suspicious input showed the same signal, or, for a rejection that names no field, the same request with fresh values was accepted once and rejected the same way when sent again, a conflict with stored state such as a unique field. Its `control` is the request that refuted it (the accepted one, for a state conflict), and `metrics.findings_refuted` counts it. A refutation can be wrong: check the control. |
 
 A confirmed resilience defect also carries a `control`: the clean base request
@@ -306,7 +307,7 @@ read from `fidelity` instead); `run.signal_causes` lists why when degraded, in
 render order - `no_responses`, `endpoints_excluded`, `withheld_by_safety_guard`,
 `access_policy_undeclared`, `access_preconditions_unmet` (an `auth` or
 `resilience` run left a targeted endpoint with an access policy unprobed for one
-of the `owner_*` or `required_role_unheld` reasons above), `run_cancelled`,
+of the `owner_*`, `owner_identity_missing`, `required_role_unheld` or `link_target_reserved` reasons above), `run_cancelled`,
 `endpoints_unreached` and/or `load_unjudged` (a load profile judged no step). See
 [Coverage and the run's signal](cli-reference.md#coverage-and-the-runs-signal) for
 what each cause means and how it is derived.

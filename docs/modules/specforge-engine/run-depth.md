@@ -5,7 +5,8 @@ exist, says little about an API. This page describes what each runner does to ge
 past the first answer, without asking a model for anything: where stateless takes
 the identifiers it puts in a path, how long a stateful run keeps going and how it
 tells one defect from another, which values a credential field gets, and how
-resilience aims at a real resource and tells a crash from an intermittent error.
+resilience aims at a real resource and tells a crash from an intermittent error,
+and why an endpoint whose link writes into a reserved header is left unprobed.
 Each mode's overall sequence is on [Execution modes](execution-modes.md); the
 decisions are in the [runner decision records](adr/runners.md).
 
@@ -209,6 +210,7 @@ When the base request cannot be built, the endpoint gets nothing and records why
 | `owner_identity_missing` | `owner_only`, and no valid identity is declared to own the resource |
 | `owner_producer_missing`, `owner_chain_cyclic`, `owner_resource_unprovisioned` | `owner_only`, and the owner's resource could not be provisioned |
 | `required_role_unheld` | `role_only`, and no valid identity holds the role |
+| `link_target_reserved` | bound through a state link into a header the owner's credentials or the transport own ([below](#a-link-into-a-reserved-header)) |
 
 Each one makes the run's signal `degraded` with `access_preconditions_unmet`.
 
@@ -251,6 +253,34 @@ which: the attack left the endpoint broken, or the endpoint recovers and only th
 attack breaks it. Confirmation requests count in `requests_shrink` and stay out of
 the trace.
 
+## A link into a reserved header { #a-link-into-a-reserved-header }
+
+A state link can write a produced value into a header, such as a login's token
+into `Authorization`. Credential headers belong to the identities and
+`Content-Type` to the transport, so the injector would drop that value, and the
+request would go out with the caller's own credential instead
+([ADR-184](adr/runners.md#adr-184)). The runners decide this before sending
+anything:
+
+- **The endpoint's own links.** `OwnerResourceRegistry.bind_for(endpoint, bundles,
+  callers)` is the one entry `auth` and `resilience` call. When a link of a bound
+  bundle targets a header reserved for any caller that crosses the endpoint, the
+  endpoint is left unprobed with `link_target_reserved`. The reserved names are
+  what each caller sends (`reserved_for_sender`); an anonymous caller reserves only
+  `Content-Type`.
+- **The owner's chain.** When the owner's resource is provisioned,
+  `plan_bundle_chain` skips a producer whose links target a header the owner
+  reserves and tries the next producer of the bundle. Only when none is usable is
+  the reason `link_target_reserved`; no producer request is sent in vain.
+- **The stateful mode** refuses such a link as a `StatefulLinkError` when it
+  compiles the rule.
+
+An endpoint's policy reason (`declared_public`, `access_undeclared`) still comes
+first. An `auth` run whose only endpoint with a policy to cross is left unprobed
+this way crossed nothing, and fails with `AccessUncrossableError` naming the
+reason; beside any crossable endpoint it completes and lists the endpoint as
+unprobed.
+
 ## Where to change it
 
 | To change | Edit |
@@ -264,4 +294,5 @@ the trace.
 | A credential naming convention | a row of `NAME_CONVENTIONS` in `strategy_compiler/constants.py` ([recipe](extension-guide.md#add-a-name-convention)) |
 | How many times a resilience attack is resent | `RESILIENCE_RESENDS` in `runtime/runners/resilience/constants.py` |
 | Which resend answers count as no answer | `UNANSWERED_STATUSES` in the same file |
+| Which headers a state link may not write into | `is_reserved_link_target` in `runtime/http/reserved_headers.py`; `reserved_for_sender` in `runtime/runners/provisioning/reserved_links.py` |
 | When a delete's transition is derived | `INVALIDATING_METHODS`, `DELETED_RESOURCE_STATUSES` in the core's `utils/constants.py` |

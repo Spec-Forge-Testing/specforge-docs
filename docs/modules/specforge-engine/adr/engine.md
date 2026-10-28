@@ -2790,7 +2790,7 @@ twice.
 
 ## ADR-116 — A request poisons one field, and its intent travels to the oracles, the trace and the replay { #adr-116 }
 
-**Status:** accepted · Supersedes in part [ADR-033](#adr-033) · `models/runtime/intent.py`, `models/runtime/draw.py`, `strategy_compiler/zone.py`, `strategy_compiler/body.py`, `runtime/fuzzers/phases.py`, `runtime/payload.py`, `runtime/http/injector.py`, `runtime/oracles/context.py`, `runtime/trace/`
+**Status:** accepted · Supersedes in part [ADR-033](#adr-033) · Superseded in part by [ADR-173](models.md#adr-173), [ADR-174](compiler.md#adr-174) · `models/runtime/intent.py`, `models/runtime/draw.py`, `strategy_compiler/zone.py`, `strategy_compiler/body.py`, `runtime/fuzzers/phases.py`, `runtime/payload.py`, `runtime/http/injector.py`, `runtime/oracles/context.py`, `runtime/trace/`
 
 ### Context
 
@@ -2850,7 +2850,7 @@ request.
 
 ## ADR-118 — A success that accepts the poisoned field outside its declared schema is an `input_validation` finding, one per field { #adr-118 }
 
-**Status:** accepted · Superseded in part by [ADR-137](#adr-137) · `runtime/oracles/input_validation.py`, `runtime/oracles/precedence.py`, `runtime/oracles/builtin.py`, `runtime/oracles/schema_check.py`, `models/runtime/crash_report.py`
+**Status:** accepted · Superseded in part by [ADR-137](#adr-137), [ADR-176](findings.md#adr-176), [ADR-177](findings.md#adr-177) · `runtime/oracles/input_validation.py`, `runtime/oracles/precedence.py`, `runtime/oracles/builtin.py`, `runtime/oracles/schema_check.py`, `models/runtime/crash_report.py`
 
 ### Context
 
@@ -3420,7 +3420,7 @@ assertion.
 
 ## ADR-143 — A 400 or 422 to a request that conforms to its contract is a `contract_completeness` finding { #adr-143 }
 
-**Status:** accepted · `runtime/oracles/contract_completeness.py`, `runtime/oracles/sent_value.py`, `runtime/oracles/semantic/input_constraints.py`, `shared/schema_check.py`, `runtime/oracles/precedence.py`, `models/runtime/crash_report.py`, `models/runtime/engine_input.py`
+**Status:** accepted · Superseded in part by [ADR-176](findings.md#adr-176) · `runtime/oracles/contract_completeness.py`, `runtime/oracles/sent_value.py`, `runtime/oracles/semantic/input_constraints.py`, `shared/schema_check.py`, `runtime/oracles/precedence.py`, `models/runtime/crash_report.py`, `models/runtime/engine_input.py`
 
 ### Context
 
@@ -3645,3 +3645,59 @@ removes it. Confirmation costs one window more per degraded step plus one for th
 baseline, and only when something degraded. Each step of a report's
 `load_profile` carries `remeasured` (report 1.20); a run stored earlier reads it
 `null`.
+
+---
+
+## ADR-185 — Path and header values are spelled in OpenAPI's `simple` style, each part as the query spells it { #adr-185 }
+
+**Status:** accepted · `shared/wire/spelling.py`, `shared/wire/texts.py`, `runtime/http/route.py`, `runtime/http/injector.py`, `strategy_compiler/fields/default/alphabet.py`, `constants.py`
+
+### Context
+
+The query is written by the HTTP client: `true` and `false` in lowercase, an
+array as one parameter per item. Python's own spelling of a path segment or a
+header gives `True`, `/None`, `[1, 2]` for an array and the text of a `dict` for an
+object, which no server reads as the value meant. An oracle that judges the value
+as drawn while the wire carries another text judges a value the server never saw:
+a false `input_validation` on a boolean path parameter, and a
+`contract_completeness` silenced on every endpoint with a boolean in its path.
+
+### Decision
+
+**One spelling module.** `parameter_text` writes a scalar as the query does:
+`true`, `false`, an empty text for `None`, `str` for the rest. `simple_parts` and
+`simple_text` write a path or header value in OpenAPI's `simple` style: an array's
+items, an object's keys each followed by its value, joined by commas, each part
+spelled by `parameter_text`.
+
+- **Path.** Each part is percent-encoded, a comma inside it included, and the
+  commas between parts are sent as such (`path_segment`). An empty text (a `None`,
+  an empty array, an empty object) is a segment URL normalization strips, so the
+  request is unsendable.
+- **Header.** The `simple` text, sent as one header (RFC 9110's list syntax).
+- **Nulls.** A query, header or form field drawn `None` is not sent;
+  `is_omitted_field` is the one rule, read by the injector and the oracles.
+
+**The generator filters with the same spelling.** A drawn path segment or header
+is checked as it will be written, so the generator, the injector and the oracle
+see one text.
+
+**Arrays and objects in a path or header are sent, not judged.** Their candidates
+stay: a request that `input_validation` cannot read still reaches the server-error,
+exposure and reflection oracles. The reader marks them unreadable
+([ADR-177](findings.md#adr-177)), because an item can hold a comma, a framework may
+not split the header, and RFC 9110 lets a server trim each element.
+
+### Rejected
+
+- **Python's spelling.** It is no server's spelling.
+- **Dropping the generator's array and object candidates for paths and headers.**
+  It loses the coverage of server errors and exposure, and prevents nothing false.
+- **Reading a header array by splitting on commas.** An item with a comma is read
+  wrong, and the finding is false.
+
+### Consequences
+
+The bytes on the wire change for path and header values that are not strings, and
+match what an OpenAPI client sends. A boolean path parameter is judged as the
+server received it, and a path value drawn `None` makes the request unsendable.

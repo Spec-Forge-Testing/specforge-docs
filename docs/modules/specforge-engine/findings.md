@@ -114,7 +114,7 @@ What each invariant puts in the slots:
 | --- | --- | --- | --- | --- |
 | `not_a_server_error` | — | the status, or the transport error | — | `connection_dropped` when the connection was cut |
 | `access_control` | `{policy, owner}`, `{policy, role}` or `{policy, invalid_credential}` | the status | `caller` (none when anonymous) | the policy |
-| `mass_assignment` | — | the value echoed back | `request_field` `body.<key>` | — |
+| `mass_assignment` | — | the value echoed back | `request_field` `body.<path>` of the key (`body.role`, `body.user.role`) | — |
 | `sensitive_data_exposure` | — | the pointer of every undeclared secret key, in order of appearance | `response_body` `""` | — |
 | `undeclared_response_field` | each schema path holding an undeclared key, with the property names it declares | `{pointers, omitted}`: the first 20 pointers of undeclared keys, and how many more | `response_body` `""` | — |
 | `information_disclosure` | — | the fragment that leaked | the poisoned field | the disclosure marker |
@@ -122,7 +122,7 @@ What each invariant puts in the slots:
 | `input_induced_timeout` | — | the elapsed ms | the poisoned field (none for a valid value) | — |
 | `semantic_property` | — | `{field: value}` for each field the rule references | — | the property class |
 | `state_transition` | the expected statuses, or the value sent | the status, or the value echoed | `follow_up`, or `response_body` | `status` or `echo` |
-| `input_validation` | `{keyword: declared}` of the first mismatch | the value as the server read it | the poisoned field | — |
+| `input_validation` | `{keyword: declared}` of the first mismatch, `pattern` and `format` included | the value sent, on a text wire the text sent (`"+4"`) | the poisoned field | — |
 | `response_schema_conformance` | `{keyword: declared}` | the value at the pointer | `response_body` pointer | — |
 | `contract_completeness` | — | the server's message for the field it blames | the blamed field (none: the whole request) | `loc` or `message_key` |
 | `content_type_conformance` | the declared type | the received type, or `null` | `response_header` `content-type` | — |
@@ -144,7 +144,10 @@ finding ([ADR-153](../core/adr/core.md#adr-153)): in the report, in `get_run` an
 A value is shown as compact JSON, clipped to 48 characters; a withheld value reads
 `***`. A finding that did not confirm says so at the end: "observed once; it did
 not reproduce", "observed once; the run stopped before retrying it", or "observed
-once; nothing to judge it against" when its control request got no answer. A
+once; nothing to judge it against" when its control request got no answer or an
+answer that cannot judge it. A `mass_assignment` finding says which: "the request
+was not accepted" or "the response held nothing to echo", with the control's
+status. A
 finding stored without an observation still gets a sentence:
 "`` `METHOD /path` `` broke *label* with *status*."
 
@@ -175,7 +178,8 @@ first member of its group (`FirstSeenEvidence`), redacted the same way.
 Raw findings group by `FindingSignature`: endpoint, phase, invariant, status,
 identity (for `access_control` only), rule id, body fingerprint and the
 **poisoned field**. Two fields that break one endpoint the same way are two
-findings.
+findings, and a nested field is named by its path (`user.email`,
+[Field addressing](field-addressing.md#a-fields-path)).
 
 A sent credential never reaches a signature: the body fingerprint reads a JSON
 body's top-level keys, and the rule id, with every credential the request sent
@@ -203,7 +207,7 @@ counts in `requests_shrink`.
 | --- | --- | --- |
 | `confirmed` | The shrunk payload reproduced the finding, and a control request, when its invariant has one, did not show the same signal. | `findings_confirmed` |
 | `flaky` | The shrunk payload did not reproduce it. | `findings_flaky` |
-| `unverified` | Never checked: the run stopped first or the member was never attempted, or its control request got no answer (a timeout, a refused connection), so there is nothing to judge it against. | `findings_unverified` |
+| `unverified` | Never checked: the run stopped first or the member was never attempted, or its control request got no answer (a timeout, a refused connection) or an answer that cannot judge it (a rejection, a success with nothing to echo in), so there is nothing to judge it against. | `findings_unverified` |
 | `refuted` | The shrunk payload reproduced it, and its control request showed it is not a defect: the input was not the cause, or the rejection was a conflict with stored state. Listed as a `RefutedFinding` with that control, never as a defect. | `findings_refuted` |
 
 The four states are the members of `FindingState`. A `resilience` finding is
@@ -213,11 +217,16 @@ The four states are the members of `FindingState`. A `resilience` finding is
 **Control requests** ([ADR-151](adr/findings.md#adr-151)). Three invariants are
 confirmed against one, in the stateless mode, each a row of `CONTROL_CHECKS`:
 
-| Invariant | Applies to | Control payload | Refuted when the control |
-| --- | --- | --- | --- |
-| `mass_assignment` | every finding | The minimal payload without the smuggled key | Echoes the key all the same |
-| `input_induced_timeout` | every finding | The poisoned field at its minimal valid value; without a poisoned field, the endpoint's minimal valid payload | Times out too |
-| `contract_completeness` | rule `request` only | The payload with its open body and query strings rotated within their character class | Is accepted, and the same control sent again is rejected the same way, in a body of the same shape |
+| Invariant | Applies to | Control payload | An answer judges when it is | Refuted when the control |
+| --- | --- | --- | --- | --- |
+| `mass_assignment` | every finding | The minimal payload without the smuggled key at its path, its other open strings rotated and its corpus values held | a 2xx whose body holds an object | Echoes the key all the same |
+| `input_induced_timeout` | every finding | The poisoned field at its minimal valid value; without a poisoned field, the endpoint's minimal valid payload | a 2xx, or a timeout | Times out too |
+| `contract_completeness` | rule `request` only | The payload with its open body and query strings rotated within their character class | a 2xx, or a 4xx with the reproduction's status | Is accepted, and the same control sent again is rejected the same way, in a body of the same shape |
+
+Each control declares which answers can judge its finding
+(`ControlCheck.judges`, [ADR-182](adr/findings.md#adr-182)). A judgeable answer
+refutes or confirms; an answer that cannot judge, like no answer at all, leaves the
+finding `unverified` with that control as its evidence.
 
 The `contract_completeness` control looks for a conflict with stored state, such
 as a unique field. Each letter or digit becomes the next of its class (`a`→`b`,
@@ -226,7 +235,11 @@ Strings that declare `enum`, `const`, `format` or `pattern`, anything under a
 composed schema, files, and path or header values are kept. When nothing rotates
 there is no control and the finding stands. A control accepted twice means the
 rejection depended on the value, and the finding is confirmed
-([ADR-166](adr/runners.md#adr-166)).
+([ADR-166](adr/runners.md#adr-166)). When that control does not refute, and the
+request took values from the run's corpus, a second control holds those values
+(the same resource) and rotates the rest; it is sent, with its own resend, only to
+add a refutation, and otherwise the first control's verdict stands
+([ADR-183](adr/runners.md#adr-183)).
 
 A refuted finding carries the control that refuted it: for a whole-request
 rejection, the request that was accepted. An unverified finding whose control got

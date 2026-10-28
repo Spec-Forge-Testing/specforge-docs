@@ -47,8 +47,9 @@ Under `security`, an endpoint that declares an aggressiveness sets its own
 
 **`security`** draws every phase the engine has. Its `attack` pass poisons one
 field per request with family-tagged payloads, and its `mutation` pass breaks a
-valid value in one place on every field, with or without an attack contract
-([ADR-156](adr/strategies.md#adr-156)). It sends read-only fields, because writing
+valid value in one place, one field per request, on every field, with or without
+an attack contract ([ADR-156](adr/strategies.md#adr-156),
+[ADR-180](adr/compiler.md#adr-180)). It sends read-only fields, because writing
 one is a probe of its own.
 
 **`exposure`** keeps `security`'s contract type and read-only handling but narrows

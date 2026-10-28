@@ -304,7 +304,9 @@ builders ([ADR-016](adr/compiler.md#adr-016)).
 | `fields/default/valid.py` | `SchemaType → valid builder` |
 | `fields/default/boundary.py` | `SchemaType → boundary builder` |
 | `fields/default/invalid.py` | `SchemaType → invalid rule`; `ZoneWire → what the wire tells apart` |
-| `constants.py` | `FORMAT_PATTERNS`: `SchemaFormat → regex pattern`; `FLOAT_BOUNDARY`: `NumericFormat → float edges`; `TEXT_ALPHABET_BY_PHASE`: `Phase → Zone → TextAlphabet` |
+| `format_constants.py` | `FORMAT_PATTERNS`: `SchemaFormat → FormatPattern(regex, lengths)`; `SHAPE_PROBES` |
+| `fields/default/format_builders.py` | `FORMAT_BUILDERS`: `SchemaFormat → FormatBuilder`, a valid text within a length |
+| `constants.py` | `FLOAT_BOUNDARY`: `NumericFormat → float edges`; `TEXT_ALPHABET_BY_PHASE`: `Phase → Zone → TextAlphabet` |
 | `fields/default/formats.py` | the date-range builders `DATE_RANGE_STRATEGIES`, and `regex_strategy` over `FORMAT_PATTERNS` |
 | `fields/default/alphabet.py` | `TextAlphabet → character strategy` |
 | `fields/attack/payloads.py` | `SchemaType → base-payload builder`; the toggle-family table |
@@ -407,7 +409,7 @@ the context, and each branch honours the alphabet it is handed:
 | The field declares | Under `OPEN` | Under `PRINTABLE` or `WIRE_SENDABLE` |
 |---|---|---|
 | free text (no `format`, no `pattern`) | text of the declared length over the open alphabet | text of the declared length over the narrower alphabet |
-| a special-cased `format` (`email`, `uuid`, `date`, `date-time`, `uri`, `ipv4`, `hostname`, `byte`) | the format's regex | the same regex — every `FORMAT_PATTERNS` entry is ASCII by construction |
+| a special-cased `format` (`email`, `uuid`, `date`, `date-time`, `uri`, `ipv4`, `hostname`, `byte`) | the format's regex, or its builder within the declared length; with a `pattern`, the pattern kept to texts the format's checker accepts | the same — every `FORMAT_PATTERNS` entry and builder is ASCII by construction |
 | an unspecial-cased `format` | the `hypothesis-jsonschema` fallback | narrower-alphabet text of the declared length, keeping a co-declared `pattern` |
 | a `pattern` | the pattern, drawn full-match | the pattern intersected with the narrower alphabet |
 
@@ -543,8 +545,12 @@ a text wire as the declared type through the strict literals
 `MASS_ASSIGNMENT_KEYS` the body does not declare, with a sentinel privileged
 value, names that key as the poisoned field and `auth_bypass` as its family. The
 key is chosen inside the one branch, so the probe is one variant of the body's
-`one_of`, never one per key. Only a body whose root is an object carries it, and
-a focus list that addresses no field of the body keeps it away.
+`one_of`, never one per key. The same branch also picks where the key goes: the
+top of the body or one of its objects, the elements of arrays included, and a body
+sent as an array gets it through `mass_assignment_root_variant`. An object that
+admits extra keys gets none ([ADR-181](adr/compiler.md#adr-181),
+[Field addressing](field-addressing.md#mass-assignment-inside-each-object)). A
+focus list that addresses no field of the body keeps it away.
 
 Under a strategy whose `attack_families` leaves out `auth_bypass`, the variant is
 not drawn.
@@ -561,9 +567,14 @@ reverse.
 table is `operators.py`, and the object mutation is `objects.py`. Two
 registrations call it: `build_base_mutation` on a `BaseStrategyContract`, with
 `DEFAULT_ATTACK_TOGGLES`, and `build_hacker_mutation` (`fields/security.py`) on a
-`HackerStrategyContract`, with the toggles the contract declares. A mutated
-request poisons no field: `mutation` declares no candidates, because an operator
-can return a value that is still valid.
+`HackerStrategyContract`, with the toggles the contract declares. Each mutated
+request varies one field, an object or one of its leaves, and the mutated value is
+classified as it travels: it names the poisoned field only when it provably
+breaks that field's contract, and is judged as a valid request otherwise
+([ADR-180](adr/compiler.md#adr-180),
+[Field addressing](field-addressing.md#mutation-varies-one-field)). The candidates
+are `base_mutation_candidates` and `hacker_mutation_candidates`; a zone with no
+field to vary falls back to mutating every field at once, unjudged.
 
 Where the attack phase samples from fixed hostile pools, mutation starts from a
 value the endpoint would accept and breaks it in exactly one place. It draws a
@@ -610,16 +621,20 @@ never changes the phase's budget: depth is intensity, not allocation.
 
 ## Attack focus and sensitive fields
 
-Two per-parameter rules narrow the attack phase, both spoken in the same
-addressing vocabulary. `is_field_addressed(zone, name, entries)` matches a bare
-field name, or a zone-qualified `zone.name`:
+Two per-field rules narrow the attack phase, both spoken in the same addressing
+vocabulary. `is_field_addressed(zone, field, entries)` matches a bare top-level
+name, or a zone followed by a dotted path that names the field or one that holds
+it (`body.article.title`, `body.items.0.price`;
+[Field addressing](field-addressing.md#focus-entries-name-a-path)):
 
 - **Focus.** When an endpoint declares `focus_fields`, a parameter the list
   does not address is compiled in the `valid` phase instead of `attack`. The
   attack effort concentrates on the named fields. A `focus_fields` entry that
   addresses no declared field would silently move every field out of the attack
-  phase, so the policy boundary rejects it as a `PolicyError` under a strategy
-  that plans `attack` — a producer typo fails loudly instead of disabling the attack.
+  phase, so the policy boundary checks each entry along its whole path and rejects
+  one the endpoint does not declare as a `PolicyError` under a strategy that plans
+  `attack` — a producer typo fails loudly instead of disabling the attack. An
+  object that holds a named leaf carries it and is never attacked whole.
 - **Sensitivity.** A parameter the `sensitive_fields` list addresses has
   `INFORMATION_DISCLOSURE` and `AUTH_BYPASS` added to its context profiles, so
   its attack payloads bias toward disclosure and auth-bypass pools.

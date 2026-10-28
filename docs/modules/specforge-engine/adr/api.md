@@ -115,3 +115,59 @@ consistency: phase-split validation (a budget may only name phases the mode's
 profile allocates), then focus-fields validation (under a strategy that plans an attack phase, a
 `focus_fields` entry must address a field the endpoint declares). New checks
 append to the chain; they do not change its shape.
+
+---
+
+## ADR-175 — A focus entry names a nested field by its path, and is checked along the whole path { #adr-175 }
+
+**Status:** accepted · Extends [ADR-015](#adr-015) · `shared/field_addressing.py`, `strategy_compiler/parameter.py`, `strategy_compiler/fields/attack/mass_assignment.py`, `policy/validators.py`; Semantic Inference `section_attack.j2`
+
+### Context
+
+`attack.focus_fields` narrows the attack phase to named fields, and
+`sensitive_fields` biases a field's payloads toward disclosure and auth bypass.
+An entry read on its first two segments, a bare name or `zone.name`, makes
+`body.article.title` reach the whole `article` object: its sibling `article.body`
+is attacked as well, and the entry the producer wrote is not the field it meant.
+With every leaf of a body poisoned on its own
+([ADR-174](compiler.md#adr-174)), an entry can say exactly which leaf it wants.
+
+### Decision
+
+**One addressing rule over the whole path.** An entry is a bare top-level name or
+a zone followed by a dotted path. `is_field_addressed` holds when the entry names
+the field or a field that contains it; `leads_to_addressed_field` also holds for a
+field that contains a named one. An entry that enters an array names the field in
+every element by index `0`; a body sent as an array is entered as `body.0.price`,
+as its findings spell it, or `body.$.0.price`. A bare name never reaches a nested
+field.
+
+**The named leaf carries the attack.** Under focus, a field no entry addresses
+compiles `valid`. An object that holds a named leaf is compiled as the leaf's
+carrier: its named leaf is attacked, the object is never attacked whole, and the
+mass-assignment variant reaches only the objects on a focused path.
+
+**The policy boundary checks the whole path.** Under a strategy that plans
+`attack`, `addresses_declared_field` walks the entry through the declared
+`properties` and `items`. A misspelled segment, a path through a scalar, or a key
+into an array without its index is a `PolicyError`, the same error a top-level
+typo raises. `sensitive_fields` is not checked: an unmatched entry there narrows
+nothing.
+
+**The prompt teaches the same paths.** The inference producer's attack section
+names a nested field by its dotted path and an array element by its index.
+
+### Rejected
+
+- **Prefix matching on the first two segments.** It is what attacked the sibling.
+- **Silently ignoring an entry that matches nothing.** Every field would move out
+  of the attack phase, and a producer typo would disable the attack quietly.
+
+### Consequences
+
+A contract whose focus entry named a nested field through its top-level parent
+keeps working, and one that names the leaf gets exactly that leaf. An entry the
+endpoint does not declare at that path makes the contract unusable: the
+`inference` producer falls back to the schema for that endpoint, and the `fixture`
+producer stops the run. The prompt's fingerprint changes, so a cached inferred
+contract is inferred once more on its endpoint's next run.

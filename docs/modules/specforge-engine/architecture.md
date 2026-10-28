@@ -38,7 +38,13 @@ src/specforge_engine/
 ├── phase_extension_builtins.py  # composition root: registers the builtin SEMANTIC extension
 ├── shared/                # Stage-neutral helpers; import only models, never a stage
 │   ├── numeric.py         # is_multiple_of: exact arithmetic shared by compiler and oracles
-│   ├── field_addressing.py # is_field_addressed: which zone/field a directive targets
+│   ├── field_addressing.py # is_field_addressed: which zone/field path a directive targets
+│   ├── field_path.py      # value_at, with_value_at: a value at a FieldPath
+│   ├── violation.py       # first_provable_violation, DECIDABLE_FORMATS: what provably breaks a contract
+│   ├── ecma_pattern.py    # ecma_match: a pattern read as ECMA-262, or undecidable
+│   ├── shape_check.py     # meets_declared_shape: pattern, format and collection keywords, by policy
+│   ├── extra_keys.py      # holder_admits_extra_keys: one rule for the mass-assignment generator and oracle
+│   ├── wire/              # how a value travels: spelling · texts · carried (read as declared)
 │   ├── semantic_properties.py # has_input_constraint: the neutral leaf both layers read
 │   ├── schema_check.py    # validate_value: the shape predicate the oracles and the attack filter share
 │   ├── sensitive_names.py # is_sensitive_field_name: the names the redaction and the sensitive-data oracle share
@@ -51,17 +57,24 @@ src/specforge_engine/
 │   ├── compiler.py        # compile(): per-endpoint orchestration, exclusions
 │   ├── parameter.py       # compile_parameter, poison_parameter: one parameter under its zone's alphabet and wire
 │   ├── zone.py            # ZoneCompileContext, compile_zone: plain and poisoning phases of a zone
+│   ├── poison_target.py   # PoisonTarget: one field poisoned whole or at one of its leaves
+│   ├── part_compile.py    # compile_part: a part's phases, the plain fallback included
+│   ├── header_sparing.py  # spares_reserved_header: keep a phase off credential and transport headers
 │   ├── body.py            # compile_body: object fields as a zone, or the root as the field `$`
 │   ├── planning.py        # build_generation_plan, estimate_parameter_space
 │   ├── effective_phases.py # effective_phases / effective_split: read the extension registry
-│   ├── constants.py       # boundary tables, alphabets per phase, seed share, choice counts, attack-family maps
+│   ├── constants.py       # boundary tables, alphabets per phase, seed share, choice counts, attack-family maps, MAX_FIELD_DEPTH
+│   ├── format_constants.py # FORMAT_PATTERNS with their lengths, SHAPE_PROBES
 │   └── fields/            # Field → SearchStrategy
 │       ├── context.py     # GenerationContext, EMPTY_CONTEXT
 │       ├── schema_view.py # SchemaView: typed reader over a contract
 │       ├── registry.py    # phase registry: register_phase, resolve_phase, candidates_for, isolated
+│       ├── generation_phase.py # GenerationPhase, PoisonCandidate, CandidateSource: a phase and its traits
+│       ├── variants.py    # ZoneVariantRequest/Source, RootVariantRequest/Source
+│       ├── field_tree.py  # field_leaves, wire_envelopes: the leaves and objects of a JSON body field
 │       ├── poisoning.py   # poisoning_strategy, untagged: the phase's candidates are the poison
 │       ├── builtin.py     # the built-in phase registrations
-│       ├── default/       # valid · boundary · invalid · constraints · formats · alphabet
+│       ├── default/       # valid · boundary · invalid · constraints · formats · format_builders · alphabet
 │       ├── attack/        # payloads and candidates any contract uses: tables · payloads · request · builders · sampling · mass_assignment
 │       ├── mutation/      # the mutation phase: builders · operators · objects · tables
 │       └── security.py    # the attack contract's tuning of the attack and mutation builders
@@ -108,7 +121,7 @@ models/
 │   ├── dialect.py · normalization.py · response.py · state_link.py · endpoint_controls.py
 │   └── strategies/     # BaseStrategyContract, HackerStrategyContract
 ├── compiler/           # compiler-side DTOs: CompilerInput, EndpointSpec, RequestZones, BodySpec, CompilationOutcome
-└── runtime/             # engine-side DTOs: EngineInput, CompiledBody, GenerationPlan, RequestIntent, ZoneDraw, runtime, options, results, trace, replay
+└── runtime/             # engine-side DTOs: EngineInput, CompiledBody, GenerationPlan, RequestIntent, FieldPath, ZoneDraw, runtime, options, results, trace, replay
 ```
 
 The enums sit at the package root because both the compiler and the engine key

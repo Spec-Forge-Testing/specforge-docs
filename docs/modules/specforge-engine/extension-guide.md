@@ -221,6 +221,20 @@ family then reaches the oracles through the intent
 Nothing else changes. The compiler records the phase in each zone's
 `poisoning_phases` and in the endpoint's, the runtime draws one poisonable zone
 per request, and a phase no zone can poison on an endpoint is not planned there.
+On a JSON body the source is also asked for every leaf inside an object or an
+array element, and the leaf variants are offered beside the field's own
+([Field addressing](field-addressing.md#every-leaf-of-a-json-body)).
+
+A candidate that only varies the field, without breaking its contract, is drawn as
+`PoisonCandidate(value, poisons=False)`: the request keeps the field as its
+`varied_field` and is judged as a valid one. Three flags of `GenerationPhase`
+declare the rest of a phase's traits:
+
+| Flag | When set |
+| --- | --- |
+| `leaves_replace_whole` | an object's leaf variants stand in for the object's own candidates (`boundary`) |
+| `plain_fallback` | a part with no field to poison still draws the phase, every field varied at once and unjudged (`mutation`) |
+| `spares_reserved_headers` | the phase never varies a header the credentials or the transport own (`mutation`) |
 Read the wire from `context.zone_wire` and offer only values the wire can tell
 apart from a valid one: on a text wire every value is text, and `None` is the
 parameter left out ([ADR-117](adr/compiler.md#adr-117)). The input-validation
@@ -231,11 +245,18 @@ declared schema, with no change of its own.
 
 A poisoning phase can add branches that are not one declared field: a body with
 an undeclared key, for instance. Register a `ZoneVariantSource` per zone in
-`zone_variants`. It receives the zone's parameters, their valid strategies and the
-parameters always sent, and returns a strategy of `ZoneDraw`s that names its own
-poisoned field, or `None` when it does not apply. The zone compiler adds it beside
-the per-field variants; a focus list that addresses no field of the zone keeps it
-away.
+`zone_variants`. It receives one `ZoneVariantRequest`: the zone's parameters
+(`params`), their valid strategies (`valid`), the parameters always sent
+(`always_sent`), the valid `context`, the phase's `focus_fields`, and whether the
+object holding the zone admits extra keys (`admits_extra_keys`). It returns a
+strategy of `ZoneDraw`s that names its own poisoned field, or `None` when it does
+not apply. The zone compiler adds it beside the per-field variants; a focus list
+that addresses no field of the zone keeps it away.
+
+A body that is not an object (an array, a scalar) is drawn whole, so a zone
+variant never sees it. Register a `RootVariantSource` in `root_variant` for that
+case: it receives a `RootVariantRequest` (the `root` contract, its `context`, the
+`focus_fields`) and returns the same kind of strategy.
 
 ```python
 from specforge_engine.models.contracts import Zone
@@ -247,6 +268,7 @@ register_phase(
         build=build_base_attack,
         candidates=base_attack_candidates,
         zone_variants={Zone.BODY: mass_assignment_variant},
+        root_variant=mass_assignment_root_variant,
     )
 )
 ```

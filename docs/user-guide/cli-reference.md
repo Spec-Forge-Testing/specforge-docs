@@ -673,7 +673,7 @@ unexpectedly.
     which endpoints it could not enrich, and why.
 
     A contract that fuses but does not compile — a hint on a zone or field the
-    endpoint does not declare, a `focus_fields` entry that names no declared field
+    endpoint does not declare, a `focus_fields` entry that names no declared field at its path
     under a strategy with an attack phase, a transition whose `bundle` matches no deterministic
     capture or more than one — follows the producer's own policy: under `drop` the
     endpoint keeps its schema alone and is listed in `producer_exclusions`; under

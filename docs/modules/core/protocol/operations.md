@@ -240,7 +240,7 @@ classification and evidence as a report's defect
 | `category`, `severity` | The invariant's [category](vocabularies.md#category) and [severity](vocabularies.md#severity); `null` without the engine. |
 | `summary` | What happened, in one sentence, told when the finding is read. |
 | `observation` | `expected`, `observed`, `location` (`{scope, path}`, see [scopes](vocabularies.md#location-scope)) and `marker`; `null` for a finding stored before `0.1.19`. |
-| `request` | `url`, `poisoned_zone`, `poisoned_field`, `attack_family`, `trigger_fields`. |
+| `request` | `url`, `poisoned_zone`, `poisoned_field` (a nested body field by its dotted path, such as `user.email` or `items.0.price`), `attack_family`, `trigger_fields`. |
 | `response` | `content_type`, `headers` (redacted), `latency_ms`. |
 | `control` | `status_code`, `latency_ms`, `error`: what the control request got back. On a confirmed finding, the control it was judged against (for `resilience`, the clean base request sent after the attack was confirmed); on an unverified one, the control that got no answer; on a refuted one, the control that refuted it (for a whole-request rejection, the request that was accepted); `null` when none was sent. |
 | `stack_trace` | Always `null`. Deprecated; removed with the next minor. |

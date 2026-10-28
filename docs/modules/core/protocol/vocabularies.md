@@ -129,9 +129,9 @@ constraint.
 
 Why the `auth` mode crossed nothing at a targeted endpoint, or the `resilience`
 mode sent it nothing: by design, or for an access precondition the run could not
-meet. `resilience` reports `required_role_unheld`, `owner_identity_missing` and
-the three `owner_*` reasons; `auth` reports every value but
-`owner_identity_missing`. In `get_run` and the report document's `endpoints`;
+meet. `resilience` reports `required_role_unheld`, `owner_identity_missing`,
+`link_target_reserved` and the three `owner_*` reasons; `auth` reports every value
+but `owner_identity_missing`. In `get_run` and the report document's `endpoints`;
 `null` when the endpoint was probed.
 
 | Value | Meaning |
@@ -143,8 +143,9 @@ the three `owner_*` reasons; `auth` reports every value but
 | `owner_resource_unprovisioned` | Every attempt to create the owner's resource failed, or its producer has no payload; the attempts are in the trace. |
 | `required_role_unheld` | No declared identity holds the required role. |
 | `owner_identity_missing` | No valid identity is declared to own the resource, so `resilience` sends the `owner_only` endpoint nothing. |
+| `link_target_reserved` | A state link of the endpoint, or of every producer of the owner's resource, writes a bound value into a header the credentials or the transport own, so nothing is sent; an `auth` run whose only endpoint to cross is left unprobed this way fails with `EXECUTION_FAILED`. |
 
-The last five are access preconditions the run could not meet; each one makes
+The last six are access preconditions the run could not meet; each one makes
 the run's signal `degraded` with [`access_preconditions_unmet`](#signal-causes).
 
 ## `run.signal_causes` { #signal-causes }

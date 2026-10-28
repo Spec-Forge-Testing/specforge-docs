@@ -4,7 +4,7 @@
 refused `HANDSHAKE_REQUIRED`.
 
 ```json
-{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.1.23"}}
+{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.1.24"}}
 ```
 
 The response carries the protocol version, the server's identity, what this
@@ -13,7 +13,7 @@ in, and the options a run can be asked for:
 
 ```json
 {"jsonrpc":"2.0","id":1,"result":{
-  "protocol_version":"0.1.23",
+  "protocol_version":"0.1.24",
   "server":{"name":"specforge-core","version":"…","frozen":false},
   "capabilities":{…},
   "catalog":{…},
@@ -74,8 +74,8 @@ matrix and how it is derived are on [Fuzz options](fuzz-options.md).
 **The core serves a range within its own series.** A client is served when its
 `protocol_version` has the core's `major.minor` and a patch between a declared
 floor and the core's own. Each part compares as a number, never as text:
-`0.1.10` is newer than `0.1.9`. This core speaks `0.1.23` and serves `0.1.5` up
-to `0.1.23`. It always answers `hello` with its own version, and a frontend
+`0.1.10` is newer than `0.1.9`. This core speaks `0.1.24` and serves `0.1.5` up
+to `0.1.24`. It always answers `hello` with its own version, and a frontend
 ignores the keys it does not know.
 
 Anything else — another series, a patch outside the range, or a
@@ -122,6 +122,50 @@ neither. See [ADR-095](../adr/protocol.md#adr-095).
 The report document that `fuzz`, `replay` and `run_pipeline` answer with is
 `schema_version` 1.23. The protocol's own README holds the full entry for each
 version; the lines below are the summary.
+
+- **0.1.24** — A finding and a focus entry name a nested body field by its path,
+  `input_validation` judges patterns and formats, and a finding whose control
+  could not judge it is left unverified. Additive on the wire, with semantic
+  changes; the report stays `schema_version` 1.23. `unprobed_reasons` gains
+  `link_target_reserved`: an `auth` or `resilience` run sends nothing at an
+  endpoint whose state link writes a bound value into a header the credentials or
+  the transport own, counted under `access_preconditions_unmet`; an `auth` run
+  whose only endpoint with a policy to cross is left unprobed this way fails with
+  `EXECUTION_FAILED`. A finding's `request.poisoned_field` names a field inside a
+  body object or array element by its dotted path (`user.email`, `items.0.price`,
+  `0.role` for a body sent as an array), and so do the `rule_id`s of
+  `input_validation`, `information_disclosure`, `reflected_payload`,
+  `input_induced_timeout` and `mass_assignment` (`body.user.email`): the
+  signatures of findings on nested fields change, those on top-level fields do
+  not. A produced contract's `attack.focus_fields` and `sensitive_fields` name a
+  nested field by the same path (`body.article.title` reaches that leaf only,
+  `body.items.0.price` the field in every element, `body.0.price` or
+  `body.$.0.price` a field of a body sent as an array); a `focus_fields` entry is
+  checked along its whole path, and one the endpoint does not declare there makes
+  the contract unusable (with the `inference` producer the endpoint falls back to
+  `schema_only`, with the `fixture` producer the run stops). The `inference`
+  prompt teaches those paths, so every cached inferred contract is inferred again
+  once. `input_validation` judges a declared `pattern` and `format` (its
+  `expected` carries the key `pattern` or `format`), reads a text as a lenient
+  server does (`"+4"` for an integer is `4`; `"1"` or `"yes"` for a boolean is
+  not a proven violation), and cites the text sent. A `mutation` finding names a
+  judged field only when the mutation provably breaks that field's contract. A
+  finding whose control request got an answer that cannot judge it (the server
+  rejected it, or a `mass_assignment` control's success holds no object) is
+  `unverified`, not `confirmed`. Path and header values are sent in
+  OpenAPI's `simple` style, each part spelled as in the query (`true`, arrays
+  joined by commas, objects as `k1,v1,k2,v2`); a `null`, empty-array or
+  empty-object path value is not sent, and the bytes on the wire change.
+  Mass-assignment keys are also injected inside the body's objects, the elements of
+  a body sent as an array included, never under an object that admits extra keys;
+  a form or multipart echo is compared with the key's value as sent.
+  `contract_completeness` checks a `format` with the JSON Schema 2020-12 checker
+  and reads a `pattern` as ECMA-262. A string with a known `format` is drawn
+  within its declared length; an endpoint is excluded only when no valid text of
+  the format fits ([Field addressing](../../specforge-engine/field-addressing.md),
+  [Proving a violation](../../specforge-engine/provable-violation.md),
+  [ADR-173](../../specforge-engine/adr/models.md#adr-173) to
+  [ADR-185](../../specforge-engine/adr/engine.md#adr-185)).
 
 - **0.1.23** — A finding a control request refuted is listed with that control, a
   `resilience` server error is confirmed by resending its attack, and the runs go

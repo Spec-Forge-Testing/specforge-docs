@@ -164,7 +164,7 @@ and halving the second shrink's budget, are what keep the walk itself cheap.
 
 ## ADR-151 — A finding its control request refutes is counted apart from a flaky one, and a control that gets no answer leaves it unverified { #adr-151 }
 
-**Status:** accepted · Supersedes in part [ADR-138](engine.md#adr-138) · Superseded in part by [ADR-167](#adr-167) · `models/runtime/results.py`, `models/runtime/stats.py`, `runtime/fuzzers/stateless/shrinking.py`, `runtime/fuzzers/stateless/control_checks.py`, `runtime/fuzzers/stateless/streak_timeout.py`, `runtime/findings/shrinker.py`
+**Status:** accepted · Supersedes in part [ADR-138](engine.md#adr-138) · Superseded in part by [ADR-167](#adr-167), [ADR-182](#adr-182) · `models/runtime/results.py`, `models/runtime/stats.py`, `runtime/fuzzers/stateless/shrinking.py`, `runtime/fuzzers/stateless/control_checks.py`, `runtime/fuzzers/stateless/streak_timeout.py`, `runtime/findings/shrinker.py`
 
 ### Context
 
@@ -381,3 +381,194 @@ a refuted finding says the response without the key echoed it too. Protocol
 A client that branches on `state` sees a fourth value; the protocol change is
 additive. `compare_runs` still diffs confirmed defects only, and a refuted finding
 is never announced as `FindingObserved`.
+
+---
+
+## ADR-176 — A value violates its contract only when the engine can prove it: patterns read as ECMA-262 under a deterministic work budget, formats only where the checker decides { #adr-176 }
+
+**Status:** accepted · Supersedes in part [ADR-118](engine.md#adr-118), [ADR-143](engine.md#adr-143) · `shared/violation.py`, `shared/ecma_pattern.py`, `shared/shape_check.py`, `shared/schema_check.py`, `models/schema.py`, `constants.py`, `runtime/oracles/input_validation.py`
+
+### Context
+
+`validate_value` leaves `pattern`, `format`, `uniqueItems` and the property counts
+unchecked, so an oracle built on it alone never reports a server that accepts a
+malformed date or a text outside a declared pattern. Judging those keywords
+naively produces false findings. Python's `re` reads several ECMA constructs
+differently (`\s`, `$`, `\Z`, backreferences, inline flags). An older draft's
+format checker reads `time` without its offset. The checker rejects valid RFC 3339
+texts (the year `0000`, a leap second). A catastrophic pattern can hang the run,
+and a timeout makes the verdict depend on the machine. A false "violates" is a
+false finding.
+
+### Decision
+
+**One predicate that only says "violates" with proof.**
+`first_provable_violation(value, contract)` returns the first place the value
+breaks its contract, or `None`. It decides everything `validate_value` decides, a
+required field left out, `uniqueItems`, `minProperties`, `maxProperties`, a
+`pattern` and a `format`. It shares the structural walk of the conformance check
+(`first_shape_mismatch`) and differs only in its `ShapePolicy`: what the engine
+cannot decide does not violate. The pattern is a Specification with a
+parameterised verdict.
+
+**Patterns as ECMA-262.** `ecma_match` returns `MATCHES`, `MISSES` or
+`UNDECIDABLE`, and only `MISSES` proves a violation.
+
+- One compilation with `re.ASCII`, so `\d`, `\w` and `\b` mean what ECMA means
+  without `u`; `\s`, `\S`, `.` and `$` rewritten to ECMA's meaning outside a class.
+- A guard of undecidable constructs before compiling: an escaped letter ECMA does
+  not define, a backreference, `{,n}`, a possessive quantifier, `[]` or `[^]`,
+  `\S` in a class, a surrogate escape, an inline flag group, and a text above
+  U+FFFF.
+- Two deterministic guards against backtracking: a star height of two or more is
+  undecidable, and so is a text whose work, the product of each quantifier's
+  reach over the text times the start positions, passes `MAX_PATTERN_WORK`
+  (1 000 000).
+
+**Formats only where the checker decides.** `DecidableFormat` names `email`,
+`uuid`, `date`, `date-time`, `time`, `ipv4`, `ipv6`, `hostname`, `uri` and
+`uri-reference`; the checker is `Draft202012Validator.FORMAT_CHECKER`. A test
+requires every member to have a checker in the installed environment. The year
+`0000` and a leap second are undecidable for the date and time formats. Every other
+format never violates.
+
+**Conformance reads the same dialect.** `contract_completeness` reads a pattern as
+ECMA-262 too (an undecidable one does not show conformance) and formats with the
+2020-12 checker, so a `time` needs its offset and a format the checker does not
+know never shows conformance.
+
+### Rejected
+
+- **A regex timeout.** The verdict would depend on the machine, and a replay could
+  judge a finding differently from the run that found it.
+- **Compiling twice, with and without `re.UNICODE`, and requiring both to miss.**
+  It is not sound with mixed classes (`^\s\W$` against `" é"`).
+- **A regex dependency with ECMA semantics.** The guards close the dialect gap with
+  the standard library; a new dependency would ship for one predicate.
+- **A field `keyword` on the observation.** The keyword already travels as the key
+  of `expected`; a new field changes three DTOs and the protocol.
+
+### Consequences
+
+A 2xx that accepts a value outside its declared `pattern` or `format` is an
+`input_validation` finding with `expected: {"pattern": …}` or `{"format": …}`,
+also when the value came from an attack payload or a boundary filler. Some
+patterns are never judged (`(foo|bar)*`, any backreference), on purpose. On the
+measured targets these findings appear only where a server does not validate the
+format; BugBank's `email` field, which the server checks, yields none.
+
+---
+
+## ADR-177 — A violation reads a text as leniently as a server does, conformance reads it strictly, and the observation cites the text sent { #adr-177 }
+
+**Status:** accepted · Supersedes in part [ADR-117](compiler.md#adr-117), [ADR-118](engine.md#adr-118) · `shared/wire/carried.py`, `shared/wire/texts.py`, `shared/wire/spelling.py`, `models/wire.py`, `runtime/oracles/sent_value.py`, `runtime/oracles/input_validation.py`, `runtime/http/injector.py`
+
+### Context
+
+Read through the strict literals ([ADR-117](compiler.md#adr-117)), `"1"` or
+`"yes"` sent for a boolean, or `"+4"` for an integer, stays text and fails the
+type, so a 2xx to it is an `input_validation` finding. A lenient server reads those
+texts as the declared type and accepts them correctly: the finding is not proven.
+An oracle that reads a field differently from how the injector sends it errs the
+same way: a form field drawn `None` is not sent, a form array is sent item by item,
+a path boolean is sent as the query spells it. Each gap is a false finding or a
+lost one.
+
+### Decision
+
+**One reader of a value as it travels, shared by every judge.** `shared/wire/`
+mirrors the injector zone by zone (`sent_on_wire`): the texts a path, query,
+header or form field carried, or a JSON body's value. A query, header or form
+field drawn `None` is absent (`is_omitted_field`, the one rule the injector uses
+too). A header is read without the whitespace HTTP strips around it.
+
+**The texts are read as the declared type.** An array reads each text as an item;
+a scalar reads its one text. Several texts for a scalar, an object on a text wire,
+an array of composites on one, and an array in a path or header are
+`UNREADABLE`, which proves nothing.
+
+**Three readings, by purpose.** `TextReading.LENIENT` (the widest common server
+reading) for a violation, `STRICT` (the wire literals) for conformance, `AS_SENT`
+for the citation. A text some lenient server reads as the type does not violate
+the type; its other keywords are judged on the value read. The observation's
+`observed` is the text sent (`"+4"`), so a reader sees what went out.
+
+The separation is the one between the two policies of the predicate
+([ADR-176](#adr-176)): a violation is proven against the most forgiving reading, a
+conformance against the strictest.
+
+### Rejected
+
+- **Strict for both.** `"1"` for a boolean becomes a proven violation that a
+  lenient server never committed.
+- **Lenient for both.** A request holding `" 7"` for an integer would count as
+  conforming, and a 400 to it would blame the contract.
+- **Citing the value read.** A reader of `observed: 4` cannot tell that `"+4"`
+  went out.
+
+### Consequences
+
+The generator, the injector and the oracle agree on every zone. Every
+`input_validation` finding on a text wire is proven against a lenient server; a
+form `None` is a missing field, and a form or query array is judged item by item.
+Arrays and objects on a text wire are never judged by `input_validation`, though
+their requests still reach the robustness and security oracles.
+
+---
+
+## ADR-182 — A finding whose control got an answer that cannot judge it is left unverified { #adr-182 }
+
+**Status:** accepted · Supersedes in part [ADR-151](#adr-151) · `runtime/fuzzers/stateless/control_checks.py`, `runtime/fuzzers/stateless/control_verdict.py`, `runtime/fuzzers/stateless/control_payloads.py`, `models/runtime/results.py`; core `services/finding_summary/sentences/security.py`
+
+### Context
+
+An answered control that does not show the finding's signal can fail to show it
+for reasons unrelated to the finding. A mass-assignment control rejected with a
+409 for a uniqueness conflict echoes nothing, a 204 has no body to echo in, and a
+503 to a whole-request control is no rejection of the same kind. Counting each of
+those as a confirmation confirms a finding the control never judged
+([ADR-151](#adr-151) only set aside a control that got no answer). With
+mass-assignment keys injected inside every object, and common sentinels (`admin`,
+`true`), the exposure grows.
+
+### Decision
+
+**Each control declares which answers can judge its finding.**
+`ControlCheck.judges(reproduction, control)` is a field of the check, not a
+cascade in the shrink:
+
+| Invariant | An answer judges when it is |
+| --- | --- |
+| `mass_assignment` | a 2xx whose body holds an object an echo could be found in |
+| `input_induced_timeout` | a 2xx, or a timeout |
+| `contract_completeness` (rule `request`) | a 2xx, or a 4xx with the reproduction's own status |
+
+**The verdict asks `judges` first.** A judgeable answer refutes when it shows the
+signal and confirms when it does not. An answer that cannot judge leaves the
+finding `unverified`, with the control as its evidence; no answer at all does the
+same. A resent whole-request control passes the same test, so a 503 to the resend
+leaves the finding unverified. The internal verdict `CONTROL_REJECTED` sits
+beside `CONTROL_UNANSWERED`; neither travels on the protocol.
+
+**The mass-assignment control varies what can collide.** Its payload rotates the
+open strings it does not take from the run's corpus, so a uniqueness rule does not
+reject it.
+
+The core's summary says why: "the request was not accepted" or "the response held
+nothing to echo", with the control's status.
+
+### Rejected
+
+- **Confirming on any answer without the signal.** A rejection says nothing about
+  the echo.
+- **Refuting on a rejected control.** A rejection is no evidence the finding is
+  false either.
+- **One acceptance rule for every control.** A timeout control and an echo control
+  are judged by different answers.
+
+### Consequences
+
+A finding is confirmed only by a control that could have refuted it. On the
+measured targets no finding is left unverified this way; the rule matters on
+servers that reject a replayed request by state. A timeout streak's
+infrastructure check is not a finding's control and keeps its own rule.

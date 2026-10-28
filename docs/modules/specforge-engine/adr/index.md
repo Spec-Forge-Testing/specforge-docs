@@ -44,14 +44,14 @@ missing here belongs to another module:
 | File | Area | Covers |
 | --- | --- | --- |
 | [foundations.md](foundations.md) | package-wide | Exceptions, the root constants, naming |
-| [models.md](models.md) | models | Vocabularies, the contract package and its dialect, the boundary DTOs |
+| [models.md](models.md) | models | Vocabularies, the contract package and its dialect, the boundary DTOs, field paths |
 | [api.md](api.md) | facade / policy | What `run` takes, what the facade exports, how input is validated |
-| [compiler.md](compiler.md) | strategy_compiler | How a field becomes a strategy |
+| [compiler.md](compiler.md) | strategy_compiler | How a field becomes a strategy, which leaves of a body are poisoned, and how mutation and mass assignment reach them |
 | [engine.md](engine.md) | engine | Requests and their intent, oracles, findings, counters, runners, replay |
 | [measurement.md](measurement.md) | measurement | How the default numbers are measured and set, and what an inferred contract adds |
-| [findings.md](findings.md) | findings | How a finding is classified, what it observed, how findings are told apart, refuted and redacted |
+| [findings.md](findings.md) | findings | How a finding is classified, what it observed, when a value provably breaks its contract, how findings are told apart, refuted, left unverified and redacted |
 | [strategies.md](strategies.md) | strategies | What a strategy decides, the oracles it opts into, and the traits each runner declares |
-| [runners.md](runners.md) | runners | How far each runner reaches: when a stateful run stops and how it tells defects apart, the stateless run corpus, refuting a whole-request rejection, the resilience base request and its confirmation |
+| [runners.md](runners.md) | runners | How far each runner reaches: when a stateful run stops and how it tells defects apart, the stateless run corpus, refuting a whole-request rejection, the resilience base request and its confirmation, links into reserved headers |
 
 ## Full index
 
@@ -187,3 +187,16 @@ missing here belongs to another module:
 | [ADR-170](runners.md#adr-170) | runners | A resilience server error is confirmed by resending its attack, and is never refuted |
 | [ADR-171](compiler.md#adr-171) | strategy_compiler | A string named like a credential gets a usable value in `valid` when its contract says nothing else |
 | [ADR-172](measurement.md#adr-172) | measurement | Targeted generation was measured and is not adopted |
+| [ADR-173](models.md#adr-173) | models | A field is addressed by a typed path, and a top-level field keeps its plain name |
+| [ADR-174](compiler.md#adr-174) | strategy_compiler | Every leaf of a JSON body is poisoned, arrays at their first element, and the split is drawn in two levels |
+| [ADR-175](api.md#adr-175) | policy | A focus entry names a nested field by its path, and is checked along the whole path |
+| [ADR-176](findings.md#adr-176) | findings | A value violates its contract only when the engine can prove it: patterns read as ECMA-262 under a deterministic work budget, formats only where the checker decides |
+| [ADR-177](findings.md#adr-177) | findings | A violation reads a text as leniently as a server does, conformance reads it strictly, and the observation cites the text sent |
+| [ADR-178](compiler.md#adr-178) | strategy_compiler | A string bound by a `pattern` or a `format` is poisoned with named probes that provably break it |
+| [ADR-179](compiler.md#adr-179) | strategy_compiler | A known format is drawn within its declared length, and an endpoint is excluded only when no valid text fits |
+| [ADR-180](compiler.md#adr-180) | strategy_compiler | Mutation varies one field and is judged only when the mutated value provably breaks its contract |
+| [ADR-181](compiler.md#adr-181) | strategy_compiler | Mass assignment is slipped inside each object of the body, and never judged under an object that admits extra keys |
+| [ADR-182](findings.md#adr-182) | findings | A finding whose control got an answer that cannot judge it is left unverified |
+| [ADR-183](runners.md#adr-183) | runners | A whole-request rejection gets a second control holding the run's corpus values, sent only to refute |
+| [ADR-184](runners.md#adr-184) | runners | An endpoint whose state link writes into a reserved header is left unprobed by the runners |
+| [ADR-185](engine.md#adr-185) | engine | Path and header values are spelled in OpenAPI's `simple` style, each part as the query spells it |

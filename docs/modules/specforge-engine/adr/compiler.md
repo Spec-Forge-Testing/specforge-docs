@@ -327,7 +327,7 @@ a new kernel attack field reaches the engine without a change to the compiler.
 
 ## ADR-051 — Mutation is a generation phase over hacker contracts, seeded from the valid strategy, with engine-owned operators { #adr-051 }
 
-**Status:** accepted · Superseded in part by [ADR-141](measurement.md#adr-141), [ADR-156](strategies.md#adr-156) · `models/phase.py`, `strategy_compiler/fields/mutation/operators.py`, `strategy_compiler/fields/security.py`, `strategy_compiler/fields/builtin.py`, `profiles/builtin.py`
+**Status:** accepted · Superseded in part by [ADR-141](measurement.md#adr-141), [ADR-156](strategies.md#adr-156), [ADR-180](#adr-180) · `models/phase.py`, `strategy_compiler/fields/mutation/operators.py`, `strategy_compiler/fields/security.py`, `strategy_compiler/fields/builtin.py`, `profiles/builtin.py`
 
 ### Context
 
@@ -680,7 +680,7 @@ exact.
 
 ## ADR-117 — The zone's wire decides what is invalid and how the oracle reads it back { #adr-117 }
 
-**Status:** accepted · `models/wire.py`, `models/media_type.py`, `strategy_compiler/fields/context.py`, `strategy_compiler/fields/default/invalid.py`, `strategy_compiler/parameter.py`, `runtime/oracles/input_validation.py`
+**Status:** accepted · Superseded in part by [ADR-177](findings.md#adr-177) · `models/wire.py`, `models/media_type.py`, `strategy_compiler/fields/context.py`, `strategy_compiler/fields/default/invalid.py`, `strategy_compiler/parameter.py`, `runtime/oracles/input_validation.py`
 
 ### Context
 
@@ -1041,7 +1041,7 @@ the `default` profile has no attack pass. (Superseded in part by
 
 ## ADR-134 — Mass assignment is a zone variant the attack phase registers, one branch per body { #adr-134 }
 
-**Status:** accepted · `strategy_compiler/fields/registry.py`, `strategy_compiler/fields/builtin.py`, `strategy_compiler/fields/attack/mass_assignment.py`, `strategy_compiler/zone.py`
+**Status:** accepted · Superseded in part by [ADR-181](#adr-181) · `strategy_compiler/fields/registry.py`, `strategy_compiler/fields/builtin.py`, `strategy_compiler/fields/attack/mass_assignment.py`, `strategy_compiler/zone.py`
 
 ### Context
 
@@ -1141,3 +1141,290 @@ On the Go target, registration and login answer 2xx, and the stateful run goes p
 its first step. The rejection on `body.user.email` turns into one on
 `body.user.password`, which the server validates against a minimum length it does
 not declare: a real incomplete contract.
+
+---
+
+## ADR-174 — Every leaf of a JSON body is poisoned, arrays at their first element, and the split is drawn in two levels { #adr-174 }
+
+**Status:** accepted · Supersedes in part [ADR-116](engine.md#adr-116) · `strategy_compiler/fields/field_tree.py`, `strategy_compiler/poison_target.py`, `strategy_compiler/zone.py`, `strategy_compiler/body.py`, `strategy_compiler/constants.py`, `strategy_compiler/fields/generation_phase.py`, `strategy_compiler/fields/default/valid_collections.py`, `strategy_compiler/fields/default/json_identity.py`, `runtime/fuzzers/stateless/corpus_overlay.py`, `runtime/fuzzers/stateless/control_payloads.py`
+
+### Context
+
+A poisoning phase that poisons only top-level fields misses most JSON APIs, which
+wrap their payload (`{"user": {...}}`, `{"article": {...}}`): their real fields
+are never attacked on their own. `invalid` replaces the whole wrapper, `boundary`
+moves every child at once and cannot say which child a finding is about, and
+`attack` has nothing to offer a wrapper with required children. Measured that way
+on the RealWorld Go API, no attack payload reaches a field inside a wrapper.
+Arrays of objects (bulk bodies, line items) have the same blind spot one level
+further down.
+
+### Decision
+
+**A field tree, walked in preorder.** `field_leaves` enters every declared
+property, required or optional, and the element schema of an array at index `0`.
+An object with properties is covered by its leaves; an array is a leaf of its own,
+because its size has edges, and is also entered. `MAX_FIELD_DEPTH` (8) is a guard
+against a pathological schema, not a policy: a holder at that depth is treated as
+a leaf. A field declaring `enum` offers no leaves. Only the JSON body is walked:
+form and multipart send an object as one text, and the parameter zones do not
+nest.
+
+**A leaf variant is the field drawn valid around its poisoned leaf.** It is built
+with the valid object and array builders and a poisoned strategy at the leaf's
+path, not a parallel fixed dictionary, so `minProperties`, `maxProperties`,
+`minItems`, `maxItems`, `uniqueItems` and extra fields stay honoured. Every object
+and array on the way is sent; an array on the way holds at least one element, and
+element `0` holds the leaf. Uniqueness is compared by JSON equality. The poisoned
+field is the leaf's full path.
+
+**Two levels.** A zone draw first picks a top-level field from the same `one_of`
+as a body without nesting, and then one of that field's own candidates or one of
+its leaf variants (`PoisonTarget`). The second level is built inside the zone's
+fixed dictionary, each branch a separate `builds`, because Hypothesis flattens
+nested `one_of`s and would otherwise give each leaf the weight of a top-level
+field.
+
+**A phase trait decides whether the leaves replace the object.**
+`GenerationPhase.leaves_replace_whole` is set for `boundary`, whose object
+variant moves every child at once; `invalid`, `attack` and `mutation` keep the
+object's own candidates beside its leaves. An array keeps its size edges in
+`boundary`.
+
+**The corpus overlay and the controls follow the path.** The overlay never
+overwrites the top-level field that holds the poisoned leaf. The timeout control
+restores the outermost ancestor the minimal valid payload leaves out, or else the
+outermost array on the way, so it never sends an invalid request or a duplicate
+element.
+
+### Rejected
+
+- **Poisoning the wrapper with one child changed.** The oracles and the control
+  would judge the wrapper, and a finding would not say which child it is about.
+- **Flattening the body in the core.** It changes what goes on the wire.
+- **One flat `one_of` over every leaf of the zone.** A scalar beside a wrapper of
+  ten leaves would drop from half of the draws to a tenth.
+- **A depth limit as policy.** Real schemas nest past any small number; the guard
+  only stops a pathological one.
+
+### Consequences
+
+On the Go API, the attack phase reaches the leaves of the six endpoints with a
+wrapped JSON body in every repetition, and findings name `body.user.email` or
+`body.0.price`. A top-level field keeps its share of the draws, and a wrapper's
+share is divided among its leaves, so each leaf gets fewer requests than the
+whole wrapper. A `boundary` finding on a wrapper's bound is reported on the leaf it
+belongs to, and a wrapper whose leaves have no edge (only booleans) has no
+`boundary` variant. There is one finding group per leaf.
+
+---
+
+## ADR-178 — A string bound by a `pattern` or a `format` is poisoned with named probes that provably break it { #adr-178 }
+
+**Status:** accepted · `strategy_compiler/format_constants.py`, `strategy_compiler/fields/default/invalid.py`, `strategy_compiler/fields/default/alphabet.py`, `models/schema.py`
+
+### Context
+
+A string whose only constraint is a `pattern` or a `format` has no invalid value
+from its length or its `enum`: the invalid phase offers over-long text, an empty
+string below a minimum and text outside an `enum`, and a `date` in an optional
+query parameter has none of those. Without another candidate such a field is never
+poisoned, and a server that accepts a malformed date goes unnoticed.
+
+### Decision
+
+**Two data tables, filtered at compile time.** `SHAPE_PROBES` holds eight named
+texts: a blank, `a`, `0`, `-1`, `!`, `a b`, a non-ASCII letter and a 256-character
+run. `FORMAT_BREAKING_TEXTS` holds one text per `DecidableFormat` that its checker
+rejects (`plainaddress`, `2024-13-45`, `%zz`, ...). A field that declares a
+`pattern` or a `format` keeps the probes, and its format's breaking text, that
+`first_provable_violation` says break its contract and that fit the zone's
+alphabet. The survivors are drawn with `sampled_from`, beside the field's other
+invalid candidates.
+
+**Only proof counts.** A probe the predicate cannot decide is dropped, so a probe
+is never a valid value labelled invalid ([ADR-176](findings.md#adr-176)).
+
+### Rejected
+
+- **Filtering random text by the pattern.** It fails Hypothesis's health check on
+  a permissive pattern and spends draws on discarded values.
+- **Generating from the pattern's complement.** It needs a regex engine the
+  engine does not carry.
+
+### Consequences
+
+On the lab API, an optional `format: date` query parameter is poisoned, and its
+acceptance of `' OR '1'='1` is an `input_validation` finding with
+`expected: {"format": "date"}`. A string with neither a `pattern` nor a `format`
+draws no probes, and one whose probes all fail the filter stays unpoisonable.
+
+---
+
+## ADR-179 — A known format is drawn within its declared length, and an endpoint is excluded only when no valid text fits { #adr-179 }
+
+**Status:** accepted · `strategy_compiler/format_constants.py`, `strategy_compiler/fields/default/format_builders.py`, `strategy_compiler/fields/default/format_lengths.py`, `strategy_compiler/fields/default/segments.py`, `strategy_compiler/fields/default/valid_text.py`
+
+### Context
+
+A string with a known `format` drawn from the format's regex alone ignores its
+declared `minLength` and `maxLength`: an `email` with `maxLength: 8` can be drawn
+24 characters long, the `valid` phase breaks its own contract, and
+`contract_completeness` cannot trust a valid draw. Filtering the regex by
+length fails the health check when the declared window is narrow. A declared
+`pattern` beside a known format has to be honoured too.
+
+### Decision
+
+**A builder per format, keyed in a table.** `FORMAT_PATTERNS` pairs each format's
+regex with the lengths it draws (`FormatPattern(regex, lengths)`).
+`FORMAT_BUILDERS` holds one `FormatBuilder` per format, with two operations:
+`reaches(bounds)`, whether a valid text has such a length, and `within(bounds)`, a
+strategy at a length that fits.
+
+- `email`, `uri`, `ipv4`, `hostname` and `date-time` are built by parts, each part
+  drawn at a length that fits; the shortest are the real minimums (`a@b.c`,
+  `a:b`).
+- `byte` is whole base64 groups of four characters.
+- `uuid` and `date` have one fixed length and keep their regex.
+
+When the regex's lengths lie within the declared ones, the regex is drawn as it
+is; otherwise the builder is.
+
+**Exclusion only when nothing fits.** A declared length no valid text of the
+format has raises `StrategyCompilationError` (`no email text is 0 to 4 characters
+long`), and the endpoint is excluded with that reason. It never falls back to plain
+text.
+
+**A pattern is the author's constraint.** A known format with a `pattern` is drawn
+from the pattern, kept to texts the format's checker accepts when it can decide,
+and bounded by length. A `date` with a declared range and a pattern is drawn from
+the range and drops what the pattern provably misses.
+
+### Rejected
+
+- **Filtering the regex by length.** It fails on narrow windows and wastes draws.
+- **Excluding by the regex's own window.** An `email` with `maxLength: 5` has a
+  valid text (`a@b.c`); excluding it would be a limit of the engine's regex, not
+  of the contract.
+- **Drawing from the format and filtering by the pattern.** A specific pattern
+  rejects almost every text of a format.
+
+### Consequences
+
+The `valid` phase keeps the declared length of every known format, so a
+conforming draw is a real one. Three limits are named: the date regex knows no
+calendar (`2023-02-31` can be drawn), a declared `date-time` range is drawn without
+the length window, and an endpoint is excluded even when the impossible field is
+optional.
+
+---
+
+## ADR-180 — Mutation varies one field and is judged only when the mutated value provably breaks its contract { #adr-180 }
+
+**Status:** accepted · Supersedes in part [ADR-051](#adr-051), [ADR-156](strategies.md#adr-156) · `strategy_compiler/fields/mutation/builders.py`, `strategy_compiler/fields/generation_phase.py`, `strategy_compiler/fields/builtin.py`, `strategy_compiler/part_compile.py`, `strategy_compiler/header_sparing.py`, `strategy_compiler/zone.py`, `strategy_compiler/body.py`, `models/runtime/draw.py`, `runtime/fuzzers/stateless/corpus_overlay.py`
+
+### Context
+
+A mutation phase that breaks every field of a request at once, with one operator
+each, cannot name any field: an operator can return a value that is still valid,
+and with every field changed an oracle cannot attribute a response to any of them.
+Such a phase spends its share and yields no findings of its own.
+
+### Decision
+
+**One field varied per request.** `mutation` registers candidates for the base
+and the hacker contracts, like a poisoning phase: each request varies one field,
+an object or one of its leaves, and keeps every other field valid.
+
+**Classified after the draw.** The mutated value is read as it travels on its
+wire and checked with the predicate the oracle uses (`carried_violation`,
+[ADR-177](findings.md#adr-177)). `PoisonCandidate.poisons` carries the answer.
+`ZoneDraw` separates `varied_field`, the field drawn outside valid values, which
+the corpus overlay never overwrites, from `poisoned_field`, set only when the
+value provably breaks its contract. A request whose mutation does not break it is
+judged as a valid request: its signature names no field, and
+`contract_completeness` can speak on it.
+
+**Two phase traits close the edges.**
+
+- `plain_fallback`: a zone with no field to vary keeps the plain mutation, every
+  field mutated at once and nothing judged, so the phase's share is still spent.
+  The fallback is a declared trait of the phase, never reached by accident.
+- `spares_reserved_headers`: a header whose name is the transport's or reads as a
+  credential is never mutated. It belongs to the identity, the injector would drop
+  it, and `auth` and `attack` already reach it.
+
+### Rejected
+
+- **Filtering the draws to the violating ones.** Many operators rarely break a
+  contract; the strategy becomes unsatisfiable.
+- **Judging every field of every 2xx.** With every field mutated, the attribution
+  is ambiguous, and a finding would blame fields the server never looked at.
+
+### Consequences
+
+`mutation` findings name a field and are judged by `input_validation`: on BugBank
+a required query parameter dropped and accepted, on the Go API a `null` username
+accepted. A mutation that stays valid surfaces `contract_completeness` findings on
+leaves the server rejects though the contract allows them. The heuristic for
+reserved headers is by name: a declared `x-api-key` that is not a credential of the
+run is never mutated, and `invalid` and `attack` still cover it.
+
+---
+
+## ADR-181 — Mass assignment is slipped inside each object of the body, and never judged under an object that admits extra keys { #adr-181 }
+
+**Status:** accepted · Supersedes in part [ADR-134](#adr-134) · `strategy_compiler/fields/attack/mass_assignment.py`, `strategy_compiler/fields/variants.py`, `strategy_compiler/fields/generation_phase.py`, `strategy_compiler/fields/field_tree.py`, `strategy_compiler/body.py`, `shared/extra_keys.py`, `runtime/oracles/security/mass_assignment.py`, `runtime/oracles/sent_value.py`, `runtime/fuzzers/stateless/control_payloads.py`
+
+### Context
+
+A privileged key added at the top of the body ([ADR-134](#adr-134)) misses most
+servers that bind a model: a wrapped body (`{"user": {...}}`) binds from the
+wrapper, so a key beside it is ignored, and a body sent as an array (a bulk
+endpoint) has no top to add it to. An object whose contract allows extra keys
+cannot be blamed for echoing one. On a form or multipart body the key travels as
+text, and a server that parses it echoes the parsed value (`true` for the text
+`true`).
+
+### Decision
+
+**One branch, many places.** `mass_assignment_variant` picks, inside its single
+branch, the top of the body or one of its objects: every object that declares
+properties and no `enum`, the elements of arrays included, on the JSON body. A body
+sent as an array gets the same branch through a second registered interface,
+`RootVariantSource` (`GenerationPhase.root_variant`), into the objects of its
+elements. The zone and the root share the filter, the injection and the room
+rule; only the holder differs. A whole-zone variant receives one parameter
+object, `ZoneVariantRequest`.
+
+**Not under an object that admits extra keys.** `holder_admits_extra_keys` is the
+one definition. The generator skips such an object, the top of the body included,
+and the oracle reads the holder's contract at the key's parent path and judges
+nothing under one.
+
+**Room is made, never forced.** The object's declared draw is capped one key below
+`maxProperties` (`MASS_ASSIGNMENT_KEY_ROOM`); `minProperties` is never lowered,
+because the control without the key would then be an invalid request. An object
+with no room gets no key.
+
+**The echo is matched as sent.** On JSON, plain equality, so a stored `true`
+echoed as `1` still matches (an SQLite-backed server does that). On a form or
+multipart body, the echo's text is compared with the text sent.
+
+### Rejected
+
+- **A root shape inside the zone request.** Every zone variant would have to check
+  a shape it cannot use; a second, root-sized interface keeps each source to what
+  it needs.
+- **One branch per object or per key.** The variant would take most of the
+  phase's draws ([ADR-134](#adr-134)).
+- **Lowering `minProperties` to make room.** It makes the control invalid and
+  confirms a false finding.
+
+### Consequences
+
+On the lab API, keys echoed from inside `user` and from the elements of a bulk
+array are confirmed, and the Go API, which echoes nothing, reports none. One echo
+still yields one finding per key the server accepts, so a server that binds every
+key reports up to six findings for one defect at each object.

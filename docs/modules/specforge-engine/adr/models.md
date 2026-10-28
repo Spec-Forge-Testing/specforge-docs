@@ -434,3 +434,66 @@ body is sent as such, each field as text (a non-string value as its JSON text), 
 a multipart body with no field to send is unsendable. Every body the spec does not
 mark required is left out of some valid draws. A root declared `{}` sends
 arbitrary JSON.
+
+---
+
+## ADR-173 — A field is addressed by a typed path, and a top-level field keeps its plain name { #adr-173 }
+
+**Status:** accepted · Supersedes in part [ADR-116](engine.md#adr-116) · `models/runtime/field_path.py`, `models/runtime/intent.py`, `models/runtime/draw.py`, `models/runtime/trace.py`, `shared/field_path.py`, `runtime/oracles/rejection_attribution.py`, `runtime/oracles/input_validation.py`; core `services/finding_summary/render.py`
+
+### Context
+
+A request names the one field it poisons ([ADR-116](engine.md#adr-116)). A name
+that is one top-level key cannot point at a field inside a body object
+(`user.email`) or an array element (`items.0.price`), so such a field cannot be
+poisoned on its own, and the oracles, signatures and replay cannot say which
+nested field a finding is about. The rejection attribution and the
+input-validation rule both spell nested fields and need one spelling. A dotted
+string alone is ambiguous: `items.0` can be the first element of `items` or a key
+literally named `"0"`.
+
+### Decision
+
+**A value object with typed segments.** `FieldPath(segments)` holds a tuple of
+`str | int`: a key or an array index. The empty path is the body root. `spelled`
+joins the segments with `FIELD_PATH_SEPARATOR` (`.`), unescaped, an index in
+decimal; `parent`, `leaf`, `child` and `is_prefix_of` navigate it. It lives in
+`models/runtime/`, beside `FieldAddress`, because `shared/` imports `models/` and
+never the reverse. The operations that read and write a value at a path and may
+meet an absent value (`value_at`, `with_value_at`) live in `shared/field_path.py`.
+
+**`FieldAddress` derives its path.** `FieldAddress(zone, field)` keeps its
+constructor: a name is one literal top-level key, and `$` is the root.
+`FieldAddress.at(zone, path)` addresses a nested field, with `field =
+path.spelled`. The path is excluded from equality, so an address is equal to the
+same field however it was built, and a top-level field is spelled, grouped and
+signed by its plain name, as a field with no nesting.
+
+**`ZoneDraw.poisoned_field` is a `FieldPath`** from the draw to the intent; the
+intent's address is built with `.at`.
+
+**The replay resolves the spelling against what it recorded.** A trace stores the
+spelled path. `TracedRequest` reads it against the zone's recorded values: the
+whole text as one key first, then split at each `.`, a numeric segment as an index
+where the value is a list (`nested_path`). The core's renderer reads it by the same
+rule. A declared name that holds a dot is cited whole: the leaf of a declared name
+is `path.leaf`, not what follows its last dot.
+
+### Rejected
+
+- **Escaping the `.` in a spelling.** It changes the spelling of every signature
+  and every wire name for a case the resolution already covers.
+- **Storing the segments in the trace.** It changes a persisted artifact; the
+  poisoned leaf is always sent, so the recorded values always hold it.
+- **Resolving against the contract.** Neither the trace nor the replay has the
+  contract at hand.
+- **A path-only `FieldAddress`.** Every construction of a top-level address would
+  change, and so would its meaning, for no reader that needs it.
+
+### Consequences
+
+Findings, rule ids and `request.poisoned_field` name nested fields by path
+(`body.user.email`, `body.items.0.price`, `body.0.price` for a body sent as an
+array); those of top-level fields do not change. A key literally named like an
+index is told apart from an index in the engine, and on the wire both spell the
+same: the replay settles it by trying the whole key first.

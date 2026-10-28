@@ -8,7 +8,7 @@ takes from a strategy.
 
 ## ADR-156 — Under `security`, the mutation phase breaks every field, not only the hinted ones { #adr-156 }
 
-**Status:** accepted · Supersedes in part [ADR-051](compiler.md#adr-051), [ADR-127](compiler.md#adr-127) · `strategy_compiler/fields/mutation/`, `strategy_compiler/fields/security.py`, `strategy_compiler/fields/builtin.py`; `tests/strategy_compiler/fields/test_layering.py`
+**Status:** accepted · Supersedes in part [ADR-051](compiler.md#adr-051), [ADR-127](compiler.md#adr-127) · Superseded in part by [ADR-180](compiler.md#adr-180) · `strategy_compiler/fields/mutation/`, `strategy_compiler/fields/security.py`, `strategy_compiler/fields/builtin.py`; `tests/strategy_compiler/fields/test_layering.py`
 
 ### Context
 

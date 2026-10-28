@@ -4,7 +4,8 @@ Part of the [Spec Forge Engine decision records](index.md). Decisions about how 
 each runner gets into an API: when a stateful run stops, how it tells one defect
 from another, where stateless takes the values it addresses resources with, how a
 whole-request rejection is told from a state conflict, and how resilience aims at
-a real resource and tells a crash from an intermittent error. The behaviour is
+a real resource, tells a crash from an intermittent error, and what a runner does
+with a link into a reserved header. The behaviour is
 described in [Run depth](../run-depth.md).
 
 ---
@@ -505,3 +506,113 @@ On the lab API, the endpoint that fails at random is reported flaky, and the rea
 crashes stay confirmed in every repetition. A resilience run now reports flaky
 findings and `requests_shrink`. A confirmed resilience finding costs at least two
 more requests per signature, plus the control.
+
+---
+
+## ADR-183 — A whole-request rejection gets a second control holding the run's corpus values, sent only to refute { #adr-183 }
+
+**Status:** accepted · Extends [ADR-166](#adr-166) · `runtime/fuzzers/stateless/control_checks.py`, `runtime/fuzzers/stateless/control_payloads.py`, `runtime/fuzzers/stateless/control_verdict.py`, `runtime/findings/causes/triggers.py`
+
+### Context
+
+The whole-request control rotates the strings of a rejected request and resends it
+([ADR-166](#adr-166)). When the request addressed a resource through a value it
+took from the run's corpus (an id, a slug, a username the run created), the rotated
+control addresses another resource, and its answer says nothing about the one the
+rejection was about. Holding the corpus values in every control is not safe
+either. The corpus also holds values the run created, which are the very values a
+uniqueness rule rejects, so a held control repeats a state conflict and confirms
+it as a defect. And a control identical to the reproduction resends the cause of a
+timeout and refutes a real finding.
+
+### Decision
+
+**A second control, only to add refutations.** `ControlCheck.holds_corpus` is set
+for the whole-request check only. The control of [ADR-166](#adr-166) is sent first,
+as it is. When it does not refute, and the same payload with the corpus values
+held differs from both the reproduction and the first control, that payload is sent
+as well, with its own resend. It counts only when it refutes; otherwise the first
+control's verdict stands. The held values come from the finding's raw payload, the
+fields its draw took from the corpus.
+
+**The other controls do not hold.** For a timeout, the corpus value can be the
+cause under suspicion. The mass-assignment control keeps the corpus values in its
+one payload, because without them the resource changes and the finding is left
+unverified for the wrong reason ([ADR-182](findings.md#adr-182)).
+
+### Rejected
+
+- **Holding the corpus in every control.** A created username repeats a 409 and
+  confirms it; a timeout on a heavy resource is resent and refuted.
+- **Replacing the first control with the held one.** It loses the discrimination
+  the first control has against a state conflict.
+
+### Consequences
+
+A rejection that is a conflict on the very resource the request addressed can be
+refuted. A finding costs at most two controls, each with its resend, and the
+second only when the first does not refute. A second send can collide with the
+state the first one left, which makes it refute less, the safe direction.
+
+---
+
+## ADR-184 — An endpoint whose state link writes into a reserved header is left unprobed by the runners { #adr-184 }
+
+**Status:** accepted · Extends [ADR-119](engine.md#adr-119), [ADR-169](#adr-169) · `runtime/http/reserved_headers.py`, `runtime/runners/provisioning/reserved_links.py`, `runtime/runners/provisioning/chain.py`, `runtime/runners/provisioning/owner_resources.py`, `runtime/runners/provisioning/plan.py`, `runtime/runners/auth/crossing.py`, `runtime/runners/resilience/owner_binding.py`, `models/runtime/stats.py`, `models/runtime/labels.py`; core `services/history/rules.py`
+
+### Context
+
+A state link can bind a produced value into a header (`Authorization` from a
+login's token). The credential headers belong to the identities and
+`Content-Type` to the transport ([ADR-119](engine.md#adr-119)), so the injector
+drops a generated value with a reserved name. A runner that writes the bound value
+there, and lets each identity send its own credential, crosses with something
+other than what it claims and confirms `access_control` findings that are false.
+Provisioning an owner's resource through such a producer loses the value the same
+way, and fails under the wrong reason. The stateful mode refuses such a link when
+it compiles a rule.
+
+### Decision
+
+**One predicate, two policies.** `is_reserved_link_target(zone, name, reserved)`
+is the one rule. The stateful mode keeps raising `StatefulLinkError` at compile
+time: a rule that cannot write its value is a broken rule, with no endpoint to
+leave out. The runners leave the endpoint `unprobed` with
+`UnprobedReason.LINK_TARGET_RESERVED`: one endpoint never takes the run down, and
+a half crossing would be a false finding.
+
+**Reserved for the callers that really cross.** The reserved set is the union of
+what each caller sends, config and identity headers merged as the request builder
+sends them (`reserved_for_sender`); an anonymous caller reserves only the
+transport's names. A header only the owner sends does not leave the endpoint
+unprobed for another caller.
+
+**Decided before anything is sent.** `OwnerResourceRegistry.bind_for(endpoint,
+bundles, callers)` is the one entry for `auth` and `resilience`: it checks the
+endpoint's own links, then binds. When the owner's resource is provisioned,
+`plan_bundle_chain` skips a producer whose links target a header the owner
+reserves and falls back to the next producer of the bundle; only when no producer
+is usable is the reason `link_target_reserved`. No producer or dependency request
+is sent in vain. A policy reason of the endpoint (declared public, undeclared
+access) still wins.
+
+The reason counts under `access_preconditions_unmet`, which makes the run's
+signal `degraded`.
+
+### Rejected
+
+- **Checking identity by identity.** The endpoint is crossed by some callers and
+  not by others: a half crossing.
+- **Failing the compilation.** It takes the run down for one endpoint.
+- **A guard in each planner.** Four copies of one rule; the façade holds it once.
+
+### Consequences
+
+On the lab API, an endpoint whose session token is bound into `Authorization` is
+left unprobed with `link_target_reserved` and no request sent; sending each
+identity's own credential there would confirm three false `access_control`
+findings. An `auth` run whose only endpoint with a policy to cross is left
+unprobed this way fails with
+`EXECUTION_FAILED` and names the reason, the rule of a run that crossed nothing
+([ADR-102](engine.md#adr-102)); with any crossable endpoint beside it, the run
+completes and lists the endpoint as unprobed.

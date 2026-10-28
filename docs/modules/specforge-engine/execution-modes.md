@@ -590,8 +590,9 @@ typed reason into `EndpointStats.unprobed_reason` (`UnprobedReason`):
 | `owner_chain_cyclic` | every candidate chain of producers for the owner's bundle comes back on itself |
 | `owner_resource_unprovisioned` | every attempt to create the owner's resource failed, or its producer has no payload |
 | `required_role_unheld` | no valid identity holds the `role_only` endpoint's required role |
+| `link_target_reserved` | a state link of the endpoint, or of every producer of the owner's resource, writes a bound value into a header a caller's credentials or the transport own ([Run depth](run-depth.md#a-link-into-a-reserved-header)) |
 
-The first two are by-design skips; the other four are access preconditions the
+The first two are by-design skips; the other five are access preconditions the
 run could not meet. Either way the endpoint is recorded and the run moves on to
 the next one. `UnprobedReason` has one more member, `owner_identity_missing`,
 which only `resilience` reports: an auth run without a valid identity stops before

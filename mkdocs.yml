@@ -222,6 +222,8 @@ nav:
           - Strategy compiler: modules/specforge-engine/strategy-compiler.md
           - Strategies and runner traits: modules/specforge-engine/strategies.md
           - Requests: modules/specforge-engine/requests.md
+          - Field addressing: modules/specforge-engine/field-addressing.md
+          - Proving a violation: modules/specforge-engine/provable-violation.md
           - Engine internals: modules/specforge-engine/engine-internals.md
           - Findings: modules/specforge-engine/findings.md
           - Execution modes: modules/specforge-engine/execution-modes.md

@@ -162,6 +162,8 @@ decisions this rule produced are in the [decision records](adr/index.md).
 | See how contracts become strategies | [Strategy compiler](strategy-compiler.md) |
 | Pick a strategy, or see what a runner takes from it | [Strategies and runner traits](strategies.md) |
 | See what a request holds, which field it poisons, and how its body and headers go out | [Requests](requests.md) |
+| See how a nested body field or array element is named, poisoned and focused | [Field addressing](field-addressing.md) |
+| Know when the engine calls a value a violation of its `pattern`, `format` or type | [Proving a violation](provable-violation.md) |
 | See how a request is sent, checked and reported | [Engine internals](engine-internals.md) |
 | Read a finding: its category, severity, observation, evidence and redaction | [Findings](findings.md) |
 | Pick a mode and its options | [Execution modes](execution-modes.md) |

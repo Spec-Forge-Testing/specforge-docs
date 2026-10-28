@@ -83,13 +83,20 @@ the schema, and a field a poisoning phase poisons never seeds
 `boundary`, `invalid` and `attack` are the **poisoning phases**: each of their
 requests draws exactly one field from the phase and every other field valid
 ([ADR-116](adr/engine.md#adr-116), [ADR-126](adr/compiler.md#adr-126)).
+`mutation` draws the same way, one field varied and every other one valid, and
+names that field as poisoned only when the mutated value provably breaks its
+contract; a zone with no field to vary falls back to mutating every field, unjudged
+([Field addressing](field-addressing.md#mutation-varies-one-field)).
 
 - **Per zone.** The zone compiles a `one_of` of variants, one per field the phase
   can poison: that field poisoned, every other one valid, with the valid phase's
   required and optional split, plus any whole-zone variant the phase registers
-  for that zone. The draw is a `ZoneDraw(values, poisoned_field, attack_family)`;
-  outside a poisoned variant `poisoned_field` is `None`, and `attack_family` is set
-  only when the drawn candidate carries one.
+  for that zone. In a JSON body, a field's variant is itself a choice between the
+  field whole and one variant per leaf inside it
+  ([Field addressing](field-addressing.md#every-leaf-of-a-json-body)). The draw is
+  a `ZoneDraw(values, poisoned_field, attack_family)`, the poisoned field a
+  `FieldPath`; outside a poisoned variant `poisoned_field` is `None`, and
+  `attack_family` is set only when the drawn candidate carries one.
 - **Per request.** `merged_strategy_for_phase` draws one zone that can poison the
   phase in its poisoned variant and every other zone valid.
 - **Per endpoint.** A phase no zone can poison is not drawn: `phase_strategies`
@@ -111,7 +118,8 @@ The built-in candidates:
 |---|---|
 | `boundary` (`boundary_candidates`) | it is an `integer` or `number` with at least one edge inside the declared range and on the declared multiple, a `string` (its length edges), an `array` or an `object` |
 | `invalid` (`invalid_candidates`) | its wire can tell at least one value apart from a valid one (below) |
-| `attack` (`base_attack_candidates`, `hacker_attack_candidates`) | at least one attack payload of its type fits its declared shape ([ADR-128](adr/compiler.md#adr-128)); on an object body, the `mass_assignment_variant` adds one branch with an undeclared privileged key ([ADR-134](adr/compiler.md#adr-134)) |
+| `attack` (`base_attack_candidates`, `hacker_attack_candidates`) | at least one attack payload of its type fits its declared shape ([ADR-128](adr/compiler.md#adr-128)); on a JSON body, the mass-assignment variant adds one branch with an undeclared privileged key at the top or inside one of the body's objects ([ADR-181](adr/compiler.md#adr-181)) |
+| `mutation` (`base_mutation_candidates`, `hacker_mutation_candidates`) | one of its type's operators applies ([ADR-180](adr/compiler.md#adr-180)); a reserved header is never a candidate |
 
 `invalid` offers, per wire:
 
@@ -127,8 +135,9 @@ The built-in candidates:
 Every wire also offers a string past `maxLength`, a text outside an `enum` and an
 integer outside the declared range. A path string with no length or `enum`
 constraint has no invalid candidate, nor does such a query or header string unless
-it is required (its omission is the candidate); a pattern or a format alone is
-never a candidate.
+it is required (its omission is the candidate). A string that declares a
+`pattern` or a `format` adds the named probes that provably break it
+([Proving a violation](provable-violation.md#probes-that-break-a-pattern-or-a-format)).
 
 ## The body
 
@@ -164,7 +173,7 @@ is a closed table keyed by the media type's essence:
 | `multipart/form-data` | `files=`, every field as a part; only a file field carries a filename | none: the client writes it with the boundary | the body is not an object, has no field to send, or a field cannot be encoded |
 
 On a form or multipart body a string goes as drawn and any other value as its JSON
-text (`true`, `3`). A media type with no encoder makes the request an
+text (`true`, `3`); an array field is sent once per non-null item. A media type with no encoder makes the request an
 `unsendable_request` with the reason `no encoder for media type …`, never JSON in
 disguise. Adding a media type is one row in that table, reviewed with the
 input-validation oracle that reads the body back
@@ -175,8 +184,31 @@ input-validation oracle that reads the body back
 On every wire, a value drawn as `None` stays off the wire. A body drawn as `None`
 is sent as no body and without the body's `Content-Type`; a form or multipart field
 drawn as `None` is left out; a query or header parameter drawn as `None` is left
-out of the URL and the headers. The blueprint records what went out, so the trace,
-the replay and every oracle see the request as sent.
+out of the URL and the headers. A JSON body field drawn as `None` is sent as
+`null`. A path value has no way to be left out: one drawn as `None`, an empty
+array or an empty object spells an empty segment, and the request is unsendable.
+`is_omitted_field` is the one rule the injector and the oracles read. The
+blueprint records what went out, so the trace, the replay and every oracle see the
+request as sent.
+
+### How a value is spelled { #how-a-value-is-spelled }
+
+A value that is not a string is written as text on every wire but a JSON body
+([ADR-185](adr/engine.md#adr-185)). `shared/wire/spelling.py` holds the one
+spelling, read by the injector, the generator's filters and the oracles alike:
+
+| Zone | How a value goes out |
+| --- | --- |
+| `query` | as httpx writes it: `true` and `false`, an array once per item |
+| `path` | OpenAPI's `simple` style: each part spelled as in the query and percent-encoded, a comma inside it included; an array's items, or an object's keys each followed by its value, joined by literal commas |
+| `header` | the same `simple` text, sent as one header |
+| form, multipart | a string as drawn, any other value as its JSON text, an array once per item |
+
+So `true` in a path is `/true`, `[1, 2]` is `/1,2`, and `{"a": 1}` in a header is
+`a,1`. An array or object in a path or header is sent but cannot be read back
+reliably (an item can hold a comma, a framework may not split a header), so
+`input_validation` never judges it; the robustness and security oracles still do
+([Proving a violation](provable-violation.md#reading-a-value-as-it-travels)).
 
 ## Reserved headers
 
@@ -194,19 +226,22 @@ reserved name unless the intent poisons that very header.
 The identity keeps its label unless an admitted, poisoned header shadows one of
 its own. A replay drops a traced reserved credential and refills it from the live
 credentials, and keeps the traced `Content-Type`, which is the one that went out.
-A state link that writes into a reserved header is a `StatefulLinkError`.
+A state link that writes into a reserved header is a `StatefulLinkError` when the
+stateful mode compiles its rule. The `auth` and `resilience` runners leave such an
+endpoint unprobed with `link_target_reserved`, before sending anything
+([Run depth](run-depth.md#a-link-into-a-reserved-header)).
 
 ## Where the intent lives
 
-`RequestIntent(phase, poisoned_zone, poisoned_field, attack_family)` is frozen;
-the zone and the field are set together or not at all, and a family needs a
-poisoned field ([ADR-130](adr/engine.md#adr-130)). Its `poisoned` property reads
-the two as one `FieldAddress(zone, field)`, or `None` when no field was poisoned;
-the oracles read that.
+`RequestIntent(phase, poisoned, attack_family)` is frozen; `poisoned` is the
+`FieldAddress(zone, field)` drawn outside its schema, or `None`, and a family
+needs a poisoned field ([ADR-130](adr/engine.md#adr-130)). A nested field's
+address carries its `FieldPath`
+([Field addressing](field-addressing.md#a-fields-path)); the oracles read that.
 
 | Holder | Field | Set by |
 |---|---|---|
-| `ZoneDraw` | `poisoned_field`, `attack_family` | the compiled zone strategy |
+| `ZoneDraw` | `poisoned_field`, `varied_field`, `attack_family`, `observed_fields` | the compiled zone strategy |
 | `ZonedPayload` | `intent` | `from_mapping`, from the zone draws; `with_field` keeps it |
 | `RequestBlueprint` | `intent` (and `phase`, derived) | `ContextInjector.build` |
 | `ResponseContext` | `intent` | the oracle context, from the result's blueprint |

@@ -133,9 +133,9 @@ marked `safety_breached` so the run is kept with that evidence.
 Symmetrically, a **targeted** endpoint that drew no requests records why in
 `EndpointStats.unprobed_reason`: `declared_public` for a by-design public skip
 (complete evidence, not a gap), `access_undeclared` for a missing access policy,
-or one of the four access preconditions the auth run could not meet
+or one of the five access preconditions the auth run could not meet
 (`owner_producer_missing`, `owner_chain_cyclic`, `owner_resource_unprovisioned`,
-`required_role_unheld`; see [Execution modes](execution-modes.md#auth)). A silent
+`required_role_unheld`, `link_target_reserved`; see [Execution modes](execution-modes.md#auth)). A silent
 endpoint is therefore never confused with one the run failed to reach.
 
 !!! note "Auth mode and a held producer"
@@ -262,11 +262,14 @@ after (`CONNECTION_DROPPED`).
 `ContextInjector.build` turns a `ZonedPayload`, a compiled endpoint, the run
 config and an optional `Identity` into an immutable `RequestBlueprint`. It:
 
-- **interpolates the path** by percent-encoding each path value
-  (`quote(..., safe="")`) and recording which segments the template actually
-  consumed;
+- **interpolates the path** by writing each path value in OpenAPI's `simple`
+  style, each part percent-encoded (`path_segment`,
+  [Requests](requests.md#how-a-value-is-spelled)), and recording which segments
+  the template actually consumed;
 - **leaves out what was drawn as `None`**: a query or header parameter drawn as
   `None` is not sent, and a body drawn as `None` is no body at all;
+  `is_omitted_field` is the one rule;
+- **spells each generated header** in the same `simple` style (`simple_text`);
 - **layers headers** in three coats — config headers, then the identity's
   credential headers (`credential_headers`, case-insensitive, the identity
   winning), then the fuzzer's generated headers — and records the credential
@@ -349,11 +352,11 @@ OracleVerdict` — and precedence is a named `IntEnum` value, never a magic gap
 | `RESILIENCE` (200) | `resilience_degradation` | under a chaos request, a 5xx or a dropped connection the attack does not tolerate |
 | `SERVER_ERROR` (210) | `server_error` | any 5xx, or a connection the server dropped |
 | `ACCESS_CONTROL` (300) | `access_control` | a 2xx a caller should not have obtained, judged against the auth runner's expectation (non-terminal) |
-| `MASS_ASSIGNMENT` (400) | `mass_assignment` | a 2xx that echoes an undeclared body key the request poisoned, with the value sent (non-terminal) |
+| `MASS_ASSIGNMENT` (400) | `mass_assignment` | a 2xx that echoes an undeclared body key the request poisoned, at any depth, with the value sent, under an object that admits no extra keys (non-terminal) |
 | `SEMANTIC` (410) | `semantic_property` | a 2xx that breaks a declared business rule (non-terminal) |
 | `INFORMATION_DISCLOSURE` (420) | `information_disclosure` | a non-2xx to a poisoned request whose body shows a leak marker outside the echo of the sent value (non-terminal) |
 | `SENSITIVE_DATA_EXPOSURE` (430) | `sensitive_data_exposure` | a 2xx, to a poisoned request or under a declared body schema, that carries a secret-looking key the object holding it does not declare (non-terminal) |
-| `INPUT_VALIDATION` (440) | `input_validation` | a 2xx to a request whose poisoned field was sent outside its declared schema (non-terminal) |
+| `INPUT_VALIDATION` (440) | `input_validation` | a 2xx to a request whose poisoned field was sent provably outside its declared schema (non-terminal) |
 | `REFLECTED_PAYLOAD` (450) | `reflected_payload` | an HTML response that echoes the active payload of a reflectable family unescaped (non-terminal) |
 | `CONTRACT_COMPLETENESS` (460) | `contract_completeness` | a 400 or 422 to an unpoisoned request that provably conforms to its declared contract (non-terminal) |
 | `STATUS_CODE` (500) | `status_code` | a status no response contract declared |
@@ -436,8 +439,12 @@ number to no word at all ([ADR-113](adr/compiler.md#adr-113)); the response sche
 oracle and the input-validation oracle both read it. Beside it,
 `meets_declared_shape(value, contract)` checks, at any depth, what `validate_value`
 leaves out: `pattern`, `format`, `uniqueItems`, `minProperties` and
-`maxProperties`. A format it cannot evaluate is never met, and `password` and
-`binary` restrict nothing. Only the contract-completeness oracle reads it.
+`maxProperties`. It reads a `pattern` as ECMA-262 and a `format` with the JSON
+Schema 2020-12 checker; a pattern or format it cannot decide is never met, and
+`password` and `binary` restrict nothing. Only the contract-completeness oracle
+reads it. Its counterpart, `first_provable_violation`, walks the same structure the
+other way round: what it cannot decide never violates
+([Proving a violation](provable-violation.md)).
 
 ### How input validation is judged
 
@@ -448,20 +455,23 @@ readily as an invalid draw, and stays silent on an invalid draw that happens to 
 valid.
 
 It speaks only on a 2xx whose intent names a poisoned field with a schema in the
-context's `declared_schemas_by_zone`. It reads the value the request sent, by
-zone: the drawn path or query value; the header's text, matched without case; the
-body's field, or the whole body for `$`, and for a form or multipart body the text
-its encoder sent. A field the request did not send is **absent**, which is not
-`null`; an absent field breaks the schema only when it is required. A sent text on
-a text wire is read as the declared type through strict literals
-(`interpret_wire_text`: `-?[0-9]+` for an integer, a decimal with an optional
-exponent for a number, `true` or `false`), so `" 7"` is text and fails an
-`integer` field ([ADR-117](adr/compiler.md#adr-117)). Then `validate_value`
-decides.
+context's `declared_schemas_by_zone`. `DeclaredSchemas.get(address)` finds a
+nested field's schema by walking `properties` for a key and `items` for an index.
+The oracle reads the value as it travelled (`shared/wire/`): a JSON body's field
+at its path, or the texts a path, query, header or form field carried, mirrored
+from the injector. A field the request did not send is **absent**, which is not
+`null`; an absent field breaks the schema only when it is required. A text is read
+as the declared type as leniently as a common server reads it, so `"+4"` for an
+integer is `4` and `"yes"` for a boolean is `true`: neither is a proven violation
+of the type ([ADR-177](adr/findings.md#adr-177)). Then
+`first_provable_violation` decides, `pattern` and `format` included, and stays
+silent on what it cannot decide
+([Proving a violation](provable-violation.md)). The observation cites the text
+that was sent.
 
 A violation is a verdict with the invariant `input_validation`, non-terminal, and
-the rule `accepted_field_rule(zone, field)`: `ViolatedRule(id="<zone>.<field>")`,
-such as `query.limit` or `body.$`. `input_validation` is in
+the rule `accepted_field_rule(zone, field)`: `ViolatedRule(id="<zone>.<path>")`,
+such as `query.limit`, `body.user.email` or `body.$`. `input_validation` is in
 `DECLARED_RULE_INVARIANTS`, so its rule is declared, not intrinsic, and findings
 group by that id: one finding per endpoint and field. Because it is non-terminal
 and runs before `status_code`, a 2xx that accepts the poisoned value and also
@@ -478,7 +488,9 @@ enforces a validation rule the contract does not declare
 It speaks only on a sent request whose intent names no poisoned field, at an
 endpoint that declares response contracts. The request must provably conform,
 read field by field through `sent_in_declared_shape` (`runtime/oracles/sent_value.py`):
-`validate_value` on the value as the server reads it, then `meets_declared_shape`.
+`validate_value` on the value as a strict server reads it (the wire literals only),
+then `meets_declared_shape`. An unreadable value (an object on a text wire) does
+not conform.
 It must break no declared input constraint (`breaks_an_input_constraint`,
 `runtime/oracles/semantic/input_constraints.py`). When the endpoint's declared
 access is anything but `public` (`CompiledExecutionEndpoint.requires_authentication`),

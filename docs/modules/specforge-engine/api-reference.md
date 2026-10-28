@@ -87,11 +87,11 @@ Field names of this family are stable: they are persisted as columns.
 | `RefutedFinding` | a group a control request showed is not a defect: its `signature`, `occurrences`, `first_seen` and the `control` that refuted it |
 | `RunStats`, `EndpointStats`, `LatencyStats` | run, endpoint and latency counters — `EndpointStats.unprobed_reason` names why a targeted endpoint drew no requests |
 | `LoadStepStats` | one concurrency-ladder step on an endpoint's `load_profile`: its `concurrency`, measured `latency`, `degraded` verdict (`None` when unjudged) and, when the step was measured twice to confirm a degradation, the second window as `remeasured` |
-| `UnprobedReason` | why the auth mode crossed nothing, or resilience sent nothing, at a targeted endpoint: `declared_public` or `access_undeclared` (by design), `owner_producer_missing`, `owner_chain_cyclic`, `owner_resource_unprovisioned`, `required_role_unheld` or `owner_identity_missing` (a precondition the run could not meet) — each one in [Execution modes](execution-modes.md#auth) |
+| `UnprobedReason` | why the auth mode crossed nothing, or resilience sent nothing, at a targeted endpoint: `declared_public` or `access_undeclared` (by design), `owner_producer_missing`, `owner_chain_cyclic`, `owner_resource_unprovisioned`, `required_role_unheld`, `owner_identity_missing` or `link_target_reserved` (a precondition the run could not meet) — each one in [Execution modes](execution-modes.md#auth) |
 | `CrashReport`, `InvariantViolation` | a confirmed finding's reproducer and the invariant it broke — its `response_body` has sensitive field values redacted to `***` by name |
-| `ViolatedRule` | the rule a `CrashReport` broke (`id` + `description`) — declared by the contract for a `semantic_property` / `access_control` finding, the accepted field (`<zone>.<field>`, such as `query.limit` or `body.$`) for an `input_validation` finding, or intrinsic to the invariant for every other one |
+| `ViolatedRule` | the rule a `CrashReport` broke (`id` + `description`) — declared by the contract for a `semantic_property` / `access_control` finding, the accepted field (`<zone>.<path>`, such as `query.limit`, `body.user.email` or `body.$`) for an `input_validation` finding, or intrinsic to the invariant for every other one |
 | `keyed_identity(invariant, identity_label) -> str \| None` | the identity that tells two findings of `invariant` apart: the label for `access_control`, `None` for every other invariant ([ADR-106](adr/engine.md#adr-106)) |
-| `ExecutionTrace`, `TracedRequest`, `TruncationRecord` | the replayable record; a `TracedRequest` records the request's intent as `phase`, `poisoned_zone`, `poisoned_field` and `poisoned_family` (the one field with a default, `None`), and its body with `media_type` and `file_fields` |
+| `ExecutionTrace`, `TracedRequest`, `TruncationRecord` | the replayable record; a `TracedRequest` records the request's intent as `phase`, `poisoned_zone`, `poisoned_field` (a nested field by its spelled path) and `poisoned_family` (the one field with a default, `None`), and its body with `media_type` and `file_fields` |
 | `ResponseDivergence`, `ReplayFidelity` | the replay comparison |
 | `ReplayReadiness` | the outcome of `validate_replayable` |
 
@@ -212,10 +212,12 @@ own tests exercise.
 |---|---|---|
 | `ZoneWire` | `models/wire.py` (also `specforge_engine.models`) | how a zone carries a value: `STRUCTURED` (a JSON body), `TEXT` (query, header, a form or multipart body), `SEGMENT` (path); `zone_wire(zone, media_type)` picks one |
 | `TextAlphabet` | `models/wire.py` | the characters a compiled string draws from: `OPEN`, `PRINTABLE`, `WIRE_SENDABLE` |
-| `RequestIntent` | `models/runtime/intent.py` (also `specforge_engine.models.runtime`) | frozen `(phase, poisoned_zone, poisoned_field, attack_family)`: what a request was drawn to test; the zone and the field are set together or not at all, and a family needs a poisoned field |
-| `ZoneDraw` | `models/runtime/draw.py` | what one zone's strategy draws: `values`, the `poisoned_field`, if any, and the `attack_family` of its value, if any |
+| `RequestIntent` | `models/runtime/intent.py` (also `specforge_engine.models.runtime`) | frozen `(phase, poisoned, attack_family)`: what a request was drawn to test; `poisoned` is a `FieldAddress` or `None`, and a family needs a poisoned field |
+| `ZoneDraw` | `models/runtime/draw.py` | what one zone's strategy draws: `values`, the `poisoned_field` (a `FieldPath`), if any, the `attack_family` of its value, if any, the `observed_fields` taken from the run's corpus, and the `varied_field` drawn outside valid values, the poisoned field by default |
 | `BODY_ROOT` | `models/runtime/intent.py` | `"$"`, the field name of a body that is not an object |
-| `FieldAddress` | `models/runtime/intent.py` | a frozen `(zone, field)`: one field of one zone, its dotted path when nested; `RequestIntent.poisoned` returns the poisoned field as one, or `None` |
+| `FieldAddress` | `models/runtime/intent.py` | a frozen `(zone, field)` with a derived `path`: a name is one literal top-level key, `FieldAddress.at(zone, path)` a nested field spelled by its path; equality reads the zone and the spelling |
+| `FieldPath` | `models/runtime/field_path.py` | a frozen tuple of segments, a key (`str`) or an index (`int`); the empty path is the body root; `spelled`, `parent`, `leaf`, `child`, `is_prefix_of` ([Field addressing](field-addressing.md#a-fields-path)) |
+| `nested_path(spelled, values)` | `models/runtime/field_path.py` | the nested path a spelling names in recorded values, the whole key tried first; `None` for a whole key or no match |
 | `PhaseBudget` | `models/runtime/stats.py` | a frozen `(planned, carried_in)`: one phase's planned examples at an endpoint, and those an earlier pass of the same identity left it; `+` adds two, `merge_phase_budgets` sums maps of them |
 | `NO_BODY_DRAWN` | `models/runtime/draw.py` | the body zone's values when a draw sends no body; `None` is a drawn value, never sent |
 | `CompiledBody` | `models/runtime/engine_input.py` | the compiled body: a `CompiledRequestPart` plus the `media_type` and the `file_fields` (properties declared `format: binary`, sent as file parts) |
@@ -249,7 +251,7 @@ tests exercise, documented for that reason
 | `compile_body(spec, ctx) -> CompiledBody` | the body's per-phase strategies: its object fields as a zone, or its root as the field `$`; an optional body is left out of some valid draws (`body.py`) |
 | `build_body_schema(spec) -> dict` | the body's documentation schema: its fields as an object, or its root as declared |
 | `compile_parameter(name, contract, zone, slot)` | one parameter compiled for the slot's phase under its zone's alphabet and wire (`parameter.py`) |
-| `poison_parameter(name, contract, zone, slot)` | the phase's `PoisonCandidate`s for the parameter in the slot's phase, filtered to what its zone can send, or `None` when the phase has no candidate for it or focus keeps it out |
+| `poison_parameter(field, contract, zone, slot)` | the phase's `PoisonCandidate`s for the field at a `FieldPath` in the slot's phase, filtered to what its zone can send, or `None` when the phase has no candidate for it or focus keeps it out |
 | `ParameterSlot`, `FieldKnobs` | the phase, wire and knobs a parameter compiles in; the endpoint-wide generation context, focus and sensitive fields |
 
 ### `strategy_compiler.fields`
@@ -261,11 +263,13 @@ tests exercise, documented for that reason
 | `registered_phases()` | the keys currently in the phase table |
 | `resolve_phase(contract, phase)` | the phase registered for a contract's type or its nearest ancestor |
 | `isolated()` | a context manager giving the block its own phase registry, restored on exit |
-| `GenerationPhase` | one `(name, contract_type, build, candidates, zone_variants)` mapping; a non-callable `build`, `candidates` or zone variant is rejected |
-| `PoisonCandidate` | frozen `(value, attack_family)`: a value a field could be poisoned with, and its family, if any |
+| `GenerationPhase` | one `(name, contract_type, build, candidates, zone_variants, root_variant)` mapping with three trait flags, `leaves_replace_whole`, `plain_fallback` and `spares_reserved_headers` ([Extension guide](extension-guide.md#a-phase-that-poisons-one-field)); a non-callable `build`, `candidates` or variant source is rejected |
+| `PoisonCandidate` | frozen `(value, attack_family, poisons)`: a value a field could be poisoned with, its family, if any, and whether it breaks the field's contract (`True` by default) or only varies it |
 | `CandidateSource` | the Protocol of a phase's `candidates`: `(contract, *, context) -> SearchStrategy[PoisonCandidate] \| None` |
 | `untagged(source)` | a value source adapted to a `CandidateSource` whose candidates carry no family |
-| `ZoneVariantSource` | the Protocol of a whole-zone branch: `(params, valid, always_sent) -> SearchStrategy[ZoneDraw] \| None` |
+| `ZoneVariantSource` | the Protocol of a whole-zone branch: `(ZoneVariantRequest) -> SearchStrategy[ZoneDraw] \| None`; the request carries `params`, `valid`, `always_sent`, `context`, `focus_fields` and `admits_extra_keys` |
+| `RootVariantSource` | the Protocol of a branch beside a body drawn whole: `(RootVariantRequest) -> SearchStrategy[ZoneDraw] \| None`; the request carries the `root` contract, `context` and `focus_fields` |
+| `root_variants_for(phase, contract_types)` | the distinct root-variant sources the phase resolves for the types |
 | `candidates_for(phase, contract_type)` | the candidates of the phase resolved for a contract type, or `None` when it does not poison |
 | `poisoning_phases(phases, contract_types)` | the phases that carry candidates for at least one of the types |
 | `poisoning_strategy(contract, phase, *, context)` | the phase's candidates for the field, or `None` when the phase cannot poison it |
@@ -302,7 +306,8 @@ key:
 | `fitting_candidates(contract, candidates, *, context)` | the candidates, deduplicated first-seen, that fit the field's declared shape, or `None` |
 | `tagged_base_payloads(value_type, request)` | the profile pools first, each spelling tagged with its profile, then the type's base payloads and toggle families |
 | `sample_attack_payloads(payloads)` | the sampled-from strategy over deduplicated payloads, or `st.none()` when empty |
-| `mass_assignment_variant(params, valid, always_sent)` | the body zone variant: the valid body plus one undeclared privileged key |
+| `mass_assignment_variant(request)` | the body zone variant: the valid body plus one undeclared privileged key, at its top or inside one of its objects, from a `ZoneVariantRequest` |
+| `mass_assignment_root_variant(request)` | the same for a body sent as an array, into the objects of its elements, from a `RootVariantRequest` |
 | `AttackRequest` | everything a base-payload builder or toggle family needs for a field |
 | `AttackToggles` | the eight payload-variant flags, pinned to the contract by a guard test; `AttackToggles.from_contract(contract)` reads an attack contract's, and `DEFAULT_ATTACK_TOGGLES` (`attack/request.py`) is the untuned set |
 | `allowed_profiles(context, *sources)` · `allowed_candidates(candidates, context)` | the families, or the candidates, whose attack family the context allows |
@@ -313,6 +318,7 @@ key:
 |---|---|
 | `build_mutation(contract, toggles, *, context)` | the mutation-phase strategy: a non-null valid seed with one operator the toggles enable applied, or the valid strategy when none applies |
 | `build_base_mutation(contract, *, context)` | the mutation phase of a field no contract tunes, with `DEFAULT_ATTACK_TOGGLES` |
+| `mutation_candidates(contract, toggles, *, context)` · `base_mutation_candidates(contract, *, context)` | one operator on a valid seed, as a `PoisonCandidate` whose `poisons` says whether the mutated value, as it travels, provably breaks the contract |
 | `resolve_mutation_depth(context)` | the context's `mutation_depth`, or `DEFAULT_MUTATION_DEPTH` |
 | `mutation_operators(value_type, toggles)` | the gate-enabled mutation operators for a schema type |
 | `MutationOperator` | a frozen `(name, gate, apply)` mutation transform |
@@ -325,6 +331,7 @@ key:
 | `hacker_attack_candidates(contract, *, context)` | the attack candidates of the contract's declared families and toggles that the context allows and that fit the field's shape |
 | `build_hacker_attack(contract, *, context)` | the sampled attack payloads of an attack contract, as bare values |
 | `build_hacker_mutation(contract, *, context)` | `build_mutation` with the toggles the contract declares (`AttackToggles.from_contract`) |
+| `hacker_mutation_candidates(contract, *, context)` | `mutation_candidates` with the toggles the contract declares |
 
 ### `shared`
 
@@ -340,9 +347,17 @@ to ([Extension guide](extension-guide.md#add-a-phase-extension)).
 | `registered_phase_extensions()` | the extensions currently registered, in registration order |
 | `phase_extension_for(phase)` | the extension registered for a phase, or `None` when it is not an extension phase |
 | `isolated()` | a context manager giving the block its own extension registry, restored on exit (`shared.phase_extensions`; not re-exported by `shared`) |
-| `is_field_addressed(zone, name, entries) -> bool` | whether a field is named by an attack addressing list, bare or zone-qualified |
+| `is_field_addressed(zone, field, entries) -> bool` | whether an entry of an attack addressing list names the field (a `FieldPath`) or a field holding it, bare or by zone and dotted path |
+| `leads_to_addressed_field(zone, field, entries) -> bool` | whether the field is addressed or holds a field an entry names |
+| `addresses_declared_field(entry, zone, name, contract) -> bool` | whether an entry names the top-level field or a property or element its contract declares; the policy check of `focus_fields` |
+| `value_at(values, path)` · `with_value_at(values, path, value)` | the value at a `FieldPath`, or `ABSENT`; a copy with it set, or removed for `ABSENT` |
+| `first_provable_violation(value, contract)` | the first place a value, or `ABSENT`, provably breaks its contract, or `None`; what cannot be decided never violates ([Proving a violation](provable-violation.md)) |
+| `DECIDABLE_FORMATS` | the formats whose checker's rejection proves a violation |
+| `carried_value(drawn, contract, reading)` · `carried_violation(drawn, contract)` | a `DrawnField` as a server reads it under a `TextReading` (`STRICT`, `LENIENT`, `AS_SENT`), or `ABSENT`, or `UNREADABLE`; where it provably breaks its contract, read leniently |
+| `is_omitted_field(value, wire)` | whether a field is left out of the request: a query, header or form field drawn `None` |
+| `holder_admits_extra_keys(holder)` | whether an object admits undeclared keys, for the mass-assignment generator and oracle alike |
 | `validate_value(value, contract) -> bool` | whether a value fits a strategy contract's type, length, `enum` and range; read by the oracles and by the attack shape filter (`schema_check.py`) |
-| `meets_declared_shape(value, contract) -> bool` | whether a value provably meets, at any depth, what `validate_value` leaves out: `pattern`, `format` (a format the checker cannot evaluate is never met; `password` and `binary` restrict nothing), `uniqueItems`, `minProperties`, `maxProperties`; read by the contract-completeness oracle (`schema_check.py`) |
+| `meets_declared_shape(value, contract) -> bool` | whether a value provably meets, at any depth, what `validate_value` leaves out: `pattern` (read as ECMA-262; an undecidable one is never met), `format` (with the 2020-12 checker; a format the checker cannot evaluate is never met; `password` and `binary` restrict nothing), `uniqueItems`, `minProperties`, `maxProperties`; read by the contract-completeness oracle (`schema_check.py`) |
 | `is_sensitive_field_name(name) -> bool` | whether a field name holds a credential or a secret, by one normalized form; read by the redaction and the sensitive-data oracle (`sensitive_names.py`) |
 | `has_input_constraint(endpoint) -> bool` | whether the endpoint declares at least one input-constraint semantic property |
 | `input_constraints(properties) -> tuple[SemanticProperty, ...]` | the properties classed as input constraints, in declaration order |

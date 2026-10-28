@@ -49,6 +49,19 @@ The full-screen interface is built in layers, each testable alone:
 | `tui/screens/` | Panels and viewers that sit over the conversation: `help`, the long-table viewer, and the stack that opens and closes them. |
 | `tui/runtime/` | `TuiSession` and the surface that connect the controller to the model. |
 
+### Progress in the text REPL
+
+The full-screen app keeps one activity line per block. The text REPL has a prompt that stays
+live while an operation runs, so a spinner drawn with the console would fight the input for the
+cursor. Its activity line is instead the prompt's own bottom toolbar: `repl/activity.py` keeps an
+`ActivityBoard` (what runs, newest last, the latest `tick` of each) and renders the toolbar text,
+and `ReplSession` shows the toolbar only while the board has something, asking the prompt to
+redraw on every change and once per spinner frame. `TextView` puts its operation on the board at
+the first progress event, turns `tick`s into updates instead of printed lines, and takes it off
+when a result, an error, a status, a notice or `finish` ends it. The wording and the spinner are
+shared with the full-screen app in `views/activity.py`. Without a terminal that can redraw a line
+(`live_activity_supported`) there is no board, and every event is printed.
+
 ## Adding things
 
 ### A local command (like `help` or `clear`)

@@ -202,6 +202,14 @@ over a pipe, in a `dumb` terminal, on Git Bash without a pseudo-terminal, or wit
 `SPECFORGE_TUI=0`. A destructive call, an inference cost or a replay with side
 effects is confirmed inline (see [Asking before it matters](#asking-before-it-matters)).
 
+While an operation that reports progress runs, a live line under the prompt says what is
+running — a spinner, the operation and the latest counters (`120 sent · 3 findings · 4.2s
+elapsed`) — and goes away when it ends. With several running at once it shows the newest and
+counts the rest (`(+1 more)`). The prompt stays usable meanwhile. Events that are not counters
+(a finding, an endpoint starting) are still printed above it. The line needs a terminal that can
+redraw it: over a pipe, in a `dumb` terminal or with `--json-output` there is none, and every
+progress event is printed as its own line instead.
+
 ## Two ways to write a call
 
 **Inside the interactive session**, a line is `<operation> [key=value ...]`:

@@ -114,6 +114,10 @@ A run is drawn in sections, each with a line under its title saying what it is:
   (what the API answered) and `repro`, an approximate `curl` to send it again. The command is
   aimed at the open project's URL (the call's own `base_url` when it named one) and says what it
   leaves out: it carries no credentials, so add your token to repeat a request that needs one.
+  A saved run read later with `get_run` or `get_finding` does not remember which URL it was sent
+  to, so its command says it aims at the project's URL. If that URL is not a full address (it
+  lacks `http://`), no command is given and the line says how to fix it:
+  `update_project base_url=http://host:port`.
 - **Endpoints.** What happened to each endpoint the run reached. `Hits` is how many of its
   requests triggered a problem; `Status` says how it answered (`401 only`, `500s`, `clean`…).
 - **Artifacts** (`get_run`). The files the run left on disk, each with its whole path: the
@@ -203,7 +207,7 @@ over a pipe, in a `dumb` terminal, on Git Bash without a pseudo-terminal, or wit
 effects is confirmed inline (see [Asking before it matters](#asking-before-it-matters)).
 
 While an operation that reports progress runs, a live line under the prompt says what is
-running — a spinner, the operation and the latest counters (`120 sent · 3 findings · 4.2s
+running — a spinner, the operation and the latest counters (`120 sent · 3 with problems · 4.2s
 elapsed`) — and goes away when it ends. With several running at once it shows the newest and
 counts the rest (`(+1 more)`). The prompt stays usable meanwhile. Events that are not counters
 (a finding, an endpoint starting) are still printed above it. The line needs a terminal that can
@@ -517,7 +521,7 @@ last run: run #12 completed · 2 problems · 2026-10-27 14:42
 | `target` | The `base_url` the project declares, or `not set`. |
 | `model` | The model inference asks first, or `not chosen`. Left out when the core could not be asked. |
 | `history` | The analyses and runs the store holds for the project. Left out when it holds none. |
-| `last run` | Id, status, confirmed problems and time of the latest run. Left out when there is none. |
+| `last run` | Id, status, confirmed problems and time of the latest run. The problems are counted as `get_run` counts them, so both say the same number. Left out when there is none; the count alone is left out when the run could not be read. |
 
 What the project lacks is shown in yellow, and the line under the card names
 the call that fills it, in the order to give them: `load_contract` (or
@@ -530,7 +534,7 @@ not loaded` is honest, not an error) — load one explicitly with
 [`load_contract`](#load_contract).
 
 The model and the latest run are not part of the core's answer: the CLI asks
-for them right after it (`get_config`, and `list_analyses` plus `list_runs`
+for them right after it (`get_config`, and `list_analyses`, `list_runs` and `get_run`
 when the store holds runs). If any of those fails, the card is drawn without
 that line. `--json-output` prints the core's answer as it came, without them.
 
@@ -716,7 +720,7 @@ specforge ❯ fuzz base_url=http://localhost:8000 target=1
 fuzz: starting
 GET:/accounts/{id} (1/1)
 GET:/accounts/{id}: phase valid
-20/200 sent · 0 findings · 0.4s elapsed
+20 sent · 0 with problems · 0.4s elapsed
 GET:/accounts/{id}: phase boundary
 GET:/accounts/{id}: phase invalid
   ⚠  GET:/accounts/{id}: status_code_conformance (status 422)
@@ -822,9 +826,12 @@ One analysis by id — the recipe a replay names.
 
 #### `list_runs`
 
-An analysis's runs, each row already saying whether to trust its evidence. `Problems` counts
-the distinct problems a run found, and says how many were confirmed when that is not all of
-them (a run cut short leaves some unverified).
+An analysis's runs, each row already saying whether to trust its evidence. `Findings` counts
+the distinct findings the run kept, and says how many were confirmed when that is not all of
+them (a run cut short leaves some unverified). It counts findings, not problems: a listing
+cannot group them, and a problem may stand on several findings (the same rule broken at the
+same endpoint, in different phases), so `get_run` can show fewer problems than this column
+shows findings.
 
 | Flag | Type | Required | Default |
 | --- | --- | --- | --- |
@@ -852,6 +859,11 @@ instant).
 One finding, tagged as the crash or the unconfirmed finding it is. A confirmed one shows the
 rule it broke, the request that did it, what came back and an approximate `curl` to repeat it;
 one that never confirmed keeps no request and shows only the shape of the response.
+
+The `×N` in the title is how many requests this finding stands for. When its problem gathers
+several findings (the same rule broken at the same endpoint, in different phases), the title
+also gives the problem's total, `×116 of the problem's ×150`, the number `get_run` lists for it.
+The CLI reads that total from the finding's run, so it is left out when the run cannot be read.
 
 | Flag | Type | Required |
 | --- | --- | --- |

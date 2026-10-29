@@ -132,7 +132,6 @@ nav:
       - Glossary: user-guide/glossary.md
   - Using Spec Forge:
       - Spec Forge CLI: user-guide/specforge-cli.md
-      - Core REPL Reference: user-guide/cli-reference.md
       - Run Report: user-guide/reports.md
       - Example Walkthrough: user-guide/example-walkthrough.md
   - Configuration:
@@ -146,6 +145,7 @@ nav:
   - Developer Guide:
       - Contributing & Testing: developer-guide/contributing.md
       - Spec Forge CLI: developer-guide/specforge-cli.md
+      - Core REPL Reference: user-guide/cli-reference.md
       - Core:
           - Overview: modules/core/index.md
           - Reference: modules/core/reference.md

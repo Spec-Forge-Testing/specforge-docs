@@ -41,7 +41,7 @@ flowchart TD
 
 ---
 
-## Start here
+## Choose your path
 
 <div class="grid cards sf-start-here" markdown>
 
@@ -65,4 +65,30 @@ flowchart TD
     - [Developer Guide › Modules](modules/contract-assembly/index.md) — a per-package
       implementation deep dive.
 
+-   :material-clipboard-text-outline:{ .lg .middle } __I maintain the project__
+
+    ---
+
+    - [Contributing & Testing](developer-guide/contributing.md) — local setup, test scopes and
+      continuous integration.
+
 </div>
+
+## Documentation map
+
+The site is organized by the question you are trying to answer:
+
+| Section | Use it for |
+|---|---|
+| **Getting started** | Install Spec Forge and complete a first run. |
+| **Core concepts** | Understand the pipeline, saved runs and vocabulary before using the CLI. |
+| **Using Spec Forge** | Run the shipped client, the core REPL, and read reports. |
+| **Configuration** | Configure providers and environment variables. |
+| **Help** | Diagnose setup and runtime problems. |
+| **Architecture** | Understand boundaries and data flow across the monorepo. |
+| **Developer Guide** | Contribute code and navigate the implementation. |
+| **Test corpora** | Run the real-API and integration test collections. |
+
+Reference-heavy module pages and decision records are grouped under **Developer Guide** so that
+new users can stay in the task-oriented sections and still reach the implementation detail when
+they need it.

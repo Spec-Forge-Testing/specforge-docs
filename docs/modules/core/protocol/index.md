@@ -16,6 +16,23 @@ defines how a message travels, the pages beside it define what the messages say.
 | [Errors](errors.md) | The two codes per error and the 42 error codes |
 | [Fixtures](fixtures.md) | Recorded sessions: how they are captured and how a client uses them |
 
+## What belongs in this section
+
+The protocol pages are the technical reference for the core/frontend boundary:
+
+- `handshake.md` defines the initial capabilities and catalog exchange.
+- `operations.md` describes the callable operations and their wire-level behavior.
+- `events.md` defines progress, cancellation and event ordering.
+- `errors.md` defines protocol error codes and their data.
+- `vocabularies.md` defines closed values used in results and events.
+- `fixtures.md` explains recorded protocol sessions.
+
+For user workflows, start with the [user guide](../../../user-guide/installation.md). For the
+core's internal implementation, use the [Core module](../index.md). For historical reasons
+behind protocol decisions, use the [protocol decision records](../adr/protocol.md). Avoid
+duplicating a complete operation table or wire-format definition in those sections; link here
+instead.
+
 ## Transport and framing
 
 **NDJSON over stdin/stdout**: one JSON object per line, UTF-8, separated by

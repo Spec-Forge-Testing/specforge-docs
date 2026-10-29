@@ -1,4 +1,4 @@
-# Errors
+# Storage errors
 
 Storage answers in its own vocabulary. Every exception it defines derives from `StorageError`,
 and all 32 classes are exported from `storage` (and from `storage.exceptions`). A failure of

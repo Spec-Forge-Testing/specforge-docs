@@ -1,4 +1,4 @@
-# Data flow
+# Engine data flow
 
 Data crosses the engine as frozen DTOs at the boundaries (pydantic,
 `extra="forbid"`) and frozen value objects inside (`@dataclass(frozen=True)`).

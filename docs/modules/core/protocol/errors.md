@@ -1,4 +1,4 @@
-# Errors
+# Protocol errors
 
 JSON-RPC's `code`s are integers with a range reserved for the protocol, so they
 are no use for the domain. The **stable domain code is a string** and travels in

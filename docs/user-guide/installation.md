@@ -33,7 +33,7 @@ the one-shot form used by scripts and CI. The [Example Walkthrough](example-walk
 runs the pipeline against a sample API.
 
 The old core REPL is still available in the `llm-pbt-agent` checkout. It is a
-developer tool with a different command set; see the [CLI Reference](cli-reference.md)
+developer tool with a different command set; see the [Core REPL Reference](cli-reference.md)
 when working on the core itself.
 
 To run Spec Forge in containers instead, see [Running with Docker](docker.md). To

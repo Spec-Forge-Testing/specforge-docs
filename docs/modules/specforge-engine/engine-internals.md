@@ -620,7 +620,7 @@ it empty, exactly like `starved_identities`, and shrink re-sends never contribut
 the per-endpoint lists and `build_stats` / `build_unshrunk_stats` surface them as
 `EndpointStats.undecided_rules` (sorted rule ids), from where they reach storage,
 the [run report](../../user-guide/reports.md) and the
-[CLI views](../../user-guide/cli-reference.md) ([ADR-057](adr/engine.md#adr-057)).
+[core CLI views](../../user-guide/cli-reference.md) ([ADR-057](adr/engine.md#adr-057)).
 
 ### How the semantic phase steers generation
 

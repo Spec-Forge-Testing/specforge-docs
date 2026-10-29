@@ -1,4 +1,4 @@
-# CLI Reference
+# Core REPL Reference
 
 This page documents the core's **built-in REPL** — the surface the team drives
 the pipeline with: workspace setup, contract validation, static tracing,

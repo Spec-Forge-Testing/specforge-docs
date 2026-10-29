@@ -12,7 +12,7 @@ a CLI release.
     there directly, you are using the **core's built-in REPL** instead — a
     different, Typer-style surface (`contract-assembly`, `trace`,
     `ast-extract`, …) used by the team to exercise the pipeline directly. That
-    one is documented on the [CLI Reference](cli-reference.md) page. This page
+    one is documented on the [Core REPL Reference](cli-reference.md) page. This page
     is about the client that ships to users of the packaged tool.
 
 ## Running it

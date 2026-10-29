@@ -76,7 +76,7 @@ flowchart TD
 - **`history`**, **`inspect`**, **`replay`**, **`compare`** and **`prune`** work with runs
   already saved (see below).
 
-See the [CLI Reference](cli-reference.md) for every command and flag.
+See the [Core REPL Reference](cli-reference.md) for the core's internal commands and flags.
 
 ## What gets saved
 

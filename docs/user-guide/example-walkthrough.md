@@ -46,4 +46,4 @@ same handlers and fuzzes them: the schema-only run reaches the `500` (whenever
 Hypothesis happens to generate a valid `account_id`) and also flags the `422`s the
 spec never declares.
 
-See the [CLI Reference](cli-reference.md) for what each command's flags and output mean.
+See the [Core REPL Reference](cli-reference.md) for what each command's flags and output mean.

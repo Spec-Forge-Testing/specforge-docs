@@ -321,7 +321,7 @@ what each cause means and how it is derived.
 ## Machine output: `--json-output`
 
 `fuzz`, `replay`, `inspect`, `history`, `compare` and `prune` all accept
-`--json-output` (see [CLI Reference](cli-reference.md)). It wraps the same building
+`--json-output` (see [Core REPL Reference](cli-reference.md)). It wraps the same building
 blocks - the run report document, a single defect or unconfirmed finding, a
 listing, a comparison - in one envelope. `inspect --crash <id>` projects the
 finding through its own shape: a confirmed id yields the defect above, a flaky,

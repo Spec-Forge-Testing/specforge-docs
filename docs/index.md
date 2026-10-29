@@ -51,7 +51,7 @@ flowchart TD
 
     - [Installation & Quick Start](user-guide/installation.md) — prerequisites and your first run.
     - [Core Concepts](user-guide/concepts.md) — what Spec Forge does and the words it uses.
-    - [CLI Reference](user-guide/cli-reference.md) — every command, its flags and its output.
+    - [Core REPL Reference](user-guide/cli-reference.md) — internal core commands, flags and output.
     - [Example Walkthrough](user-guide/example-walkthrough.md) — the commands end to end
       against a sample API.
 

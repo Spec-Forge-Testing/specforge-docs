@@ -17,7 +17,7 @@ the answer must validate against. Its caller in the pipeline is
 [Semantic Inference](../semantic-inference/index.md), which builds the prompts
 and turns the answer into a contract.
 
-## What a call goes through
+## How it fits into the pipeline
 
 ```mermaid
 flowchart LR

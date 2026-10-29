@@ -76,7 +76,7 @@ sections, and the engine keeps exactly those.
 payloads of the `security` and `exposure` strategies and for the fields a finding redacts, and redaction already covers its
 built-in list without it.
 
-## Public surface
+## Public API
 
 | Name | Where | What it is |
 | --- | --- | --- |
@@ -125,7 +125,7 @@ from the handler, so the model cannot guess them: `transitions[].bundle` and
 `access.owner_bundle` must name one of them. A request without hints renders as
 an endpoint that produces and consumes nothing.
 
-## Development requirements
+## Development and testing
 
 The package targets Python 3.11+ and depends on Jinja2, Pydantic, the shared
 kernel `specforge-contracts` and `specforge-llm`. General setup is in

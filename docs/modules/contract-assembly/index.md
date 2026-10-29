@@ -10,6 +10,13 @@ and the internal shared model.
 2. Adapt the parser output through `ASTAdapter`.
 3. Fuse endpoint information into the canonical representation with `fuse_contract`.
 
+## How it fits into the pipeline
+
+Contract Assembly is the ingestion and fusion boundary. It receives an external
+OpenAPI description, produces the normalized endpoint definitions, and combines
+them with semantic contracts before the orchestrator sends them to the
+execution engine.
+
 ## Use it when
 
 - validating or inspecting an OpenAPI file from the CLI;
@@ -18,3 +25,11 @@ and the internal shared model.
 
 See the [reference](reference.md) for the transformation stages, module layout,
 CLI usage and development workflow.
+
+## Read next
+
+| If you want to | Read |
+|---|---|
+| Follow the parsing and fusion stages | [Reference](reference.md) |
+| Understand the shared endpoint contract | [Contracts](../contracts/index.md) |
+| Run or extend the module tests | [Contributing & Testing](../../developer-guide/contributing.md#test-a-compose-module) |

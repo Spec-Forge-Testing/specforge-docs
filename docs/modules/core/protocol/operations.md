@@ -6,6 +6,14 @@ core's own façade. Each operation declares what must be open before it is calle
 stopped (`cancellable`), and whether it destroys what cannot be undone
 (`destructive`). The tables below group them by family; the authoritative,
 machine-readable form is whatever `describe` returns from the build in hand.
+This page is the human-readable protocol reference for that catalog. It is not
+a second CLI-owned list: clients discover operation names and parameters from
+the handshake, while this page explains their wire-level behavior and links to
+the surrounding protocol rules.
+
+When the catalog changes, update this page together with the protocol fixtures
+and verify the documented operation names, requirements and effects against
+`describe` before publishing the documentation.
 
 `requires` is one of:
 

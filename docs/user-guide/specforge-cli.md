@@ -860,6 +860,11 @@ One finding, tagged as the crash or the unconfirmed finding it is. A confirmed o
 rule it broke, the request that did it, what came back and an approximate `curl` to repeat it;
 one that never confirmed keeps no request and shows only the shape of the response.
 
+The `×N` in the title is how many requests this finding stands for. When its problem gathers
+several findings (the same rule broken at the same endpoint, in different phases), the title
+also gives the problem's total, `×116 of the problem's ×150`, the number `get_run` lists for it.
+The CLI reads that total from the finding's run, so it is left out when the run cannot be read.
+
 | Flag | Type | Required |
 | --- | --- | --- |
 | `--finding-id` | integer | yes |

@@ -16,6 +16,13 @@ supersedes it.
     evidence about the API. When a shortcut would make a number look better
     than what the engine actually saw, the number wins.
 
+## How to use this section
+
+These records explain **why** the engine works the way it does; they are not
+the current API reference. Start with the [module overview](../index.md) and
+reference pages for current behavior. Use the ADRs when you need the
+constraints, alternatives or trade-offs behind a decision.
+
 ## Where a decision lives
 
 The records are split one file per area, in pipeline order, plus one file for

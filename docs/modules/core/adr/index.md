@@ -15,6 +15,14 @@ is never edited to reflect a later change of mind — a new record supersedes it
     shortcut would let two parties learn about each other any other way, the
     contract wins.
 
+## How to use this section
+
+These records explain **why** the core works the way it does; they are not the
+current protocol reference. Start with the [core overview](../index.md) and
+the [protocol reference](../protocol/index.md) for current behavior. Use the
+ADRs when you need the constraints, alternatives or trade-offs behind a
+decision.
+
 ## Where a decision lives
 
 The records are split by area. Numbers stay global across the whole site and are

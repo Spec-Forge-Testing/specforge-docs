@@ -14,6 +14,13 @@ is never edited to reflect a later change of mind — a new record supersedes it
     miss costs five minutes; a confident wrong answer poisons everything
     downstream. When in doubt, raise.
 
+## How to use this section
+
+These records explain **why** the AST module works the way it does; they are
+not the current API reference. Start with the [module overview](../index.md)
+and reference pages for current behavior. Use the ADRs when you need the
+constraints, alternatives or trade-offs behind a decision.
+
 ## Where a decision lives
 
 The records are split one file per pipeline stage, in pipeline order, plus one

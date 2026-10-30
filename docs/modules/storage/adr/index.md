@@ -14,6 +14,13 @@ is never edited to reflect a later change of mind — a new record supersedes it
     SQLite's or the operating system's; a composed write lands whole or not at
     all; and no row is ever left naming a file that is not on disk.
 
+## How to use this section
+
+These records explain **why** the storage module works the way it does; they
+are not the current API reference. Start with the [module overview](../index.md)
+and reference pages for current behavior. Use the ADRs when you need the
+constraints, alternatives or trade-offs behind a decision.
+
 ## Where a decision lives
 
 The records are split by area. Numbers stay global across the whole site and are

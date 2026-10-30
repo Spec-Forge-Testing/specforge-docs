@@ -13,6 +13,13 @@ is never edited to reflect a later change of mind — a new record supersedes it
     never left for it to guess.** The model infers what only reading the code
     can tell; everything already written down reaches it as evidence.
 
+## How to use this section
+
+These records explain **why** the inference module works the way it does; they
+are not the current API reference. Start with the [module overview](../index.md)
+and reference pages for current behavior. Use the ADRs when you need the
+constraints, alternatives or trade-offs behind a decision.
+
 ## Where a decision lives
 
 Numbers stay global across the whole site and are never reused — the number

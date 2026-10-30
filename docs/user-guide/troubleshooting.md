@@ -9,12 +9,18 @@ Common problems, what causes them, and how to fix them. Terms in this page are d
   `prune_runs`, `apply_prune_plan`, `--execution` and `--identities-path`.
   The older commands in the sections below (`doctor`, `history`, `inspect`,
   `prune`, `--mode` and `--identities`) belong to the core's built-in REPL,
-  documented in the [CLI Reference](cli-reference.md).
+  documented in the [Core REPL Reference](cli-reference.md).
 
 For problems specific to the shipped client, first check the core startup
 command and timeout (`SPECFORGE_CORE_COMMAND` and
 `SPECFORGE_STARTUP_TIMEOUT`), then run the operation with `--json-output` to
 separate the result from terminal rendering.
+
+!!! tip "Where to look next"
+  This page explains symptoms from a user's point of view. For the complete operation catalog,
+  parameter types and protocol behavior, see the [protocol operation reference](../modules/core/protocol/operations.md).
+  For implementation details, use the [Core module reference](../modules/core/index.md); for
+  historical design decisions, use its [decision records](../modules/core/adr/index.md).
 
 ## The environment is not ready
 

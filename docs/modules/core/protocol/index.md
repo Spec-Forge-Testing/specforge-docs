@@ -11,10 +11,27 @@ defines how a message travels, the pages beside it define what the messages say.
 | [Handshake and versioning](handshake.md) | `hello`, capabilities, the catalog, versioning and the changelog |
 | [Fuzz options](fuzz-options.md) | The modes, strategies, producers and presets a run can be asked for, the effects matrix, and examples per endpoint |
 | [Events and cancellation](events.md) | The 16 event kinds, the progress token, state vs fact, contract production, `$/cancelRequest` |
-| [Operations](operations.md) | The 33 operations by family, what each requires, emits and destroys |
+| [Operations](operations.md) | The 41 operations by family, what each requires, emits and destroys |
 | [Result vocabularies](vocabularies.md) | The closed vocabularies a result field may take: run status, comparability, oracle scope, truncation reason, target-down verdict, coverage, producer-exclusion disposition, unprobed reason, signal causes, load-step degradation, strategy, effect changes, category, severity, location scope, replay verdicts, caveats, operation and stage status |
 | [Errors](errors.md) | The two codes per error and the 42 error codes |
 | [Fixtures](fixtures.md) | Recorded sessions: how they are captured and how a client uses them |
+
+## What belongs in this section
+
+The protocol pages are the technical reference for the core/frontend boundary:
+
+- `handshake.md` defines the initial capabilities and catalog exchange.
+- `operations.md` describes the callable operations and their wire-level behavior.
+- `events.md` defines progress, cancellation and event ordering.
+- `errors.md` defines protocol error codes and their data.
+- `vocabularies.md` defines closed values used in results and events.
+- `fixtures.md` explains recorded protocol sessions.
+
+For user workflows, start with the [user guide](../../../user-guide/installation.md). For the
+core's internal implementation, use the [Core module](../index.md). For historical reasons
+behind protocol decisions, use the [protocol decision records](../adr/protocol.md). Avoid
+duplicating a complete operation table or wire-format definition in those sections; link here
+instead.
 
 ## Transport and framing
 

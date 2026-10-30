@@ -45,6 +45,11 @@ every endpoint straight from the schema. Reading the code and inferring business
 a large language model) adds rules the schema cannot express — "you cannot delete an article
 you do not own" — so the fuzzer can find deeper, logic-level bugs.
 
+For the module boundaries and the technical data flowing between them, see
+[Architecture overview](../architecture/overview.md). This guide explains the
+product concepts; the architecture section is the reference for implementation
+relationships and internal DTOs.
+
 ## The workflow
 
 Spec Forge is an interactive shell (a **REPL**: you type a command, it answers, you type the
@@ -71,7 +76,7 @@ flowchart TD
 - **`history`**, **`inspect`**, **`replay`**, **`compare`** and **`prune`** work with runs
   already saved (see below).
 
-See the [CLI Reference](cli-reference.md) for every command and flag.
+See the [Core REPL Reference](cli-reference.md) for the core's internal commands and flags.
 
 ## What gets saved
 

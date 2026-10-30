@@ -17,6 +17,21 @@ they are unique across the whole site, so a number always names one decision.
     building the contract is reported on `deviations` rather than rejecting the
     spec — rejecting costs every endpoint the document describes correctly.
 
+## How to use this section
+
+These records explain **why** the module works the way it does; they are not
+the current API reference. Start with the [module overview](../index.md) for
+the module's role, then use its reference pages for current behavior. Come
+back to the ADRs when you need the constraints, alternatives or trade-offs
+behind a decision.
+
+!!! tip "Choose a path"
+    - **Understand the module:** start with the [module overview](../index.md).
+    - **Find current behavior:** use the module's reference pages.
+    - **Understand a design choice:** choose an area under [Where a decision
+      lives](#where-a-decision-lives), then open its records.
+    - **Find a specific ADR:** search the [full index](#full-index).
+
 ## Where a decision lives
 
 | File | Stage | Covers |

@@ -66,7 +66,7 @@ means a contract must also be loaded; `Precondition.ANALYSIS` means an
 
 ## The operation catalog
 
-`describe` publishes everything a frontend can ask for: **33 operations in
+`describe` publishes everything a frontend can ask for: **41 operations in
 eight families**, each with its parameters and types, whether it emits progress,
 whether it can be cancelled, and what it requires open first. The catalog is
 **derived from the façade's own signatures and docstrings**, so there is no
@@ -99,6 +99,23 @@ exception type as the reason.
 **missing** (with the import failure's reason), and **installed but not yet
 loaded** — a library added while the process was running, which reads as
 blocking as missing and whose only fix is a restart.
+
+## Documentation ownership
+
+This page explains the core's implementation and runtime boundaries. Use the surrounding
+documentation according to its audience:
+
+| If you need to know | Read |
+|---|---|
+| How to use Spec Forge or complete a user task | [User guide](../../user-guide/installation.md) |
+| Which operations the core exposes and how to call them | [Protocol operations](protocol/operations.md) |
+| How messages, events and errors travel over the wire | [Core ↔ frontend protocol](protocol/index.md) |
+| Why a core design was chosen | [Core decision records](adr/index.md) |
+| How to contribute or run tests | [Contributing & Testing](../../developer-guide/contributing.md) |
+
+Keep user workflows out of module internals, keep wire-format details in `protocol/`, and keep
+historical rationale in `adr/`. When a concept needs to appear in more than one place, keep the
+complete explanation in the page that owns it and link to it from the other page.
 
 ## How a run is executed, persisted and reported
 

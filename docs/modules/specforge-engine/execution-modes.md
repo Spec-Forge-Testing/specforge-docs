@@ -609,7 +609,7 @@ an `owner_only` endpoint the owner is always the first valid identity
 identity whose `role` equals its `required_role`, wherever it sits in the list.
 
 An identity declared with `credential = "invalid"` (see
-[the CLI reference](../../user-guide/cli-reference.md#commands)) carries a token
+[the core REPL reference](../../user-guide/cli-reference.md#commands)) carries a token
 the target must reject — expired, revoked or garbage. Only the auth mode sends
 requests under it, and only under the `authenticated` policy is it treated as a
 distinct probe. Everywhere else — owner selection, role holders, the

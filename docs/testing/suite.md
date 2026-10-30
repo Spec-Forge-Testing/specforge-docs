@@ -138,6 +138,15 @@ row in `esperado/`, not a stuck suite.
 
 ## Status
 
+### Current repository facts
+
+The in-repo corpus gate currently measures **32 of the 36 EMB contracts
+accepted**: 16 of 19 Swagger 2.0 and 16 of 17 OpenAPI 3.x. The four that
+remain out are rejected for a cause of their own — each references a schema
+its own file never defines — not for its dialect.
+
+### Historical baseline
+
 > **These numbers predate the ingestion work, and the harness has not been
 > re-run.** Everything below was measured before Contract Assembly widened its
 > entry edge — tolerant validation, bounded resolution, cycle reporting and
@@ -146,17 +155,20 @@ row in `esperado/`, not a stuck suite.
 > recorded as rejected are accepted today, and one of its metrics counts a
 > rejection reason that no longer exists.
 >
-> The in-repo corpus gate, which is current, measures **32 of the 36 EMB
-> contracts accepted** (16 of 19 Swagger 2.0, 16 of 17 OpenAPI 3.x). The four
-> that remain out are rejected for a cause of their own — each references a
-> schema its own file never defines — not for their dialect. Regenerating
-> `esperado/` is outstanding work in the harness repository.
+> Regenerating `esperado/` is outstanding work in the harness repository.
 
 | Folder | Covers | Status |
 | --- | --- | --- |
 | `contract_assembly/` | 2 functions × 37 contracts (RealWorld + EMB) | Run. **27 of 74 red** |
 | `contract_assembly/` — `polyglot` track | 2 functions × 10 contracts, separate catalog/fixture | Run. **8 of 10 red** |
 | `core_ast/` | 2 functions × 12 implementations | Written, **not run yet**: inherits whatever the previous stage delivers |
+
+### Pending regeneration
+
+The historical table must not be interpreted as a current pass rate. Re-run
+the harness and regenerate the `esperado/` baselines before using those
+figures as repository status. Until then, the current facts above and the
+historical observations below have different evidentiary status.
 
 `specforge_engine` and `semantic_inference` have no folder here yet. When
 they get one, each follows the same rule — if the seam doesn't exist in the CLI, it doesn't get written

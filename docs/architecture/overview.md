@@ -97,21 +97,17 @@ docker-compose.yml           # monorepo orchestration (root entry point)
 
 ## The unified contract
 
-The boundary object between the AI side and the execution engine is `EndpointContract` /
-`EndpointParameters` / `SchemaProperty`:
+The shared `EndpointContract` is the boundary between semantic inference and
+the execution engine. Contract Assembly provides the OpenAPI-derived identity
+and structure, semantic inference adds constraints and domain information, and
+the orchestrator adapts the result into the engine's `CompilerInput`.
 
-- Pure JSON Schema vocabulary (`type`, `minimum`/`maximum`, `pattern`, `enum`, `minLength`/
-  `maxLength`, `minItems`/`maxItems`, `items`, `properties`, `required`, `format`) — engines
-  compile it natively.
-- camelCase on the wire, snake_case in Python.
-- `extra="forbid"` forces LLM self-correction (hallucinated keywords fail validation).
-- **Identity vs. invariants** — `method`/`path_url` are routing identity, always sourced from the
-  OpenAPI base. The LLM only contributes validation constraints, never overrides identity.
-- **One vocabulary end to end** — the execution engine never sees the LLM's output. The
-  producer emits the kernel's `EndpointContract`, the orchestrator's adapter translates it into
-  the engine's `CompilerInput`, and the engine's `policy` layer validates it. The shared
-  vocabulary (`EndpointRisk`, the `AttackFamily` enum, `TransitionInvariant`,
-  `SemanticProperty`, and `EndpointAttack` itself) is imported by the engine from the kernel,
-  not redefined, so it crosses that seam untranslated; the types the engine keeps of its own —
-  the per-value `HackerStrategyContract`, the state-link family — are filled by the adapter from
-  the contract's `field_hints` and its `transitions`.
+The shared kernel is the authoritative reference for the contract's fields,
+wire dialects and validation invariants. The engine's internal projection and
+stage-by-stage DTOs are documented in its [data flow](../modules/specforge-engine/data-flow.md).
+Keeping those details in their owning references prevents this architecture
+overview from becoming a second contract specification.
+
+See the [shared contracts module](../modules/contracts/index.md) for the model
+and the [architecture data flow](data-flow.md) for the boundaries between
+modules.

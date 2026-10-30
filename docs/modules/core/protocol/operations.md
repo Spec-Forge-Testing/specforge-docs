@@ -1,11 +1,19 @@
 # Operations
 
-`describe` publishes **34 operations in eight families**, derived from the
+`describe` publishes **41 operations in eight families**, derived from the
 core's own façade. Each operation declares what must be open before it is called
 (`requires`), whether it can be watched (`emits_progress`), whether it can be
 stopped (`cancellable`), and whether it destroys what cannot be undone
 (`destructive`). The tables below group them by family; the authoritative,
 machine-readable form is whatever `describe` returns from the build in hand.
+This page is the human-readable protocol reference for that catalog. It is not
+a second CLI-owned list: clients discover operation names and parameters from
+the handshake, while this page explains their wire-level behavior and links to
+the surrounding protocol rules.
+
+When the catalog changes, update this page together with the protocol fixtures
+and verify the documented operation names, requirements and effects against
+`describe` before publishing the documentation.
 
 `requires` is one of:
 
@@ -16,9 +24,10 @@ machine-readable form is whatever `describe` returns from the build in hand.
 | `contract` | A contract must also be loaded — which implies a project. |
 | `analysis` | An `analyze_endpoints` must have run in the same session — which implies a contract. Without it the call is refused `NO_STATIC_ANALYSIS`. |
 
-`destructive` is `true` on exactly two operations, `apply_fix_plan` and
-`apply_prune_plan`, which delete or rewrite what cannot be undone. A frontend
-confirms those before sending, reading the flag instead of keeping its own list.
+`destructive` is `true` on exactly three operations, `apply_fix_plan`,
+`apply_finding_fix` and `apply_prune_plan`, which delete or rewrite what cannot
+be undone. A frontend confirms those before sending, reading the flag instead
+of keeping its own list.
 
 ## `session`
 
@@ -218,6 +227,12 @@ give `/api/v1`, never `/api/api/v1`.
 | `list_runs` | none | — |
 | `get_run` | none | `started`, `finished` |
 | `get_finding` | none | — |
+| `estimate_finding_explanation` | project | — |
+| `explain_finding` | project | `started`, `finished`; cancellable |
+| `estimate_finding_fix` | project | — |
+| `propose_fix` | project | `started`, `finished`; cancellable |
+| `get_finding_fix_patch` | none | — |
+| `apply_finding_fix` | project | —; destructive |
 | `compare_runs` | none | — |
 | `prune_runs` | none | — |
 | `apply_prune_plan` | none | — |
@@ -255,6 +270,7 @@ control request refuted; each is also listed, with `state` `refuted` and its `co
 | `get_config` | none |
 | `set_config` | project |
 | `reset_config` | project |
+| `list_llm_models` | none |
 
 ## `environment`
 

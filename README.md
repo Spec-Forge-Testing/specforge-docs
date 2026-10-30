@@ -23,10 +23,13 @@ specforge-docs/
 ├── mkdocs.yml           # site config, nav, Material theme
 ├── requirements.txt
 └── docs/
-    ├── index.md
-    ├── user-guide/       # installing and running Spec Forge
-    ├── architecture/     # conceptual overview of the pipeline
-    ├── developer-guide/  # contributing and CLI internals
-    ├── modules/          # per-package reference, nested under Developer Guide in the nav
-    └── testing/          # tests-repos corpora, nested under Developer Guide in the nav
+    ├── index.md                 # choose a path and documentation map
+    ├── user-guide/              # task-oriented product documentation
+    ├── architecture/            # conceptual overview of the pipeline
+    ├── developer-guide/         # contributing and implementation guidance
+    ├── modules/                 # per-package reference and decision records
+    └── testing/                 # tests-repos corpora
 ```
+
+The site follows progressive disclosure: getting-started and usage pages come first, while
+reference material is grouped under the Developer Guide.

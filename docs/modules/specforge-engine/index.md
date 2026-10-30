@@ -27,7 +27,7 @@ flowchart LR
     E --> R[("EngineRunResult")]
 ```
 
-## Development requirements
+## Development and testing
 
 The package targets Python 3.11+. Installation and verification commands are in
 [Development & Testing](../../developer-guide/contributing.md#test-a-compose-module).
@@ -106,7 +106,7 @@ never re-validates; the engine consumes `EngineInput` alone and never sees a
 `Strategy`. Data flows one way through typed DTOs, so each stage is
 testable in isolation. See [Architecture](architecture.md).
 
-## The public facade
+## Public API { #the-public-facade }
 
 Everything you import comes from the top-level `specforge_engine` package;
 internal module paths are an implementation detail. The surface is the two
@@ -153,7 +153,7 @@ derived by subtraction. A request that never reached the wire says nothing
 about the API, so it is recorded in the stats and never becomes a finding. The
 decisions this rule produced are in the [decision records](adr/index.md).
 
-## Where to read next
+## Read next
 
 | If you want to | Read |
 |---|---|

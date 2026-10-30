@@ -1,4 +1,4 @@
-# CLI Reference
+# Core REPL Reference
 
 This page documents the core's **built-in REPL** — the surface the team drives
 the pipeline with: workspace setup, contract validation, static tracing,
@@ -200,7 +200,7 @@ unexpectedly.
     If the contract assembly library is not installed it says so
     and points at `pip install -e lib/contract_assembly` — see
     [Installation](installation.md). This is the same validation the
-    [Example Walkthrough](example-walkthrough.md) runs first, before any tracing or
+    [Core REPL walkthrough](example-walkthrough.md) runs first, before any tracing or
     fuzzing.
 
 ??? "`trace` — static code tracing from an OpenAPI endpoint"
@@ -1157,5 +1157,5 @@ code registry are documented in [Run report](reports.md).
 ## Example workspace
 
 Want to see every command against one consistent project? See the
-[Example Walkthrough](example-walkthrough.md) — a self-contained Dummy Bank API
+[Core REPL walkthrough](example-walkthrough.md) — a self-contained Dummy Bank API
 that exercises `trace`, `ast-extract` and `fuzz` end to end.

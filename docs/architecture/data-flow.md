@@ -1,4 +1,4 @@
-# Data Flow
+# System-wide data flow
 
 The pipeline is a chain of stages, and every seam between two stages is a typed boundary object.
 Nothing but a validated DTO crosses from one module to the next: a stage receives one shape,

@@ -104,7 +104,7 @@ The data directory is resolved in this order:
 The variables are listed with the rest of the user-facing settings in
 [Environment variables](../../user-guide/environment.md).
 
-## Who uses it
+## How it fits into the pipeline
 
 [Core](../core/index.md) is the only caller. It opens one transaction per
 persisted run, fuzz or replay, and writes every row inside it: the transaction

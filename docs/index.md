@@ -41,7 +41,7 @@ flowchart TD
 
 ---
 
-## Start here
+## Choose your path
 
 <div class="grid cards sf-start-here" markdown>
 
@@ -51,9 +51,8 @@ flowchart TD
 
     - [Installation & Quick Start](user-guide/installation.md) — prerequisites and your first run.
     - [Core Concepts](user-guide/concepts.md) — what Spec Forge does and the words it uses.
-    - [CLI Reference](user-guide/cli-reference.md) — every command, its flags and its output.
-    - [Example Walkthrough](user-guide/example-walkthrough.md) — the commands end to end
-      against a sample API.
+    - [Spec Forge CLI](user-guide/specforge-cli.md) — the packaged client and its two ways to run.
+    - [Interactive use](user-guide/cli/interactive.md) — run operations and read their output.
 
 -   :material-hammer-wrench:{ .lg .middle } __I want to understand or extend the code__
 
@@ -65,4 +64,31 @@ flowchart TD
     - [Developer Guide › Modules](modules/contract-assembly/index.md) — a per-package
       implementation deep dive.
 
+-   :material-help-circle-outline:{ .lg .middle } __I need help__
+
+    ---
+
+    - [Troubleshooting](user-guide/troubleshooting.md) — diagnose setup and runtime problems.
+    - [Run Report](user-guide/reports.md) — understand findings, saved runs and machine output.
+    - [Environment Variables](user-guide/environment.md) — configure the CLI and its providers.
+
 </div>
+
+## Documentation map
+
+The site is organized by the question you are trying to answer:
+
+| Section | Use it for |
+|---|---|
+| **Getting started** | Install Spec Forge and complete a first run. |
+| **Core concepts** | Understand the pipeline, saved runs and vocabulary before using the CLI. |
+| **Using Spec Forge** | Run the shipped client, the core REPL, and read reports. |
+| **Configuration** | Configure providers and environment variables. |
+| **Help** | Diagnose setup and runtime problems. |
+| **Architecture** | Understand boundaries and data flow across the monorepo. |
+| **Developer Guide** | Contribute code and navigate the implementation. |
+| **Test corpora** | Run the real-API and integration test collections. |
+
+Reference-heavy module pages and decision records are grouped under **Developer Guide** so that
+new users can stay in the task-oriented sections and still reach the implementation detail when
+they need it.

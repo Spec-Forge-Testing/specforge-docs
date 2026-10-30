@@ -25,7 +25,7 @@ flowchart LR
     H --> I[("LLMPayload")]
 ```
 
-## Development requirements
+## Development and testing { #development-requirements }
 
 The package targets Python 3.11+. Installation and verification commands are in
 [Contributing & Testing](../../developer-guide/contributing.md#test-a-compose-module).
@@ -68,7 +68,7 @@ for result in analyze_endpoints(endpoints, repo_root="/path/to/api/repo"):
         print(result.endpoint.path, type(result.error).__name__)
 ```
 
-## Public API Re-exports
+## Public API { #public-api-re-exports }
 
 The root core_ast package exports:
 
@@ -84,7 +84,7 @@ the run learned, not just the payload.
 
 Typed domain exceptions are exported from ``core_ast.exceptions``.
 
-## The pipeline
+## How it fits into the pipeline
 
 Each stage narrows the uncertainty: from a repository to a file, from a file to a
 function, from a function to its call graph.

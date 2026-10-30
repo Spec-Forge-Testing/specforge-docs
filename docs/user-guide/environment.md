@@ -10,7 +10,7 @@ key, the shell wins.
 | Variable | Read from | Default | What it does |
 | --- | --- | --- | --- |
 | `SPECFORGE_THEME` | shell | `default` | Selects the UI color theme at startup. Valid values: `default`, `light`, `mono`, `nord`, `dracula`, `solarized`, `matrix`. An unknown name falls back to `default`. In the core's own REPL you can also switch it live with the `theme` command. |
-| `SPECFORGE_TUI` | shell | enabled | Set it to a falsy value (`0`, `false`, `no`, `off`) to use the text REPL instead of the [full-screen interface](specforge-cli.md#the-full-screen-interface). The full-screen interface also needs real terminals on stdin and stderr and a `TERM` other than `dumb`. |
+| `SPECFORGE_TUI` | shell | enabled | Set it to a falsy value (`0`, `false`, `no`, `off`) to use the text REPL instead of the [full-screen interface](cli/interactive.md#the-full-screen-interface). The full-screen interface also needs real terminals on stdin and stderr and a `TERM` other than `dumb`. |
 | `SPECFORGE_MOUSE` | shell | enabled | Set it to a falsy value to leave the mouse to the terminal in the full-screen interface, so its native selection and copy work. |
 | `SPECFORGE_CORE_COMMAND` | shell | `specforge --serve` | The command `specforge-cli` launches as the core. |
 | `SPECFORGE_STARTUP_TIMEOUT` | shell | `15` | Seconds `specforge-cli` waits for the core's handshake. |

@@ -696,7 +696,7 @@ front because they're the ones a fresh session hits first:
 - [Run Report](reports.md) — the full shape of what `fuzz`/`replay`/
   `run_pipeline` answer with, and the `report.json`/`report.html` artifacts a
   saved run leaves.
-- [Example Walkthrough](example-walkthrough.md) — a self-contained demo API
+- [Core REPL walkthrough](example-walkthrough.md) — a self-contained demo API
   to try every operation above against, end to end.
 - [Operations](../modules/core/protocol/operations.md),
   [Events and cancellation](../modules/core/protocol/events.md),

@@ -56,10 +56,10 @@ so a run cut short keeps what it had produced.
 
 Use the page that matches what you want to do:
 
-- [Interactive use](cli/interactive.md) ? the full-screen interface, text REPL, command syntax and interactive conveniences.
-- [Scripts, CI and approvals](cli/scripts-and-ci.md) ? one-shot calls, machine-readable output, CI exit codes and approvals.
-- [Fixing findings](cli/fixing-findings.md) ? proposing and applying fixes from the CLI.
-- [Run Report](reports.md) ? how the CLI presents run results and the complete report model.
-- [CLI operation reference](specforge-cli-reference.md) ? every operation, flag, default and CLI-specific rendering detail.
+- [Interactive use](cli/interactive.md) — the full-screen interface, text REPL, command syntax and interactive conveniences.
+- [Scripts, CI and approvals](cli/scripts-and-ci.md) — one-shot calls, machine-readable output, CI exit codes and approvals.
+- [Fixing findings](cli/fixing-findings.md) — proposing and applying fixes from the CLI.
+- [Run Report](reports.md) — how the CLI presents run results and the complete report model.
+- [CLI operation reference](specforge-cli-reference.md) — every operation, flag, default and CLI-specific rendering detail.
 
 The [Core REPL Reference](cli-reference.md) is a different page under the Developer Guide. It documents the core's internal testing REPL, not this packaged client.

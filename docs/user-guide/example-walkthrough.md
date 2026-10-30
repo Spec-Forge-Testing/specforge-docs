@@ -1,5 +1,11 @@
 # Example Walkthrough
 
+!!! info "For core development"
+    This walkthrough uses the **Core REPL** from an `llm-pbt-agent` checkout.
+    It is not a walkthrough for the packaged `specforge-cli` client. For the
+    shipped client, start with [Installation & Quick Start](installation.md)
+    and [Interactive use](cli/interactive.md).
+
 `examples/ast_demo/` is a self-contained *Dummy Bank API* used to exercise the
 commands end to end and see each renderer against one consistent project. It pairs
 a handful of source handlers with the matching `openapi.yaml`:

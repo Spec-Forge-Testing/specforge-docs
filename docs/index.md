@@ -51,9 +51,8 @@ flowchart TD
 
     - [Installation & Quick Start](user-guide/installation.md) — prerequisites and your first run.
     - [Core Concepts](user-guide/concepts.md) — what Spec Forge does and the words it uses.
-    - [Core REPL Reference](user-guide/cli-reference.md) — internal core commands, flags and output.
-    - [Example Walkthrough](user-guide/example-walkthrough.md) — the commands end to end
-      against a sample API.
+    - [Spec Forge CLI](user-guide/specforge-cli.md) — the packaged client and its two ways to run.
+    - [Interactive use](user-guide/cli/interactive.md) — run operations and read their output.
 
 -   :material-hammer-wrench:{ .lg .middle } __I want to understand or extend the code__
 
@@ -65,12 +64,13 @@ flowchart TD
     - [Developer Guide › Modules](modules/contract-assembly/index.md) — a per-package
       implementation deep dive.
 
--   :material-clipboard-text-outline:{ .lg .middle } __I maintain the project__
+-   :material-help-circle-outline:{ .lg .middle } __I need help__
 
     ---
 
-    - [Contributing & Testing](developer-guide/contributing.md) — local setup, test scopes and
-      continuous integration.
+    - [Troubleshooting](user-guide/troubleshooting.md) — diagnose setup and runtime problems.
+    - [Run Report](user-guide/reports.md) — understand findings, saved runs and machine output.
+    - [Environment Variables](user-guide/environment.md) — configure the CLI and its providers.
 
 </div>
 

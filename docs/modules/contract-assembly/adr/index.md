@@ -25,6 +25,13 @@ the module's role, then use its reference pages for current behavior. Come
 back to the ADRs when you need the constraints, alternatives or trade-offs
 behind a decision.
 
+!!! tip "Choose a path"
+    - **Understand the module:** start with the [module overview](../index.md).
+    - **Find current behavior:** use the module's reference pages.
+    - **Understand a design choice:** choose an area under [Where a decision
+      lives](#where-a-decision-lives), then open its records.
+    - **Find a specific ADR:** search the [full index](#full-index).
+
 ## Where a decision lives
 
 | File | Stage | Covers |

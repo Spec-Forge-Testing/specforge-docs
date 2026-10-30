@@ -132,6 +132,10 @@ nav:
       - Glossary: user-guide/glossary.md
   - Using Spec Forge:
       - Spec Forge CLI: user-guide/specforge-cli.md
+      - Interactive use: user-guide/cli/interactive.md
+      - Scripts, CI and approvals: user-guide/cli/scripts-and-ci.md
+      - Fixing findings: user-guide/cli/fixing-findings.md
+      - CLI operation reference: user-guide/specforge-cli-reference.md
       - Run Report: user-guide/reports.md
       - Example Walkthrough: user-guide/example-walkthrough.md
   - Configuration:

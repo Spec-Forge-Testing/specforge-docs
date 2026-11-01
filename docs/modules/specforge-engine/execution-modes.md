@@ -187,6 +187,10 @@ sequenceDiagram
     Sup-->>SR: StatefulExplorationOutcome
 ```
 
+A stateful finding can end `refuted` or `unverified` as a stateless one does: its last
+step is judged by the same [control requests](control-requests.md), after the minimal
+sequence is re-sent. A stateful run sends no [witnesses](witnesses.md#stateful).
+
 The machine runs Hypothesis's `explicit`, `generate` and `shrink` phases only.
 Hypothesis's `explain` phase is left out: it re-runs the whole machine against the
 target hundreds of times only to annotate Hypothesis's printed report, which the

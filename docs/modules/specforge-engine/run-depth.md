@@ -112,12 +112,25 @@ each looking past the defects already reported, until one changes nothing
 | ends flaky on a new signature | the ceiling |
 | widens a range defect's suppression (below) | once per defect |
 | ends flaky with no violation to sign | `STATEFUL_UNEXPLAINED_FLAKY_PASSES` (2) |
+| ends `refuted` or `unverified` on a new signature, or widens one's suppression | the ceiling |
 
 The run also stops when the distinct confirmed reports, or the distinct flaky
 signatures, reach `StatefulOptions.max_distinct_bugs` (default
 `STATEFUL_MAX_DISTINCT_BUGS`, 25). Setting it to `1` reports the first defect only.
 A cancellation, a dead target, a machine that can draw no sequence and an engine
 failure stop it at once.
+
+Passes are also bounded by `STATEFUL_MAX_PASSES` (100), however many count as progress.
+A run that reaches it ends `truncated` with reason `pass_limit_reached`
+([ADR-188](adr/runners.md#adr-188)).
+
+### A witness Hypothesis calls flaky
+
+Hypothesis may fail a pass while shrinking, because the target's state changed between
+replays. The violation it saw is still in hand. The pass keeps that witness and
+verifies it by re-sending its sequence, as it does with a shrink the budget cut short.
+If it reproduces, it is minimized and judged like any other; otherwise the pass is
+flaky under its signature.
 
 ### Telling defects apart
 

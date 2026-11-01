@@ -230,6 +230,10 @@ nav:
           - Proving a violation: modules/specforge-engine/provable-violation.md
           - Engine internals: modules/specforge-engine/engine-internals.md
           - Findings: modules/specforge-engine/findings.md
+          - Control requests: modules/specforge-engine/control-requests.md
+          - Witnesses of inferred rules: modules/specforge-engine/witnesses.md
+          - Information disclosure: modules/specforge-engine/disclosure.md
+          - Shrink limits and the trace: modules/specforge-engine/shrink-limits.md
           - Execution modes: modules/specforge-engine/execution-modes.md
           - Run depth: modules/specforge-engine/run-depth.md
           - Progress and cancellation: modules/specforge-engine/progress-and-cancellation.md

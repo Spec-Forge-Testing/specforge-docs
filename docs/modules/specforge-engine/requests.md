@@ -191,6 +191,14 @@ array or an empty object spells an empty segment, and the request is unsendable.
 blueprint records what went out, so the trace, the replay and every oracle see the
 request as sent.
 
+### A body left out { #optional-body }
+
+An optional body counts as not sent, and so do the fields inside it, however required
+they are within the body. A minimal request can therefore omit it and still conform to
+its contract. A server that answers 400 or 422 to that request demands a body the spec
+leaves optional, which is a `contract_completeness` finding of that endpoint, with or
+without a produced contract.
+
 ### How a value is spelled { #how-a-value-is-spelled }
 
 A value that is not a string is written as text on every wire but a JSON body

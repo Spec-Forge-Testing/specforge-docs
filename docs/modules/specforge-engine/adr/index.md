@@ -214,3 +214,6 @@ missing here belongs to another module:
 | [ADR-183](runners.md#adr-183) | runners | A whole-request rejection gets a second control holding the run's corpus values, sent only to refute |
 | [ADR-184](runners.md#adr-184) | runners | An endpoint whose state link writes into a reserved header is left unprobed by the runners |
 | [ADR-185](engine.md#adr-185) | engine | Path and header values are spelled in OpenAPI's `simple` style, each part as the query spells it |
+| [ADR-186](findings.md#adr-186) | findings | A rejection is confirmed only against a value the run shows free |
+| [ADR-187](runners.md#adr-187) | runners | An inferred rule is witnessed in the valid pass, by a value derived within a bound |
+| [ADR-188](runners.md#adr-188) | runners | A stateful run keeps a witness Hypothesis calls flaky, and its passes are bounded |

@@ -117,7 +117,7 @@ What each invariant puts in the slots:
 | `mass_assignment` | — | the value echoed back | `request_field` `body.<path>` of the key (`body.role`, `body.user.role`) | — |
 | `sensitive_data_exposure` | — | the pointer of every undeclared secret key, in order of appearance | `response_body` `""` | — |
 | `undeclared_response_field` | each schema path holding an undeclared key, with the property names it declares | `{pointers, omitted}`: the first 20 pointers of undeclared keys, and how many more | `response_body` `""` | — |
-| `information_disclosure` | — | the fragment that leaked | the poisoned field | the disclosure marker |
+| `information_disclosure` | — | the fragment that leaked | the poisoned field (none: the [whole request](disclosure.md#scope)) | the [disclosure marker](disclosure.md#markers) |
 | `reflected_payload` | — | the reflected text | the poisoned field | the attack family |
 | `input_induced_timeout` | — | the elapsed ms | the poisoned field (none for a valid value) | — |
 | `semantic_property` | — | `{field: value}` for each field the rule references | — | the property class |
@@ -125,6 +125,7 @@ What each invariant puts in the slots:
 | `input_validation` | `{keyword: declared}` of the first mismatch, `pattern` and `format` included | the value sent, on a text wire the text sent (`"+4"`) | the poisoned field | — |
 | `response_schema_conformance` | `{keyword: declared}` | the value at the pointer | `response_body` pointer | — |
 | `contract_completeness` | — | the server's message for the field it blames | the blamed field (none: the whole request) | `loc` or `message_key` |
+| `contract_completeness`, a [rule only the produced contract declares](witnesses.md) | `{keyword: declared}` | the value sent | the poisoned field | `inferred_rule` |
 | `content_type_conformance` | the declared type | the received type, or `null` | `response_header` `content-type` | — |
 | `status_code_conformance` | the declared status keys | the status | — | — |
 | `latency_sla` | the SLA in ms | the latency in ms | — | — |
@@ -162,7 +163,7 @@ same redaction.
 | --- | --- | --- |
 | `RequestEvidence` | `url`, `poisoned_zone`, `poisoned_field`, `attack_family`, `trigger_fields` | Where the request went (no userinfo, no query, no fragment: the query is in the payload), the field it drew outside its schema, the payload family it used, and the fields whose values the shrink found the finding needs. |
 | `ResponseEvidence` | `content_type`, `headers`, `latency_ms` | What the response carried besides its status and body. |
-| `ControlEvidence` | `status_code`, `latency_ms`, `error` | What the control request the finding was judged against got back; `null` when none was sent. |
+| `ControlEvidence` | `status_code`, `latency_ms`, `error`, `source`, `attribution`, `peer`, `occupancy`, `known_answer`, `identity_label` | What the control request the finding was judged against got back, and the further controls it led to ([Control requests](control-requests.md#evidence)); `null` when no control applies. |
 
 `trigger_fields` are the top-level fields where the minimal payload differs from
 the simplest payload the same phase draws, spelled `<zone>.<field>`. A stateful
@@ -214,32 +215,15 @@ The four states are the members of `FindingState`. A `resilience` finding is
 `confirmed` or `flaky` by resending its attack, and is never `refuted`
 ([Run depth](run-depth.md#confirming-a-server-error)).
 
-**Control requests** ([ADR-151](adr/findings.md#adr-151)). Three invariants are
-confirmed against one, in the stateless mode, each a row of `CONTROL_CHECKS`:
-
-| Invariant | Applies to | Control payload | An answer judges when it is | Refuted when the control |
-| --- | --- | --- | --- | --- |
-| `mass_assignment` | every finding | The minimal payload without the smuggled key at its path, its other open strings rotated and its corpus values held | a 2xx whose body holds an object | Echoes the key all the same |
-| `input_induced_timeout` | every finding | The poisoned field at its minimal valid value; without a poisoned field, the endpoint's minimal valid payload | a 2xx, or a timeout | Times out too |
-| `contract_completeness` | rule `request` only | The payload with its open body and query strings rotated within their character class | a 2xx, or a 4xx with the reproduction's status | Is accepted, and the same control sent again is rejected the same way, in a body of the same shape |
-
-Each control declares which answers can judge its finding
-(`ControlCheck.judges`, [ADR-182](adr/findings.md#adr-182)). A judgeable answer
+**Control requests** ([ADR-151](adr/findings.md#adr-151)). `mass_assignment`,
+`input_induced_timeout`, `contract_completeness` and, on a rule only a produced
+contract declares, `input_validation` are confirmed against one, in stateless and
+stateful runs alike. Each row of `CONTROL_CHECKS` declares which answers can judge its
+finding (`ControlCheck.judges`, [ADR-182](adr/findings.md#adr-182)). A judgeable answer
 refutes or confirms; an answer that cannot judge, like no answer at all, leaves the
-finding `unverified` with that control as its evidence.
-
-The `contract_completeness` control looks for a conflict with stored state, such
-as a unique field. Each letter or digit becomes the next of its class (`a`→`b`,
-`9`→`0`), so a string keeps its length and classes; an empty string stays empty.
-Strings that declare `enum`, `const`, `format` or `pattern`, anything under a
-composed schema, files, and path or header values are kept. When nothing rotates
-there is no control and the finding stands. A control accepted twice means the
-rejection depended on the value, and the finding is confirmed
-([ADR-166](adr/runners.md#adr-166)). When that control does not refute, and the
-request took values from the run's corpus, a second control holds those values
-(the same resource) and rotates the rest; it is sent, with its own resend, only to
-add a refutation, and otherwise the first control's verdict stands
-([ADR-183](adr/runners.md#adr-183)).
+finding `unverified` with that control as its evidence. The payloads, what a control
+may send and what each verdict rests on are on
+[Control requests](control-requests.md).
 
 A refuted finding carries the control that refuted it: for a whole-request
 rejection, the request that was accepted. An unverified finding whose control got

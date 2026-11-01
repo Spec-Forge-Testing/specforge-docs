@@ -233,6 +233,7 @@ give `/api/v1`, never `/api/api/v1`.
 | `propose_fix` | project | `started`, `finished`; cancellable |
 | `get_finding_fix_patch` | none | — |
 | `apply_finding_fix` | project | —; destructive |
+| `revert_finding_fix` | project | —; destructive |
 | `compare_runs` | none | — |
 | `prune_runs` | none | — |
 | `apply_prune_plan` | none | — |
@@ -257,7 +258,7 @@ classification and evidence as a report's defect
 | `observation` | `expected`, `observed`, `location` (`{scope, path}`, see [scopes](vocabularies.md#location-scope)) and `marker`; `null` for a finding stored before `0.1.19`. |
 | `request` | `url`, `poisoned_zone`, `poisoned_field` (a nested body field by its dotted path, such as `user.email` or `items.0.price`), `attack_family`, `trigger_fields`. |
 | `response` | `content_type`, `headers` (redacted), `latency_ms`. |
-| `control` | `status_code`, `latency_ms`, `error`: what the control request got back. On a confirmed finding, the control it was judged against (for `resilience`, the clean base request sent after the attack was confirmed); on an unverified one, the control that got no answer; on a refuted one, the control that refuted it (for a whole-request rejection, the request that was accepted); `null` when none was sent. |
+| `control` | `status_code`, `latency_ms`, `error`: what the control request got back, plus `source`, `attribution`, `peer`, `occupancy` and `known_answer` ([what they hold](../../specforge-engine/control-requests.md#evidence)). On a confirmed finding, the control it was judged against (for `resilience`, the clean base request sent after the attack was confirmed); on an unverified one, the control that got no answer; on a refuted one, the control that refuted it (for a whole-request rejection, the request that was accepted); `null` when none was sent. |
 | `stack_trace` | Always `null`. Deprecated; removed with the next minor. |
 
 `metrics.findings_refuted` counts, apart from `findings_flaky`, the findings a

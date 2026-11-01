@@ -96,9 +96,8 @@ breaks ties. Endpoints that produce for one another in a cycle share a layer.
 
 Once requests reuse real values, some 400 and 422 answers are conflicts with stored
 state, such as a username already taken. A `contract_completeness` finding that
-blames the whole request is checked against a control request with fresh string
-values, sent twice; it is refuted only when the first is accepted and the second
-rejected the same way ([Findings](findings.md#states)).
+blames the whole request is judged by a control that sends only values the run has
+not seen accepted; [Control requests](control-requests.md) has the verdicts.
 
 ## Stateful: until a pass finds nothing new { #stateful-depth }
 
@@ -112,12 +111,25 @@ each looking past the defects already reported, until one changes nothing
 | ends flaky on a new signature | the ceiling |
 | widens a range defect's suppression (below) | once per defect |
 | ends flaky with no violation to sign | `STATEFUL_UNEXPLAINED_FLAKY_PASSES` (2) |
+| ends `refuted` or `unverified` on a new signature, or widens one's suppression | the ceiling |
 
 The run also stops when the distinct confirmed reports, or the distinct flaky
 signatures, reach `StatefulOptions.max_distinct_bugs` (default
 `STATEFUL_MAX_DISTINCT_BUGS`, 25). Setting it to `1` reports the first defect only.
 A cancellation, a dead target, a machine that can draw no sequence and an engine
 failure stop it at once.
+
+Passes are also bounded by `STATEFUL_MAX_PASSES` (100), however many count as progress.
+A run that reaches it ends `truncated` with reason `pass_limit_reached`
+([ADR-188](adr/runners.md#adr-188)).
+
+### A witness Hypothesis calls flaky
+
+Hypothesis may fail a pass while shrinking, because the target's state changed between
+replays. The violation it saw is still in hand. The pass keeps that witness and
+verifies it by re-sending its sequence, as it does with a shrink the budget cut short.
+If it reproduces, it is minimized and judged like any other; otherwise the pass is
+flaky under its signature.
 
 ### Telling defects apart
 

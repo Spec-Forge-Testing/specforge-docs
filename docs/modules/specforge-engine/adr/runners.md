@@ -616,3 +616,92 @@ unprobed this way fails with
 `EXECUTION_FAILED` and names the reason, the rule of a run that crossed nothing
 ([ADR-102](engine.md#adr-102)); with any crossable endpoint beside it, the run
 completes and lists the endpoint as unprobed.
+
+---
+
+## ADR-187 — An inferred rule is witnessed in the valid pass, by a value derived within a bound { #adr-187 }
+
+**Status:** accepted · `runtime/fuzzers/stateless/witnesses.py`, `runtime/fuzzers/stateless/example_counts.py`, `strategy_compiler/witness_values.py`, `strategy_compiler/constants.py`
+
+### Context
+
+A rule the produced contract declares and the spec leaves out narrows every valid draw,
+so a valid pass obeys it. A rejection that the same field gets without that contract no
+longer appears, and adding knowledge loses a finding. The `boundary` phase crosses
+rules, but `smoke` and `exposure` have no such pass.
+
+### Decision
+
+**Every valid pass sends, after its minimal request, one witness per field that infers
+a keyword.** A witness is the minimal payload with that field at a value the spec takes
+and only the inferred rule forbids. It sits in the valid pass so that every strategy has
+it, and inside the pass's share so that it spends no extra budget.
+
+**A witness's value follows from the keyword.** The nearest value past a rule's edge is
+computed. Only keywords that derive nothing are searched, within
+`WITNESS_SEARCH_EXAMPLES` candidates and `WITNESS_WALL_BUDGET_S` per endpoint's plan.
+
+**Past a limit, no witness.** 64 elements; 1024 characters in a path, query or header,
+65536 in a body; weight 128 for `uniqueItems`. A value is never trimmed to fit.
+
+**A witness is not shrunk.** It is already the simplest value. The request carries
+`RequestOrigin.WITNESS`, so the shrink does not have to infer that from its phase.
+
+### Rejected
+
+- **A filter over one strategy holding every field's candidates.** Its cost grows with
+  the fields, is paid while planning before any deadline starts, and loses witnesses at
+  random.
+- **Sending the witnesses only in `boundary`.** Strategies with no such pass would lose
+  the finding.
+- **Trimming a value to the limit.** A trimmed value no longer breaks the rule.
+
+### Consequences
+
+A witness and the `boundary` draw over the same rule are two findings of one `rule_id`,
+as their reproducers differ. A rule whose edge lies past a limit has no witness. A share
+smaller than the witnesses sends the first ones. A stateful run sends none, so
+field-level `contract_completeness` on an inferred rule comes from stateless runs
+([Witnesses](../witnesses.md#stateful)).
+
+---
+
+## ADR-188 — A stateful run keeps a witness Hypothesis calls flaky, and its passes are bounded { #adr-188 }
+
+**Status:** accepted · Extends [ADR-162](#adr-162) · `runtime/fuzzers/stateful/outcome.py`, `runtime/fuzzers/stateful/minimizer.py`, `runtime/fuzzers/stateful/supervisor.py`, `runtime/fuzzers/stateful/constants.py`
+
+### Context
+
+Hypothesis replays a failing sequence to shrink it. Against a live server the replay can
+take another path, and Hypothesis then ends the pass with a flakiness error or fails
+inside its own shrink. The engine held a real violation at that moment, and discarding
+it loses the finding. Some of those errors would have stopped the run.
+
+With `refuted` and `unverified` findings counting as progress, and repeated ones widening
+their suppression, the loop until a pass finds nothing new has no natural end on a
+target that always gives something new.
+
+### Decision
+
+**The witness is kept and verified by re-sending it.** A pass Hypothesis called flaky,
+or failed while shrinking, ends cut short on the violation in hand. Its sequence is
+re-sent verbatim: if it reproduces, it is minimized and judged as any other finding; if
+not, the pass is flaky. An error over how the engine used Hypothesis is not treated this
+way.
+
+**Passes are bounded by `STATEFUL_MAX_PASSES` (100).** A run reaching it ends `truncated`
+with reason `pass_limit_reached`, so a reader sees the depth was cut.
+
+### Rejected
+
+- **Trusting Hypothesis's verdict.** Its replay is one more request against moving
+  state; the re-send is the test the engine trusts everywhere else.
+- **Reporting the witness without verifying it.** The report promises a sequence that
+  reproduced on the wire.
+- **A bound by time alone.** `deadline_ms` is the caller's choice and may be unset; a
+  pass count bounds the loop in every run.
+
+### Consequences
+
+A stateful run costs more requests on a target that makes Hypothesis flaky, and goes on
+past it. A run reaching the limit is `truncated`, and does not compare as a complete one.

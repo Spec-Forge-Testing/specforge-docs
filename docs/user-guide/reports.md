@@ -67,7 +67,7 @@ its metrics, endpoint stats and crashes stay queryable through `history` and
 ## The `report.json` schema
 
 `ReportDocument` is a frozen, `extra="forbid"` Pydantic model: a pure function
-of persisted run data, never a live object. Its `schema_version` is `1.23`.
+of persisted run data, never a live object. Its `schema_version` is `1.24`.
 The version changes when a reader must account for a new or changed field.
 
 The changelog is intentionally compact: **additive** versions preserve the
@@ -79,6 +79,7 @@ the schema table below.
 
     | Version | Compatibility | Changes |
     | --- | --- | --- |
+    | `1.24` | Additive over 1.23 | A `control` can carry `attribution`, `peer`, `occupancy` and `known_answer`, and carries `source`. |
     | `1.23` | Additive over 1.22 | `unconfirmed_findings` can have `state: refuted`, with the refuting `control` and an explanatory `summary`. |
     | `1.22` | Additive over 1.21 | Adds canonical `analysis.strategy`, preserves the legacy `strategy_mode` label, and adds `analysis.examples_per_endpoint`. |
     | `1.21` | Removes `defects[].stack_trace`; otherwise additive | Adds finding classification and evidence fields, severity ordering, `metrics.findings_refuted`, transition payload and response fields, `load_unjudged`, and replay verdicts. |
@@ -138,7 +139,7 @@ evidence](../modules/specforge-engine/findings.md).
 | `observation` | `expected`, `observed`, `location` (`{scope, path}`, see [scopes](../modules/core/protocol/vocabularies.md#location-scope)) and `marker`. |
 | `request` | `url` (no userinfo, query or fragment), `poisoned_zone`, `poisoned_field`, `attack_family` and `trigger_fields`. |
 | `response` | `content_type`, `headers` (redacted) and `latency_ms`. |
-| `control` | `status_code`, `latency_ms` and `error` of the control request the finding was judged against; on an unconfirmed finding, the control that got no answer; `null` when none was sent. |
+| `control` | `status_code`, `latency_ms` and `error` of the control request the finding was judged against; on an unconfirmed finding, the control that got no answer; `null` when none was sent. `source` says where the answer comes from (`sent`, `reproduction`, `earlier`); `attribution`, `peer`, `occupancy` and `known_answer` hold the further requests sent, and are absent or `null` when not sent (see [Control requests](../modules/specforge-engine/control-requests.md#evidence)). |
 
 A finding stored before 1.21 reads back `observation`, `request`, `response` and
 `control` as `null`; its `category`, `severity` and `summary` are derived when it
@@ -236,7 +237,7 @@ most first. The three **states** answer *why* a finding never became a crash:
 | --- | --- |
 | `flaky` | Seen, but it did not reproduce when the engine tried to confirm it. Stateless, stateful and resilience runs report these (a resilience server error is flaky when its attack, resent twice, does not get it back every time), and `metrics.findings_flaky` counts every such event. |
 | `unverified` | Collected but never checked: the run stopped before it could be confirmed, or its control request got no answer, or an answer that cannot judge it (a rejection, a success with nothing to echo in), so there was nothing to judge it against. Such an entry carries that control in `control`. |
-| `refuted` | It reproduced, but its control request showed it is not a defect: the same request without the suspicious input showed the same signal, or, for a rejection that names no field, the same request with fresh values was accepted once and rejected the same way when sent again, a conflict with stored state such as a unique field. Its `control` is the request that refuted it (the accepted one, for a state conflict), and `metrics.findings_refuted` counts it. A refutation can be wrong: check the control. |
+| `refuted` | It reproduced, but its control request showed it is not a defect: the same request without the suspicious input showed the same signal, or, for a rejection that names no field, the same request with fresh values was accepted once and rejected the same way when sent again, a conflict with stored state such as a unique field; or another identity got the same rejection for a value the first caller had accepted; or the same request from the same caller was accepted earlier in the run (`control.source` `earlier`). Stateless and stateful runs report these. A refuted finding has no request to replay alone: `replay_finding` fails with `REPLAY_NOT_REPRODUCIBLE`. Its `control` is the request that refuted it (the accepted one, for a state conflict), and `metrics.findings_refuted` counts it. A refutation can be wrong: check the control. |
 
 A confirmed resilience defect also carries a `control`: the clean base request
 sent after its attack was confirmed, and its `summary` says whether the attack

@@ -354,11 +354,11 @@ OracleVerdict` — and precedence is a named `IntEnum` value, never a magic gap
 | `ACCESS_CONTROL` (300) | `access_control` | a 2xx a caller should not have obtained, judged against the auth runner's expectation (non-terminal) |
 | `MASS_ASSIGNMENT` (400) | `mass_assignment` | a 2xx that echoes an undeclared body key the request poisoned, at any depth, with the value sent, under an object that admits no extra keys (non-terminal) |
 | `SEMANTIC` (410) | `semantic_property` | a 2xx that breaks a declared business rule (non-terminal) |
-| `INFORMATION_DISCLOSURE` (420) | `information_disclosure` | a non-2xx to a poisoned request whose body shows a leak marker outside the echo of the sent value (non-terminal) |
+| `INFORMATION_DISCLOSURE` (420) | `information_disclosure` | a non-2xx whose body shows a [leak marker](disclosure.md#markers) outside the echo of what the request sent; a poisoned request cites its field, any other the whole request (non-terminal) |
 | `SENSITIVE_DATA_EXPOSURE` (430) | `sensitive_data_exposure` | a 2xx, to a poisoned request or under a declared body schema, that carries a secret-looking key the object holding it does not declare (non-terminal) |
 | `INPUT_VALIDATION` (440) | `input_validation` | a 2xx to a request whose poisoned field was sent provably outside its declared schema (non-terminal) |
 | `REFLECTED_PAYLOAD` (450) | `reflected_payload` | an HTML response that echoes the active payload of a reflectable family unescaped (non-terminal) |
-| `CONTRACT_COMPLETENESS` (460) | `contract_completeness` | a 400 or 422 to an unpoisoned request that provably conforms to its declared contract (non-terminal) |
+| `CONTRACT_COMPLETENESS` (460) | `contract_completeness` | a 400 or 422 to an unpoisoned request that provably conforms to its declared contract, or to a poisoned one whose value [only an inferred rule forbids](witnesses.md) (non-terminal) |
 | `STATUS_CODE` (500) | `status_code` | a status no response contract declared |
 | `CONTENT_TYPE` (510) | `content_type` | a body whose `Content-Type` misses the declared one |
 | `SCHEMA` (520) | `schema` | a body that fails the declared schema |
@@ -903,15 +903,12 @@ its raw findings are counted `unverified` — one `UnverifiedFinding` per
 signature — rather than spending requests rediscovering the target is down.
 
 **Shrinking** (`shrinking.py`) runs off the findings, never the results, so its
-requests stay out of the trace. It first re-sends the finding's own payload to
+requests stay out of the trace, except [the request a leak reduces to](shrink-limits.md#trace). It first re-sends the finding's own payload to
 confirm it still reproduces, then `find`s the smallest payload that still does,
 then re-executes that minimal payload to package it; a minimal payload that does
-not reproduce on re-execution is flaky and yields no report. A `mass_assignment`
-or `input_induced_timeout` finding, and a `contract_completeness` finding that
-blames the whole request, is then checked against a **control request**
-(`CONTROL_CHECKS`, `control_checks.py`): the payload without the poisoned key,
-with the poisoned field at its minimal valid value, or with its open strings
-rotated and sent twice. A control that shows the same signal refutes the finding,
+not reproduce on re-execution is flaky and yields no report. A finding whose invariant has a check in `CONTROL_CHECKS` (`control_checks.py`) is
+then judged against a **control request** ([Control requests](control-requests.md)).
+Its bounds are on [Shrink limits](shrink-limits.md). A control that shows the same signal refutes the finding,
 which becomes a `RefutedFinding` carrying that control
 ([Findings](findings.md#states), [ADR-167](adr/findings.md#adr-167)). The shrink
 holds the fields a draw took from the run corpus, and never counts them as trigger

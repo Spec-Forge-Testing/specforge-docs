@@ -4,7 +4,7 @@
 refused `HANDSHAKE_REQUIRED`.
 
 ```json
-{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.1.24"}}
+{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.1.25"}}
 ```
 
 The response carries the protocol version, the server's identity, what this
@@ -13,7 +13,7 @@ in, and the options a run can be asked for:
 
 ```json
 {"jsonrpc":"2.0","id":1,"result":{
-  "protocol_version":"0.1.24",
+  "protocol_version":"0.1.25",
   "server":{"name":"specforge-core","version":"…","frozen":false},
   "capabilities":{…},
   "catalog":{…},
@@ -74,8 +74,8 @@ matrix and how it is derived are on [Fuzz options](fuzz-options.md).
 **The core serves a range within its own series.** A client is served when its
 `protocol_version` has the core's `major.minor` and a patch between a declared
 floor and the core's own. Each part compares as a number, never as text:
-`0.1.10` is newer than `0.1.9`. This core speaks `0.1.24` and serves `0.1.5` up
-to `0.1.24`. It always answers `hello` with its own version, and a frontend
+`0.1.10` is newer than `0.1.9`. This core speaks `0.1.25` and serves `0.1.5` up
+to `0.1.25`. It always answers `hello` with its own version, and a frontend
 ignores the keys it does not know.
 
 Anything else — another series, a patch outside the range, or a
@@ -120,8 +120,29 @@ neither. See [ADR-095](../adr/protocol.md#adr-095).
 ## Changelog
 
 The report document that `fuzz`, `replay` and `run_pipeline` answer with is
-`schema_version` 1.23. The protocol's own README holds the full entry for each
+`schema_version` 1.24. The protocol's own README holds the full entry for each
 version; the lines below are the summary.
+
+- **0.1.25** — A replay says when the server still runs the code from before a finding's
+  fix, a fix is aimed at where the server crashed, and a finding on a rule only a produced
+  contract declares is judged by a plain request. Additive on the wire, with semantic
+  changes; the report is `schema_version` 1.24. `replay_finding` answers `stale_target`,
+  `null` unless the server logged a trace the applied fix cannot have logged.
+  `revert_finding_fix` undoes an applied fix, and `status` gains `reverted`.
+  `estimate_finding_explanation` and `estimate_finding_fix` take `include_prompt` and
+  answer `prompt`. Entries of a fix's `discarded` carry `search`. The truncation reason
+  `pass_limit_reached` is new. Explanations and fixes name the places that call the
+  crashing function, a fix can add the import it needs, and a finding recorded as a crash
+  with no stack trace is replayed once alone first when `replay.log_container` is set. A
+  2xx to a value breaking a declared constraint gets an `acceptance` too. The
+  `input_validation` and whole-request `contract_completeness` controls change: see
+  [Control requests](../../specforge-engine/control-requests.md). A `replay_finding` of a
+  `refuted` finding fails with `REPLAY_NOT_REPRODUCIBLE`.
+
+- **Report 1.24** — A `control` carries the further requests that judged it.
+  Additive; it ships with protocol `0.1.25`. A `control` can carry `attribution`,
+  `peer`, `occupancy` and `known_answer`, and always carries `source`. See
+  [What the report shows](../../specforge-engine/control-requests.md#evidence).
 
 - **0.1.24** — A finding and a focus entry name a nested body field by its path,
   `input_validation` judges patterns and formats, and a finding whose control

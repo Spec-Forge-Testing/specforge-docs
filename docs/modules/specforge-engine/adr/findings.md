@@ -572,3 +572,59 @@ A finding is confirmed only by a control that could have refuted it. On the
 measured targets no finding is left unverified this way; the rule matters on
 servers that reject a replayed request by state. A timeout streak's
 infrastructure check is not a finding's control and keeps its own rule.
+
+---
+
+## ADR-186 — A rejection is confirmed only against a value the run shows free { #adr-186 }
+
+**Status:** accepted · Supersedes in part [ADR-166](runners.md#adr-166), [ADR-183](runners.md#adr-183) · `runtime/http/accepted_values.py`, `runtime/fuzzers/stateless/free_controls.py`, `runtime/fuzzers/stateless/sibling_verdict.py`, `runtime/fuzzers/stateless/control_verdict.py`
+
+### Context
+
+A control that rotates a string assumes the rotation is a value the server has never
+seen. During a run that assumption fails: the fuzzer stores values, a short string
+rotates onto one already taken, and a rejection for a unique field reads exactly like
+a rule. A confirmation resting on that control reports a rule the server does not
+have. The target knows which values it holds, but the run can only see what it was
+told.
+
+### Decision
+
+**The run records what the target accepted, and a control reads it.**
+`AcceptedValues` keeps, per endpoint, each 2xx to an unsafe method: the request by
+caller, and each body and query scalar by field. A control that vouches for a
+rejection sends only values that record does not hold. A full record treats every
+value as taken.
+
+**The same request accepted earlier refutes without a send** (`source` `earlier`).
+
+**With no free control, a sibling judges.** The sibling changes every movable value
+and is judged only if accepted: a rejection it gets is no evidence either way, and
+running out of tries leaves the finding `unverified`.
+
+**A rotated named value tells content from occupancy.** When a sibling is accepted and
+the rejection names fields, each named value is rotated alone. Rejected alike every
+time, the rule reads the value's content.
+
+**A vouching control needs the run behind it.** A rejection stays `unverified` when the
+run never saw this caller accepted, or when the response shows a store refusing a write.
+
+**The same test scopes a leak.** A leak moves from a field to the whole request only
+against a rest of free values ([Information disclosure](../disclosure.md#scope)).
+
+### Rejected
+
+- **Rotating harder and trusting the result.** More characters make a collision less
+  likely, and leave the verdict unproven.
+- **Confirming on the reproduced rejection when nothing can be sent.** A finding with
+  no control has not been judged.
+- **Refuting whenever a sibling is accepted.** One acceptance does not show the
+  rejection depended on state; a value's content can differ between the two.
+
+### Consequences
+
+A control can spend up to `CONTROL_SEND_CAP` (10) requests, inside the shrink's wall.
+More findings on stateful targets end `unverified`, which is the honest answer when
+nothing could judge them. "Free" is only as wide as the run: a value stored by an
+earlier run reads as free, and a quota that fills mid-run can still confirm
+([Known limits](../control-requests.md#known-limits)).

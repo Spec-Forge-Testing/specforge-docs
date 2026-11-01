@@ -141,7 +141,7 @@ The package targets Python 3.11+. Installation and the test suite are in
 ```bash
 specforge                      # the interactive REPL (the team's testing surface)
 specforge --serve              # serve the protocol until EOF or `shutdown`
-specforge --protocol-version   # 0.1.24
+specforge --protocol-version   # 0.1.25
 ```
 
 ## Read more

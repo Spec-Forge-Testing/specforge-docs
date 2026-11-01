@@ -119,7 +119,7 @@ raise them. Together with the protocol-level codes, these are the complete set.
 | `CONTRACT_PRODUCER_FAILED` | A contract producer could not honor an explicit request |
 | `INFERENCE_APPROVAL_REQUIRED` | A run has inferences to pay for while `inference.require_approval` is on, and its `producer.approval_token` is missing or stale; `data`: `reason` (`missing` or `stale`), `estimate` (as [`estimate_inference`](operations.md#estimate-inference) answers it). Refused before any inference; in `run_pipeline` it fails the `inference` stage with the same code and `data` |
 | `EXECUTION_FAILED` | The run failed while executing |
-| `REPLAY_NOT_REPRODUCIBLE` | The recorded trace cannot be replayed against the target |
+| `REPLAY_NOT_REPRODUCIBLE` | The recorded trace cannot be replayed against the target; also a `replay_finding` of a finding that cannot be sent alone: a stateful one, which needs its prior requests, or a `refuted` one, which is not a defect. Its `reason` says to replay the analysis instead |
 | `SIDE_EFFECTS_CONSENT_REQUIRED` | A `replay` of a recording that needs [consent](operations.md#replay-consent) did not pass `allow_side_effects`; refused before any request is sent. `data`: `analysis_id`, `parameter` (`allow_side_effects`), `reason` (`recorded_with_side_effects` or `safety_breached`) |
 
 ### Results and retention

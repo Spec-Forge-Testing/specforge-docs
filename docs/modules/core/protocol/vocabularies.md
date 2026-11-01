@@ -70,6 +70,7 @@ set when that endpoint's pass was cut short whether or not the run was.
 | `state_link_abort` | A stateful chain could not be honored: a fault of the harness, not of the API. |
 | `generation_exhausted` | No request could be generated for the endpoint. |
 | `engine_failure` | The engine itself raised while exploring the endpoint; it was isolated and the run went on. |
+| `pass_limit_reached` | A stateful run that kept making progress stopped at its limit of passes. |
 | `cancelled` | The client asked the run to stop. |
 
 `detail` beside it is free text for a person, or `null`. For `engine_failure` it

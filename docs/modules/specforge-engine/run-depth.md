@@ -99,6 +99,133 @@ state, such as a username already taken. A `contract_completeness` finding that
 blames the whole request is judged by a control that sends only values the run has
 not seen accepted; [Control requests](control-requests.md) has the verdicts.
 
+## Stateful: until a pass finds nothing new { #stateful-depth }
+
+A stateful pass ends at its first violation. The supervisor runs pass after pass,
+each looking past the defects already reported, until one changes nothing
+([ADR-162](adr/runners.md#adr-162)). A pass counts as progress when it:
+
+| Progress | Bounded by |
+| --- | --- |
+| reports a defect no report holds yet | the ceiling |
+| ends flaky on a new signature | the ceiling |
+| widens a range defect's suppression (below) | once per defect |
+| ends flaky with no violation to sign | `STATEFUL_UNEXPLAINED_FLAKY_PASSES` (2) |
+| ends `refuted` or `unverified` on a new signature, or widens one's suppression | the ceiling |
+
+The run also stops when the distinct confirmed reports, or the distinct flaky
+signatures, reach `StatefulOptions.max_distinct_bugs` (default
+`STATEFUL_MAX_DISTINCT_BUGS`, 25). Setting it to `1` reports the first defect only.
+A cancellation, a dead target, a machine that can draw no sequence and an engine
+failure stop it at once.
+
+Passes are also bounded by `STATEFUL_MAX_PASSES` (100), however many count as progress.
+A run that reaches it ends `truncated` with reason `pass_limit_reached`
+([ADR-188](adr/runners.md#adr-188)).
+
+### A witness Hypothesis calls flaky
+
+Hypothesis may fail a pass while shrinking, because the target's state changed between
+replays. The violation it saw is still in hand. The pass keeps that witness and
+verifies it by re-sending its sequence, as it does with a shrink the budget cut short.
+If it reproduces, it is minimized and judged like any other; otherwise the pass is
+flaky under its signature.
+
+### Telling defects apart
+
+A defect is its report's `FindingSignature`, body fingerprint included, plus its
+**trigger fields** ([ADR-163](adr/runners.md#adr-163)):
+
+- The signature is computed on the **shrunk** step (`step_signature`), so a later
+  pass is compared with exactly what was reported.
+- The trigger fields are the fields the shrunk step sent off its endpoint's
+  simplest draw (`SimplestDraws`, computed once per endpoint, no request sent),
+  minus the fields a bundle injected. The report carries them as
+  `request.trigger_fields`. A transition probe has none.
+- `SuppressedDefects` covers a later violation only when it has a reported
+  signature and sent the reported values in each trigger field. Two fields that
+  make one endpoint answer the same 500 are two reports.
+
+**Range defects.** A defect that fires on a range of values (any negative
+amount) comes back on the next pass with another value. It is folded into its
+report (`represented_findings` grows by one), and the suppression is **widened**
+once: the signature is covered on any step that sent off the simplest value in
+every trigger field and in no other field. A step that also changed another field
+escapes the widened entry and is shrunk on its own.
+
+### Deleted resources
+
+Two rules of the core's state links give the stateful run what it needs to check a
+delete without a model ([ADR-168](../core/adr/core.md#adr-168)):
+
+- **A `DELETE` invalidates the value it consumes.** Once the step draws it, the
+  value leaves its bundle, so no later step addresses a deleted resource. A
+  nested consumption does not invalidate its parent: deleting a comment keeps the
+  article.
+- **A deleted-resource transition is derived.** For a `DELETE` whose only
+  placeholder is its last path segment, and a `GET` on the same path template that
+  declares `404` or `410`, the run probes the `GET` after a successful `DELETE`
+  and expects one of those statuses. A soft delete that still answers 200 is a
+  `state_transition` finding.
+
+The compiler rejects an endpoint whose transition's follow-up path names a
+placeholder its probe cannot fill; the endpoint is listed in `excluded_endpoints`
+with that reason.
+
+### When the shrinker itself fails
+
+An error raised inside Hypothesis while it shrinks, when the pass already holds a
+witness, ends the pass on that witness: it is re-sent once and reported, or
+counted flaky, and the error is logged. An error raised in the engine's own code
+still cuts the run `engine_failure` ([ADR-164](adr/runners.md#adr-164)). The engine
+requires `hypothesis>=6.170.3,<6.170.10`.
+
+## Valid values for credential fields { #credential-fields }
+
+A string named like a credential, whose contract constrains it in no other way,
+gets a usable value in the `valid` phase ([ADR-171](adr/compiler.md#adr-171)):
+
+| A name matching, whole | Gets |
+| --- | --- |
+| `email`, `*_email`, `*-email`, `*Email` | `format: email` |
+| `username`, `user_name`, `user-name`, `password` | `minLength: 1` |
+
+The rule applies only to a string that declares no `format` other than the
+display-only `password`, no `pattern`, no `minLength` and no `enum`, and never past a
+declared `maxLength`. A poisoned field keeps its contract.
+
+An object parameter's `example` or `examples` also seed the values of its
+properties, as a body's do.
+
+## Resilience: a real target and a confirmed crash { #resilience-depth }
+
+### The base request
+
+Every attack targets one base request per endpoint
+([ADR-169](adr/runners.md#adr-169)):
+
+- **Its values** are the endpoint's minimal valid request in every zone; a path
+  parameter that draw leaves out keeps a placeholder.
+- **For an `owner_only` endpoint**, the owner's resource is provisioned under the
+  first valid identity, through the same provisioning package `auth` uses
+  (`runtime/runners/provisioning/`), and its values are written into the base
+  request. A resource is provisioned once per bundle per run and reused; after the
+  battery of an endpoint whose method is not safe it is forgotten, and the next use
+  provisions a new one.
+- **Its identity** is the one the endpoint's access demands
+  ([Execution modes](execution-modes.md#the-base-request-and-its-identity)).
+
+When the base request cannot be built, the endpoint gets nothing and records why:
+
+| `unprobed_reason` | The endpoint is |
+| --- | --- |
+| `owner_identity_missing` | `owner_only`, and no valid identity is declared to own the resource |
+| `owner_producer_missing`, `owner_chain_cyclic`, `owner_resource_unprovisioned` | `owner_only`, and the owner's resource could not be provisioned |
+| `required_role_unheld` | `role_only`, and no valid identity holds the role |
+| `link_target_reserved` | bound through a state link into a header the owner's credentials or the transport own ([below](#a-link-into-a-reserved-header)) |
+
+Each one makes the run's signal `degraded` with `access_preconditions_unmet`.
+
 ### Confirming a server error
 
 A 5xx under attack is not reported on one sighting. After an endpoint's battery is

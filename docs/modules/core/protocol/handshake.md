@@ -4,7 +4,7 @@
 refused `HANDSHAKE_REQUIRED`.
 
 ```json
-{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.2.0"}}
+{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.2.1"}}
 ```
 
 The response carries the protocol version, the server's identity, what this
@@ -13,7 +13,7 @@ in, and the options a run can be asked for:
 
 ```json
 {"jsonrpc":"2.0","id":1,"result":{
-  "protocol_version":"0.2.0",
+  "protocol_version":"0.2.1",
   "server":{"name":"specforge-core","version":"…","frozen":false},
   "capabilities":{…},
   "catalog":{…},
@@ -74,9 +74,9 @@ matrix and how it is derived are on [Fuzz options](fuzz-options.md).
 **The core serves a range within its own series.** A client is served when its
 `protocol_version` has the core's `major.minor` and a patch between a declared
 floor and the core's own. Each part compares as a number, never as text:
-`0.1.10` is newer than `0.1.9`. This core speaks `0.2.0` and serves `0.2.0`
-only: no `0.1.x` client is served. It always answers `hello` with its own
-version, and a frontend ignores the keys it does not know.
+`0.1.10` is newer than `0.1.9`. This core speaks `0.2.1` and serves `0.2.0`
+up to `0.2.1`: no `0.1.x` client is served. It always answers `hello` with its
+own version, and a frontend ignores the keys it does not know.
 
 Anything else — another series, a patch outside the range, or a
 `protocol_version` that is not `major.minor.patch` — is refused
@@ -124,6 +124,42 @@ neither. See [ADR-095](../adr/protocol.md#adr-095).
 The report document that `fuzz`, `replay` and `run_pipeline` answer with is
 `schema_version` 1.25. The protocol's own README holds the full entry for each
 version; the lines below are the summary.
+
+- **0.2.1** — A finding's replay says what it judged and why it could not tell,
+  and earns `possibly_resolved` behind witnesses. **Additive on the wire**: this
+  core serves `0.2.0` up to `0.2.1`. The report stays `schema_version` 1.25.
+    - *Added:* on `replay_finding`'s answer, and so on `verify_finding_fix`'s
+      `replay`: `judged` (`oracle_scope`, `requests_sent`, `controls_resent`;
+      `null` for a cancelled replay), [`inconclusive_reason`](vocabularies.md#inconclusive-reason)
+      (`no_answer`, `stale_target`, `credentials_refused`, `witness_diverged`,
+      `unwitnessed`, `not_observable_without_contract`), `witnesses` (the recorded
+      reads sent before the finding's request) and `exchange` (the finding's
+      request and its answer this time, in `get_finding`'s evidence shape)
+      ([Finding replay verdicts](finding-replay.md)).
+    - *Changed:* a finding's replay is `possibly_resolved` only when the server
+      answered, runs the code with the fix, its credentials pass or are proven, and
+      witnesses answered as recorded; otherwise it is `inconclusive` with the first
+      reason that holds, and resolves nothing. An `inconclusive` replay takes an
+      earlier `resolution` away. `present` is unchanged
+      ([how the verdict is reached](finding-replay.md#verdict)).
+    - *Changed:* when no witness answers, the finding's request is not sent
+      (`no_answer`, `exchange` `null`, the server's log not read). `fidelity` is
+      `reduced` when a witness diverged, the server's log is then not kept, and
+      `run_status` is the worse of the witnesses' run and the finding's.
+    - *Changed:* a `401` or `403` to a request recorded with credentials, where the
+      recording got neither, never meets `acceptance` while no witness proves the
+      credentials ([credentials](finding-replay.md#credentials)).
+    - *Changed:* `fix_applied_at`, `stale_reason` and `stale_target`, in
+      `replay_finding` and in `inspect_service` with `finding_id`, speak of the
+      newest fix applied over the finding's handler files, its own or another
+      finding's ([stale builds](finding-replay.md#stale)).
+    - *Added:* [`scope_differs`](vocabularies.md#caveats) in `compare_runs`'
+      `caveats[].reason`, side `pair`.
+    - *Fixed:* `compare_runs` between a run of one endpoint and a run of many no
+      longer rules the others' defects `possibly_resolved`: a defect the `after`
+      run lacks, on an endpoint it did not exercise, is `inconclusive`.
+    - *Changed:* `compare_runs`' `comparable` is ruled after every caveat, the
+      `replay` one included: a comparison against a replay is never `comparable`.
 
 - **0.2.0** — The compatibility kept for `0.1.x` clients goes away, and a cut no
   endpoint caused names none. **Breaking: this core serves `0.2.0` only**; a

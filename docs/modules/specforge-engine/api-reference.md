@@ -80,7 +80,7 @@ Field names of this family are stable: they are persisted as columns.
 | `CompilationOutcome` | Result: `engine_input` + `exclusions` |
 | `EndpointExclusion` | one rejected or withheld endpoint with its `reason` |
 | `EngineInput`, `CompiledExecutionEndpoint`, `CompiledEndpointStrategies` | the executable compile output; `CompiledEndpointStrategies` holds one compiled part per zone (`body` a `CompiledBody`), the `generation_plan`, and the `poisoning_phases` its contract type poisons; `CompiledExecutionEndpoint.optional_oracles` names the opt-in oracles its strategy turns on |
-| `EngineRunResult` | `findings` + `status` + `stats` + `trace` + optional `fidelity` |
+| `EngineRunResult` | `findings` + `status` + `stats` + `trace` + optional `fidelity` + `exchanges` (a replay that asked to capture them) |
 | `Finding` | the discriminated union of `ConfirmedFinding`, `FlakyFinding`, `UnverifiedFinding`, `RefutedFinding` on `state` |
 | `ConfirmedFinding` | a settled reproducer: carries its `report` |
 | `FlakyFinding`, `UnverifiedFinding` | a settled group: its `signature` and how many raw `occurrences` it stands for |
@@ -93,6 +93,7 @@ Field names of this family are stable: they are persisted as columns.
 | `keyed_identity(invariant, identity_label) -> str \| None` | the identity that tells two findings of `invariant` apart: the label for `access_control`, `None` for every other invariant ([ADR-106](adr/engine.md#adr-106)) |
 | `ExecutionTrace`, `TracedRequest`, `TruncationRecord` | the replayable record; a `TracedRequest` records the request's intent as `phase`, `poisoned_zone`, `poisoned_field` (a nested field by its spelled path) and `poisoned_family` (the one field with a default, `None`), and its body with `media_type` and `file_fields` |
 | `ResponseDivergence`, `ReplayFidelity` | the replay comparison |
+| `ReplayedExchange` | one replayed request and its answer, redacted like a finding's evidence, on `EngineRunResult.exchanges` when the replay asked for it |
 | `ReplayReadiness` | the outcome of `validate_replayable` |
 
 ## Runtime and per-mode options
@@ -102,6 +103,7 @@ Field names of this family are stable: they are persisted as columns.
 | `ExecutionConfig` | global runtime: `base_url` (required; an `http`/`https` URL naming a host, with a port from 1 to 65535 when it writes one, and no `@` in its fragment), timeouts, concurrency, headers, identities. `valid_identities` and `invalid_identities` are derived views that split `identities` by credential kind; every mode rotates through `valid_identities`, and `first_valid_identity` is the one a mode that sends under a single identity uses |
 | `Identity` | one caller identity: a `label`, its credential `headers`, an optional `role` (never empty) that only a `role_only` endpoint reads (`None` never satisfies a required role), and a `credential` (`CredentialKind`, default `VALID`) |
 | `StatelessOptions`, `StatefulOptions`, `PerformanceOptions`, `ReplayOptions` | passed to `run(options=...)` per mode |
+| `ExchangeCapture` | the value of `ReplayOptions.capture`: the `sensitive_fields` to redact in each captured exchange |
 | `ConcurrencyLadder` | the value of `PerformanceOptions.concurrency_ladder`: strictly increasing `steps` plus the degradation `tolerance` (frozen) |
 
 ## Strategies and runner traits

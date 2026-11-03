@@ -15,7 +15,7 @@ flowchart LR
     A --> V[verify_finding_fix]
     V -->|build failed, error in the fix| R[fix taken out<br/><i>reverted_check_failed</i>]
     V -->|build passed, or none could run| Q[replay_finding]
-    Q -->|passed against the fix| S[resolution set]
+    Q -->|possibly_resolved, earned against the fix| S[resolution set]
     R -->|mend_build| P
     A -.-> X[revert_finding_fix]
 ```
@@ -24,8 +24,11 @@ flowchart LR
 
 `replay_finding` takes `finding_id`, `rebuild` (default `false`), and
 `identities_path`, `base_url` and `allow_side_effects` as `replay` takes them. It
-finds the finding's request in its analysis's recorded trace and sends it alone,
-at once, under the analysis's recipe: how a fix applied since is checked. A finding
+finds the finding's request in its analysis's recorded trace and sends it at once,
+under the analysis's recipe, behind up to two recorded reads that vouch for the
+server's environment, its **witnesses**: how a fix applied since is checked. How
+the verdict is reached, and what each `inconclusive` reason asks of you, is on
+[Finding replay verdicts](finding-replay.md). A finding
 that needed earlier requests to build its state, or whose request is not in the
 trace, is `REPLAY_NOT_REPRODUCIBLE`, and so is a `refuted` one; an unknown one is
 `FINDING_NOT_FOUND`.
@@ -47,23 +50,28 @@ replayed anyway.
 | --- | --- |
 | `status` | `completed`, or `cancelled` while rebuilding: no request sent, `analysis_id` `null`, `verdict` `inconclusive`, `fidelity` `none`. |
 | `finding_id`, `analysis_id` | The finding, and the analysis whose trace held its request. |
-| `verdict` | [`present`](vocabularies.md#replay-verdicts) while the request still breaks the rule, `possibly_resolved` once it answers otherwise, `inconclusive` when no answer came back or the replay was not faithful. |
+| `verdict` | [`present`](vocabularies.md#replay-verdicts) while the request still breaks the rule, `possibly_resolved` once it answers otherwise and nothing gives a reason to doubt it, `inconclusive` otherwise ([how it is reached](finding-replay.md#verdict)). |
+| `inconclusive_reason` | Why the replay could not tell: one of the six [reasons](vocabularies.md#inconclusive-reason); `null` unless `verdict` is `inconclusive`. |
+| `judged` | What the verdict judged: `oracle_scope`, `requests_sent`, `controls_resent`. `null` only when cancelled. |
+| `witnesses` | The recorded reads sent before the finding's request, each with its recorded and observed status and whether it `diverged` ([what is sent](finding-replay.md#what-it-sends)). |
 | `recorded_status`, `observed_status` | The status recorded and the one received. |
-| `fidelity`, `run_status`, `duration_ms` | How faithful the re-send was, how it ended, and how long it took. |
-| `acceptance` | For a finding recorded as a crash: `expected_statuses` (the 4xx the contract declares for the operation), `observed_status` and `met`. `null` for any other finding. |
-| `server_log` | `not_configured`, `captured`, `no_trace` or `unavailable`: whether the server's log was read while the request was in flight. |
+| `fidelity`, `run_status`, `duration_ms` | How faithful the re-send was (`reduced` when a witness diverged), how it ended (the worse of the witnesses' run and the finding's), and how long it took. |
+| `acceptance` | For a finding recorded as a crash: `expected_statuses` (the 4xx the contract declares for the operation), `observed_status` and `met`. `met` is `false` for a `401` or `403` to a request recorded with credentials that nothing proves still pass ([credentials](finding-replay.md#credentials)). `null` for any other finding. |
+| `server_log` | `not_configured`, `captured`, `no_trace` or `unavailable`: whether the server's log was read while the request was in flight. `unavailable` when no witness answered or one diverged. |
 | `server_trace`, `server_log_detail` | The stack trace kept as the finding's evidence, and why the log could not be read or the trace kept. |
 | `service` | What answered on the port; see [`inspect_service`](#inspect-service). |
 | `rebuild` | `status` (`not_requested`, `succeeded`, `unavailable` with `reason`, `cancelled`), `runner` (`compose` or `command`), `command`, `duration_ms`. |
-| `fix_applied_at`, `stale_reason` | When the finding's fix was applied, and why the verdict judges the code from before it: `trace_before_fix`, else `image_before_fix`, else `started_before_fix`; `null` when it does not. |
-| `stale_target` | `fix_id`, `file`, `line`, `line_after_fix`: the server logged a trace naming a line the fix moved or rewrote. `null` otherwise. |
-| `resolution` | What resolves the finding once this replay passed against a fix in its tree: `fix_id`, `fix_finding_id`, `replayed_at`. `null` otherwise. |
+| `fix_applied_at`, `stale_reason` | When the newest fix applied over the finding's handler files was applied, the finding's own or another finding's, and why the server runs the code from before it: `trace_before_fix`, else `image_before_fix`, else `started_before_fix`; `null` when it does not ([stale builds](finding-replay.md#stale)). |
+| `stale_target` | `fix_id`, `file`, `line`, `line_after_fix`: the server logged a trace naming a line one of those fixes, the newest first, moved or rewrote. `null` otherwise. |
+| `resolution` | What resolves the finding once this replay earned `possibly_resolved` against a fix in its tree: `fix_id`, `fix_finding_id`, `replayed_at`. `null` otherwise. |
+| `exchange` | What the finding's request sent and got back this time, in `get_finding`'s evidence shape and redacted the same way; `null` when the request was not sent or the stored contract cannot be read ([the exchange](finding-replay.md#exchange)). |
 
 The log read is `replay.log_container` when set, else `replay.log_file`, else the
 container found publishing the port, else, on Linux, the files a host process on
 the port writes its output to. A replay is kept against the finding's own applied
 fix, else the newest other finding's applied fix over its handler's files; a
-revert of that fix, or a later replay that fails, takes `resolution` away.
+revert of that fix, or a later replay that does not earn `possibly_resolved`,
+takes `resolution` away.
 
 ## `inspect_service` { #inspect-service }
 
@@ -75,7 +83,7 @@ before a host process listening on it, never by a container name.
 | --- | --- |
 | `service` | `status` (`found`; `not_found`; `not_local`, the URL names another machine; `unavailable`, nothing could look), `port`, `runtime` (`docker` or `host`), `name` (the container's, or the executable's; never a command line), `compose_service`, `started_at`, `image_created_at`, `source_mounted`, `hot_reload` and `hot_reload_source` (`config` or `command`), `detail`. |
 | `rebuild_available`, `rebuild_command`, `rebuild_unavailable_reason` | Whether `replay_finding` could rebuild it, with what, or why not. |
-| `fix_applied_at`, `stale_reason` | With `finding_id`: whether the service runs the code from before that finding's applied fix, before any replay. |
+| `fix_applied_at`, `stale_reason` | With `finding_id`: whether the service runs the code from before the newest fix applied over that finding's handler files, its own or another finding's, before any replay; as `replay_finding` answers them. |
 
 ## `set_finding_trace` { #set-finding-trace }
 

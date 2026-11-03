@@ -4,7 +4,7 @@
 refused `HANDSHAKE_REQUIRED`.
 
 ```json
-{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.1.25"}}
+{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.2.0"}}
 ```
 
 The response carries the protocol version, the server's identity, what this
@@ -13,7 +13,7 @@ in, and the options a run can be asked for:
 
 ```json
 {"jsonrpc":"2.0","id":1,"result":{
-  "protocol_version":"0.1.25",
+  "protocol_version":"0.2.0",
   "server":{"name":"specforge-core","version":"…","frozen":false},
   "capabilities":{…},
   "catalog":{…},
@@ -74,9 +74,9 @@ matrix and how it is derived are on [Fuzz options](fuzz-options.md).
 **The core serves a range within its own series.** A client is served when its
 `protocol_version` has the core's `major.minor` and a patch between a declared
 floor and the core's own. Each part compares as a number, never as text:
-`0.1.10` is newer than `0.1.9`. This core speaks `0.1.25` and serves `0.1.5` up
-to `0.1.25`. It always answers `hello` with its own version, and a frontend
-ignores the keys it does not know.
+`0.1.10` is newer than `0.1.9`. This core speaks `0.2.0` and serves `0.2.0`
+only: no `0.1.x` client is served. It always answers `hello` with its own
+version, and a frontend ignores the keys it does not know.
 
 Anything else — another series, a patch outside the range, or a
 `protocol_version` that is not `major.minor.patch` — is refused
@@ -89,9 +89,11 @@ parameter, a result field, an event kind, an error code — bumps the patch. A
 breaking change — a rename, a removal, a type change, a parameter made required
 — bumps the minor.
 
-**Why there is a floor.** `0.1.5` renamed keys inside the `0.1` series, so no
-client older than `0.1.5` reads this core's replies correctly. When the minor
-moves, the floor returns to `.0`. See [ADR-094](../adr/protocol.md#adr-094).
+**Why there is a floor.** A patch that breaks inside a series raises the floor
+to itself, so no client older than it is handed keys it cannot read; `0.1.5`
+did that inside the `0.1` series. When the minor moves, the floor returns to
+`.0`: the `0.2` series starts at `0.2.0` with the floor there
+([ADR-094](../adr/protocol.md#adr-094), [ADR-189](../adr/protocol.md#adr-189)).
 
 ## Lifecycle { #lifecycle }
 
@@ -120,8 +122,86 @@ neither. See [ADR-095](../adr/protocol.md#adr-095).
 ## Changelog
 
 The report document that `fuzz`, `replay` and `run_pipeline` answer with is
-`schema_version` 1.24. The protocol's own README holds the full entry for each
+`schema_version` 1.25. The protocol's own README holds the full entry for each
 version; the lines below are the summary.
+
+- **0.2.0** — The compatibility kept for `0.1.x` clients goes away, and a cut no
+  endpoint caused names none. **Breaking: this core serves `0.2.0` only**; a
+  client asking for any `0.1.x` gets `PROTOCOL_VERSION_MISMATCH` with `oldest`
+  `0.2.0` ([ADR-189](../adr/protocol.md#adr-189)). The report is `schema_version`
+  1.25.
+    - *Removed:* `stack_trace` on the findings of `get_run` and `get_finding`;
+      `hacker` as a `strategy` value of `fuzz`, `run_pipeline` and
+      `estimate_inference` (refused `INVALID_PARAMS` like any unknown strategy:
+      send `security`); `strategy_mode` from `list_analyses`, `get_analysis`,
+      `get_run`'s `analysis` and the report document's `analysis` (read
+      `strategy`).
+    - *Changed:* `run.truncation.endpoint_id` is `null` with reason
+      [`flaky_generation`](vocabularies.md#truncation-reason), and the
+      `truncated` event carries no `endpoint` for it; every other reason names
+      one.
+    - *Added:* [`run_truncated`](vocabularies.md#signal-causes) in
+      `run.signal_causes`: a `truncated` run is always `degraded`, and a `fuzz`
+      reply carries the `degraded_signal` warning naming it. The operation's
+      `status` stays `completed` for such a run.
+    - *Added:* [`requests_unanswered`](vocabularies.md#signal-causes) in
+      `run.signal_causes`: an endpoint that leaves at least three of its
+      requests, and at least 5 % of them, with a timeout or an availability
+      failure makes the run `degraded`.
+    - *Added:* `observation.marker` `inferred_rule_database_error`: a rejection
+      of a value only an inferred rule forbids, whose body shows a database
+      error, does not show the server applies the rule
+      ([Witnesses](../../specforge-engine/witnesses.md#what-it-reports)).
+    - *Changed:* a `stateful` run stops after two consecutive passes without
+      progress, sends inferred-rule witnesses among its draws, and gives one
+      further pass to the targeted endpoints it never reached and what produces
+      their values ([Run depth](../../specforge-engine/stateful-depth.md#stateful-depth)).
+    - *Changed:* a `control`'s `known_answer` is sent on every method, and on a
+      write it follows a resource the accepted `attribution` renamed; a
+      whole-request rejection that reproduces is `unverified` when a value in
+      question was already accepted at its field
+      ([Control requests](../../specforge-engine/control-requests.md)).
+    - *Changed:* in a `performance` run, a latency finding and a crash are
+      reported as observed, and every finding judged against the contract is
+      shrunk and judged like a stateless one; in an `auth` run, an
+      `access_control` finding and a crash are confirmed, and every finding judged
+      against the contract is `unverified`
+      ([Findings](../../specforge-engine/findings.md#states)).
+    - *Changed:* the engine's warnings, not only its errors, are written to the
+      core's stderr.
+
+- **Report 1.25** — Breaking; it ships with protocol `0.2.0`. `analysis.strategy_mode`
+  is removed (`analysis.strategy` stays). `run.truncation.endpoint_id` is `null`
+  with reason `flaky_generation`. `run.signal_causes` gains `run_truncated` and
+  `requests_unanswered`; `observation.marker` gains `inferred_rule_database_error`.
+  The HTML report's header shows `Strategy`, the canonical value.
+
+- **0.1.30** — A finding says what resolves it: `resolution` (`fix_id`,
+  `fix_finding_id`, `replayed_at`) on every finding and on `replay_finding`'s
+  answer, and `covering_fixes` on `inspect_finding_source`. The truncation reason
+  `flaky_generation` is new: a stateful run whose passes kept ending because the
+  target answered differently from an earlier test case ends `truncated`.
+
+- **0.1.29** — An applied fix is verified with one build and a replay in a single
+  operation, `verify_finding_fix`; `check_finding_fix` and `apply_finding_fix`'s
+  `check` are removed, a proposed fix carries `build_failure`, and `propose_fix`
+  takes `mend_build`. `set_finding_trace` keeps text with no stack frame as notes.
+
+- **0.1.28** — `check_finding_fix` runs an applied fix's build apart from applying
+  it, `inspect_finding_source` answers `server_trace`, and an edit quoted with the
+  prompt's line numbers holds.
+
+- **0.1.27** — An applied fix is checked with the project's own build and taken
+  out again when it breaks it. `inspect_finding_source` and `set_finding_trace` are
+  new; the config gains `replay.log_file` and the `fix` group
+  (`fix.check_command`, `fix.check_timeout_s`).
+
+- **0.1.26** — A replay finds the API under test on its port (`inspect_service`),
+  can build and start it again first (`replay_finding`'s `rebuild`, error
+  `REBUILD_FAILED`), and says when it still runs the code from before the
+  finding's applied fix (`stale_reason`). The config gains
+  `replay.rebuild_command`, `replay.hot_reload`, `replay.rebuild_timeout_s` and
+  `replay.ready_timeout_s`.
 
 - **0.1.25** — A replay says when the server still runs the code from before a finding's
   fix, a fix is aimed at where the server crashed, and a finding on a rule only a produced
@@ -354,6 +434,49 @@ version; the lines below are the summary.
   endpoint whose exploration raised inside the engine was isolated, with the
   error's type and location in `detail`; the run explores the other endpoints and
   ends `truncated` ([ADR-125](../adr/core.md#adr-125)).
+- **0.1.18** — An endpoint whose produced contract declared a risk flag and could
+  not be used runs schema-only under the safety guard instead of being withheld.
+  Additive on the wire, with semantic changes. Such an endpoint (an identity that
+  does not match it, a fusion failure, a construct the projection does not support)
+  keeps only its declared risk flags; the guard holds it as any other, naming the
+  flag in `held_back_by`. `producer_exclusions[].disposition` and `contract_failed`'s
+  `disposition` are `schema_only` for it, its `reason` naming the flags the guard
+  still holds. `generate_contract` composes the mount prefixes it can read
+  statically, writes a `requestBody` for a Go handler binding one struct with
+  validation tags, and emits `started` before validating `repo_root`.
+  `endpoint_failed.code` can be `SOURCE_UNREADABLE`. `fuzz`, `run_pipeline` and
+  `replay` without `identities_path` read the one `specforge.toml` declares under
+  `[project]`, and `ProjectState` carries `settings.identities_path`. The error
+  `REPO_ROOT_INVALID` (`data`: `repo_root`, `reason`) answers a `repo_root` that does
+  not exist or is not a directory. A `get_config` row's `layer` can be
+  `environment`.
+- **0.1.17** — A proposed fix can be applied to the tree its finding's run traced.
+  Additive. `apply_finding_fix` (family `results`, destructive): `finding_id`,
+  `fix_id`, `create_backup`; through `git apply` in a Git work tree, else by
+  replacing each edit in place with a `.bak` copy; it answers `applied` or
+  `conflict`, the tree untouched. The errors `FIX_EMPTY_OR_UNAPPLICABLE` and
+  `FIX_APPLY_FAILED`. `get_finding`'s `fix` answers `applied`.
+  `list_llm_models` answers `credential_env_vars` per provider.
+- **0.1.16** — A finding can be explained in plain language and a model can propose
+  a fix for it. Additive. `estimate_finding_explanation` and `explain_finding`
+  (a fixed template, a stored explanation or a model, optionally with the handler's
+  code), `estimate_finding_fix`, `propose_fix` (SEARCH/REPLACE edits checked
+  against the traced tree, never written) and `get_finding_fix_patch`.
+  `get_finding` answers `explanation` and `fix`. The errors
+  `FINDING_EXPLANATION_FAILED`, `FINDING_FIX_FAILED`, `FIX_NOT_FOUND` and
+  `STATIC_ANALYSIS_REQUIRED`; `endpoint_failed.code` can be `FRAMEWORK_ROUTE`.
+- **0.1.15** — A project with no OpenAPI document can get one from its code.
+  Additive. `generate_contract` scans `repo_root` without running it, writes an
+  OpenAPI 3.1 document and loads it; with `use_llm`, an approved LLM discovers more
+  routes and refines each one ([Operations](operations.md#generate-contract)). The
+  error `CONTRACT_GENERATION_FAILED`. `list_llm_models` lists the models a
+  provider's account can call, else its catalog.
+- **0.1.14** — `get_config` publishes `paths.llm_env_file`, the `.env.local` the
+  LLM layer reads, so a frontend can write the user's model and key there.
+  Additive.
+- **0.1.13** — `update_project` (family `session`) changes `name`, `openapi_spec`
+  or `base_url` in `specforge.toml`, leaving the other sections and comments as
+  written, and reloads the project. Additive.
 - **0.1.12** — The catalog says what an operation needs and what it destroys.
   Additive. `requires: "analysis"` on `get_static_analysis`,
   `get_endpoint_static_analysis` and `get_llm_payload`; `destructive` on every

@@ -23,9 +23,11 @@ being true.
 ### Schema and record parity
 
 The [data model](data-model.md) is one record per table, with the columns
-derived from the record's fields. The parity test is what makes that true: a
-column added to `schema.sql` without a field, or a field without a column,
-fails it by name.
+derived from the record's fields. The parity test is what makes that true: it
+migrates a fresh database and compares its columns with the records, so a column a
+migration adds without a field, or a field without a column, fails it by name.
+`tests/test_migrations.py` checks that a file at every released version reaches
+the shape of a fresh one, and that no released script changed.
 
 ### Public API
 

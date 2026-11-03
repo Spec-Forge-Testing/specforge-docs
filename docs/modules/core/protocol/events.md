@@ -37,7 +37,7 @@ which one framed the event.
 
 | `kind` | Class | Own fields | When |
 | --- | --- | --- | --- |
-| `started` | fact | `operation`; on `fuzz`, `base_url` (the URL the run's requests go to, the specification's server path included, without any `user:pass@` it carries; [ADR-146](../adr/core.md#adr-146)), `execution` and `strategy` (its canonical [value](vocabularies.md#strategy): `security` for a run asked for with `hacker`); on `analyze_endpoints`, `endpoints` (int); on `replay`, `analysis_id`; on `get_run`, `run_id` | An operation begins |
+| `started` | fact | `operation`; on `fuzz`, `base_url` (the URL the run's requests go to, the specification's server path included, without any `user:pass@` it carries; [ADR-146](../adr/core.md#adr-146)), `execution` and `strategy` (its canonical [value](vocabularies.md#strategy)); on `analyze_endpoints`, `endpoints` (int); on `replay`, `analysis_id`; on `get_run`, `run_id` | An operation begins |
 | `finished` | fact | `operation`, `status` (`completed`, `cancelled`, `failed` or `safety_breached`; see [operation status](vocabularies.md#operation-status)), and operation-specific fields | An operation ends |
 | `contract_started` | fact | `endpoint` (ref), `index`, `total` | The run starts producing one endpoint's contract |
 | `contract_finished` | fact | `endpoint` (ref), `source` (`cache`, `model`, `fixture` or `absent`); with `model`, `input_tokens`, `output_tokens` (int) and `cost_usd` (number, absent when the model has no price) | The endpoint's contract is ready to fuzz with, or (`absent`) the endpoint runs schema-only |
@@ -48,7 +48,7 @@ which one framed the event.
 | `finding` | fact | `endpoint` (ref), `status`, `invariant`, `phase`, `category` and `severity` (see [`category`](vocabularies.md#category) and [`severity`](vocabularies.md#severity)), `summary` | A finding is confirmed |
 | `infra_failure` | fact | `endpoint` (ref), `reason`, `streak`, `limit` | A timeout or transport failure |
 | `target_down` | fact | `base_url` (the URL the run's requests go to, server path included), `reason` | The run concluded the API is down: a liveness probe failed, or every circuit breaker opened; `reason` says which |
-| `truncated` | fact | `endpoint` (ref), `reason` | Cut short by budget |
+| `truncated` | fact | `endpoint` (ref; absent when no endpoint caused the cut, reason [`flaky_generation`](vocabularies.md#truncation-reason)), `reason` | Cut short by budget |
 | `endpoint_resolved` | fact | `endpoint` (ref) | An endpoint's static analysis resolved |
 | `endpoint_failed` | fact | `endpoint`, `code`, `reason` | An endpoint's static analysis failed |
 | `stage_started` | fact | `stage` | A pipeline stage begins |

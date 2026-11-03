@@ -455,7 +455,7 @@ A 2xx that accepts a value outside its declared `pattern` or `format` is an
 also when the value came from an attack payload or a boundary filler. Some
 patterns are never judged (`(foo|bar)*`, any backreference), on purpose. On the
 measured targets these findings appear only where a server does not validate the
-format; BugBank's `email` field, which the server checks, yields none.
+format; the lab API's `email` field, which the server checks, yields none.
 
 ---
 
@@ -628,3 +628,50 @@ More findings on stateful targets end `unverified`, which is the honest answer w
 nothing could judge them. "Free" is only as wide as the run: a value stored by an
 earlier run reads as free, and a quota that fills mid-run can still confirm
 ([Known limits](../control-requests.md#known-limits)).
+
+---
+
+## ADR-192 — An intrinsic verdict is its own evidence; a verdict that judges needs a control { #adr-192 }
+
+**Status:** accepted · `runtime/runners/performance/runner.py`, `runtime/runners/shrink_phase.py`, `runtime/runners/auth/runner.py`, `runtime/findings/stats.py`, `models/runtime/taxonomy.py`
+
+### Context
+
+Every runner runs the whole oracle chain on what it sends, but not every runner
+controls what each oracle reports. Some verdicts need nothing beyond the
+observation: a latency measured, a 5xx or a dropped connection, a caller the policy
+excludes getting a 2xx. Others judge the answer against the contract (a schema, a
+status code, a rejection) and can be wrong for reasons a single observation does
+not rule out. Under load, a `performance` run meets both; an `auth` crossing
+controls access, its own question, and nothing the contract states.
+
+### Decision
+
+**An intrinsic verdict is reported as observed.** In `performance`, a
+`latency_sla` or `latency_degradation` finding, and a crash (`CRASH_INVARIANTS`:
+`not_a_server_error`, `resilience_degradation`), are materialized without a
+shrink. A degradation is measured twice before it is reported; a crash seen under
+load is not refuted by an unloaded re-send that does not reproduce it. In `auth`, an
+`access_control` finding, whose control is the crossing itself, and a crash are
+confirmed.
+
+**A verdict that judges needs a control.** In `performance`, every finding judged
+against the contract goes through the shrink phase stateless uses, in a shared
+module (`shrink_phase.py`): re-send, minimize, control. It can end `flaky`,
+`refuted` or `unverified`. In `auth`, which has no such control, it is an
+`UnverifiedFinding`, counted in `findings_unverified`.
+
+### Rejected
+
+- **Shrinking latency findings.** A latency sample re-sent alone measures another
+  load; the reproducer would not be the evidence.
+- **Shrinking crashes found under load.** The re-send runs without the load that
+  provoked the crash, and would turn a real crash `flaky`.
+- **Dropping contract findings from `auth`.** They are real observations; the run
+  only lacks the control to confirm them.
+
+### Consequences
+
+A `performance` run spends shrink requests on its contract findings, counted in
+`requests_shrink`. An `auth` report may list unverified findings beside its
+confirmed access breaches and crashes.

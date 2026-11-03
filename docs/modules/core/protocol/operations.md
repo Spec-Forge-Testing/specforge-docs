@@ -1,6 +1,6 @@
 # Operations
 
-`describe` publishes **41 operations in eight families**, derived from the
+`describe` publishes **47 operations in eight families**, derived from the
 core's own façade. Each operation declares what must be open before it is called
 (`requires`), whether it can be watched (`emits_progress`), whether it can be
 stopped (`cancellable`), and whether it destroys what cannot be undone
@@ -24,9 +24,10 @@ and verify the documented operation names, requirements and effects against
 | `contract` | A contract must also be loaded — which implies a project. |
 | `analysis` | An `analyze_endpoints` must have run in the same session — which implies a contract. Without it the call is refused `NO_STATIC_ANALYSIS`. |
 
-`destructive` is `true` on exactly three operations, `apply_fix_plan`,
-`apply_finding_fix` and `apply_prune_plan`, which delete or rewrite what cannot
-be undone. A frontend confirms those before sending, reading the flag instead
+`destructive` is `true` on exactly five operations, `apply_fix_plan`,
+`apply_finding_fix`, `verify_finding_fix`, `revert_finding_fix` and
+`apply_prune_plan`, which delete or rewrite what cannot be undone: a fix the build
+refuses is taken out of the tree again. A frontend confirms those before sending, reading the flag instead
 of keeping its own list.
 
 ## `session`
@@ -117,6 +118,9 @@ carries `path`, `adopted`, `endpoints` (`method`, `path`, `handler`, `file`,
 | `estimate_inference` | contract | none; prices what inferring the selection's contracts would cost, per endpoint and in total, with an `approval_token`; calls no model ([fields](#estimate-inference)) |
 | `fuzz` | contract | emits progress and is cancellable |
 | `replay` | project | emits progress and is cancellable |
+| `replay_finding` | project | none; cancellable. Re-sends the one request a finding was reported from ([Replay and fixes](replay-and-fixes.md#replay-finding)) |
+| `inspect_service` | project | none; sends nothing. Finds the service answering on the API's port ([Replay and fixes](replay-and-fixes.md#inspect-service)) |
+| `set_finding_trace` | project | none. Keeps a pasted stack trace, or notes, as the finding's evidence ([Replay and fixes](replay-and-fixes.md#set-finding-trace)) |
 | `run_pipeline` | none | composes the four stages; emits progress and is cancellable |
 
 `run_pipeline` frames each stage with `stage_started` / `stage_finished` over
@@ -144,8 +148,7 @@ What each stage of `run_pipeline` works on:
 ### Strategy and examples { #strategy-and-examples }
 
 `fuzz` and `run_pipeline` take `strategy` (one of the five
-[strategies](vocabularies.md#strategy), `default` when omitted; `hacker` is
-accepted as `security`) and `examples_per_endpoint`, an integer of at least 1.
+[strategies](vocabularies.md#strategy), `default` when omitted) and `examples_per_endpoint`, an integer of at least 1.
 Without a count, a run asks each endpoint the strategy's own default, held under
 the runner's cap; a count asked of a runner that honors none (the `performance`
 ladder, `auth`, `resilience`) is refused `INVALID_PARAMS`. What each choice
@@ -227,12 +230,14 @@ give `/api/v1`, never `/api/api/v1`.
 | `list_runs` | none | — |
 | `get_run` | none | `started`, `finished` |
 | `get_finding` | none | — |
+| `inspect_finding_source` | project | —. Whether the finding's handler code can be reached ([Replay and fixes](replay-and-fixes.md#inspect-finding-source)) |
 | `estimate_finding_explanation` | project | — |
 | `explain_finding` | project | `started`, `finished`; cancellable |
 | `estimate_finding_fix` | project | — |
 | `propose_fix` | project | `started`, `finished`; cancellable |
 | `get_finding_fix_patch` | none | — |
-| `apply_finding_fix` | project | —; destructive |
+| `apply_finding_fix` | project | —; destructive. Writes the fix's files, nothing is built ([Replay and fixes](replay-and-fixes.md#fixing-a-finding)) |
+| `verify_finding_fix` | project | `started`, `stage_*` (`build`, `replay`), `finished`; cancellable; destructive ([Replay and fixes](replay-and-fixes.md#fixing-a-finding)) |
 | `revert_finding_fix` | project | —; destructive |
 | `compare_runs` | none | — |
 | `prune_runs` | none | — |
@@ -258,8 +263,8 @@ classification and evidence as a report's defect
 | `observation` | `expected`, `observed`, `location` (`{scope, path}`, see [scopes](vocabularies.md#location-scope)) and `marker`; `null` for a finding stored before `0.1.19`. |
 | `request` | `url`, `poisoned_zone`, `poisoned_field` (a nested body field by its dotted path, such as `user.email` or `items.0.price`), `attack_family`, `trigger_fields`. |
 | `response` | `content_type`, `headers` (redacted), `latency_ms`. |
+| `resolution` | What resolves the finding: `fix_id`, `fix_finding_id` (another finding's when its fix covers this one) and `replayed_at`. Set while its newest replay against a fix applied to its tree passed; `null` otherwise. |
 | `control` | `status_code`, `latency_ms`, `error`: what the control request got back, plus `source`, `attribution`, `peer`, `occupancy` and `known_answer` ([what they hold](../../specforge-engine/control-requests.md#evidence)). On a confirmed finding, the control it was judged against (for `resilience`, the clean base request sent after the attack was confirmed); on an unverified one, the control that got no answer; on a refuted one, the control that refuted it (for a whole-request rejection, the request that was accepted); `null` when none was sent. |
-| `stack_trace` | Always `null`. Deprecated; removed with the next minor. |
 
 `metrics.findings_refuted` counts, apart from `findings_flaky`, the findings a
 control request refuted; each is also listed, with `state` `refuted` and its `control`.

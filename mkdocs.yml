@@ -161,6 +161,7 @@ nav:
               - Fuzz options: modules/core/protocol/fuzz-options.md
               - Events and cancellation: modules/core/protocol/events.md
               - Operations: modules/core/protocol/operations.md
+              - Replay and fixes: modules/core/protocol/replay-and-fixes.md
               - Result vocabularies: modules/core/protocol/vocabularies.md
               - Errors: modules/core/protocol/errors.md
               - Fixtures: modules/core/protocol/fixtures.md
@@ -198,6 +199,8 @@ nav:
           - Transactions: modules/storage/transactions.md
           - Repositories: modules/storage/repositories.md
           - Data model: modules/storage/data-model.md
+          - Finding follow-up records: modules/storage/finding-records.md
+          - Schema versions and migrations: modules/storage/migrations.md
           - Artifacts and retention: modules/storage/artifacts.md
           - Errors: modules/storage/errors.md
           - Testing: modules/storage/testing.md
@@ -236,6 +239,7 @@ nav:
           - Shrink limits and the trace: modules/specforge-engine/shrink-limits.md
           - Execution modes: modules/specforge-engine/execution-modes.md
           - Run depth: modules/specforge-engine/run-depth.md
+          - Stateful depth: modules/specforge-engine/stateful-depth.md
           - Progress and cancellation: modules/specforge-engine/progress-and-cancellation.md
           - Extension guide: modules/specforge-engine/extension-guide.md
           - API Reference: modules/specforge-engine/api-reference.md

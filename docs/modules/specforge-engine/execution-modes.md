@@ -189,7 +189,8 @@ sequenceDiagram
 
 A stateful finding can end `refuted` or `unverified` as a stateless one does: its last
 step is judged by the same [control requests](control-requests.md), after the minimal
-sequence is re-sent. A stateful run sends no [witnesses](witnesses.md#stateful).
+sequence is re-sent. One step in ten sends an inferred-rule [witness](witnesses.md#stateful)
+instead of a valid draw.
 
 The machine runs Hypothesis's `explicit`, `generate` and `shrink` phases only.
 Hypothesis's `explain` phase is left out: it re-runs the whole machine against the
@@ -207,13 +208,17 @@ flaky finding. The mechanism is laid out in
 [Engine internals](engine-internals.md#shrinking-and-minimizing-a-stateful-finding)
 and the choice in [ADR-089](adr/engine.md#adr-089).
 
-A stateful run keeps running passes until one finds nothing new: each reported
-defect is suppressed, by its signature and its trigger fields, before the next
-pass. It stops early once the distinct defects, or the distinct flaky signatures,
-reach `max_distinct_bugs` (default 25); `1` reports the first defect only. A
-`DELETE` removes the value it consumes from its bundle, and a read that declares
-404 or 410 is probed after a delete of the same route. The rules are on
-[Run depth](run-depth.md#stateful-depth). A flaky pass outcome becomes a flaky
+A stateful run keeps running passes until two in a row find nothing new: each
+reported defect is suppressed, by its signature and its trigger fields, before the
+next pass. It stops early once the distinct defects, or the distinct flaky
+signatures, reach `max_distinct_bugs` (default 25); `1` reports the first defect
+only. When the passes stop with targeted endpoints never reached, one further pass
+runs on them and on what produces their values. Captured values live in pools a
+rule draws from, so what a pass may send never depends on the target's answers,
+and the machine leads with a harmless read. A `DELETE` removes the value it
+consumes from its pool, and a read that declares 404 or 410 is probed after a
+delete of the same route. The rules are on
+[Run depth](stateful-depth.md#stateful-depth). A flaky pass outcome becomes a flaky
 finding, counted in `findings_flaky` by occurrence and folded away when a
 confirmed report already covers its signature ([ADR-047](adr/engine.md#adr-047)). When a state
 link cannot be honored the run raises `StatefulLinkError` carrying the partial
@@ -300,8 +305,15 @@ run status and the truncation reach the JSON report as for any other run.
 ## Performance
 
 Fuzz under a scaled load with the latency-SLA oracle active. The
-`GenerationPlan` is scaled with `.scaled(load_factor)`; findings are
-materialized without shrinking.
+`GenerationPlan` is scaled with `.scaled(load_factor)`. A latency finding
+(`latency_sla`, `latency_degradation`) and a crash (`not_a_server_error`,
+`resilience_degradation`) are reported as observed, without shrinking: the
+measurement, or the 5xx or dropped connection seen under load, is its own
+evidence, and an unloaded re-send that does not reproduce it says nothing against
+it. Every finding judged against the contract goes through the stateless shrink phase (`runtime/runners/shrink_phase.py`), its
+re-send and its [control request](control-requests.md), so one that does not
+reproduce ends `flaky` and one its control refutes ends `refuted`
+([ADR-192](adr/findings.md#adr-192)).
 
 ```mermaid
 sequenceDiagram
@@ -312,10 +324,12 @@ sequenceDiagram
     participant Fnd as findings
 
     PR->>PR: plan.scaled(load_factor)
-    PR->>Loop: explore_endpoints(scaled, EndpointLoopSpec(resolve=materialize))
+    PR->>Loop: explore_endpoints(scaled, EndpointLoopSpec(resolve=...))
     Loop->>F: fuzz under load
     F->>Or: check → SLA breach
-    Loop->>Fnd: group → materialize (no shrink) → dedupe → build_unshrunk_stats
+    Loop->>Fnd: latency and crash groups → materialize (no shrink)
+    Loop->>Fnd: contract groups → shrink_or_leave_unverified (re-send, control)
+    Loop->>Fnd: dedupe → build_stats
 ```
 
 ### The concurrency ladder
@@ -669,7 +683,8 @@ sequenceDiagram
         AR->>Or: check each crossing (access_expectation)
         Or-->>AR: 2xx for an excluded caller → violation
     end
-    AR->>Fnd: group → materialize (no shrink) → dedupe → build_unshrunk_stats
+    AR->>Fnd: access_control and crash groups → materialize (no shrink) → dedupe
+    AR->>Fnd: contract groups → unverified → build_unshrunk_stats
 ```
 
 Each endpoint is crossed with **one deterministic valid request** — the simplest
@@ -718,9 +733,16 @@ status whose declared field is null or missing means the producer broke its own
 contract and ends the attempts. When no attempt yields a value the endpoint is
 `owner_resource_unprovisioned`; the attempts are in the trace. Producer requests
 feed the run-wide `TargetWatch` through `ProducerWatch`, like the crossings do, so
-a dead target or a cancellation stops provisioning too. Findings are
-**materialized without shrinking** — a cross-identity read is already its own
-minimal reproducer.
+a dead target or a cancellation stops provisioning too.
+
+Findings are **materialized without shrinking**: a cross-identity read is already
+its own minimal reproducer. An `access_control` finding is confirmed, since its
+control is the crossing itself, and so is a crash (`not_a_server_error`,
+`resilience_degradation`), its observation being its evidence. A crossing runs the
+whole oracle chain, so its response can also break an invariant judged against the
+contract (a schema, a status code) that the crossing never controls; every such
+finding is reported `unverified` and counted in `findings_unverified`
+([ADR-192](adr/findings.md#adr-192)).
 
 ### Stopping on a dead target
 

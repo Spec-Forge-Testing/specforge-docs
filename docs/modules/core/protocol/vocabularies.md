@@ -30,6 +30,12 @@ How a stored run ended. In `list_runs`, `get_run` and the report document's
 A run that fails outright is never stored, so `failed` is not a `run.status`.
 The persistence layer stores these five values under a CHECK constraint.
 
+The [operation status](#operation-status) is not the run's verdict: `completed`
+there means the operation ran and answered a document, and a `truncated` run
+answers it too. Read the verdict from `run.status` and `run.signal`; a
+`truncated` run's signal is always `degraded`, with
+[`run_truncated`](#signal-causes) among its causes.
+
 ## `run.comparability` { #comparability }
 
 Whether this run's defects can be compared with another run's.
@@ -71,9 +77,11 @@ set when that endpoint's pass was cut short whether or not the run was.
 | `generation_exhausted` | No request could be generated for the endpoint. |
 | `engine_failure` | The engine itself raised while exploring the endpoint; it was isolated and the run went on. |
 | `pass_limit_reached` | A stateful run that kept making progress stopped at its limit of passes. |
+| `flaky_generation` | A stateful run's passes kept ending because the target answered differently from an earlier test case, so it stopped before a clean pass. No endpoint caused it: `run.truncation.endpoint_id` is `null`, and the `truncated` event carries no `endpoint`. |
 | `cancelled` | The client asked the run to stop. |
 
-`detail` beside it is free text for a person, or `null`. For `engine_failure` it
+Every reason but `flaky_generation` names the endpoint the run was exploring in
+`run.truncation.endpoint_id`. `detail` beside it is free text for a person, or `null`. For `engine_failure` it
 names the error's type and where it was raised (`<type> @ <file>:<line>`); the
 message and the traceback are in the core's stderr log, never in the report.
 
@@ -158,11 +166,13 @@ the signal is not `degraded`.
 | Value | Meaning |
 | --- | --- |
 | `no_responses` | No request reached the target: every attempt was an availability, timeout or unsendable-request failure. |
+| `requests_unanswered` | Some requests reached the target, but an endpoint left at least three of its requests, and at least 5 % of them, with a timeout or an availability failure, so what the run says of that endpoint rests on the rest. `metrics.by_category` and the endpoint's `by_category` count them. Never raised beside `no_responses`. |
 | `endpoints_excluded` | One or more declared endpoints were excluded from this run. |
 | `withheld_by_safety_guard` | The safety guard held back one or more targeted endpoints, so they were never probed. |
 | `access_policy_undeclared` | One or more targeted endpoints declare no access policy, so the `auth` run verified nothing there. |
 | `access_preconditions_unmet` | One or more targeted endpoints had an access policy the run could not cross: no producer, no role holder, no owner, or no resource it could create; each one's [`unprobed_reason`](#unprobed-reason) says which. |
 | `run_cancelled` | The run was cancelled before it reached every targeted endpoint. |
+| `run_truncated` | The run's `run.status` is `truncated`: it was cut short before its plan was exhausted, even when every targeted endpoint received requests. `run.truncation` says why. It can stand beside `endpoints_unreached`. |
 | `endpoints_unreached` | One or more targeted endpoints never received a request. |
 | `load_unjudged` | One or more endpoints' load profiles judged no step: every `degraded` is `null`, because the baseline or every step was measured on no samples. |
 
@@ -184,10 +194,7 @@ answers. The `strategy` parameter of `fuzz`, `run_pipeline` and
 `estimate_inference` takes one of these values, the `started` event of a run
 carries the one it runs with, and an analysis carries it as `strategy` in
 `list_analyses`, `get_analysis`, `get_run`'s `analysis` and the report document's
-`analysis`. `hacker`, spelled exactly so, is accepted as input and means
-`security`; it is never listed and never sent back. Beside `strategy`, an analysis
-carries `strategy_mode`, its label for older clients: `Hacker` for
-`security`, every other value capitalized.
+`analysis`. Any other value, `hacker` included, is refused `INVALID_PARAMS`.
 
 | Value | Meaning |
 | --- | --- |

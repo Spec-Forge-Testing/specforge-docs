@@ -39,7 +39,7 @@ name, that name follows in `code font`.
 | **Project / analysis / run** | The three storage levels: the API you test, a replayable recipe, and one execution of that recipe. |
 | **Artifact** | A file a run leaves on disk — its reports and the trace file — indexed in storage. |
 | **Fidelity** | How closely a replay reproduced the original run, i.e. how much to trust its result. |
-| **Strategy** | What a run generates and which extra checks judge the answers: `default` (schema-only), `security` (widened toward adversarial values), `conformance` (schema-only, also flagging response fields the contract does not declare), `smoke` (a short run of valid requests) or `exposure` (read-only fields and mass assignment). `hacker` is accepted as `security`. |
+| **Strategy** | What a run generates and which extra checks judge the answers: `default` (schema-only), `security` (widened toward adversarial values), `conformance` (schema-only, also flagging response fields the contract does not declare), `smoke` (a short run of valid requests) or `exposure` (read-only fields and mass assignment). |
 | **Examples per endpoint** | How many generated requests a run asks of each endpoint (`examples_per_endpoint`); without it, the strategy's own default, held under the mode's cap. |
 | **Preset** | A named sequence of runs the core publishes (`quick-check`, `contract-audit`, `security-scan`, `exposure-scan`, `load`, `full`); a client runs them one after the other. |
 | **Producer contract** | An extra per-endpoint contract you supply (`--contracts`) that enriches the run beyond the OpenAPI schema. |

@@ -706,3 +706,47 @@ repetition, with no model involved. On the RealWorld Go target nothing is derive
 its `GET /articles/{slug}` declares no 404. The invalidation acts when the step
 draws the value, whatever the `DELETE` answers, so a `DELETE` that fails still
 empties the bundle until a producer fills it again.
+
+---
+
+## ADR-190 — A run cut short, or one that left an endpoint's requests unanswered, is never clean { #adr-190 }
+
+**Status:** accepted · `services/history/rules.py`, `services/history/models.py`, `services/fuzz/signal.py`, `services/report/builder/metrics.py`
+
+### Context
+
+A run's `signal` says whether its evidence covers what it was asked to cover. Two
+runs read `clean` without doing so. A run cut short after it had sent requests to
+every targeted endpoint left no endpoint unreached, so nothing degraded it; the
+operation answered `completed` and a reader saw a whole run. An endpoint whose
+requests timed out now and then, short of the streak that cuts a pass, also left
+the signal untouched, although part of what the run says of it was never answered.
+
+### Decision
+
+**A truncated run is degraded.** `assess_signal` adds `run_truncated` whenever
+`run.status` is `truncated`, beside `endpoints_unreached` when an endpoint was also
+never reached. The operation's `status` keeps meaning that the run ended with a
+document; the verdict is `run.status` and `run.signal`.
+
+**An endpoint that leaves enough of its requests unanswered degrades the run.**
+`requests_unanswered` is raised when one endpoint counts at least three requests
+(`_FEWEST_UNANSWERED_THAT_DEGRADE`), and at least 5 % of its own
+(`_UNANSWERED_SHARE_THAT_DEGRADES`), in the categories `timeout` and
+`availability`. An unsendable request never left, so it does not count. The cause is
+not raised beside `no_responses`, which already says more.
+
+Both are derived from the run's facts, live and when a stored run is read, so the
+store keeps no column for them.
+
+### Rejected
+
+- **Answering `truncated` as the operation's status.** A client would read a run
+  with a document as a failed operation.
+- **A share alone.** One lost request on an endpoint of few would read as a lot.
+- **A count alone.** A large run loses a few requests on a healthy endpoint.
+
+### Consequences
+
+More runs read `degraded`, and each one says why. A `fuzz` reply carries the
+`degraded_signal` warning for the new causes as for the others.

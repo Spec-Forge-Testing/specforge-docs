@@ -123,11 +123,11 @@ registry, never a branch.
 | Mode | What it does |
 |---|---|
 | `STATELESS` | fuzz each endpoint independently, addressing resources by the values earlier responses returned; shrink each failure to a minimal reproducer |
-| `STATEFUL` | drive sequences of linked operations as a state machine, pass after pass until one finds nothing new; shrink the failing payload, then minimize the sequence to the steps it needs |
+| `STATEFUL` | drive sequences of linked operations as a state machine, pass after pass until two in a row find nothing new; shrink the failing payload, then minimize the sequence to the steps it needs |
 | `REPLAY` | re-send a recorded trace verbatim and report how faithfully the API behaved |
-| `PERFORMANCE` | fuzz under a scaled load with a latency-SLA oracle active |
+| `PERFORMANCE` | fuzz under a scaled load with a latency-SLA oracle active; report latency and crashes as observed, and shrink and control every finding judged against the contract as stateless does |
 | `RESILIENCE` | send chaos-shaped requests (oversized, slow, malformed) built on a valid request, and confirm a degradation by resending its attack |
-| `AUTH` | cross the declared identities against each endpoint's access policy; flag a 2xx a caller should not have obtained |
+| `AUTH` | cross the declared identities against each endpoint's access policy; flag a 2xx a caller should not have obtained, report a crash as observed, and leave a finding judged against the contract unverified |
 
 Each mode's sequence and the options it accepts are in
 [Execution modes](execution-modes.md).
@@ -167,7 +167,8 @@ decisions this rule produced are in the [decision records](adr/index.md).
 | See how a request is sent, checked and reported | [Engine internals](engine-internals.md) |
 | Read a finding: its category, severity, observation, evidence and redaction | [Findings](findings.md) |
 | Pick a mode and its options | [Execution modes](execution-modes.md) |
-| See how each mode gets past the first answer: run corpus, stateful passes, resilience confirmation | [Run depth](run-depth.md) |
+| See how each mode gets past the first answer: run corpus, resilience confirmation | [Run depth](run-depth.md) |
+| See how a stateful run draws, how long it keeps going and how it judges a transition | [Stateful depth](stateful-depth.md) |
 | Add a runner, a profile, a phase, an oracle, a transport or a body encoder | [Extension guide](extension-guide.md) |
 | Call a function, or know what it raises | [API reference](api-reference.md) |
 | Know *why* something is the way it is | [Decision records](adr/index.md) |

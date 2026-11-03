@@ -67,7 +67,7 @@ flowchart TD
     E -->|no| A{every value accepted before,<br/>or no control sends only free values?}
     A -->|no| C[free control]
     A -->|yes| S[sibling control]
-    C --> B{vouched for, and the run saw this<br/>caller accepted, and no store refusal?}
+    C --> B{vouched for, the run saw this caller accepted,<br/>no store refusal, an accepted form still taken,<br/>no value in question taken before?}
     B -->|yes| OK[confirmed]
     B -->|no| U[refuted or unverified]
 ```
@@ -78,13 +78,24 @@ body and query value to a free one, each string by at least
 request holding one goes to the sibling control. For an inferred rule, it is the
 plain request, unless the value it isolates was accepted at that field.
 
-Two conditions stop a free control from confirming, and leave the finding
+Three conditions stop a free control from confirming, and leave the finding
 `unverified`:
 
 - The run never saw the endpoint accept anything from this caller. A target left
-  dirty or a spent quota reads the same way.
+  dirty or a quota spent from the first request reads the same way.
 - The rejection shows a store refusing a write for what it already holds (a
   [state-refusal marker](disclosure.md#markers)).
+- Every free control was rejected, and a rotated form of a request the run saw
+  accepted is now refused too. A quota spent since that acceptance reads the same
+  as the rule, so nothing vouches. That last request is reported as
+  `control.attribution`; without a form to send, the finding is `unverified` too.
+
+**A value the run already took.** A whole-request rejection that reproduces is
+`unverified`, never confirmed, when a value in question was accepted at its field
+before the controls sent theirs: a value the rejection names or, when it names
+none, any value the request chose. Accumulated state, such as a capacity rule,
+may be what refuses it, and the rotated control, the re-send and a peer would all
+be accepted alike.
 
 ### The sibling control { #sibling }
 
@@ -126,7 +137,7 @@ may reject it for another reason, or accept it because the rule is not real.
 | --- | --- | --- |
 | **Plain** | The rest rotated, the poisoned field as sent, its value rotated when that still breaks exactly the same inferred rules | `control` |
 | **Attribution** | The same rest, the field at a valid value | `control.attribution` |
-| **Known answer** | On a safe method: the same rest, another value the whole contract takes | `control.known_answer` |
+| **Known answer** | Another valid value the whole contract takes, beside a rest of its own | `control.known_answer` |
 | **Occupancy** | The attribution's value again, the rest rotated once more | `control.occupancy` |
 
 The plain request decides first. Accepted, the finding is `refuted`. Rejected as
@@ -134,29 +145,42 @@ invalid (400 or 422), the attribution is sent; unless it is accepted, the findin
 is `unverified`, as it is with no valid value to send. Any other answer to the plain
 request also leaves it `unverified`.
 
-With the attribution accepted, a plain request that isolated the value confirms the
-finding. The last two requests run only when it could not (an empty text, a value
-that does not rotate), since the target may hold that value already. The occupancy
-control shows how the target refuses a taken value. On a creation it goes under the
-finding's caller, then another identity; on an update, under another identity alone.
-A refusal shaped like the plain request's leaves the finding `unverified`, never
-`refuted`: the value was taken, and that says nothing about the rule.
+### The known answer { #known-answer }
 
-### Safe methods { #known-answer }
+An accepted attribution shows the field takes some valid value, not that the rule
+is what refused the poisoned one: the value may belong to another caller, or match
+nothing. So, on every method, the **known answer** goes next, under the finding's
+caller, with its own rest, its strings rotated when a rotation still meets the
+field's contract.
 
-A `GET`, `HEAD` or `OPTIONS` stores nothing, but a value may still belong to another
-caller or match nothing. So a safe method sends the **known answer** first, under
-the finding's caller. Its value is the one just inside the edge a numeric or
-`minItems`/`maxItems` rule was crossed at, else a simple value meeting the whole
-contract.
+| Its value | When |
+| --- | --- |
+| Just inside the edge the poisoned value crossed | a numeric or `minItems`/`maxItems` rule |
+| Up to `KNOWN_ANSWER_EDGE_DISTANCES` (10, then 5, then 2) steps further inside | the attribution's value already sits on that edge: one step away, a lookup of the two values would take it too |
+| A simple value meeting the whole contract | any other rule |
 
-| Known answer | Another identity | Verdict |
-| --- | --- | --- |
-| Not accepted | any | `unverified`: the rejection is not the rule's |
-| Accepted | none | `confirmed` |
-| Accepted | declared | The occupancy control decides |
-| No other valid value | declared | The occupancy control decides |
-| No other valid value | none | `unverified` |
+With no such value, or with the known answer not accepted, the finding is
+`unverified` whatever callers are declared: the rejection is not shown to be the
+rule's.
+
+With the known answer accepted, a plain request that isolated the value confirms
+the finding. Otherwise (an empty text, a value that does not rotate) the target may
+hold that value already, and the **occupancy** control decides. On a creation it
+goes under the finding's caller, then another identity; on an update, under another
+identity alone. A refusal shaped like the plain request's leaves the finding
+`unverified`, never `refuted`: the value was taken, and that says nothing about the
+rule. With no caller to send it under, a safe method is `confirmed` and a write is
+`unverified`.
+
+### A write that moved its resource { #moved-resource }
+
+A write's accepted answer can move the resource it addressed: a `PUT` that renames
+an article answers its new slug. When the attribution's answer holds a path
+parameter's name, at its top level or one object down, with another value, the
+known answer and any later occupancy control are sent to that new address, so a
+404 at the old one does not leave the rule `unverified`. The known answer must
+still be accepted. The same rule moves the occupancy control after the known
+answer's own accepted answer (`followed` in `moved_resource.py`).
 
 ## Bounds { #bounds }
 
@@ -167,26 +191,23 @@ one the wall cuts leaves the finding `unverified`, with the last answer as evide
 
 ## What the report shows { #evidence }
 
-`ControlEvidence` (`models/runtime/evidence.py`) reaches the report as `control`
-(report `schema_version` 1.24).
+`ControlEvidence` (`models/runtime/evidence.py`) reaches the report as `control`,
+with every field below since report `schema_version` 1.24.
 
 | Field | Holds |
 | --- | --- |
 | `status_code`, `latency_ms`, `error` | What the control got back |
 | `source` | `sent`; `reproduction`, when no control could be built and the answer is the reproduced rejection; `earlier`, when nothing was sent because the same request from the same caller was accepted earlier in the run |
-| `attribution` | The request sent after a rejected control |
+| `attribution` | The request sent after a rejected control: for an inferred rule, the field at a valid value; for a whole-request rejection, the rotated form of an accepted request |
 | `peer` | The same control under another identity, once the finding's caller had it accepted twice |
 | `occupancy` | The attribution's value sent again; its own `peer` is the same request under another identity |
-| `known_answer` | Another valid value, sent by a safe method's caller |
+| `known_answer` | Another valid value, sent under the finding's caller |
 | `identity_label` | The caller of a `peer`, `occupancy` or `known_answer` control |
 
 ## Known limits { #known-limits }
 
 - **A store outside the record.** A value held since an earlier run reads as free.
   Its rejection can look like a rule when the run has no sibling that says otherwise.
-- **A quota filled mid-run.** The run saw the caller accepted, so a rejection from
-  a quota that fills partway through can still be confirmed. A quota spent from the
-  first request is not, because nothing was ever accepted.
 
 ## Where to change it
 
@@ -196,6 +217,8 @@ one the wall cuts leaves the finding `unverified`, with the last answer as evide
 | How many rotations or siblings are tried | `CONTROL_ROTATIONS`, `SIBLING_TRIES` in `runtime/fuzzers/stateless/constants.py` |
 | Which formats never rotate | `_KEPT_FORMATS` in `rotated_strings.py` |
 | How much of a run is remembered | `ACCEPTED_ENTRIES_PER_ENDPOINT` in `runtime/http/constants.py` |
+| How far inside an edge the known answer moves | `KNOWN_ANSWER_EDGE_DISTANCES` in `runtime/fuzzers/stateless/constants.py` |
+| Where a moved resource is read from an answer | `moved_value` in `runtime/state_link/moved.py` |
 
 Decisions: [ADR-186](adr/findings.md#adr-186), [ADR-182](adr/findings.md#adr-182),
 [ADR-183](adr/runners.md#adr-183).

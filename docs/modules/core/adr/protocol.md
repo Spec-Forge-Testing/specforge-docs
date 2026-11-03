@@ -113,7 +113,7 @@ change for all of them at once, recorded as such in the
 
 ## ADR-094 — Version negotiation within the series, from a floor { #adr-094 }
 
-**Status:** accepted · Supersedes [ADR-074](#adr-074) · `adapters/stdio/protocol_version.py`, `adapters/stdio/server.py`, `utils/constants.py`
+**Status:** accepted · Supersedes [ADR-074](#adr-074) · Its floor for the `0.2` series in [ADR-189](#adr-189) · `adapters/stdio/protocol_version.py`, `adapters/stdio/server.py`, `utils/constants.py`
 
 ### Context
 
@@ -198,7 +198,7 @@ closing it early cancels what has not finished. See
 
 ## ADR-155 — One strategy name inside, the former name only at the border { #adr-155 }
 
-**Status:** accepted · `schemas/strategy.py`, `services/persistence/stored_strategy.py`, `services/fuzz/constants.py`, `services/report/builder/run.py`, `controllers/results/browse.py`; engine `models/strategy.py`; storage `migrations/0006_strategy_canonical.sql`
+**Status:** accepted · Superseded in part by [ADR-189](#adr-189): the alias and `strategy_mode` are gone · `schemas/strategy.py`, `services/persistence/stored_strategy.py`, `services/fuzz/constants.py`, `services/report/builder/run.py`, `controllers/results/browse.py`; engine `models/strategy.py`; storage `migrations/0006_strategy_canonical.sql`
 
 ### Context
 
@@ -246,3 +246,48 @@ that sends `hacker` sees `started.strategy` read `security`: a semantic change,
 stated in the changelog. A client that builds its strategy choices from the
 catalog never offers the alias. A new strategy is a member in each enum, which the
 parity test keeps in step.
+
+---
+
+## ADR-189 — The `0.2` series serves only itself and carries no compatibility surface { #adr-189 }
+
+**Status:** accepted · Supersedes in part [ADR-155](#adr-155) · `utils/constants.py`, `schemas/strategy.py`, `models/results/findings.py`, `domain/wire_events.py`; storage `migrations/0011_strategy_column_and_cut_without_endpoint.sql`
+
+### Context
+
+The `0.1` series kept three things alive for clients built against its early
+versions: the strategy alias `hacker`, the derived label `strategy_mode` beside
+`strategy`, and a `stack_trace` on every finding that was always `null`. Each one
+is a second spelling a client may read, and a reader that reads the wrong one sees
+nothing wrong. A cut no endpoint caused (`flaky_generation`) also had to name an
+endpoint, because the field was typed as a string.
+
+### Decision
+
+**The minor moves, and the floor moves with it.** The core speaks `0.2.0` and
+serves `0.2.0` only (`PROTOCOL_OLDEST_SERVED_VERSION`): a `0.1.x` client gets
+`PROTOCOL_VERSION_MISMATCH` with `oldest` `0.2.0`, as [ADR-094](#adr-094) prescribes
+for a breaking change.
+
+**One spelling of each fact.** `strategy` takes and returns the five canonical
+values; anything else, `hacker` included, is refused `INVALID_PARAMS`.
+`strategy_mode` and `stack_trace` are removed from every reply and from the report
+document, whose `schema_version` becomes 1.25. Storage renames the analyses'
+strategy column to match.
+
+**A cut names its endpoint only when one caused it.** `run.truncation.endpoint_id`
+is `null` with reason `flaky_generation`, and the `truncated` event omits
+`endpoint` for it, as an event omits any field it has no value for.
+
+### Rejected
+
+- **Keeping the alias inside `0.2`.** Every client would still have to know that
+  two names mean one strategy, and the catalog would still have to hide one.
+- **Naming the first endpoint of the run for a cut it did not cause.** A reader
+  would look for the defect at that endpoint.
+
+### Consequences
+
+A client moves to `0.2.0` once, reading `strategy` and treating `endpoint_id` as
+nullable. The core has one serializer per field again, and a new strategy is one
+enum member.

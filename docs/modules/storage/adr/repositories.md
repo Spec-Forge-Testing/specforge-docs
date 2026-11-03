@@ -74,7 +74,7 @@ reproducer fields raises `ValidationError`.
 
 ## ADR-080 — Closed vocabularies are enforced twice: by a CHECK and by `create()` { #adr-080 }
 
-**Status:** accepted · `models/run.py`, `models/analysis.py`, `schema.sql`
+**Status:** accepted · `models/run.py`, `models/analysis.py`, `migrations/`
 
 ### Context
 

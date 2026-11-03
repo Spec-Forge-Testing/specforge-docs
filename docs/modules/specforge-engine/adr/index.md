@@ -47,11 +47,12 @@ missing here belongs to another module:
   composed; [ADR-153](../../core/adr/core.md#adr-153), how a finding's summary is
   told; [ADR-154](../../core/adr/core.md#adr-154), how a replay judges each
   recorded defect; [ADR-155](../../core/adr/protocol.md#adr-155), the strategy's
-  one name and its alias; [ADR-160](../../core/adr/core.md#adr-160), presets;
+  one name; [ADR-160](../../core/adr/core.md#adr-160), presets;
   [ADR-161](../../core/adr/core.md#adr-161), how a run's examples per endpoint
-  resolve; and [ADR-168](../../core/adr/core.md#adr-168), how a `DELETE`
-  invalidates what it consumes and how a deleted-resource transition is derived,
-  are the core's.
+  resolve; [ADR-168](../../core/adr/core.md#adr-168), how a `DELETE`
+  invalidates what it consumes and how a deleted-resource transition is derived;
+  [ADR-189](../../core/adr/protocol.md#adr-189), the `0.2` series; and
+  [ADR-190](../../core/adr/core.md#adr-190), when a run is clean, are the core's.
 - [ADR-136](../../semantic-inference/adr/prompts.md#adr-136), the plausible values
   the prompt asks for, is Semantic Inference's.
 
@@ -65,7 +66,7 @@ missing here belongs to another module:
 | [measurement.md](measurement.md) | measurement | How the default numbers are measured and set, and what an inferred contract adds |
 | [findings.md](findings.md) | findings | How a finding is classified, what it observed, when a value provably breaks its contract, how findings are told apart, refuted, left unverified and redacted |
 | [strategies.md](strategies.md) | strategies | What a strategy decides, the oracles it opts into, and the traits each runner declares |
-| [runners.md](runners.md) | runners | How far each runner reaches: when a stateful run stops and how it tells defects apart, the stateless run corpus, refuting a whole-request rejection, the resilience base request and its confirmation, links into reserved headers |
+| [runners.md](runners.md) | runners | How far each runner reaches: what a stateful pass draws, when the run stops and how it tells defects apart, the stateless run corpus, refuting a whole-request rejection, the resilience base request and its confirmation, links into reserved headers |
 
 ## Full index
 
@@ -217,3 +218,5 @@ missing here belongs to another module:
 | [ADR-186](findings.md#adr-186) | findings | A rejection is confirmed only against a value the run shows free |
 | [ADR-187](runners.md#adr-187) | runners | An inferred rule is witnessed in the valid pass, by a value derived within a bound |
 | [ADR-188](runners.md#adr-188) | runners | A stateful run keeps a witness Hypothesis calls flaky, and its passes are bounded |
+| [ADR-191](runners.md#adr-191) | runners | A stateful pass draws the same shape whatever the target answers, the run stops after two dry passes, and one more pass aims at what it never reached |
+| [ADR-192](findings.md#adr-192) | findings | An intrinsic verdict is its own evidence; a verdict that judges needs a control |

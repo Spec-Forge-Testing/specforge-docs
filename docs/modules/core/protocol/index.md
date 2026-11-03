@@ -46,7 +46,9 @@ Three non-negotiable rules:
    the stream, so the server claims the descriptor at startup and sends any
    loose write to stderr.
 2. **stderr stays free** for logs and tracebacks. A crash never dirties the
-   channel.
+   channel. The engine's `specforge_engine` logger writes its warnings and
+   errors there, so a witness a run lost shows up beside an engine failure's
+   traceback.
 3. **Backpressure.** If the frontend stops reading, the pipe fills and the core
    blocks on write. A client must always be reading, on a thread or task
    separate from rendering.
@@ -73,8 +75,9 @@ shapes, and no more:
 **Batching is not used.** A core that receives an array answers
 `-32600 Invalid Request`; the surface is left narrow on purpose.
 
-**The `id` is chosen by the client and never reused across the whole session.**
-Integer or string; the core returns it verbatim. Reuse looks harmless and is
+**The `id` is chosen by the client and never reused across the whole session**;
+the core refuses a reused one with `INVALID_PARAMS`. Integer or string; the core
+returns it verbatim. Reuse looks harmless and is
 not: cancellation travels by `id`, so a reused id would let a delayed
 `$/cancelRequest` cancel the wrong operation. A counter that only goes up avoids
 this entirely.

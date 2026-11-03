@@ -792,8 +792,10 @@ are in [Findings: taxonomy and evidence](findings.md).
   plain text ([ADR-109](adr/engine.md#adr-109)). A form shorter than
   `MIN_SECRET_LENGTH` (8) is not scrubbed in any encoding, so a short value does
   not mangle a body.
-  `materialize_report` is the no-shrink path, used by the modes that never
-  minimize ([ADR-037](adr/engine.md#adr-037)).
+  `materialize_report` is the no-shrink path, used for the findings a mode does
+  not minimize: every finding of `resilience`, the `access_control` and crash
+  findings of `auth`, and the latency and crash findings of `performance`
+  ([ADR-037](adr/engine.md#adr-037), [ADR-192](adr/findings.md#adr-192)).
 - **Dedupe.** `dedupe_crash_reports` keeps one report per `ReportKey` — method,
   endpoint, invariant, status, the canonical reproducer and, for an
   identity-scoped invariant only, the identity; phase deliberately excluded — and
@@ -805,8 +807,8 @@ are in [Findings: taxonomy and evidence](findings.md).
   `UnverifiedFinding`s and `RefutedFinding`s — each an entry per signature
   carrying the raw `occurrences` it stands for, a refuted one also its control. The counters stay the measurement; the union
   reifies them ([ADR-044](adr/engine.md#adr-044)).
-- **Stats.** Four builders, one per lifecycle — `build_stats` (stateless),
-  `build_stateful_stats`, `build_unshrunk_stats` (performance, resilience, auth)
+- **Stats.** Four builders, one per lifecycle — `build_stats` (stateless and
+  performance), `build_stateful_stats`, `build_unshrunk_stats` (resilience, auth)
   and `build_replay_stats` — all start from the shared `RequestBreakdown`:
   per-endpoint request counts, `by_phase`, `by_attack_family` and latency, plus the
   run's `by_phase` and `by_category` totals. Each builder counts `findings_raw` and
@@ -814,7 +816,9 @@ are in [Findings: taxonomy and evidence](findings.md).
   endpoint rows always add up to it; in a mode that never shrinks, a defect
   observed once counts as confirmed ([ADR-107](adr/engine.md#adr-107)), unless
   resilience's confirmation found it flaky, which `build_unshrunk_stats` counts in
-  `findings_flaky` with the confirmation's requests in `requests_shrink`. Latency percentiles are **nearest-rank** (P50/P95/P99):
+  `findings_flaky` with the confirmation's requests in `requests_shrink`, or the
+  runner left it unverified, as `auth` does with every finding judged against
+  the contract, counted in `findings_unverified`. Latency percentiles are **nearest-rank** (P50/P95/P99):
   always an observed sample, never interpolated, and an unsent request is never
   sampled into a latency it never took.
 
@@ -924,17 +928,21 @@ is not accepted as its shrink.
 
 `runtime/fuzzers/stateful/` drives sequences of linked operations as a Hypothesis
 `RuleBasedStateMachine`, built **dynamically** for a given set of endpoints:
-one `Bundle` per referenced name, one `@rule` per endpoint, and an optional
-`@initialize` that fixes one identity for the whole sequence
-([ADR-038](adr/engine.md#adr-038)).
+one pool of captured values per referenced name, one `@rule` per endpoint, led by
+the first harmless read, and an optional `@initialize` that fixes one identity
+for the whole sequence ([ADR-038](adr/engine.md#adr-038),
+[ADR-191](adr/runners.md#adr-191)). A rule draws its payload and one index per
+pool it consumes; a step whose pool is empty is skipped unsent, so the rules
+Hypothesis may pick never depend on the target's answers
+([Run depth](stateful-depth.md#stateful-draws)).
 
 A rule's state link drives the chaining: it **produces** a captured
-response value into a bundle, **consumes** bundled values into later requests'
+response value into a pool, **consumes** pooled values into later requests'
 zones. The capture primitive itself — `capture`, which pulls a production's
 dotted `response_field` out of a response body once its status matches, and
 `matches_declared_statuses` — lives in `runtime/state_link/`, the shared home for
 state-link mechanics used by both the stateful machine and the auth runner.
-A state link also optionally `invalidates` the bundle so a deleted resource is not
+A state link also optionally `invalidates` the consumed value, removing it from its pool, so a deleted resource is not
 operated on again (the core sets it on every `DELETE` consumption but a nested
 one), and declares **transition invariants** — a follow-up probe
 whose observed status must fall in an expected set, and whose body must reflect
@@ -942,11 +950,15 @@ the request's `echoed_fields`. A response that breaks its endpoint's own
 invariant, or a transition probe that breaks its own, raises a
 `StatefulViolationError`, the signal Hypothesis shrinks on. The error carries the
 violating `ExecutedStep`, the observed violations, the sequence that led to it,
-and `recheck` — the oracle that judged the step, kept so a re-sent response can be
-judged the same way. Each `ExecutedStep` records the `BundleBinding`s it
+`recheck` — the oracle that judged the step, kept so a re-sent response can be
+judged the same way — and, for a transition probe, `trigger_gate`: whether a
+trigger's answer brings the transition into force, so a re-send reproduces only
+after a trigger that did ([Run depth](stateful-depth.md#transition-probes)). Each `ExecutedStep` records the `BundleBinding`s it
 `consumed` and `produced`, so the sequence says which step fed which.
 
-A **supervisor** runs passes until the machine stops finding anything new. Each
+A **supervisor** runs passes until two in a row change nothing, then, when
+targeted endpoints were never reached, one further pass on them and their
+producers ([Run depth](stateful-depth.md#reach-pass)). Each
 pass ends in a closed union, isolated in one small function around the single
 `try`/`except` ([ADR-038](adr/engine.md#adr-038)). `run_pass` returns a
 `MachineOutcome`: a `PassOutcome` — `Reported`, `LinkBroken`, `Exhausted`,
@@ -958,9 +970,9 @@ and the supervisor reacts to it:
   signature and trigger fields, which then stands for one more finding, and
   **suppresses** that defect in `SuppressedDefects`, so the next pass looks past
   it. A defect found again on another value widens its suppression once. The run
-  keeps going until a pass changes nothing, or `max_distinct_bugs` (25) distinct
-  defects or flaky signatures are found
-  ([Run depth](run-depth.md#stateful-depth)).
+  keeps going until two passes in a row change nothing, or `max_distinct_bugs`
+  (25) distinct defects or flaky signatures are found
+  ([Run depth](stateful-depth.md#stateful-depth)).
 - `LinkBroken` raises `StatefulLinkError` carrying the partial exploration.
 - `MachineFailed` — the engine itself raised inside the pass, with an exception
   the outcome table does not classify — ends the machine with an `engine_failure`
@@ -974,17 +986,18 @@ and the supervisor reacts to it:
   it — becomes a `FlakyFinding`: the recovered violation is turned into a
   `FindingSignature` and its occurrences are accumulated, or, when no violation
   could be recovered, the event is still tallied. A new flaky signature is
-  suppressed like a reported defect and counts as progress; so do the first two
-  flaky passes with no violation. `build_stateful_stats` sums
+  suppressed like a reported defect and counts as progress, and one seen again
+  widens its suppression; the first two flaky passes with no violation count as
+  progress too. A run that stops on such a pass ends `truncated` with
+  `flaky_generation`. `build_stateful_stats` sums
   both into `findings_flaky`, and `reconcile_flaky_with_confirmed` folds away any
   flaky finding a confirmed report already stands for
-  ([ADR-047](adr/engine.md#adr-047)). A pass whose *rule set* diverged between the
-  failing run and its replay lands here too: a rule is eligible only while its
-  bundle is non-empty, and bundles fill from the target's own responses, so
-  Hypothesis can draw a different set of eligible rules when it replays a failing
-  sequence. That pass counts as "could not reproduce" — the same fact as a flaky
-  violation — and the run moves on to the next pass. A budget-cut pass whose best
-  failure does not reproduce when re-sent lands here too.
+  ([ADR-047](adr/engine.md#adr-047)). A pass Hypothesis ends with its flakiness
+  error, holding a violation or with a witness in hand, ends `ShrinkCutShort` on
+  it and the re-send decides; it lands here only when that re-send does not
+  reproduce. With neither, it lands here with no violation: the target answered
+  differently from an earlier test case. A budget-cut pass whose best failure does not reproduce when
+  re-sent lands here too.
 
 ### Shrinking and minimizing a stateful finding
 
@@ -1016,10 +1029,9 @@ link error).
 minimizer (`minimizer.py`) on a `Reported` and on a `ShrinkCutShort`; every other
 outcome passes through.
 
-1. `data_slice` keeps, transitively, every step that produced a bundle value a
-   kept step consumed, and for a transition probe the nearest earlier step that
-   moved the value the probe re-reads (its trigger). The violating step is always
-   kept.
+1. `data_slice` keeps, transitively, every step that produced a pool value a
+   kept step consumed, and for a transition probe the step right before it, the
+   trigger it followed. The violating step is always kept.
 2. If the slice leaves steps out, it is re-sent alone; when it reproduces, it is
    the reproducer.
 3. A `ShrinkCutShort` witness that the slice did not settle is re-sent whole, once,
@@ -1033,7 +1045,7 @@ Every attempt goes through `WireResender`, which re-sends each step's recorded
 same send gate, collector and progress tick as a rule step. A send the gate
 blocks stops the search. A re-send reproduces when its last response has the
 original status code and `recheck` reports the same invariant under the same rule
-id. The reproducer is rebuilt from the fresh results of the re-send that
+id; for a transition probe, the fresh trigger must also pass its `trigger_gate`. The reproducer is rebuilt from the fresh results of the re-send that
 reproduced, so the report shows the responses the minimal sequence actually got;
 a deletion that breaks reproduction is undone. An attempt that would overrun the
 budget is not made, and the search ends with the best verified reproducer. A

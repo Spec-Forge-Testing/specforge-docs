@@ -121,11 +121,11 @@ What each invariant puts in the slots:
 | `reflected_payload` | — | the reflected text | the poisoned field | the attack family |
 | `input_induced_timeout` | — | the elapsed ms | the poisoned field (none for a valid value) | — |
 | `semantic_property` | — | `{field: value}` for each field the rule references | — | the property class |
-| `state_transition` | the expected statuses, or the value sent | the status, or the value echoed | `follow_up`, or `response_body` | `status` or `echo` |
+| `state_transition` | the expected statuses, or the value sent | the status, or the value echoed; `null` when the response left it out | `follow_up`, or the `response_body` pointer | `status`; `echo` for a value returned changed; `echo_missing` for a value the response left out |
 | `input_validation` | `{keyword: declared}` of the first mismatch, `pattern` and `format` included | the value sent, on a text wire the text sent (`"+4"`) | the poisoned field | — |
 | `response_schema_conformance` | `{keyword: declared}` | the value at the pointer | `response_body` pointer | — |
 | `contract_completeness` | — | the server's message for the field it blames | the blamed field (none: the whole request) | `loc` or `message_key` |
-| `contract_completeness`, a [rule only the produced contract declares](witnesses.md) | `{keyword: declared}` | the value sent | the poisoned field | `inferred_rule` |
+| `contract_completeness`, a [rule only the produced contract declares](witnesses.md) | `{keyword: declared}` | the value sent | the poisoned field | `inferred_rule`; `inferred_rule_database_error` when the rejection's body shows a [database error](witnesses.md#what-it-reports) |
 | `content_type_conformance` | the declared type | the received type, or `null` | `response_header` `content-type` | — |
 | `status_code_conformance` | the declared status keys | the status | — | — |
 | `latency_sla` | the SLA in ms | the latency in ms | — | — |
@@ -211,14 +211,21 @@ counts in `requests_shrink`.
 | `unverified` | Never checked: the run stopped first or the member was never attempted, or its control request got no answer (a timeout, a refused connection) or an answer that cannot judge it (a rejection, a success with nothing to echo in), so there is nothing to judge it against. | `findings_unverified` |
 | `refuted` | The shrunk payload reproduced it, and its control request showed it is not a defect: the input was not the cause, or the rejection was a conflict with stored state. Listed as a `RefutedFinding` with that control, never as a defect. | `findings_refuted` |
 
-The four states are the members of `FindingState`. A `resilience` finding is
-`confirmed` or `flaky` by resending its attack, and is never `refuted`
-([Run depth](run-depth.md#confirming-a-server-error)).
+The four states are the members of `FindingState`. Each mode reaches them its own
+way ([ADR-192](adr/findings.md#adr-192)):
+
+| Mode | How a finding gets its state |
+| --- | --- |
+| `stateless` | The shrink and, when its invariant has one, the control request. |
+| `stateful` | The minimal sequence re-sent, then the same control at its last step. |
+| `performance` | A latency finding (`latency_sla`, `latency_degradation`) and a crash (`not_a_server_error`, `resilience_degradation`) are reported as observed: the measurement or the crash is its own evidence, and a degradation is measured twice first. Every finding judged against the contract goes through the stateless shrink and control, so it can end `flaky`, `refuted` or `unverified`. |
+| `resilience` | `confirmed` or `flaky` by resending its attack; never `refuted` ([Run depth](run-depth.md#confirming-a-server-error)). |
+| `auth` | An `access_control` finding is `confirmed`: the crossing is its control. A crash a crossing provokes is `confirmed` as observed. Any finding judged against the contract is `unverified`, since the crossing controls no such invariant. |
 
 **Control requests** ([ADR-151](adr/findings.md#adr-151)). `mass_assignment`,
 `input_induced_timeout`, `contract_completeness` and, on a rule only a produced
-contract declares, `input_validation` are confirmed against one, in stateless and
-stateful runs alike. Each row of `CONTROL_CHECKS` declares which answers can judge its
+contract declares, `input_validation` are confirmed against one, in stateless,
+stateful and `performance` runs alike. Each row of `CONTROL_CHECKS` declares which answers can judge its
 finding (`ControlCheck.judges`, [ADR-182](adr/findings.md#adr-182)). A judgeable answer
 refutes or confirms; an answer that cannot judge, like no answer at all, leaves the
 finding `unverified` with that control as its evidence. The payloads, what a control

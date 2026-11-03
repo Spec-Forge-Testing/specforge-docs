@@ -26,6 +26,15 @@ smallest failure. If that minimum no longer reproduces, the shrink reports the r
 payload rather than losing the finding. In a stateful pass, the wall covers the
 minimizer and the step's control together.
 
+The wall is per shrink, not per finding or per run, so the time a run can spend
+adds up:
+
+| Case | Wall time it can spend |
+| --- | --- |
+| A stateful finding | Up to 240 s: one wall for Hypothesis's payload shrink, started at the pass's first failure, and one for the sequence minimizer and its control. |
+| A group's second representative, which holds the first cause | The whole 120 s wall, while its request budget is halved (`HELD_SHRINK_REQUEST_BUDGET`, 250). |
+| N findings at one slow endpoint | N × 120 s, each shrink with its own wall; only timed-out candidates are capped across them ([below](#per-endpoint-timed-out-candidates)). |
+
 ### Per endpoint: timed-out candidates
 
 A search candidate that times out costs the whole request timeout, so one slow endpoint

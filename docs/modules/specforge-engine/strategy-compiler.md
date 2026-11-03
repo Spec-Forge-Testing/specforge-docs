@@ -543,7 +543,9 @@ a text wire as the declared type through the strict literals
 `mass_assignment_variant` is the zone variant `attack` registers on the body
 ([ADR-134](adr/compiler.md#adr-134)). It draws the valid body plus one key of
 `MASS_ASSIGNMENT_KEYS` the body does not declare, with a sentinel privileged
-value, names that key as the poisoned field and `auth_bypass` as its family. The
+value, names that key as the poisoned field and `auth_bypass` as its family. A
+key counts as declared only when the spec declares it: a property only a produced
+contract adds (listed in the node's `inferredProperties`) is still a candidate. The
 key is chosen inside the one branch, so the probe is one variant of the body's
 `one_of`, never one per key. The same branch also picks where the key goes: the
 top of the body or one of its objects, the elements of arrays included, and a body

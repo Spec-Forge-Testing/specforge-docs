@@ -24,6 +24,11 @@ specforge fuzz --project ./my-api --contract ./my-api/openapi.yaml \
 echo $?   # 1 if fuzz found anything, or if it didn't complete
 ```
 
+!!! info "Long output in a one-shot call"
+    A table longer than 20 rows is cut to 20. The line under it says how many there are and how
+    to narrow the list (`showing 20 of 51 — ...`), and the next one says `Full detail: open it in
+    the desktop app`. `--json-output` always carries every row.
+
 With no arguments at all, `specforge` opens the interactive session regardless of any of
 these — they only apply once an operation name is given.
 
@@ -45,7 +50,7 @@ Some operations ask for confirmation before spending money, sending requests wit
 
 | What | When it asks | Answering up front |
 | --- | --- | --- |
-| Destructive operations (`apply_fix_plan`, `apply_prune_plan`, `apply_finding_fix`) | Before they are sent. | `--yes` |
+| Destructive operations (`apply_fix_plan`, `apply_prune_plan`, `apply_finding_fix`, `revert_finding_fix`, `verify_finding_fix`) | Before they are sent. | `--yes` |
 | A run that would pay for LLM inference | The core returns its estimate; the CLI shows it and resends with the approval token. | `--yes`, but only with `producer.max_cost_usd` set; without a cap it stops with exit `2`. |
 | Asking a model to explain a finding (`explain_finding`) | The core returns that finding's price; the CLI shows it and resends with the approval token. | `--yes` approves exactly the price shown. |
 | Asking a model for a fix (`propose_fix`) | The same, with the fix's price. | Never. `--yes` stops with exit `2` and sends nothing: a person reads the price. |

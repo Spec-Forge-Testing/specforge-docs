@@ -44,8 +44,9 @@ error hangs from it with a `└`. A long run shows one live line (a spinner, wha
 doing, the latest counters) and keeps its detailed progress folded: click the line, or
 press `Ctrl-O`, to open it while it runs or once it finished; `Ctrl-O` again closes
 every fold. The same finding reported again and again is shown once, followed by `×N`.
-A table of more than 50 rows opens in a viewer (click it, or press `Ctrl-T`; `↑`/`↓`,
-`PgUp`/`PgDn` to move, `Esc` to close) instead of flooding the conversation.
+A table of more than 20 rows shows its first 20 and ends with `showing 20 of N`. Click that
+line or press `Ctrl-T` to open the whole table in a viewer (`↑`/`↓`, `PgUp`/`PgDn` to move,
+`Esc` to close), so a long listing never floods the conversation.
 
 For the meaning of the sections and counts in a run, see the
 [Run Report](../reports.md).
@@ -102,7 +103,14 @@ answers it itself (`credentials`, `model`) or the core does (`list_llm_models`).
 | `setup` | Set up the LLM (`credentials`, `model`, `list_llm_models`), the options and the environment. |
 
 `help` lists the groups, `help setup` lists the commands of one, and `help <operation>` shows an
-operation's parameters. The names `help` used before (`results`, `execution`, `config`, and the
+operation's parameters.
+
+!!! info "`help fuzz` also explains the choices"
+    After the parameter table it lists the strategies, with the requests each sends per endpoint
+    and the kinds of request it spends them on (valid, boundary, invalid, attack, mutation). Then
+    come the execution modes with their variants, and the presets written as the commands you
+    would type. The lists come from the core, so a strategy it adds shows up without a CLI
+    release. The names `help` used before (`results`, `execution`, `config`, and the
 rest of the core's families) still answer, saying which group their operations are in now.
 `help` is a command of the interactive session; from a shell, `specforge --help` lists the
 operations.
@@ -115,6 +123,9 @@ the full-screen interface, and the same completion (below), and it is what you g
 over a pipe, in a `dumb` terminal, on Git Bash without a pseudo-terminal, or with
 `SPECFORGE_TUI=0`. A destructive call, an inference cost or a replay with side
 effects is confirmed inline (see [Approvals and cost estimates](scripts-and-ci.md#approvals-and-cost-estimates)).
+
+A table longer than 20 rows goes through your terminal's pager. Where there is no pager, as
+over a pipe, it is cut to 20 rows and the last line says `Full detail: open it in the desktop app`.
 
 While an operation that reports progress runs, a live line under the prompt says what is
 running — a spinner, the operation and the latest counters (`120 sent · 3 with problems · 4.2s

@@ -333,6 +333,45 @@ Emits progress, framed per stage
 `inference` / `execution`); is cancellable. Requires nothing to be open —
 it's the one operation designed to run cold.
 
+#### `replay_finding`
+
+Re-sends the one request a finding was reported from, under the recipe of its analysis, and says whether it still breaks its rule. It is how a fix applied since is checked. A finding that needed earlier requests to build its state, or whose request is not in the recorded trace, answers `REPLAY_NOT_REPRODUCIBLE`.
+
+| Flag | Type | Required | Default |
+| --- | --- | --- | --- |
+| `--finding-id` | integer | yes | — |
+| `--rebuild` | boolean | no | `false` |
+| `--identities-path` | path | no | — |
+| `--base-url` | string | no | the project's |
+| `--allow-side-effects` | boolean | no | `false` |
+
+Needs an open project and can be cancelled. A replay that could change the target asks first, and `--yes` does not cover that question; `--allow-side-effects` does. `--rebuild` rebuilds and restarts the service before sending. Details are in [Replay and fixes](../modules/core/protocol/replay-and-fixes.md#replay-finding).
+
+!!! info "How the CLI reads the answer"
+    The verdict decides: `present`, `possibly_resolved` or `inconclusive`. A request that stopped failing but does not answer what the contract asks (a `200` where a `422` is expected) is reported as no longer failing, but not as the fix intended.
+
+#### `inspect_service`
+
+Looks for the service answering on the API's port and says whether it can be rebuilt. It sends nothing. Needs an open project.
+
+| Flag | Type | Required | Default |
+| --- | --- | --- | --- |
+| `--base-url` | string | no | the project's |
+| `--finding-id` | integer | no | — |
+
+With `--finding-id` it also says whether the service still runs the code from before that finding's applied fix. See [Replay and fixes](../modules/core/protocol/replay-and-fixes.md#inspect-service).
+
+#### `set_finding_trace`
+
+Keeps a stack trace you pasted as the finding's evidence, for a server whose log Spec Forge cannot read, such as one that prints to a terminal. The credentials of the identities file and the headers are blanked as `***`. The next `explain_finding` and `propose_fix` read it.
+
+| Flag | Type | Required |
+| --- | --- | --- |
+| `--finding-id` | integer | yes |
+| `--trace` | string | yes |
+
+Needs an open project.
+
 ### Results
 
 These resolve by id against the central store, so none of them is limited to the currently
@@ -404,6 +443,16 @@ The CLI reads that total from the finding's run, so it is left out when the run 
 | --- | --- | --- |
 | `--finding-id` | integer | yes |
 
+#### `inspect_finding_source`
+
+Says whether a finding's handler code can be reached, before an explanation with code or a fix needs it. When it cannot, the finding can still be diagnosed and explained from its evidence, but never fixed. Needs an open project.
+
+| Flag | Type | Required |
+| --- | --- | --- |
+| `--finding-id` | integer | yes |
+
+The answer also says which tree a fix would be applied to, whether the server's stack trace is known and which other findings' applied fixes edit the same files. See [Replay and fixes](../modules/core/protocol/replay-and-fixes.md#inspect-finding-source).
+
 #### `estimate_finding_explanation`
 
 What explaining a finding would cost, without sending anything. `source` says how it would be
@@ -415,9 +464,11 @@ explained: `template` and `cache` are free, `model` is priced and carries the `a
 | `--finding-id` | integer | yes | — |
 | `--include-code` | boolean | no | `false` |
 | `--refresh` | boolean | no | `false` |
+| `--include-prompt` | boolean | no | `false` |
 
 `--include-code` prices the explanation with the handler's code in the prompt; `--refresh` prices
-a new one even when one is already stored.
+a new one even when one is already stored. `--include-prompt` answers the prompt itself, so you
+can read what would be sent.
 
 #### `explain_finding`
 
@@ -448,6 +499,11 @@ What proposing a fix for a finding would cost, without sending anything to a mod
 | --- | --- | --- | --- |
 | `--finding-id` | integer | yes | — |
 | `--refresh` | boolean | no | `false` |
+| `--include-prompt` | boolean | no | `false` |
+| `--mend-build` | boolean | no | `false` |
+
+`--include-prompt` answers the prompt itself. `--mend-build` prices a fix told what the build
+refused the current one with, the way [`propose_fix`](#propose_fix) takes it.
 
 `source` says where the fix would come from: `cache` is an equivalent finding's fix, already
 paid for and free; `model` is priced and carries the `approval_token` [`propose_fix`](#propose_fix)
@@ -467,6 +523,11 @@ The result is kept as the finding's current fix.
 | `--finding-id` | integer | yes | — |
 | `--approval-token` | string | no | — |
 | `--refresh` | boolean | no | `false` |
+| `--mend-build` | boolean | no | `false` |
+
+With `--mend-build` the model is shown the current fix's diff and what the build refused it with
+(see [`verify_finding_fix`](#verify_finding_fix)), and a new fix is always asked for. It is
+`INVALID_PARAMS` for a current fix that no build refused, or one still in the tree.
 
 The token is the one [`estimate_finding_fix`](#estimate_finding_fix) returned; without it the
 core refuses with the estimate. Needs an open project. Emits progress and is cancellable.
@@ -504,6 +565,34 @@ with nothing left to apply is `FIX_EMPTY_OR_UNAPPLICABLE`, and any other failure
 `FIX_APPLY_FAILED`, which leaves the tree as it was. The result says which files changed and
 which backups were left. Needs an open project. For the guided way through all of this, see
 [Fixing findings](cli/fixing-findings.md).
+
+#### `verify_finding_fix`
+
+Builds a finding's applied fix once, then re-sends the request the finding was reported from. It restarts or rebuilds the service, so it is **destructive** and is confirmed before it is sent.
+
+| Flag | Type | Required | Default |
+| --- | --- | --- | --- |
+| `--finding-id` | integer | yes | — |
+| `--rebuild` | boolean | no | `false` |
+| `--identities-path` | path | no | — |
+| `--base-url` | string | no | the project's |
+| `--allow-side-effects` | boolean | no | `false` |
+
+If the build fails on a file the fix edited, the fix is taken out again and the answer is `reverted_check_failed`. Any other failure leaves the fix in. A failed build sends no request, and what it refused the fix with is kept so that `propose_fix --mend-build` can start from it. Emits progress (`stage_started` and `stage_finished` for `build` and `replay`) and can be cancelled; cancelling stops the build and leaves the fix in. Needs an open project.
+
+#### `revert_finding_fix`
+
+Undoes a finding's applied fix, its current one or `--fix-id`, in its source files. It is **destructive** and is confirmed before it is sent.
+
+| Flag | Type | Required | Default |
+| --- | --- | --- | --- |
+| `--finding-id` | integer | yes | — |
+| `--fix-id` | integer | no | the finding's current fix |
+
+In a Git work tree the diff goes through `git apply --check --reverse` and then `git apply --reverse`. Elsewhere each replacement is checked against its file and put back. The answer is `reverted`. A tree that no longer holds the fix answers `conflict` and nothing is touched. A fix with nothing to undo is `FIX_EMPTY_OR_UNAPPLICABLE`. Needs an open project.
+
+!!! tip "The usual order"
+    `apply_finding_fix`, then `verify_finding_fix` to check it, and `revert_finding_fix` if it does not hold. The guided version is in [Fixing findings](cli/fixing-findings.md).
 
 #### `compare_runs`
 
@@ -579,6 +668,17 @@ Returns options to their defaults, by key or all of them. Requires a project. Li
 ```bash
 specforge reset_config --keys base_url --keys timeout_s
 ```
+
+#### `list_llm_models`
+
+The chat models a provider offers, to choose `llm.primary_model` or `LLM_MODEL` from. Needs nothing open. In the interactive session, `model` shows the same list and saves what you pick.
+
+| Flag | Type | Required | Default |
+| --- | --- | --- | --- |
+| `--provider` | string | no | — |
+| `--refresh` | boolean | no | `false` |
+
+`--provider` narrows the list to one provider.
 
 ### Environment
 

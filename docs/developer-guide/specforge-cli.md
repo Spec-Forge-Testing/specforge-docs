@@ -94,11 +94,21 @@ never touches stdout directly, so it works in every interface and in `--json-out
 
 A view only draws the result it is handed, so a fact the core did not put in it is fetched
 before drawing, by `session/enrichment.py`, for the REPL, the full-screen app and a one-shot
-call alike. Today that is the model in use beside a `list_llm_models` listing (the
-`llm.primary_model` option, read with `get_config`), the configuration as it was before a
-`set_config` or `reset_config`, and the finding an applied fix was for (read with `get_finding`,
-so the next steps can name the endpoint to run again and the run to compare against). It is an extra: if the core cannot answer it, the result is
-drawn without it. `--json-output` never gets it, and the extra request is not made.
+call alike. Today that is:
+
+- the model in use, beside a `list_llm_models` listing and a project's state (the
+  `llm.primary_model` option, read with `get_config`);
+- the project's latest run, beside its state;
+- the configuration as it was before a `set_config` or `reset_config`;
+- the finding an applied fix was for (read with `get_finding`, so the next steps can name the
+  endpoint to run again and the run to compare against);
+- the problem a finding belongs to (read with `get_run`), so `get_finding` can say
+  `×116 of the problem's ×168`;
+- the ids of the findings behind each problem of a `fuzz`, read with `get_run` only when the run
+  found something, so the report can name them and suggest a real `get_finding`.
+
+It is an extra: if the core cannot answer it, the result is drawn without it. `--json-output`
+never gets it, and the extra request is not made.
 
 ### How an approval leads to the next step
 

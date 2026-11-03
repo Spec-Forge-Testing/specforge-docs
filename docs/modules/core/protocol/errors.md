@@ -99,6 +99,7 @@ raise them. Together with the protocol-level codes, these are the complete set.
 | `CONTRACT_LOAD_FAILED` | The contract could not be parsed or loaded |
 | `UNKNOWN_ENDPOINT` | The referenced endpoint is not in the contract |
 | `NO_MATCHING_ENDPOINTS` | A selection matched no endpoint |
+| `CONTRACT_GENERATION_FAILED` | `generate_contract` reached its work and could not finish it: `repo_root` is not a directory, or no route was found in it. `data`: `path`, `reason` |
 
 ### Analysis
 
@@ -107,6 +108,8 @@ raise them. Together with the protocol-level codes, these are the complete set.
 | `NO_STATIC_ANALYSIS` | An operation that `requires` `analysis` was called before any `analyze_endpoints` in this session |
 | `ENDPOINT_NOT_ANALYZED` | The endpoint has no static analysis yet |
 | `ENDPOINT_ANALYSIS_FAILED` | Static analysis of the endpoint failed |
+| `REPO_ROOT_INVALID` | The repository to trace does not exist or is not a directory |
+| `STATIC_ANALYSIS_REQUIRED` | A finding's handler code was needed and could not be reached: its run traced no tree, or tracing its endpoint there found no handler |
 
 ### Execution
 
@@ -119,6 +122,7 @@ raise them. Together with the protocol-level codes, these are the complete set.
 | `CONTRACT_PRODUCER_FAILED` | A contract producer could not honor an explicit request |
 | `INFERENCE_APPROVAL_REQUIRED` | A run has inferences to pay for while `inference.require_approval` is on, and its `producer.approval_token` is missing or stale; `data`: `reason` (`missing` or `stale`), `estimate` (as [`estimate_inference`](operations.md#estimate-inference) answers it). Refused before any inference; in `run_pipeline` it fails the `inference` stage with the same code and `data` |
 | `EXECUTION_FAILED` | The run failed while executing |
+| `REBUILD_FAILED` | The API under test could not be built and started again before its replay, so the replay was not sent |
 | `REPLAY_NOT_REPRODUCIBLE` | The recorded trace cannot be replayed against the target; also a `replay_finding` of a finding that cannot be sent alone: a stateful one, which needs its prior requests, or a `refuted` one, which is not a defect. Its `reason` says to replay the analysis instead |
 | `SIDE_EFFECTS_CONSENT_REQUIRED` | A `replay` of a recording that needs [consent](operations.md#replay-consent) did not pass `allow_side_effects`; refused before any request is sent. `data`: `analysis_id`, `parameter` (`allow_side_effects`), `reason` (`recorded_with_side_effects` or `safety_breached`) |
 
@@ -134,6 +138,11 @@ raise them. Together with the protocol-level codes, these are the complete set.
 | `PRUNE_FAILED` | Building a prune plan failed |
 | `PRUNE_PLAN_STALE` | The prune plan differs from what is stored |
 | `PRUNE_APPLY_FAILED` | Applying a prune plan failed |
+| `FINDING_EXPLANATION_FAILED` | A finding needed a model to be explained and no usable explanation came back: no model could be asked, or the one asked failed |
+| `FINDING_FIX_FAILED` | No fix could be proposed for a finding: no model could be asked, the one asked failed, or the fix could not be kept |
+| `FIX_NOT_FOUND` | The finding has no proposed fix, or none with that id |
+| `FIX_EMPTY_OR_UNAPPLICABLE` | The fix has nothing to apply: none of its edits held when it was proposed |
+| `FIX_APPLY_FAILED` | Applying a fix failed for a reason other than a conflict, such as `git` failing after its check passed or a file that could not be backed up or written. The tree is left as it was |
 
 ### Config and environment
 

@@ -30,6 +30,25 @@ The headline counts problems, not the findings that make them up: three
 findings of the same rule at the same endpoint are `1 problem`, while
 `get_run` still names the individual findings.
 
+Three details of what the terminal shows:
+
+- **Which findings a problem stands on.** In a `fuzz` report each problem ends with
+  `findings #426, #428`, the ids `get_finding` takes. The run is read back from the store to
+  know them, so they are left out if the core cannot answer.
+- **Problems about the contract.** When the API and its contract disagree on something harmless,
+  such as a documented response the API never sends, the report counts them in one line
+  (`Not listed: 1 problem about the contract (×59)`) and `get_run` lists them. A run with only
+  those lists them in full.
+- **The footer.** `analysis #49 · run #50 · stateless/security` gives the analysis, the run and
+  the execution mode with the strategy it used. A run starts with the same pair
+  (`fuzz: starting · stateless/security`), followed by what that strategy changes when the core
+  declares it.
+
+!!! info "Strategy names"
+    Reports use the strategy's own name (`security`, `conformance`, `smoke`, `exposure`,
+    `default`). Older runs stored the label `hacker` for what is now `security`; the CLI shows
+    the new name whenever the run carries it.
+
 ## What a run leaves
 
 Alongside the execution trace, a saved run writes two run-level artifacts:

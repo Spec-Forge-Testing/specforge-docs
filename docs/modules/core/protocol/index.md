@@ -12,7 +12,9 @@ defines how a message travels, the pages beside it define what the messages say.
 | [Fuzz options](fuzz-options.md) | The modes, strategies, producers and presets a run can be asked for, the effects matrix, and examples per endpoint |
 | [Events and cancellation](events.md) | The 16 event kinds, the progress token, state vs fact, contract production, `$/cancelRequest` |
 | [Operations](operations.md) | The 41 operations by family, what each requires, emits and destroys |
-| [Result vocabularies](vocabularies.md) | The closed vocabularies a result field may take: run status, comparability, oracle scope, truncation reason, target-down verdict, coverage, producer-exclusion disposition, unprobed reason, signal causes, load-step degradation, strategy, effect changes, category, severity, location scope, replay verdicts, caveats, operation and stage status |
+| [Replay and fixes](replay-and-fixes.md) | `replay_finding`, `inspect_service`, a finding's trace and source, and applying, verifying and reverting a fix |
+| [Finding replay verdicts](finding-replay.md) | What a finding's replay sends, how its verdict is reached, the reasons it is inconclusive and the exchange it answers |
+| [Result vocabularies](vocabularies.md) | The closed vocabularies a result field may take: run status, comparability, oracle scope, truncation reason, target-down verdict, coverage, producer-exclusion disposition, unprobed reason, signal causes, load-step degradation, strategy, effect changes, category, severity, location scope, replay verdicts, inconclusive reasons, caveats, operation and stage status |
 | [Errors](errors.md) | The two codes per error and the 42 error codes |
 | [Fixtures](fixtures.md) | Recorded sessions: how they are captured and how a client uses them |
 

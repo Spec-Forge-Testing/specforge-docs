@@ -289,12 +289,39 @@ defect of an invariant the replay cannot observe (a response schema, a declared
 rule, a timeout on the whole request, ...) is `inconclusive`, never resolved
 ([ADR-154](../adr/core.md#adr-154)).
 
+These are the verdicts of an analysis-wide `replay`, which re-sends the whole
+recorded run with no [witnesses](finding-replay.md#what-it-sends): when every
+recorded request violated something, nothing in it vouches that the server still
+answers as recorded. A finding's replay (`replay_finding`) starts from the same
+verdict on its one request and then earns, or loses, `possibly_resolved`
+([Finding replay verdicts](finding-replay.md#verdict)).
+
+## `inconclusive_reason` { #inconclusive-reason }
+
+Why a finding's replay could not tell whether the defect is still there. In
+`replay_finding`'s answer and `verify_finding_fix`'s `replay`, beside `verdict`;
+`null` unless `verdict` is `inconclusive`, and for a replay cancelled before its
+request was sent. The reasons are checked in this order and the first that holds is
+the one given; what to do for each is on
+[Finding replay verdicts](finding-replay.md#verdict).
+
+| Value | Meaning |
+| --- | --- |
+| `no_answer` | The server did not answer the finding's request (down, timed out, connection dropped), or no witness answered and the request was not sent. |
+| `stale_target` | The server answered with the code from before a fix applied over the finding's handler files (`stale_reason` or `stale_target` set). |
+| `credentials_refused` | The request, recorded with credentials, now gets a `401` or `403`, and no witness proved the credentials still pass. |
+| `witness_diverged` | A witness no longer answers as recorded: the server's data, or the credentials, are not the ones the finding was recorded against. |
+| `unwitnessed` | The server answered otherwise, but the trace held no witness to vouch that it still answers as recorded. |
+| `not_observable_without_contract` | The server answered otherwise, but the finding's invariant can only be judged against a contract the replay does not check. |
+
 ## Comparison caveats { #caveats }
 
 In `compare_runs`, each entry of `caveats` says why two runs' defect sets are
 not directly comparable. `side` says whether it concerns the `before` run, the
 `after` run or the `pair`; `detail` is free text for a person, or `null`.
-Branch on `reason`, show `detail`.
+Branch on `reason`, show `detail`. `comparable` is `true` only when `caveats` is
+empty, the `replay` caveat included: a comparison against a replay is never
+`comparable`.
 
 | Value | Side | Meaning |
 | --- | --- | --- |
@@ -306,6 +333,7 @@ Branch on `reason`, show `detail`.
 | `oracle_scope_differs` | `pair` | Different oracles judged the two runs. |
 | `strategy_differs` | `pair` | The analyses ran different [strategies](#strategy), so one may have judged with oracles or drawn values the other never did. |
 | `examples_differs` | `pair` | The analyses asked a different number of examples of each endpoint; silent when either recorded none. |
+| `scope_differs` | `pair` | The runs exercised different endpoints; `detail` says how many of the first run's the second exercised and, when it covered more, how many the first did not. |
 | `replay` | `after` | The later run is a replay: it records verdicts per recorded request, not crashes. |
 | `replay_report_not_indexed` | `after` | The replay's report was never recorded. |
 | `replay_report_missing` | `after` | The replay's report is missing from disk. |
@@ -316,6 +344,16 @@ Branch on `reason`, show `detail`.
 With any of the five `replay_report_*` reasons, every change but a `new` one is
 `inconclusive`: without the replay's verdicts, nothing can be ruled resolved or
 persisted.
+
+**Per endpoint.** A run exercised an endpoint when it reached the wire for it and
+did not leave it unprobed, an endpoint reached by a transition included. A defect
+the `after` run lacks, on an endpoint it did not exercise, is `inconclusive`, never
+`possibly_resolved`. Every other `after` or `pair` reason makes any defect the
+`after` run lacks `inconclusive`; `scope_differs` does not: a defect on an endpoint
+the `after` run exercised is ruled as usual, and a `new` one on an endpoint the
+`before` run did not exercise stays `new`. Scope is kept per method and path, not
+per identity: an endpoint exercised under one identity counts as exercised for a
+defect recorded under another ([ADR-195](../adr/core.md#adr-195)).
 
 **Against a replay**, a defect meets the replay's `defect_verdicts` with its own
 identity: method, path, invariant, status and, for `access_control`, the identity

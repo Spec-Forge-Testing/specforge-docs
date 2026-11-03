@@ -955,11 +955,13 @@ unexpectedly.
 
     - **new** — found only in `--after`.
     - **persisted** — found in both.
-    - **possibly resolved** — found only in `--before`, and nothing taints the
-      comparison.
-    - **inconclusive** — found only in `--before`, but a caveat taints
-      `--after` or the pair itself (see the
-      [comparison caveats](../modules/core/protocol/vocabularies.md#caveats)).
+    - **possibly resolved** — found only in `--before`, on an endpoint
+      `--after` exercised, and nothing taints the comparison.
+    - **inconclusive** — found only in `--before`, but `--after` never
+      exercised its endpoint, or a caveat taints `--after` or the pair itself
+      (see the [comparison caveats](../modules/core/protocol/vocabularies.md#caveats)).
+      Runs that exercised different endpoints carry `scope_differs`, which
+      leaves the endpoints both runs exercised ruled as usual.
 
     A worked example:
 
@@ -984,8 +986,9 @@ unexpectedly.
     - **Phase** — the later side's phase (`--after`), falling back to the
       earlier one when it only appears in `--before`; not part of the pairing key.
     - **Verdict** — `persisted` (both runs), `possibly resolved` (only
-      `--before`, no caveat), `new` (only `--after`), or `inconclusive` (only
-      `--before`, but a caveat taints the comparison — see
+      `--before`, on an endpoint `--after` exercised, no caveat), `new` (only
+      `--after`), or `inconclusive` (only `--before`, but its endpoint was not
+      exercised or a caveat taints the comparison — see
       [comparison caveats](../modules/core/protocol/vocabularies.md#caveats)).
     - **Occ. b→a** — how many times this exact symptom was seen on each side;
       a count, never averaged into a single representative.

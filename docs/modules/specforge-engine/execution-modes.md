@@ -32,7 +32,7 @@ producers before their consumers and deletes last, with risk breaking ties
 |---|---|---|
 | `STATELESS` | `StatelessOptions` | none — the mode exposes no tuning knob today |
 | `STATEFUL` | `StatefulOptions` | `max_examples`, `step_count`, `max_distinct_bugs` |
-| `REPLAY` | `ReplayOptions` | `trace`, `preserve_timing` |
+| `REPLAY` | `ReplayOptions` | `trace`, `preserve_timing`, `capture` |
 | `PERFORMANCE` | `PerformanceOptions` | `latency_sla_ms`, `load_factor`, `concurrency_ladder` |
 | `RESILIENCE` | none | the built-in chaos battery |
 | `AUTH` | none | the declared `identities` and each endpoint's `access` policy |
@@ -263,6 +263,15 @@ sequenceDiagram
 
 `preserve_timing=True` selects the timed pacer, which waits until each
 request's recorded `sent_at_ms`; `False` selects the immediate pacer.
+
+`capture` (an `ExchangeCapture`, default `None`) asks for what each replayed
+request sent and got back. Each one comes back on `EngineRunResult.exchanges` as a
+`ReplayedExchange` (`sequence`, `endpoint_id`, `method`, `request`, `payload` by
+zone, `sanitized_headers`, `media_type`, `status_code`, `response`,
+`response_body`), redacted as a finding's evidence is: against the live
+credentials it was sent with and the `sensitive_fields` the capture names. The
+trace is unchanged; the exchanges are never part of it. The core asks for them in
+a [finding's replay](../core/protocol/finding-replay.md#exchange).
 
 ### Consent to re-send { #consent-to-re-send }
 

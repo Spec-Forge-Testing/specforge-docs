@@ -311,7 +311,7 @@ parameter per mode. `None` means the mode's defaults.
 | `StatelessOptions` | `include_repeated_requests` (validated, not yet wired to generation) |
 | `StatefulOptions` | `max_examples` and `step_count` bound the breadth and length of each generated sequence; `max_distinct_bugs` caps the loop-until-dry depth: the run keeps passing until one finds nothing new, and stops early once that many distinct defects, or distinct flaky signatures, are found (default `STATEFUL_MAX_DISTINCT_BUGS`, 25; `1` reports the first defect only) |
 | `PerformanceOptions` | `latency_sla_ms` (the SLA the oracle enforces) and `load_factor`, a multiplier applied to each phase's example budget to sustain load; `concurrency_ladder` (a `ConcurrencyLadder` of strictly increasing `steps` and a degradation `tolerance`) replays the valid phase once per step and flags latency that grows with concurrency |
-| `ReplayOptions` | `trace` to re-send and `preserve_timing` (wait between requests to match the recorded schedule) |
+| `ReplayOptions` | `trace` to re-send, `preserve_timing` (wait between requests to match the recorded schedule) and `capture` (an `ExchangeCapture` naming the contract's `sensitive_fields`: return each replayed request's redacted exchange; `None` captures nothing) |
 
 `StatefulOptions` is persisted by the orchestrator as part of a run's recipe,
 so its field names are stable.

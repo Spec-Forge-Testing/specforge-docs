@@ -750,3 +750,104 @@ store keeps no column for them.
 
 More runs read `degraded`, and each one says why. A `fuzz` reply carries the
 `degraded_signal` warning for the new causes as for the others.
+
+---
+
+## ADR-194 — A finding's replay earns `possibly_resolved` behind witnesses, and says why when it cannot { #adr-194 }
+
+**Status:** accepted · `services/replay/witnesses.py`, `services/replay/judgement.py`, `services/replay/staleness.py`, `services/replay/exchange.py`, `services/replay/finding.py`; engine `models/runtime/replay.py`
+
+### Context
+
+A finding's replay re-sends the one request the finding was reported from, to
+check a fix. It read `possibly_resolved` whenever the answer changed. Many things
+change an answer without fixing anything: a server that is down, a build from
+before the fix, an expired token, a database a rebuild emptied. Each one produced a
+green verdict, and with a fix in the tree, a `resolution` nobody had earned. A
+client also had no way to tell an `inconclusive` that needed a restart from one
+that needed a full run against the contract, and saw nothing of the answer itself.
+
+### Decision
+
+**Witnesses go first.** Up to two recorded reads (`GET` or `HEAD`, valid values,
+answered 2xx, under the finding's identity), those naming the finding's resource
+first, are sent before the finding's request. If none answers, the finding's
+request is not sent.
+
+**`present` stands; anything else must survive an ordered list of reasons.**
+`judge_finding_replay` checks `no_answer`, `stale_target`, `credentials_refused`,
+`witness_diverged`, `unwitnessed` and `not_observable_without_contract`, most
+specific first, and the first that holds makes the verdict `inconclusive` and is
+answered as `inconclusive_reason`. A `401` or `403` refuses the credentials only
+while nothing proves them: behind witnesses of the same identity that answered as
+recorded, it is an ordinary answer.
+
+**Staleness is measured against every fix over the handler.** The newest fix
+applied over the handler's files, the finding's own or another finding's, decides
+whether the server predates the code; a stale `possibly_resolved` is
+`inconclusive`.
+
+**The answer shows what it judged and what it got.** `judged` states the oracle
+scope and how many requests were sent; `exchange` carries the finding's request and
+answer, redacted as the finding's evidence is. The engine captures it only on
+request (`ReplayOptions.capture`), and the core does not ask when the stored
+contract cannot be read, so no exchange leaves without its sensitive fields
+redacted.
+
+### Rejected
+
+- **Trusting a changed status.** It turns every broken environment into a fix.
+- **Re-running the whole recorded run.** It vouches for the environment at the
+  cost of re-sending writes, and a run whose recorded requests all violated
+  something still holds no read to trust.
+- **One generic `inconclusive`.** A client cannot tell the user what to do next.
+
+### Consequences
+
+Fewer replays read `possibly_resolved`, and each `inconclusive` names its remedy.
+A `resolution` follows the finding's newest replay, so an `inconclusive` one takes
+an earlier one away. Witnesses compare statuses only: a state change none of them
+reads, such as an emptied database seen only by a collection `GET`, can still let a
+replay read `possibly_resolved`. A trace with a read on the finding's own resource
+closes most of that gap.
+
+---
+
+## ADR-195 — A comparison rules each defect within the endpoints the later run exercised { #adr-195 }
+
+**Status:** accepted · `services/compare/rules.py`, `services/compare/models.py`, `services/history/rules.py`
+
+### Context
+
+`compare_runs` read a defect the `after` run lacked as `possibly_resolved`. Set a
+run of one endpoint after a run of many, and every defect of the other endpoints
+read resolved, although nothing had been sent to them. `comparable` was also ruled
+before the `replay` caveat was added, so a comparison against a replay could read
+`comparable` beside a caveat.
+
+### Decision
+
+**Scope is the endpoints a run exercised.** An endpoint is exercised when the run
+reached the wire for it and did not leave it unprobed, an endpoint reached by a
+transition included; it is keyed on method and path. A defect the `after` run lacks,
+on an endpoint it did not exercise, is `inconclusive`.
+
+**Different scopes are a caveat that does not blank the comparison.**
+`scope_differs` (side `pair`) says how many of the first run's endpoints the second
+exercised. Unlike the other `pair` caveats, it leaves a defect on an exercised
+endpoint ruled as usual, and a `new` one stays `new`.
+
+**`comparable` is ruled last.** It is `true` only when `caveats` is empty, the
+`replay` caveat included.
+
+### Rejected
+
+- **Making any scope difference blank every defect.** A focused re-run of the
+  endpoint a fix touched is the common case, and it would tell nothing.
+
+### Consequences
+
+A focused re-run tells resolved from untested. Scope is kept per method and path,
+not per identity: a defect recorded under one identity, on an endpoint the later
+run exercised only under another, is ruled as usual and can read
+`possibly_resolved`.

@@ -61,7 +61,7 @@ exceptions:
 |---|---|---|
 | `runs` | `status` is in `RUN_STATUSES` | `InvalidRunStatusError` |
 | `runs` | `oracle_scope` is in `ORACLE_SCOPES` | `InvalidOracleScopeError` |
-| `runs` | `truncation_reason` and `truncation_endpoint_id` are both set or both null | `IncompleteTruncationError` |
+| `runs` | `truncation_reason` and `truncation_endpoint_id` are both set or both null, except that reason `flaky_generation` takes no endpoint | `IncompleteTruncationError` |
 | `runs` | `truncation_detail` and `target_down_verdict` are null when there is no truncation reason | `TruncationQualifierWithoutReasonError` |
 | `analysis_endpoints` | `disposition` is in `ENDPOINT_DISPOSITIONS` | `InvalidDispositionError` |
 | `analysis_endpoints` | `exclusion_reason` is set exactly when the disposition is `excluded` | `IncompleteExclusionError` |
@@ -171,7 +171,8 @@ and the ones you set combine:
 
 ### Add a table
 
-1. Write the table's DDL in `src/storage/schema.sql`.
+1. Write the table's DDL in a new [migration](migrations.md#adding-a-migration),
+   `src/storage/migrations/NNNN_<name>.sql`.
 2. Add its record to `src/storage/models/<domain>.py`, one field per column, with
    the database-assigned fields defaulting to `None`, and re-export it from
    `models/__init__.py`.
@@ -186,21 +187,21 @@ and the ones you set combine:
    names to `tests/test_public_api.py`. The parity test fails until the table has
    a mapping whose columns match the DDL; the public-API test fails until the
    names are exported.
-7. Delete your local databases: the schema text changed, so the
-   [fingerprint](data-model.md#fingerprint) changed and an existing file refuses to
-   open with `SchemaMismatchError`.
+7. Nothing to delete: an existing local database runs the new migration the next
+   time it is opened.
 
 ### Add a value to a closed vocabulary
 
 1. Add the value to its tuple: `RUN_STATUSES` or `ORACLE_SCOPES` in
    `src/storage/models/run.py`, `ENDPOINT_DISPOSITIONS` in
    `src/storage/models/analysis.py`.
-2. Add the same value to the table's CHECK in `src/storage/schema.sql`.
+2. Add the same value to the table's CHECK in a new migration, which rebuilds the
+   table, since SQLite cannot alter a CHECK (`0011` rebuilds `runs` that way).
 3. Leave `create()` alone: it already reads the tuple.
 4. Run the run repository's tests: they write every value of `RUN_STATUSES` and
    `ORACLE_SCOPES` through the CHECK, so a value added to one place but not the
    other fails there.
-5. Delete your local databases: the schema text changed, so the fingerprint
-   changed.
+5. Run `tests/test_migrations.py`: a file at every earlier version must reach the
+   new shape.
 6. If the value is a run status, describe what it means to a reader on
    [result vocabularies](../core/protocol/vocabularies.md#run-status).

@@ -44,9 +44,10 @@ sequenceDiagram
 | `":memory:"` | an in-memory database that lives as long as the engine |
 | any other `str`, or a `Path` | the database file at that path |
 
-Opening an engine applies `schema.sql` and checks the
-[fingerprint](data-model.md#fingerprint) stamped in the file. A file built from
-a different schema raises `SchemaMismatchError`. If anything fails while
+Opening an engine brings the file to the latest schema version, running the
+[migrations](migrations.md) it is missing. A file a newer release migrated raises
+`SchemaTooNewError`, untouched; one no version recognizes is set aside and
+replaced. If anything fails while
 opening, the engine closes itself before the exception leaves the constructor.
 
 Every connection the engine opens returns rows addressable by column name and

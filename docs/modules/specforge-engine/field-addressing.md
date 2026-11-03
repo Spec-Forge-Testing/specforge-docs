@@ -162,6 +162,13 @@ objects, and one key of `MASS_ASSIGNMENT_KEYS` (`role`, `is_admin`, `admin`,
   `maxProperties` (`MASS_ASSIGNMENT_KEY_ROOM`); `minProperties` is never lowered,
   and an object with no room left gets no key.
 - **Focus.** Under focus, only the objects on a focused path are candidates.
+- **The spec's keys decide.** "Declared" means declared by the spec. When a
+  produced contract adds a property the spec leaves out, the core's projection
+  marks it in the object's `inferredProperties`, and the spec's view of the object
+  drops it. The attack still injects a key only the produced contract names
+  (`role`, say, inferred as a hidden field), and the oracle still judges its echo,
+  so an inferred contract that names a hidden field does not silence the attack on
+  it (`spec_properties` in `shared/provenance.py`).
 
 The poisoned field is the key's path (`user.role`), and the rule id follows
 (`body.user.role`). The oracle looks for the key's echo at any depth of the

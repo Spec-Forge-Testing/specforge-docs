@@ -6,13 +6,13 @@ from another, where stateless takes the values it addresses resources with, how 
 whole-request rejection is told from a state conflict, and how resilience aims at
 a real resource, tells a crash from an intermittent error, and what a runner does
 with a link into a reserved header. The behaviour is
-described in [Run depth](../run-depth.md).
+described in [Run depth](../run-depth.md) and [Stateful depth](../stateful-depth.md).
 
 ---
 
 ## ADR-162 — A stateful run continues until a pass finds nothing new, under a ceiling of 25 distinct defects { #adr-162 }
 
-**Status:** accepted · `constants.py`, `models/runtime/options.py`, `runtime/fuzzers/stateful/supervisor.py`, `runtime/fuzzers/stateful/constants.py`
+**Status:** accepted · Its stop condition superseded by [ADR-191](#adr-191) · `constants.py`, `models/runtime/options.py`, `runtime/fuzzers/stateful/supervisor.py`, `runtime/fuzzers/stateful/constants.py`
 
 ### Context
 
@@ -621,7 +621,7 @@ completes and lists the endpoint as unprobed.
 
 ## ADR-187 — An inferred rule is witnessed in the valid pass, by a value derived within a bound { #adr-187 }
 
-**Status:** accepted · `runtime/fuzzers/stateless/witnesses.py`, `runtime/fuzzers/stateless/example_counts.py`, `strategy_compiler/witness_values.py`, `strategy_compiler/constants.py`
+**Status:** accepted · Extended to stateful steps by [ADR-191](#adr-191) · `runtime/fuzzers/stateless/witnesses.py`, `runtime/fuzzers/stateless/example_counts.py`, `strategy_compiler/witness_values.py`, `strategy_compiler/constants.py`
 
 ### Context
 
@@ -705,3 +705,64 @@ with reason `pass_limit_reached`, so a reader sees the depth was cut.
 
 A stateful run costs more requests on a target that makes Hypothesis flaky, and goes on
 past it. A run reaching the limit is `truncated`, and does not compare as a complete one.
+
+---
+
+## ADR-191 — A stateful pass draws the same shape whatever the target answers, the run stops after two dry passes, and one more pass aims at what it never reached { #adr-191 }
+
+**Status:** accepted · Supersedes in part [ADR-162](#adr-162) · `runtime/fuzzers/stateful/rule.py`, `runtime/fuzzers/stateful/machine_builder.py`, `runtime/fuzzers/stateful/step_witnesses.py`, `runtime/fuzzers/stateful/supervisor.py`, `runtime/fuzzers/stateful/reach_pass.py`, `runtime/fuzzers/stateful/probes.py`, `runtime/fuzzers/stateful/minimizer.py`
+
+### Context
+
+Hypothesis bundles fill from the target's answers, so a rule is eligible only once
+an earlier step succeeded. A repeated create that fails changes which rules
+Hypothesis can pick on its replay, and Hypothesis aborts the pass as inconsistent
+generation: most runs against a real API would be cut. Hypothesis's simplest case
+repeats the first rule with its minimal payload; when that rule is a creating
+write, every repeat is a duplicate and the run never builds state. On a large spec,
+endpoints behind a chain of steps are reached by chance or not at all. And a
+re-sent transition probe whose fresh trigger failed would judge a state the
+trigger never brought about.
+
+### Decision
+
+**Pools, not bundles.** Captured values live in pools on the machine. A rule draws
+an index per pool it consumes, read from the newest value back, and a step whose
+pool is empty is skipped unsent. What Hypothesis may pick never depends on the
+target.
+
+**A harmless read leads.** The first rule is the first endpoint with a safe method
+that consumes nothing, so Hypothesis's simplest case repeats a read.
+
+**Witnesses among the draws.** One step in ten sends an inferred-rule witness of
+its endpoint in place of a valid draw, until a confirmed defect of that endpoint
+sent the witness's value.
+
+**Two dry passes stop the run.** With every pass completing, one dry pass is not a
+fixed point yet: the next draws differently. The run stops after
+`STATEFUL_NO_PROGRESS_PASSES` (2) consecutive passes without progress. A run whose
+last pass ended flaky with no violation, once such passes no longer count, ends
+`truncated` with `flaky_generation`.
+
+**One more pass at what was never reached.** When the passes stop with targeted
+endpoints unreached and at least one reached, one further pass runs on the
+unreached endpoints and their transitive producers, unless the run must stop.
+
+**A probe is judged after a trigger that brought it into force.** A re-sent probe
+reproduces only when its fresh trigger passes the same gate the discovery did,
+and the probe follows a resource the trigger's accepted write moved.
+
+### Rejected
+
+- **Keeping bundles and tolerating the aborts.** Most real runs would stay cut,
+  and the cut says nothing about the API.
+- **Leading with the riskiest rule.** It is often a creating write, the one that
+  must not lead.
+- **More passes over every endpoint instead of a focused one.** The endpoints
+  already reached would spend the requests again.
+
+### Consequences
+
+A stateful run goes deeper on a real API and ends after two passes that found
+nothing. A sequence with a skipped step is shorter than its step count. A run that
+keeps going flaky reads `truncated`, never `completed`.

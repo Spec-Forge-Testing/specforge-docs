@@ -67,9 +67,8 @@ exercised in seconds.
 
 The core maps each strategy to the LLM profile an `inference` producer infers its
 contracts with: `qa` for `default`, `conformance` and `smoke`; `security` for
-`security` and `exposure` ([Inference](../core/inference.md)). The wire also
-accepts `hacker` as an exact alias of `security`; the engine never sees it
-([ADR-155](../core/adr/protocol.md#adr-155)).
+`security` and `exposure` ([Inference](../core/inference.md)). The wire takes
+the canonical names only ([ADR-155](../core/adr/protocol.md#adr-155)).
 
 ## The profile
 

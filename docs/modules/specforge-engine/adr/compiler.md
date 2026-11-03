@@ -1364,7 +1364,7 @@ judged as a valid request: its signature names no field, and
 
 ### Consequences
 
-`mutation` findings name a field and are judged by `input_validation`: on BugBank
+`mutation` findings name a field and are judged by `input_validation`: on the lab API
 a required query parameter dropped and accepted, on the Go API a `null` username
 accepted. A mutation that stays valid surfaces `contract_completeness` findings on
 leaves the server rejects though the contract allows them. The heuristic for

@@ -11,9 +11,25 @@ leaks are grouped. The code is `runtime/oracles/security/` and
 
 The oracle reads every text of a non-2xx response body. A text shows a marker when it
 holds all the fragments of one of the marker's signatures. What the request sent
-never counts as its own leak: a sent text holding a fragment is discounted from the
-response first. A poisoned request discounts its poisoned value; an unpoisoned one
-discounts everything it sent.
+never counts as its own leak: every sent text holding a fragment is discounted from
+the response first, longest first, and replaced by a separator so the texts around
+it never join into a fragment.
+
+### The request's own path { #own-path }
+
+A debug page or a router's 404 often prints the path it was asked for, in the form
+the server read it. A path that carries a probe such as `../../../etc/passwd` would
+otherwise read as a leak of `/etc/`. So the discount holds the path in every form a
+server shows it:
+
+| Sent text | Discounted as |
+| --- | --- |
+| The URL path | as sent; percent-decoded; decoded with its dot-segments removed (RFC 3986 §5.2.4); that resolved path without its leading `/` |
+| Each path parameter | as sent; percent-decoded; percent-encoded as its segment; percent-encoded keeping `/`, as a server re-encodes its decoded path |
+| Query, header and body values | as sent |
+
+A fragment outside the echoed text, such as a stack frame printed beside it, still
+counts.
 
 ## The catalogue { #markers }
 
@@ -115,6 +131,12 @@ run.
   and this run has no clean answer to compare with. The leak reduces to the whole
   request although a field caused it. Reset the target between runs to avoid it.
 - **No free rest.** A request with no rest of free values keeps its field unless a
-  store refused it, so one leak can report once per field.
+  store refused it, so one leak can report once per field. A number or a boolean the
+  run already took cannot rotate, so an endpoint that holds one never reduces to
+  `request`: it reports more findings, never a false one.
+- **The field cited is where the leak was seen.** A leak that keeps its field cites
+  the poisoned field, even when its text names another: a unique constraint failing
+  on `email` can be reported at `body.user.image`, the field that pass was poisoning.
+  The leak is real; the field it cites is not its cause.
 
 Decisions: [ADR-186](adr/findings.md#adr-186), [ADR-131](adr/engine.md#adr-131).

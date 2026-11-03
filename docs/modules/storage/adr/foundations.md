@@ -45,7 +45,7 @@ returned by `get_connection()`: SQL run on it raises the driver's own errors.
 
 ## ADR-076 — The schema carries a fingerprint in `user_version`; a mismatched file is refused, not migrated { #adr-076 }
 
-**Status:** accepted · `db.py`, `schema.sql`
+**Status:** superseded by [ADR-193](#adr-193) · `db.py`
 
 ### Context
 
@@ -108,3 +108,42 @@ busy timeout already arbitrates.
 Operations that take the engine instead of a Unit of Work are called after the
 caller's block closes. The error message says so: transactions do not nest, and
 such operations open their own.
+
+---
+
+## ADR-193 — The schema is built by numbered, forward-only migrations, and `user_version` holds the version { #adr-193 }
+
+**Status:** accepted · Supersedes [ADR-076](#adr-076) · `db.py`, `migrations/__init__.py`, `migrations/versions.py`, `set_aside.py`, `inspection.py`
+
+### Context
+
+A fingerprint of one schema file told a stale database apart, but the only way
+forward was to delete it, and with it every run, finding, explanation and fix a
+user had kept. Once findings carry paid explanations and fixes applied to a tree,
+a local database is worth keeping across releases.
+
+### Decision
+
+**Each change of shape is a script.** `NNNN_<name>.sql` takes a file from version
+`NNNN - 1` to `NNNN`; scripts are numbered without gaps, and a released one is never
+edited. `user_version` holds the version, version 1 keeping the checksum the
+earlier releases stamped so their files migrate on.
+
+**Opening migrates.** The scripts a file lacks run in one write transaction, with
+foreign keys off for table rebuilds and checked before the commit. A file from a
+newer release raises `SchemaTooNewError` and is left untouched; a file no version
+recognizes is set aside as `<name>.old-<timestamp>`, never deleted, and replaced
+by a fresh one.
+
+### Rejected
+
+- **Keeping the fingerprint and deleting stale files.** Every schema change would
+  cost the user their history.
+- **A migration library.** The runner is a loop over ordered scripts; SQLite's own
+  `user_version` and `complete_statement` are all it needs.
+
+### Consequences
+
+A release opens any file an earlier release wrote. A schema change costs a script
+and a test that every earlier version reaches the new shape; changing a CHECK
+costs a table rebuild.

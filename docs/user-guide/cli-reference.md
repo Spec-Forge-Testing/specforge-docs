@@ -548,7 +548,7 @@ unexpectedly.
     adversarial values; `conformance` stays schema-only and also flags response
     fields the contract does not declare; `smoke` sends a short run of valid
     requests only; `exposure` writes the fields the contract marks read-only and
-    probes mass assignment. `hacker` is still accepted and runs `security`. The
+    probes mass assignment. The
     choices are the engine's own `Strategy` values, so a new strategy needs no
     second list here ([Strategies](../modules/specforge-engine/strategies.md)).
 
@@ -1090,11 +1090,15 @@ vocabulary is closed:
 | `signal_cause` | The run is degraded because |
 | --- | --- |
 | `no_responses` | No request reached the target at all — every attempt was an availability, timeout or unsendable-request failure. |
+| `requests_unanswered` | An endpoint left at least three of its requests, and at least 5 % of them, with a timeout or an availability failure, so its evidence rests on the rest. |
 | `endpoints_excluded` | A declared endpoint was selected but the compiler rejected it. |
 | `withheld_by_safety_guard` | A targeted endpoint was held out of the run by the safety guard (a declared side effect). |
 | `access_policy_undeclared` | A targeted endpoint drew no requests because its access policy was not declared, so the run could not tell what to probe. |
+| `access_preconditions_unmet` | A targeted endpoint had an access policy the run could not cross: no producer, no role holder, no owner, or no resource it could create. |
 | `run_cancelled` | The run was cancelled before it finished, so its evidence is partial. |
+| `run_truncated` | The run was cut short before it exhausted its plan, even when every targeted endpoint received requests. |
 | `endpoints_unreached` | A targeted endpoint never received a request for a reason the rows above do not cover. |
+| `load_unjudged` | An endpoint's load profile judged no step: its baseline or every step was measured on no samples. |
 
 `filtered` never degrades a run — narrowing the selection is the caller's own
 choice, not a gap. A by-design public skip does not degrade a run either: it is

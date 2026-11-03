@@ -14,14 +14,14 @@ Every class carries the attributes listed below, plus a readable message as its 
 | `StorageError` | `Exception` | — | Never raised itself: the base to catch. |
 | **Engine and transactions** | | | |
 | `EngineClosedError` | `StorageError` | `db_path` | Any use of a `StorageEngine` after `close()`, memory- or file-backed. |
-| `SchemaMismatchError` | `StorageError` | `db_path`, `expected_fingerprint`, `actual_fingerprint` | `StorageEngine(...)`, opening a file built from a different `schema.sql` ([fingerprint](data-model.md#fingerprint)). |
+| `SchemaTooNewError` | `StorageError` | `db_path`, `found_version`, `supported_version` | `StorageEngine(...)`, opening a file a newer release migrated past the latest script this one ships; the file is left untouched ([migrations](migrations.md#opening-a-file)). |
 | `NestedTransactionError` | `StorageError` | `db_path` | `transaction()` or `ensure_can_begin_transaction()` while the same engine has a scope open on the same thread ([ADR-077](adr/foundations.md#adr-077)). The retention operations check it before any side effect. |
 | **Writes** | | | |
 | `PersistedRecordError` | `StorageError` | `record_type`, `assigned` | Any `create()` given a record that already carries a database-assigned field (`id`, `created_at`, `executed_at`). |
 | `ConstraintViolationError` | `StorageError` | `table`, `detail`, `error_name` | A statement or a commit that breaks a schema constraint and is not a duplicate. `table` is `None` when the violation surfaced away from one INSERT: at commit, or in SQL run on the scope's connection. |
 | `DuplicateRowError` | `ConstraintViolationError` | inherited | An INSERT that breaks a UNIQUE or PRIMARY KEY constraint. |
 | `DuplicateRunError` | `DuplicateRowError` | `analysis_id`, `ordinal`, plus inherited | `uow.runs.create()` when the analysis already has a run with that ordinal. |
-| `IncompleteTruncationError` | `StorageError` | `truncation_reason`, `truncation_endpoint_id` | `uow.runs.create()` with only one of the truncation pair. |
+| `IncompleteTruncationError` | `StorageError` | `truncation_reason`, `truncation_endpoint_id` | `uow.runs.create()` with only one of the truncation pair, a `flaky_generation` cut without an endpoint aside. |
 | `TruncationQualifierWithoutReasonError` | `StorageError` | `column`, `value` | `uow.runs.create()` and `uow.run_endpoint_stats.create()` when a qualifier of a cut comes without a `truncation_reason`. |
 | `InvalidRunStatusError` | `StorageError` | `status` | `uow.runs.create()` with a status outside `RUN_STATUSES`. |
 | `InvalidOracleScopeError` | `StorageError` | `oracle_scope` | `uow.runs.create()` with a scope outside `ORACLE_SCOPES`. |
@@ -91,7 +91,7 @@ that boundary, act only on the subclasses that change what a reader can show:
 | The `*NotFoundError` classes | A lookup by id whose target was deleted or never existed: report "not found" instead of failing. |
 | `ArtifactFileMissingError`, `ArtifactIntegrityError`, `ArtifactDecompressionError` | An artifact that is gone or corrupt: show the row without its content. |
 | `DatabaseBusyError` | Another process holds the database: retry or ask the user to wait. |
-| `SchemaMismatchError` | A local database built from another schema: delete the file and let storage create it again. |
+| `SchemaTooNewError` | A database a newer release wrote: update Spec Forge, or point `SPECFORGE_DATA_DIR` elsewhere. |
 
 Everything else is a failed write or an unusable database, and belongs to the boundary
 handler. Core is that boundary for persistence: it wraps a storage failure during a write

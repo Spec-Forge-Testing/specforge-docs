@@ -131,7 +131,7 @@ flowchart TD
 | **Requests** | How many requests the run sent. |
 | **Shrink requests** | Extra requests spent shrinking failures to their minimal form (not counted in Requests). |
 | **Raw findings** | Every rule violation seen while exploring. |
-| **Confirmed** | Findings that still failed after shrinking — one per distinct symptom. In the modes that never shrink (`performance`, `resilience`, `auth`), each distinct defect observed counts as confirmed; in `resilience`, once its resent attack got it back every time. |
+| **Confirmed** | Findings that still failed after shrinking — one per distinct symptom. A finding a mode does not shrink counts as confirmed once observed: a `performance` latency finding or crash, an `auth` access breach or crash, and a `resilience` finding once its resent attack got it back every time. A `performance` finding judged against the contract is shrunk as in `stateless`, and an `auth` one is unverified. |
 | **Collapsed** | Findings with the same symptom as a confirmed one, so not shrunk again. |
 | **Unverified** | Findings the run collected but never got to shrink (it was cut short first), or whose control request got no answer. |
 | **Flaky** | Findings that could not be reproduced on a second try. |

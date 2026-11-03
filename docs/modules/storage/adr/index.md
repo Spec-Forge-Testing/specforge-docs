@@ -39,7 +39,7 @@ protocol's.
 
 | File | Area | Covers |
 | --- | --- | --- |
-| [foundations.md](foundations.md) | the engine | Error translation, the schema fingerprint, transaction scopes |
+| [foundations.md](foundations.md) | the engine | Error translation, the schema version and its migrations, transaction scopes |
 | [repositories.md](repositories.md) | tables and records | Derived columns, where validation lives, closed vocabularies, get-or-create |
 | [artifacts.md](artifacts.md) | files on disk | Write order, retention, the filesystem gateway |
 
@@ -57,3 +57,4 @@ protocol's.
 | [ADR-082](artifacts.md#adr-082) | artifacts | An artifact file is written before its row, at a content-addressed path |
 | [ADR-083](artifacts.md#adr-083) | artifacts | Retention checks the transaction guard first and unlinks only after its own commit |
 | [ADR-084](artifacts.md#adr-084) | artifacts | One filesystem gateway touches the disk, with the Windows extended-length prefix |
+| [ADR-193](foundations.md#adr-193) | foundations | The schema is built by numbered, forward-only migrations, and `user_version` holds the version |

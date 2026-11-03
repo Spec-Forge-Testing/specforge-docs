@@ -1,6 +1,8 @@
 # Data model
 
-Storage keeps its data in eleven SQLite tables, declared in `schema.sql`, and exposes each one
+Storage keeps its data in sixteen SQLite tables, built by its [migrations](migrations.md). This
+page covers the eleven of the run hierarchy and the contract cache; the five a finding gathers
+after its run are on [Finding follow-up records](finding-records.md). Storage exposes each one
 as a frozen pydantic record. A record's fields are exactly its table's columns, in order: the
 repository derives its column list from the record, and a test compares that list with the
 columns SQLite reports. So each table below documents the schema and the record at once.
@@ -66,13 +68,14 @@ The replicable recipe a run executes: resolved contracts, strategy and execution
 | `created_at` | DATETIME | yes | `CURRENT_TIMESTAMP` | When the analysis was created; set by the database. |
 | `label` | TEXT | yes | — | An optional human-readable label. |
 | `generated_against_repo_hash` | TEXT | no | — | Repository hash the analysis, and its recorded trace, was generated against. |
-| `strategy_mode` | TEXT | no | — | The strategy the trace was generated with, by its canonical name (`default`, `security`, `conformance`, `smoke`, `exposure`); schema version 6 rewrote earlier labels (`Hacker` to `security`, the rest lower-cased). The core refuses to read any other value. |
+| `strategy` | TEXT | no | — | The strategy the trace was generated with, by its canonical name (`default`, `security`, `conformance`, `smoke`, `exposure`). The core refuses to read any other value. |
 | `execution_mode` | TEXT | no | — | How the trace was generated: `stateless`, `stateful`, `performance`, `resilience` or `auth`. Replay is never an analysis's mode: a replay re-sends an existing analysis's trace. |
 | `execution_options` | TEXT | yes | — | The execution mode's effective options as JSON; NULL for a mode without options. |
 | `execution_config` | TEXT | no | — | The execution configuration as JSON, headers already sanitized. |
 | `engine_version` | TEXT | yes | — | Engine version that produced the analysis; provenance only. |
 | `contracts_hash` | TEXT | yes | — | Hash of the produced contracts, ordered by (method, path); NULL when the analysis is schema-only. |
 | `producer` | TEXT | yes | — | JSON provenance of the contract producer; NULL when the analysis is schema-only. |
+| `repo_root` | TEXT | yes | — | The tree the analysis's run traced, relative to the project root (POSIX separators; absolute only on another drive); NULL when the run traced no code, and in a row written before schema version 2. |
 | `examples_per_endpoint` | INTEGER | yes | — | The examples the run asked of each endpoint; NULL when its runner honors no count, and in a row written before schema version 6. |
 
 Constraints: none beyond the foreign key; `execution_mode` is not CHECKed.
@@ -128,7 +131,7 @@ shrinking; a replay re-executes that trace without generating anything new.
 | `is_original` | INTEGER | no | `0` | `1` for the run that generated and recorded the trace. |
 | `fidelity` | TEXT | yes | — | Replay fidelity, `exact` or `reduced`; NULL for an original run. |
 | `truncation_reason` | TEXT | yes | — | Why the run was cut short (an engine reason token); NULL when it was not. |
-| `truncation_endpoint_id` | TEXT | yes | — | The endpoint being explored when the run was cut short; NULL when it was not. |
+| `truncation_endpoint_id` | TEXT | yes | — | The endpoint being explored when the run was cut short; NULL when it was not, or when the reason is `flaky_generation`, which no endpoint caused. |
 | `truncation_detail` | TEXT | yes | — | What happened when the run was cut short. |
 | `target_down_verdict` | TEXT | yes | — | How the target was ruled down (an engine verdict token). |
 | `contract_cache_hits` | INTEGER | yes | — | Endpoints whose contract the [inferred-contract cache](#inferred_contracts) reused; NULL when the run used no cache. |
@@ -169,14 +172,14 @@ over `analysis_endpoints` and `run_endpoint_stats`.
 | `findings_flaky` | INTEGER | no | — | Findings that did not reproduce after shrinking. |
 | `findings_refuted` | INTEGER | no | `0` | Findings whose minimal payload reproduced but whose control request showed the same signal. |
 | `findings_collapsed` | INTEGER | no | `0` | Findings never shrunk because another with their signature was. |
-| `findings_unverified` | INTEGER | no | `0` | Findings never attempted: the run was cut before shrinking, or the strategy could not produce a candidate. |
+| `findings_unverified` | INTEGER | no | `0` | Findings left unjudged: the run was cut before shrinking, the strategy could not produce a candidate, the control could not judge them, or an `auth` crossing provoked a finding judged against the contract. |
 | `requests_shrink` | INTEGER | no | `0` | Requests sent while shrinking (in a stateful run, also while minimizing the sequence); not part of `total_requests`. |
 | `by_phase` | TEXT | yes | — | JSON breakdown of requests per phase. |
 | `by_category` | TEXT | yes | — | JSON breakdown of requests per error category. |
 
-Constraints: none beyond the foreign key. The three defaulted counts are zero in a mode
-that never shrinks; a stateful run, which shrinks inside each pass, records its
-`requests_shrink` but leaves the other two at zero.
+Constraints: none beyond the foreign key. A count the run's mode does not produce stays at
+its default: `findings_collapsed` is counted by the shrink phase of stateless and `performance` runs, and a mode that
+never shrinks records `requests_shrink` only for what it re-sends to confirm a finding.
 
 ### `run_endpoint_stats` — `RunEndpointStatsRecord` { #run_endpoint_stats }
 
@@ -364,20 +367,16 @@ it first so the caller gets a typed error naming the values ([ADR-079](adr/repos
 
 | Table | Rule | Rejected with |
 | --- | --- | --- |
-| `runs` | `truncation_reason` and `truncation_endpoint_id` are both set or both NULL. | `IncompleteTruncationError` |
+| `runs` | `truncation_reason` and `truncation_endpoint_id` are both set or both NULL, except that reason `flaky_generation` takes no endpoint. | `IncompleteTruncationError` |
 | `runs` | `truncation_detail` and `target_down_verdict` qualify a cut: set only with a `truncation_reason`. | `TruncationQualifierWithoutReasonError` |
 | `run_endpoint_stats` | `truncation_detail` is set only with a `truncation_reason`. | `TruncationQualifierWithoutReasonError` |
 | `run_endpoint_stats` | `held_back_by` and `held_back_via` are both set or both NULL. | `IncompleteHoldError` |
 | `analysis_endpoints` | `exclusion_reason` is set exactly when `disposition` is `excluded`. | `IncompleteExclusionError` |
 | `artifacts` | Exactly one of `analysis_id` and `run_id` is set. | `InvalidArtifactLevelError`, raised by `save_artifact` before any file is written |
 
-## Fingerprint { #fingerprint }
+## Schema version { #schema-version }
 
-`schema.sql` is applied with `CREATE TABLE IF NOT EXISTS`, which never adds a column to an
-existing table. So the engine stamps SQLite's `user_version` with a CRC32 of the schema text,
-read with line endings normalized so a CRLF and an LF checkout agree.
-
-Opening a file whose `user_version` differs from the fingerprint and that already has tables
-raises `SchemaMismatchError` with `db_path`, `expected_fingerprint` and `actual_fingerprint`;
-an empty file is stamped and created. There are no migrations: when the schema changes,
-delete the local database and let storage create it again ([ADR-076](adr/foundations.md#adr-076)).
+The tables above are what the latest migration leaves. SQLite's `user_version`
+records the version a file is at, and opening an engine runs the scripts it is
+missing; a file from a newer release is refused with `SchemaTooNewError`. See
+[Schema versions and migrations](migrations.md).

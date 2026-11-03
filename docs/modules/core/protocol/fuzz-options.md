@@ -141,18 +141,12 @@ each with the strategy's default examples per endpoint
 ## Choosing a strategy
 
 `fuzz`, `run_pipeline` and `estimate_inference` take `strategy`, one of the five
-canonical values; omitted, it is `default`. `hacker`, spelled exactly so, is
-accepted as an alias of `security`: it is never listed, never sent back, and the
-`started` event of a run asked for with it carries `security`
-([ADR-155](../adr/protocol.md#adr-155)).
+canonical values; omitted, it is `default`. Any other value is refused
+`INVALID_PARAMS`, and the `started` event of a run carries the value it runs with
+([ADR-155](../adr/protocol.md#adr-155), [ADR-189](../adr/protocol.md#adr-189)).
 
-An analysis carries the strategy twice, in `list_analyses`, `get_analysis`,
-`get_run`'s `analysis` and the report document's `analysis`:
-
-| Field | Holds |
-| --- | --- |
-| `strategy` | The canonical value |
-| `strategy_mode` | Its label for older clients: `Hacker` for `security`, every other value capitalized (`Default`, `Conformance`, ...) |
+An analysis carries it as `strategy`, the canonical value, in `list_analyses`,
+`get_analysis`, `get_run`'s `analysis` and the report document's `analysis`.
 
 ## Examples per endpoint { #examples-per-endpoint }
 

@@ -386,12 +386,12 @@ producer:
 | Counter | Meaning |
 |---|---|
 | `findings_raw` | violations observed during exploration, before shrinking: a response that breaks two rules counts twice |
-| `findings_confirmed` | shrink attempts that reproduced and became a crash report; in a mode that never shrinks (`performance`, `resilience`, `auth`), each defect observed |
+| `findings_confirmed` | shrink attempts that reproduced and became a crash report; for a finding a mode does not shrink (a `resilience` finding, an `auth` access breach or crash, a `performance` latency finding or crash), each defect observed |
 | `findings_unique` | distinct defects after collapsing reports with the same minimal reproducer (and, for `access_control`, the same identity); equal to the count of `ConfirmedFinding`s, never above `findings_confirmed` |
 | `findings_flaky` | attempted during shrinking and did not reproduce; in `resilience`, a server error its resent attacks did not get back on every resend |
 | `findings_refuted` | reproduced, and its control request showed it is not a defect: the input was not the cause, or the rejection was a state conflict ([ADR-151](adr/findings.md#adr-151), [ADR-167](adr/findings.md#adr-167)) |
 | `findings_collapsed` | not shrunk because a faithful representative of their signature stands for them |
-| `findings_unverified` | never judged: the run was cut before shrinking, no candidate could be produced, or the control request got no answer |
+| `findings_unverified` | never judged: the run was cut before shrinking, no candidate could be produced, the control request got no answer or one that cannot judge it, or, in `auth`, a finding judged against the contract, which the crossing does not control |
 | `requests_shrink` | requests the shrinking phase put on the wire (in a stateful run, Hypothesis's shrink re-sends plus the sequence minimizer's; in `resilience`, the confirmation's resends, controls and provisioning); not part of `total_requests` |
 
 `EndpointStats` mirrors the per-endpoint subset (`requests`,
@@ -458,8 +458,9 @@ short — becomes a `FlakyFinding`, keyed by the same
 those into `findings_flaky` (plus the flaky events that recovered no violation to
 sign), and `reconcile_flaky_with_confirmed` drops any flaky finding whose
 signature already has a confirmed report, so a symptom the run also confirmed is
-shown once, as a defect. `findings_unverified` stays 0 for a stateful run, which
-confirms or minimizes every step as it goes. A signature's `status_code` of `0`
+shown once, as a defect. A stateful finding its control could not judge, or whose
+re-send a blocked send stopped, counts in `findings_unverified`, and one its
+control refuted in `findings_refuted`. A signature's `status_code` of `0`
 records a step that got no response at all (a transport failure).
 
 `EngineRunResult.status` is the run's terminal outcome as a `RunStatus`:

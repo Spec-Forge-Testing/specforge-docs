@@ -3,8 +3,7 @@
 A run that stops at its first defect, or that addresses resources which do not
 exist, says little about an API. This page describes what each runner does to get
 past the first answer, without asking a model for anything: where stateless takes
-the identifiers it puts in a path, how long a stateful run keeps going and how it
-tells one defect from another, which values a credential field gets, and how
+the identifiers it puts in a path, which values a credential field gets, and how
 resilience aims at a real resource and tells a crash from an intermittent error,
 and why an endpoint whose link writes into a reserved header is left unprobed.
 Each mode's overall sequence is on [Execution modes](execution-modes.md); the
@@ -99,86 +98,11 @@ state, such as a username already taken. A `contract_completeness` finding that
 blames the whole request is judged by a control that sends only values the run has
 not seen accepted; [Control requests](control-requests.md) has the verdicts.
 
-## Stateful: until a pass finds nothing new { #stateful-depth }
+## Stateful runs { #stateful }
 
-A stateful pass ends at its first violation. The supervisor runs pass after pass,
-each looking past the defects already reported, until one changes nothing
-([ADR-162](adr/runners.md#adr-162)). A pass counts as progress when it:
-
-| Progress | Bounded by |
-| --- | --- |
-| reports a defect no report holds yet | the ceiling |
-| ends flaky on a new signature | the ceiling |
-| widens a range defect's suppression (below) | once per defect |
-| ends flaky with no violation to sign | `STATEFUL_UNEXPLAINED_FLAKY_PASSES` (2) |
-| ends `refuted` or `unverified` on a new signature, or widens one's suppression | the ceiling |
-
-The run also stops when the distinct confirmed reports, or the distinct flaky
-signatures, reach `StatefulOptions.max_distinct_bugs` (default
-`STATEFUL_MAX_DISTINCT_BUGS`, 25). Setting it to `1` reports the first defect only.
-A cancellation, a dead target, a machine that can draw no sequence and an engine
-failure stop it at once.
-
-Passes are also bounded by `STATEFUL_MAX_PASSES` (100), however many count as progress.
-A run that reaches it ends `truncated` with reason `pass_limit_reached`
-([ADR-188](adr/runners.md#adr-188)).
-
-### A witness Hypothesis calls flaky
-
-Hypothesis may fail a pass while shrinking, because the target's state changed between
-replays. The violation it saw is still in hand. The pass keeps that witness and
-verifies it by re-sending its sequence, as it does with a shrink the budget cut short.
-If it reproduces, it is minimized and judged like any other; otherwise the pass is
-flaky under its signature.
-
-### Telling defects apart
-
-A defect is its report's `FindingSignature`, body fingerprint included, plus its
-**trigger fields** ([ADR-163](adr/runners.md#adr-163)):
-
-- The signature is computed on the **shrunk** step (`step_signature`), so a later
-  pass is compared with exactly what was reported.
-- The trigger fields are the fields the shrunk step sent off its endpoint's
-  simplest draw (`SimplestDraws`, computed once per endpoint, no request sent),
-  minus the fields a bundle injected. The report carries them as
-  `request.trigger_fields`. A transition probe has none.
-- `SuppressedDefects` covers a later violation only when it has a reported
-  signature and sent the reported values in each trigger field. Two fields that
-  make one endpoint answer the same 500 are two reports.
-
-**Range defects.** A defect that fires on a range of values (any negative
-amount) comes back on the next pass with another value. It is folded into its
-report (`represented_findings` grows by one), and the suppression is **widened**
-once: the signature is covered on any step that sent off the simplest value in
-every trigger field and in no other field. A step that also changed another field
-escapes the widened entry and is shrunk on its own.
-
-### Deleted resources
-
-Two rules of the core's state links give the stateful run what it needs to check a
-delete without a model ([ADR-168](../core/adr/core.md#adr-168)):
-
-- **A `DELETE` invalidates the value it consumes.** Once the step draws it, the
-  value leaves its bundle, so no later step addresses a deleted resource. A
-  nested consumption does not invalidate its parent: deleting a comment keeps the
-  article.
-- **A deleted-resource transition is derived.** For a `DELETE` whose only
-  placeholder is its last path segment, and a `GET` on the same path template that
-  declares `404` or `410`, the run probes the `GET` after a successful `DELETE`
-  and expects one of those statuses. A soft delete that still answers 200 is a
-  `state_transition` finding.
-
-The compiler rejects an endpoint whose transition's follow-up path names a
-placeholder its probe cannot fill; the endpoint is listed in `excluded_endpoints`
-with that reason.
-
-### When the shrinker itself fails
-
-An error raised inside Hypothesis while it shrinks, when the pass already holds a
-witness, ends the pass on that witness: it is re-sent once and reported, or
-counted flaky, and the error is logged. An error raised in the engine's own code
-still cuts the run `engine_failure` ([ADR-164](adr/runners.md#adr-164)). The engine
-requires `hypothesis>=6.170.3,<6.170.10`.
+How long a stateful run keeps going, what a pass draws, the further pass at what
+it never reached, how defects are told apart and how transition probes are judged
+are on [Stateful depth](stateful-depth.md).
 
 ## Valid values for credential fields { #credential-fields }
 
@@ -301,10 +225,7 @@ unprobed.
 | How often a field draws from the corpus | `PATH_CORPUS_SHARE_PERCENT` in `runtime/fuzzers/stateless/constants.py`; `_CORPUS_SHARE_BY_ZONE` in `corpus_overlay.py` |
 | What counts as created by the run | `CREATING_METHODS`, `CREATED_STATUS` in `constants.py` |
 | Which corpus values a request may take | `_lookup` in `runtime/fuzzers/stateless/corpus_overlay.py`, over the readers of `CorpusSnapshot` (`values_for`, `destructive_values_for`, `unpinned_values_for`) |
-| The stateful ceiling's default | `STATEFUL_MAX_DISTINCT_BUGS` in `constants.py` |
-| How many flaky passes without a violation count | `STATEFUL_UNEXPLAINED_FLAKY_PASSES` in `runtime/fuzzers/stateful/constants.py` |
 | A credential naming convention | a row of `NAME_CONVENTIONS` in `strategy_compiler/constants.py` ([recipe](extension-guide.md#add-a-name-convention)) |
 | How many times a resilience attack is resent | `RESILIENCE_RESENDS` in `runtime/runners/resilience/constants.py` |
 | Which resend answers count as no answer | `UNANSWERED_STATUSES` in the same file |
 | Which headers a state link may not write into | `is_reserved_link_target` in `runtime/http/reserved_headers.py`; `reserved_for_sender` in `runtime/runners/provisioning/reserved_links.py` |
-| When a delete's transition is derived | `INVALIDATING_METHODS`, `DELETED_RESOURCE_STATUSES` in the core's `utils/constants.py` |

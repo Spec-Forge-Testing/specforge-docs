@@ -75,7 +75,7 @@ with tempfile.TemporaryDirectory() as tmp:
             analysis = AnalysisRecord(
                 project_id=project.id,
                 generated_against_repo_hash="abc123",
-                strategy_mode="default",
+                strategy="default",
                 execution_mode="stateless",
                 execution_config="{}",
             )

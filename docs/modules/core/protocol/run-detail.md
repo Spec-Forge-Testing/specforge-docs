@@ -99,14 +99,15 @@ A [`replay`](vocabularies.md#replay-verdicts) rules each defect the recorded run
 confirmed. Its run keeps those verdicts in the store, so they read back after the
 `replay` answer is gone and whatever retention did to its report.
 
-`get_run` carries them in `replay`: `null` for a run that is no replay, and for a
+`get_run` carries them in `replay`: `null` for a run that is no replay, for a
 replay stored by a core older than protocol `0.2.2`, whose verdicts were kept only
-in its report.
+in its report, and for a replay whose stored verdicts are fewer than the count
+stored with them: part of them is never published.
 
 | Field | What it holds |
 | --- | --- |
-| `judged` | The same object as the `replay` answer's `replay.judged`: `oracle_scope` (as [`run.oracle_scope`](vocabularies.md#oracle-scope)), `recorded_defects`, `present`, `possibly_resolved` and `inconclusive`. |
-| `defect_verdicts` | One per confirmed finding of the recorded run, in the order the `replay` answer gave them: `finding_id` (the confirmed finding it rules on), `method`, `path`, `status_code`, `invariant_violated`, `rule_id` and `identity_label` as that finding was stored, and `verdict` (`present`, `possibly_resolved` or `inconclusive`). |
+| `judged` | The same object as the `replay` answer's `replay.judged`: `oracle_scope` (as [`run.oracle_scope`](vocabularies.md#oracle-scope)), `recorded_defects`, `present`, `possibly_resolved` and `inconclusive`. `recorded_defects` counts the recorded run's confirmed findings, one per phase a defect was confirmed in, not distinct defects. |
+| `defect_verdicts` | One per confirmed finding of the recorded run, in the order the `replay` answer gave them: `finding_id` (the confirmed finding it rules on, an integer), `method`, `path`, `status_code`, `invariant_violated`, `rule_id` and `identity_label` as that finding was stored, and `verdict` (`present`, `possibly_resolved` or `inconclusive`). |
 
 ```json
 "replay": {
@@ -120,7 +121,8 @@ in its report.
 
 The `replay` answer and the report document's `replay.defect_verdicts` carry
 `finding_id` too, so a client links each verdict to the finding it can open with
-`get_finding`. A replay of a run that confirmed nothing has `defect_verdicts` `[]`
+`get_finding`. In the report document it is optional: a report written before
+`1.26` has none. A replay of a run that confirmed nothing has `defect_verdicts` `[]`
 and every count of `judged` `0`; a replay whose verdicts are unknown is `null`,
 never "zero of zero".
 
@@ -131,9 +133,9 @@ replay's row by its `judged` ("2 present, 1 possibly resolved"), and a `null` th
 as verdicts unknown.
 
 `compare_runs` against a replay reads these stored verdicts, so pruning the
-replay's report changes nothing. Only a replay stored before `0.2.2` still reads its
-report, and only it can raise a `replay_report_*`
-[caveat](vocabularies.md#caveats).
+replay's report changes nothing. Only a replay whose `replay` is `null` (stored
+before `0.2.2`, or with incomplete stored verdicts) still reads its report, and only
+it can raise a `replay_report_*` [caveat](vocabularies.md#caveats).
 
 ## Replaying a finding alone { #replay-alone }
 
@@ -147,17 +149,21 @@ so `verify_finding_fix`, can send its request alone.
 
 `reason` is `null` when `possible` is `true`; otherwise it is the
 [reason](vocabularies.md#replay-alone-reason) `replay_finding` would refuse the
-finding with, `REPLAY_NOT_REPRODUCIBLE`. The reasons are checked in their listed
-order, and the first that holds is the one given, so it names the same reason the
-error would. Whether the trace holds the finding's request is decided when the run
-is stored, against the trace as it is stored; a `flaky` or `unverified` finding,
+finding with, `REPLAY_NOT_REPRODUCIBLE`, whose `data.reason` carries the same value.
+The reasons are checked in their listed order, and the first that holds is the one
+given, so it names the same reason the error would. Every finding of a `stateful`
+analysis is `stateful`, confirmed or not. Whether the trace holds the finding's
+request is decided when the run is stored, against the trace as it is stored, and
+kept with the version of the matcher that decided it. Storing a run whose trace
+does not read back from its own bytes fails, rather than keep a run no replay could
+read; a `flaky` or `unverified` finding,
 which has no minimal payload, is looked up as its replay sends it: the first
 recorded request that broke an invariant at its endpoint, in its phase, under its
 identity and with its status.
 
-`replay_alone` is `null` for a finding stored before protocol `0.2.2` that nothing
-else refuses: whether its request is in the trace is not known until it is
-replayed. `stateful`, `refuted` and `trace_pruned` are still given for it.
+`replay_alone` is `null` for a finding that nothing else refuses and that was
+stored before protocol `0.2.2`, or by a core whose matcher had another version:
+whether its request is in the trace is not known until it is replayed. `stateful`, `refuted` and `trace_pruned` are still given for it.
 
 !!! note "`possible: true` is not a promise"
     `replay_alone` does not cover what depends on the replay call itself or on the

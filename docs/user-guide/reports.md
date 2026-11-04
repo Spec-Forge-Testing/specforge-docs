@@ -201,10 +201,10 @@ sent a targeted endpoint:
 | `owner_identity_missing` | `resilience` only: no valid identity is declared to own the resource, so the owner-only endpoint was not attacked. |
 | `link_target_reserved` | A state link of the endpoint, or of every producer of the owner's resource, writes a bound value into a credential or `Content-Type` header, so nothing was sent. |
 | `link_value_never_produced` | `stateful` only: every time the exploration drew the endpoint, a value it consumes had not been produced yet, because its producer never answered with a status that produces it. The producer's requests are in the trace. |
-| `rule_never_drawn` | `stateful` only: the exploration never drew the endpoint. |
+| `rule_never_drawn` | `stateful` only: the exploration never drew the endpoint, or could never draw arguments for it. |
 
 The two `stateful` reasons leave the run's signal `degraded` with the cause
-`link_values_unproduced`.
+`stateful_endpoints_unsent`.
 
 ### Endpoints that degrade under load
 
@@ -299,7 +299,7 @@ three of its requests, and at least 5 % of them, with a timeout or an availabili
 failure), `endpoints_excluded`, `withheld_by_safety_guard`,
 `access_policy_undeclared`, `access_preconditions_unmet` (an `auth` or
 `resilience` run left a targeted endpoint with an access policy unprobed for one
-of the `owner_*`, `owner_identity_missing`, `required_role_unheld` or `link_target_reserved` reasons above), `link_values_unproduced` (a `stateful` run never sent a targeted endpoint, for `link_value_never_produced` or `rule_never_drawn`), `run_cancelled`,
+of the `owner_*`, `owner_identity_missing`, `required_role_unheld` or `link_target_reserved` reasons above), `stateful_endpoints_unsent` (a `stateful` run never sent a targeted endpoint, for `link_value_never_produced` or `rule_never_drawn`), `run_cancelled`,
 `run_truncated` (the run's `status` is `truncated`, even when every targeted
 endpoint received requests), `endpoints_unreached` and/or `load_unjudged` (a load profile judged no step). See
 [Coverage and the run's signal](cli-reference.md#coverage-and-the-runs-signal) for

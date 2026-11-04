@@ -259,6 +259,7 @@ reproducer: `status_code`, `minimal_payload`, `sanitized_headers` and `response_
 | `observation` | TEXT | yes | — | JSON object of what the oracle expected and observed, where, and its marker. |
 | `control` | TEXT | yes | — | JSON object of the control request the finding was judged against: its status, latency and error; NULL unless a control was sent. |
 | `replay_request_recorded` | INTEGER | yes | — | Whether the trace its run recorded holds the request the finding was reported from, matched when the finding is written against the trace as a replay later reads it; NULL for a finding stored before it was kept. |
+| `replay_matcher_version` | INTEGER | yes | — | The version of the trace matcher that gave `replay_request_recorded`, at least `1`; NULL exactly when that answer is. A reader whose matcher has another version treats the answer as unknown. |
 
 Constraints: `analysis_endpoint_id` is `ON DELETE SET NULL`. `phase` and `state` are free
 text: the engine owns those vocabularies, and storage does not CHECK them. Neither a finding's

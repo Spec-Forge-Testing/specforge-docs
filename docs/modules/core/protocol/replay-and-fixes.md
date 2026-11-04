@@ -33,7 +33,9 @@ the verdict is reached, and what each `inconclusive` reason asks of you, is on
 
 A finding that needed earlier requests to build its state, a `refuted` one, one
 whose analysis's trace was pruned, and one whose request is not in the trace are
-`REPLAY_NOT_REPRODUCIBLE`, and the message says which. Each finding announces that
+`REPLAY_NOT_REPRODUCIBLE`, with `data.reason` `stateful`, `refuted`,
+`trace_pruned` or `not_in_trace`. Every finding of a `stateful` analysis is refused
+as `stateful`, an unconfirmed one too. Each finding announces that
 answer ahead in [`replay_alone`](run-detail.md#replay-alone), by the same rule. The
 trace is looked up before the consent the recording needs is checked: a finding
 whose request is not there is `REPLAY_NOT_REPRODUCIBLE` even when the call also
@@ -180,10 +182,17 @@ is told.
 - **Verifying needs a replay.** `verify_finding_fix` refuses a `refuted` or a
   stateful finding with `REPLAY_NOT_REPRODUCIBLE` before anything is built, as
   `replay_finding` does.
-- **The state is part of the cache key.** An explanation, the fixed template's one
-  included, and a fix are reused only for a finding in the same state: a `refuted`
-  finding never reuses what a `confirmed` one with the same signature was answered,
-  nor the other way around.
+- **The state and the control are part of the cache key.** An explanation, the
+  fixed template's one included, and a fix are reused only for a finding in the
+  same state, judged by the same kind of control: whether it had one, where its
+  answer came from, and whether it failed, never the status it got back. A
+  `refuted` finding never reuses what a `confirmed` one with the same signature
+  was answered, and a chaos attack whose clean request after it failed too never
+  reuses what one that recovered was answered.
+- **Stored answers are paid for once more.** The prompts carry the state and the
+  control, so explanations and fixes a model gave before are asked for again the
+  first time they are needed; the fixed template's explanations are rewritten at no
+  cost.
 
 ## Mending a fix the build refused { #mend-build }
 

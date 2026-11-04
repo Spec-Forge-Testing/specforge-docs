@@ -227,10 +227,11 @@ exploration.
 The exploration counts, per endpoint, how often it drew the endpoint's rule and how
 often an empty consumed pool left that rule nothing to send (`RuleAttempts`). A
 targeted endpoint the run never sent anything to gets its `unprobed_reason` from
-those counts: `rule_never_drawn` when its rule was never drawn,
+those counts: `rule_never_drawn` when its rule was never drawn (also when its
+arguments could never be drawn, so no draw of the rule completed), and
 `link_value_never_produced` when every draw found a pool it consumes empty. A run cut
 short sets neither, since its truncation already explains the silence. Either reason
-makes the run's signal `degraded` with `link_values_unproduced` instead of
+makes the run's signal `degraded` with `stateful_endpoints_unsent` instead of
 `endpoints_unreached` ([the values](../core/protocol/vocabularies.md#unprobed-reason)).
 
 A dead target costs the run at most `MAX_INFRA_FAILURES` requests plus one

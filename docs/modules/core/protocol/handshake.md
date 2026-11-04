@@ -146,9 +146,11 @@ version; the lines below are the summary.
       against that replay. A replay stored before keeps its verdicts
       ([Replay verdicts](vocabularies.md#replay-verdicts)).
     - *Added:* `finding_id` on each entry of a replay's `defect_verdicts`, in the
-      `replay` answer, the report document and `get_run`.
+      `replay` answer, the report document and `get_run`. `judged.recorded_defects`
+      counts the recorded run's confirmed findings, one per phase.
     - *Added:* `replay` in `get_run` (`judged` and `defect_verdicts`, `null` for a
-      run that is no replay and for a replay stored before), and `run.judged` in
+      run that is no replay, for a replay stored before and for one whose stored
+      verdicts are incomplete), and `run.judged` in
       `list_runs` and `get_run` ([A stored replay's verdicts](run-detail.md#replay)).
     - *Changed:* `compare_runs` against a replay reads its verdicts from the store:
       pruning its report no longer leaves every defect `inconclusive`. A replay
@@ -156,26 +158,41 @@ version; the lines below are the summary.
       `replay_report_*` caveat.
     - *Added:* `replay_alone` (`possible`, [`reason`](vocabularies.md#replay-alone-reason):
       `stateful`, `refuted`, `trace_pruned` or `not_in_trace`) on every finding, in
-      `get_run` and `get_finding`. It covers neither consent nor the live
-      credentials ([Replaying a finding alone](run-detail.md#replay-alone)).
+      `get_run` and `get_finding`. Every finding of a `stateful` analysis is
+      `stateful`. It is `null` when not known ahead: stored before, or by a core
+      whose trace matcher had another version. It covers neither consent nor the
+      live credentials ([Replaying a finding alone](run-detail.md#replay-alone)).
+    - *Added:* `data.reason` in `REPLAY_NOT_REPRODUCIBLE` when a finding is refused
+      for one of `replay_alone`'s reasons; every other cause carries none.
+    - *Changed:* storing a run reads its trace back from the bytes it stores: a
+      trace that does not read back now fails storing the run, instead of every
+      later replay of it.
     - *Changed:* `replay_finding` and `verify_finding_fix` look for the finding's
       request in the trace before they ask for consent: a finding whose request is
       not there is `REPLAY_NOT_REPRODUCIBLE` where it was
       `SIDE_EFFECTS_CONSENT_REQUIRED`.
     - *Added:* `reasons` in `SIDE_EFFECTS_CONSENT_REQUIRED`'s `data`: every case
       that applies, `safety_breached` before `recorded_with_side_effects`; `reason`
-      is the first of them ([Replay consent](operations.md#replay-consent)).
+      is the first of them, so a recording made with `allow_side_effects` that
+      also breached the guard reads `safety_breached` where it read
+      `recorded_with_side_effects` ([Replay consent](operations.md#replay-consent)).
+    - *Fixed:* an endpoint with a finding that only a shrink reached, as a
+      `stateful` shrink can, counts as exercised: it is in `coverage.exercised` and
+      the scope `compare_runs` rules by, and no longer in `endpoints_unreached`. Its
+      `requests` still count exploration only.
     - *Added:* [`link_value_never_produced`](vocabularies.md#unprobed-reason) and
       `rule_never_drawn` in `unprobed_reason` and `vocabulary.unprobed_reasons`:
       why a `stateful` run that was not cut short never sent a targeted endpoint;
-      with them, the signal cause `link_values_unproduced`, and those endpoints
-      leave `endpoints_unreached`.
+      with them, the signal cause `stateful_endpoints_unsent`, named after both,
+      and those endpoints leave `endpoints_unreached`. `rule_never_drawn` also
+      covers a rule whose arguments could never be drawn.
     - *Changed:* `estimate_finding_explanation`, `explain_finding`,
       `estimate_finding_fix` and `propose_fix` take a finding in any state, and the
       model is told what its `state` means. `propose_fix` may answer a `refuted`
       finding with an empty fix; `apply_finding_fix` refuses it with
-      `FIX_EMPTY_OR_UNAPPLICABLE`. The state is part of the explanation's and the
-      fix's cache key ([Explaining and fixing an unconfirmed finding](replay-and-fixes.md#unconfirmed)).
+      `FIX_EMPTY_OR_UNAPPLICABLE`. The state, and the control the finding was
+      judged by (whether it had one, its source, whether it failed), are part of
+      the explanation's and the fix's cache key ([Explaining and fixing an unconfirmed finding](replay-and-fixes.md#unconfirmed)).
     - *Changed:* why static analysis could not resolve an endpoint is an English
       sentence the core writes for its `code`, in `endpoint_failed`,
       `analyze_endpoints`' `failures`, `ENDPOINT_ANALYSIS_FAILED`,
@@ -184,7 +201,7 @@ version; the lines below are the summary.
 
 - **Report 1.26** — Additive; it ships with protocol `0.2.2`. Adds `starved` to
   each phase of `endpoints[].budget_by_phase`, and `finding_id` to each entry of
-  `replay.defect_verdicts`.
+  `replay.defect_verdicts`; a report written before `1.26` has none.
 
 - **0.2.1** — A finding's replay says what it judged and why it could not tell,
   and earns `possibly_resolved` behind witnesses. **Additive on the wire**: this

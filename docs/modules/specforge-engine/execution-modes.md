@@ -224,6 +224,15 @@ confirmed report already covers its signature ([ADR-047](adr/engine.md#adr-047))
 link cannot be honored the run raises `StatefulLinkError` carrying the partial
 exploration.
 
+The exploration counts, per endpoint, how often it drew the endpoint's rule and how
+often an empty consumed pool left that rule nothing to send (`RuleAttempts`). A
+targeted endpoint the run never sent anything to gets its `unprobed_reason` from
+those counts: `rule_never_drawn` when its rule was never drawn,
+`link_value_never_produced` when every draw found a pool it consumes empty. A run cut
+short sets neither, since its truncation already explains the silence. Either reason
+makes the run's signal `degraded` with `link_values_unproduced` instead of
+`endpoints_unreached` ([the values](../core/protocol/vocabularies.md#unprobed-reason)).
+
 A dead target costs the run at most `MAX_INFRA_FAILURES` requests plus one
 liveness probe: a run-wide watch feeds the shared `TargetLivenessMonitor` and, once
 its probe confirms the target is down, blocks every send and cuts the run
@@ -281,8 +290,8 @@ guard did not hold, so the core re-sends them only with the caller's consent,
 given again for this replay: one made with `allow_side_effects`, and one whose
 original run ended `safety_breached`. Without `allow_side_effects` on the
 `replay` call (`--allow-side-effects` on the CLI), the core refuses it with
-`SIDE_EFFECTS_CONSENT_REQUIRED` before any request is sent, naming which of the
-two applies. Consent is per run, never inherited from the recording; on any
+`SIDE_EFFECTS_CONSENT_REQUIRED` before any request is sent, naming every one of
+the two that applies, the breach first. Consent is per run, never inherited from the recording; on any
 other recording the parameter is accepted and changes nothing, and it never
 alters the recorded configuration the engine replays under.
 
@@ -621,9 +630,10 @@ typed reason into `EndpointStats.unprobed_reason` (`UnprobedReason`):
 
 The first two are by-design skips; the other five are access preconditions the
 run could not meet. Either way the endpoint is recorded and the run moves on to
-the next one. `UnprobedReason` has one more member, `owner_identity_missing`,
-which only `resilience` reports: an auth run without a valid identity stops before
-any request instead.
+the next one. `UnprobedReason` has three more members. `owner_identity_missing`
+only `resilience` reports: an auth run without a valid identity stops before any
+request instead. `link_value_never_produced` and `rule_never_drawn` only a
+`stateful` run reports ([stateful](#stateful)).
 
 The run **fails fast before any request** on one condition only: no **valid**
 identity is declared (`AccessIdentityError`). Everything else degrades per

@@ -865,8 +865,10 @@ Hypothesis handed over (`PassOutcome.examples_run`), sendable or not. A pass
 skipped because its phase was exhausted hands its whole share on. Passes run in
 phase order, so `valid` never receives, and a ladder step, which repeats payloads
 until full, never leaves a remainder. The ledger's `budget_by_phase` —
-`PhaseBudget(planned, carried_in)` per phase — lands on the endpoint's stats
-([ADR-142](adr/engine.md#adr-142)).
+`PhaseBudget(planned, carried_in, starved)` per phase, `starved` naming the
+identities that phase's split left with zero examples — lands on the endpoint's
+stats ([ADR-142](adr/engine.md#adr-142)); `starved_identities` is the union of the
+phases' `starved`.
 
 **One stop signal crosses the `@given` boundary.** When folding decides the pass
 must stop, it sets a `Cut` on the shared state and raises a single

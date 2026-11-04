@@ -14,7 +14,8 @@ defines how a message travels, the pages beside it define what the messages say.
 | [Operations](operations.md) | The 41 operations by family, what each requires, emits and destroys |
 | [Replay and fixes](replay-and-fixes.md) | `replay_finding`, `inspect_service`, a finding's trace and source, and applying, verifying and reverting a fix |
 | [Finding replay verdicts](finding-replay.md) | What a finding's replay sends, how its verdict is reached, the reasons it is inconclusive and the exchange it answers |
-| [Result vocabularies](vocabularies.md) | The closed vocabularies a result field may take: run status, comparability, oracle scope, truncation reason, target-down verdict, coverage, producer-exclusion disposition, unprobed reason, signal causes, load-step degradation, strategy, effect changes, category, severity, location scope, replay verdicts, inconclusive reasons, caveats, operation and stage status |
+| [Run detail](run-detail.md) | What `get_run` says beyond the report: the finding counters, the budget per phase, a stored replay's verdicts, and whether a finding can be replayed alone |
+| [Result vocabularies](vocabularies.md) | The closed vocabularies a result field may take: run status, comparability, oracle scope, truncation reason, target-down verdict, coverage, producer-exclusion disposition, unprobed reason, signal causes, load-step degradation, strategy, effect changes, category, severity, location scope, replay verdicts, inconclusive reasons, replay-alone reasons, caveats, operation and stage status |
 | [Errors](errors.md) | The two codes per error and the 42 error codes |
 | [Fixtures](fixtures.md) | Recorded sessions: how they are captured and how a client uses them |
 

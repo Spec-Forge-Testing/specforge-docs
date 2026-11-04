@@ -185,7 +185,7 @@ example count does not change the estimate.
 | `priced` | Whether the model has a price. `false` means the cost is unknown, never that it is free. |
 | `token_basis` | `calibrated` (counted for that provider) or `approximate`. |
 | `endpoints` | One row per endpoint: `method`, `path_url`, `source` (`cache` or `model`), `input_tokens`, `output_tokens`, `cost_usd`; `null` where nothing would be sent. |
-| `untraced` | The endpoints whose code could not be traced (`method`, `path_url`, `reason`); they would run schema-only. |
+| `untraced` | The endpoints whose code could not be traced (`method`, `path_url`, `reason`, a [sentence](errors.md#analysis-failure-reasons) naming the endpoint and the cause); they would run schema-only. |
 | `cached`, `pending` | How many contracts the cache would serve, and how many the model would infer. |
 | `input_tokens`, `output_tokens`, `cost_usd` | The totals; `cost_usd` is `null` when unpriced. |
 | `max_cost_usd` | The `producer.max_cost_usd` echoed back, or `null`. |
@@ -199,9 +199,13 @@ example count does not change the estimate.
 recording made with `allow_side_effects`, or one whose original run ended
 `safety_breached`, is re-sent only when the call passes it: consent is given per
 replay, never inherited from the recording. Without it the call is refused with
-`SIDE_EFFECTS_CONSENT_REQUIRED` before any request is sent, and `data.reason`
-says which case applies (`recorded_with_side_effects` or `safety_breached`). On
-any other recording the parameter is accepted and does nothing. See
+`SIDE_EFFECTS_CONSENT_REQUIRED` before any request is sent. `data.reasons` lists
+every case that applies, the most severe first: `safety_breached` before
+`recorded_with_side_effects`. `data.reason` is the first of them, and the message
+names them all. A recording made with `allow_side_effects` whose run then breached
+the guard carries both. On any other recording the parameter is accepted and does
+nothing. `replay_finding` and `verify_finding_fix` ask for the same consent, after
+they have found the finding's request in the trace. See
 [consent to re-send](../../specforge-engine/execution-modes.md#consent-to-re-send).
 
 ### The target base URL { #base-url }
@@ -227,8 +231,8 @@ give `/api/v1`, never `/api/api/v1`.
 | `list_projects` | none | — |
 | `list_analyses` | none | — |
 | `get_analysis` | none | — |
-| `list_runs` | none | — |
-| `get_run` | none | `started`, `finished` |
+| `list_runs` | none | —. Each row carries `judged`, a replay's verdict counts ([Run detail](run-detail.md#replay)) |
+| `get_run` | none | `started`, `finished`. The run's counters, budget per phase and stored replay verdicts are on [Run detail](run-detail.md) |
 | `get_finding` | none | — |
 | `inspect_finding_source` | project | —. Whether the finding's handler code can be reached ([Replay and fixes](replay-and-fixes.md#inspect-finding-source)) |
 | `estimate_finding_explanation` | project | — |
@@ -263,11 +267,18 @@ classification and evidence as a report's defect
 | `observation` | `expected`, `observed`, `location` (`{scope, path}`, see [scopes](vocabularies.md#location-scope)) and `marker`; `null` for a finding stored before `0.1.19`. |
 | `request` | `url`, `poisoned_zone`, `poisoned_field` (a nested body field by its dotted path, such as `user.email` or `items.0.price`), `attack_family`, `trigger_fields`. |
 | `response` | `content_type`, `headers` (redacted), `latency_ms`. |
+| `replay_alone` | `possible` and `reason`: whether `replay_finding` can send the finding's request alone, and the [reason](vocabularies.md#replay-alone-reason) it would refuse it with; `null` for a finding stored before protocol `0.2.2` that nothing else refuses ([Run detail](run-detail.md#replay-alone)). |
 | `resolution` | What resolves the finding: `fix_id`, `fix_finding_id` (another finding's when its fix covers this one) and `replayed_at`. Set while its newest replay against a fix applied to its tree passed; `null` otherwise. |
 | `control` | `status_code`, `latency_ms`, `error`: what the control request got back, plus `source`, `attribution`, `peer`, `occupancy` and `known_answer` ([what they hold](../../specforge-engine/control-requests.md#evidence)). On a confirmed finding, the control it was judged against (for `resilience`, the clean base request sent after the attack was confirmed); on an unverified one, the control that got no answer; on a refuted one, the control that refuted it (for a whole-request rejection, the request that was accepted); `null` when none was sent. |
 
-`metrics.findings_refuted` counts, apart from `findings_flaky`, the findings a
-control request refuted; each is also listed, with `state` `refuted` and its `control`.
+`metrics.findings_refuted` counts, apart from `findings_flaky`, the occurrences a
+control request refuted; each refuted finding is also listed, with `state`
+`refuted` and its `control`. `metrics.unconfirmed_unique` counts the unconfirmed
+defects once each ([The finding counters](run-detail.md#metrics)).
+
+`estimate_finding_explanation`, `explain_finding`, `estimate_finding_fix` and
+`propose_fix` take a finding in any state; what the model is told of an unconfirmed
+one is on [Replay and fixes](replay-and-fixes.md#unconfirmed).
 
 ## `config`
 

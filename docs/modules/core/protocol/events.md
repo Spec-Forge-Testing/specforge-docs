@@ -50,7 +50,7 @@ which one framed the event.
 | `target_down` | fact | `base_url` (the URL the run's requests go to, server path included), `reason` | The run concluded the API is down: a liveness probe failed, or every circuit breaker opened; `reason` says which |
 | `truncated` | fact | `endpoint` (ref; absent when no endpoint caused the cut, reason [`flaky_generation`](vocabularies.md#truncation-reason)), `reason` | Cut short by budget |
 | `endpoint_resolved` | fact | `endpoint` (ref) | An endpoint's static analysis resolved |
-| `endpoint_failed` | fact | `endpoint`, `code`, `reason` | An endpoint's static analysis failed |
+| `endpoint_failed` | fact | `endpoint`, `code`, `reason` (an English [sentence](errors.md#analysis-failure-reasons) for the `code`) | An endpoint's static analysis failed |
 | `stage_started` | fact | `stage` | A pipeline stage begins |
 | `stage_finished` | fact | `stage`, `status` (`completed`, `failed`, `skipped` or `stopped`; for the execution stage it follows the run: `failed` for a breached run, `stopped` for a cancelled one; see [stage status](vocabularies.md#stage-status)) | A pipeline stage ends |
 

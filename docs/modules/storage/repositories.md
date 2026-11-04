@@ -1,6 +1,6 @@
 # Repositories
 
-Each of the eleven tables has one repository, a Data Access Object that holds all of
+Each of the twelve tables on [Data model](data-model.md) has one repository, a Data Access Object that holds all of
 that table's SQL. Every repository takes a `sqlite3.Connection`; in practice you
 get them from a `UnitOfWork` (see [transactions](transactions.md)), so they write
 inside the caller's scope.
@@ -146,6 +146,9 @@ others.
 | | | `count_by_state(run_id)` | `dict[str, int]`; states with no findings are absent | — |
 | `RunProducerExclusionsRepository` | `producer_exclusions` | `create(record)` | `int` | `InvalidDispositionError` |
 | | | `list_by_run(run_id)` | `list[RunProducerExclusionRecord]` by id | — |
+| `ReplayDefectVerdictsRepository` | `replay_defect_verdicts` | `create(record)` | `int` | — |
+| | | `list_by_run(run_id)` | `list[ReplayDefectVerdictRecord]` in stored order | — |
+| | | `list_by_analysis(analysis_id)` | `dict[int, list[ReplayDefectVerdictRecord]]`: every replay's verdicts by run id, each in stored order | — |
 | `ArtifactRepository` | `artifacts` | `create(record)` | `int` | — |
 | | | `get_by_id(artifact_id)` | `ArtifactRecord` | `ArtifactNotFoundError` |
 | | | `list_by_analysis(analysis_id)` | `list[ArtifactRecord]` | — |

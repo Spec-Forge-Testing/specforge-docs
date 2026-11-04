@@ -1098,6 +1098,7 @@ vocabulary is closed:
 | `withheld_by_safety_guard` | A targeted endpoint was held out of the run by the safety guard (a declared side effect). |
 | `access_policy_undeclared` | A targeted endpoint drew no requests because its access policy was not declared, so the run could not tell what to probe. |
 | `access_preconditions_unmet` | A targeted endpoint had an access policy the run could not cross: no producer, no role holder, no owner, or no resource it could create. |
+| `stateful_endpoints_unsent` | A `stateful` run never sent a targeted endpoint: the value it consumes was never produced, or the exploration never drew it. Its `unprobed_reason` says which, and it does not count as unreached. |
 | `run_cancelled` | The run was cancelled before it finished, so its evidence is partial. |
 | `run_truncated` | The run was cut short before it exhausted its plan, even when every targeted endpoint received requests. |
 | `endpoints_unreached` | A targeted endpoint never received a request for a reason the rows above do not cover. |

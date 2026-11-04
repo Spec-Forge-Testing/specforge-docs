@@ -98,6 +98,7 @@ each built on first use and bound to that connection:
 | `run_endpoint_stats` | `RunEndpointStatsRepository` | [`run_endpoint_stats`](data-model.md#run_endpoint_stats) |
 | `findings` | `FindingsRepository` | [`findings`](data-model.md#findings) |
 | `producer_exclusions` | `RunProducerExclusionsRepository` | [`run_producer_exclusions`](data-model.md#run_producer_exclusions) |
+| `replay_defect_verdicts` | `ReplayDefectVerdictsRepository` | [`replay_defect_verdicts`](data-model.md#replay_defect_verdicts) |
 | `artifacts` | `ArtifactRepository` | [`artifacts`](data-model.md#artifacts) |
 
 A `UnitOfWork` has no `commit()`: the scope that opened it commits. No

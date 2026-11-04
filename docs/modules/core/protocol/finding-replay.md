@@ -175,7 +175,10 @@ answered.
   change that hides the defect without fixing it, also reads `possibly_resolved`.
 - **Controls are not resent.** `controls_resent` is `false`: a finding's control
   requests are not part of its replay.
-- **An analysis-wide replay has no witnesses.** `replay` re-sends a whole recorded
-  run and rules each recorded request on its own
-  ([Replay verdicts](vocabularies.md#replay-verdicts)). When every recorded request
-  violated something, nothing in it plays the witnesses' part.
+- **An analysis-wide replay sends no witnesses of its own.** `replay` re-sends a
+  whole recorded run, and its recorded requests that were not findings play the
+  witnesses' part: a defect reads `possibly_resolved` only behind one of the same
+  identity that still answers as recorded, and never when its credentials are now
+  refused ([Replay verdicts](vocabularies.md#replay-verdicts)). When every recorded
+  request violated something, nothing in it vouches for the server, and nothing
+  reads resolved.

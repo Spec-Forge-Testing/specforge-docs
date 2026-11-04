@@ -1,13 +1,13 @@
 # Data model
 
-Storage keeps its data in sixteen SQLite tables, built by its [migrations](migrations.md). This
-page covers the eleven of the run hierarchy and the contract cache; the five a finding gathers
+Storage keeps its data in seventeen SQLite tables, built by its [migrations](migrations.md). This
+page covers the twelve of the run hierarchy and the contract cache; the five a finding gathers
 after its run are on [Finding follow-up records](finding-records.md). Storage exposes each one
 as a frozen pydantic record. A record's fields are exactly its table's columns, in order: the
 repository derives its column list from the record, and a test compares that list with the
 columns SQLite reports. So each table below documents the schema and the record at once.
 
-Ten tables form the project → analysis → run hierarchy drawn below. The eleventh,
+Eleven tables form the project → analysis → run hierarchy drawn below. The twelfth,
 [`inferred_contracts`](#inferred_contracts), stands outside it: the cache of the contracts
 the inference producer already paid for, keyed by what determines the prompt.
 
@@ -23,6 +23,8 @@ erDiagram
     runs ||--o{ findings : "records"
     analysis_endpoints |o--o{ findings : "located at"
     runs ||--o{ run_producer_exclusions : "drops"
+    runs ||--o{ replay_defect_verdicts : "rules on"
+    findings ||--o{ replay_defect_verdicts : "ruled by"
     analyses |o--o{ artifacts : "recipe files"
     runs |o--o{ artifacts : "run files"
 ```
@@ -41,7 +43,7 @@ foreign key reaches `inferred_contracts`, so no delete in the hierarchy touches 
   serialized JSON, and its record field says so. Storage never parses it.
 - **A missing fact is NULL.** `run_endpoint_stats` never stores an empty JSON list or object.
 - **No secondary indexes.** Only those SQLite creates for primary keys and UNIQUE constraints.
-- **Booleans are integers.** `is_original`, `critical`, `compressed`: `0`/`1`, a `bool` in the record.
+- **Booleans are integers.** `is_original`, `critical`, `compressed`, `replay_request_recorded`: `0`/`1`, a `bool` in the record.
 
 ## Tables
 
@@ -142,6 +144,7 @@ shrinking; a replay re-executes that trace without generating anything new.
 | `inference_input_tokens` | INTEGER | yes | — | Input tokens the run's inferences really consumed; NULL when the run had no inference producer. |
 | `inference_output_tokens` | INTEGER | yes | — | Output tokens the run's inferences really produced; NULL when the run had no inference producer. |
 | `inference_cost_usd` | REAL | yes | — | What the run's inferences really cost, in US dollars; NULL when the run had no inference producer or the model is unpriced. |
+| `replay_recorded_defects` | INTEGER | yes | — | How many [defect verdicts](#replay_defect_verdicts) a replay stored with its run, `0` for a replay of a run that confirmed nothing; NULL for a run that is no replay, and for a replay stored before its verdicts were kept, so an empty verdict table never reads as a replay that ruled on nothing. Not negative. |
 
 Constraints: `UNIQUE (analysis_id, ordinal)`; `status` and `oracle_scope` CHECK in their
 [closed vocabularies](#closed-vocabularies); the truncation columns are [paired](#paired-columns).
@@ -202,7 +205,7 @@ field, a [`LatencyRecord`](#value-objects), sampling only requests that reached 
 | `latency_p50_ms` | REAL | no | `0` | `latency.p50_ms`: 50th percentile (nearest-rank). |
 | `latency_p95_ms` | REAL | no | `0` | `latency.p95_ms`: 95th percentile (nearest-rank). |
 | `latency_p99_ms` | REAL | no | `0` | `latency.p99_ms`: 99th percentile (nearest-rank). |
-| `starved_identities` | TEXT | yes | — | JSON list of the identity labels the budget could not fund here. |
+| `starved_identities` | TEXT | yes | — | JSON list of the identity labels a phase's budget could not fund here: the union of `budget_by_phase`'s `starved`. |
 | `undecided_rules` | TEXT | yes | — | JSON list of the ids of declared rules evaluated here that the run could never decide. |
 | `held_back_by` | TEXT | yes | — | The risk flag that kept the safety guard from probing the endpoint; NULL when it was probed. |
 | `held_back_via` | TEXT | yes | — | The id of the endpoint whose risk flag held this one back, its own id when its own flag did; NULL exactly when `held_back_by` is. |
@@ -215,7 +218,7 @@ field, a [`LatencyRecord`](#value-objects), sampling only requests that reached 
 | `by_phase` | TEXT | yes | — | JSON object: phase → requests at this endpoint drawn for it; NULL when none were counted. |
 | `findings_by_phase` | TEXT | yes | — | JSON object: phase → raw findings at this endpoint raised by its traffic; NULL when none were counted. |
 | `by_attack_family` | TEXT | yes | — | JSON object: attack family → requests at this endpoint that carried it; NULL when none did. |
-| `budget_by_phase` | TEXT | yes | — | JSON object: phase → `{planned, carried_in}`, the examples planned for it and those an earlier phase of the same identity left it; NULL when the endpoint had no pass to plan. |
+| `budget_by_phase` | TEXT | yes | — | JSON object: phase → `{planned, carried_in, starved}`, the examples planned for it, those an earlier phase of the same identity left it, and the identities it left with none; `starved` is absent in a row written before it was kept, and reads back `[]`. NULL when the endpoint had no pass to plan. |
 
 Constraints: `UNIQUE (run_id, analysis_endpoint_id)`; `truncation_detail` only with a
 `truncation_reason`; `held_back_by` and `held_back_via` [paired](#paired-columns). A cancellation before the endpoint started is the run's cut, not its own.
@@ -255,6 +258,8 @@ reproducer: `status_code`, `minimal_payload`, `sanitized_headers` and `response_
 | `latency_ms` | REAL | yes | — | How long the response took, in milliseconds. |
 | `observation` | TEXT | yes | — | JSON object of what the oracle expected and observed, where, and its marker. |
 | `control` | TEXT | yes | — | JSON object of the control request the finding was judged against: its status, latency and error; NULL unless a control was sent. |
+| `replay_request_recorded` | INTEGER | yes | — | Whether the trace its run recorded holds the request the finding was reported from, matched when the finding is written against the trace as a replay later reads it; NULL for a finding stored before it was kept. |
+| `replay_matcher_version` | INTEGER | yes | — | The version of the trace matcher that gave `replay_request_recorded`, at least `1`; NULL exactly when that answer is. A reader whose matcher has another version treats the answer as unknown. |
 
 Constraints: `analysis_endpoint_id` is `ON DELETE SET NULL`. `phase` and `state` are free
 text: the engine owns those vocabularies, and storage does not CHECK them. Neither a finding's
@@ -280,6 +285,25 @@ catalog.
 | `disposition` | TEXT | no | — | What the run did with the endpoint: `schema_only` or `withheld`. |
 
 Constraints: `disposition` CHECK in its [two values](#closed-vocabularies).
+
+### `replay_defect_verdicts` — `ReplayDefectVerdictRecord` { #replay_defect_verdicts }
+
+What a replay concluded about each defect the recorded run confirmed: one row per
+confirmed finding of the analysis's original run, written with the replay's run in the
+same transaction. The core reads them back as `get_run`'s
+[`replay`](../core/protocol/run-detail.md#replay), and `compare_runs` against the replay
+reads them instead of its report.
+
+| Column | Type | Null | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `id` | INTEGER | no | — | Primary key, assigned by the database; the order the replay stored its verdicts in. |
+| `run_id` | INTEGER | no | — | The replay (`runs.id`). |
+| `finding_id` | INTEGER | no | — | The confirmed finding of the recorded run it rules on (`findings.id`). |
+| `verdict` | TEXT | no | — | The replay's [verdict](../core/protocol/vocabularies.md#replay-verdicts): `present`, `possibly_resolved` or `inconclusive`. |
+
+Constraints: `UNIQUE (run_id, finding_id)`; both foreign keys `ON DELETE CASCADE`;
+`verdict` CHECK in the three values of `REPLAY_VERDICTS`, enforced by the schema alone. An
+index on `finding_id` serves a finding's lookup.
 
 ### `artifacts` — `ArtifactRecord` { #artifacts }
 

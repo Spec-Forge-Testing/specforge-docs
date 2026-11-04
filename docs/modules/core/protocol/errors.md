@@ -111,6 +111,30 @@ raise them. Together with the protocol-level codes, these are the complete set.
 | `REPO_ROOT_INVALID` | The repository to trace does not exist or is not a directory |
 | `STATIC_ANALYSIS_REQUIRED` | A finding's handler code was needed and could not be reached: its run traced no tree, or tracing its endpoint there found no handler |
 
+#### Why an endpoint could not be resolved { #analysis-failure-reasons }
+
+When static analysis cannot resolve an endpoint, the core publishes a closed `code`
+and a `reason`: an English sentence it writes for that code, naming the endpoint and
+what the code knows. The same pair travels in the `endpoint_failed` event, in
+`analyze_endpoints`' `failures`, in `ENDPOINT_ANALYSIS_FAILED` and
+`STATIC_ANALYSIS_REQUIRED` (`data.reason` and the message), and in
+`estimate_inference`'s `untraced`. Branch on `code`; show `reason` as it comes.
+
+| `code` | `reason`, for `GET /articles` |
+| --- | --- |
+| `CONTROLLER_NOT_FOUND` | No file in the scanned repository declares GET /articles. |
+| `FRAMEWORK_ROUTE` | No file declares GET /articles: the framework publishes that route by itself. |
+| `AMBIGUOUS_CONTROLLER` | More than one file declares GET /articles: a.py, b.py. |
+| `HANDLER_NOT_FOUND` | a.py declares GET /articles, but the function that handles it could not be named. |
+| `TARGET_NODE_NOT_FOUND` | The function get_article, behind GET /articles, was not found in a.py. |
+| `UNSUPPORTED_LANGUAGE` | The code behind GET /articles is in a .rs file (a.rs), a language the analysis does not read. |
+| `SYNTAX_PARSE_ERROR` | a.py, which holds the code behind GET /articles, could not be parsed. |
+| `SOURCE_UNREADABLE` | a.py, which holds the code behind GET /articles, could not be read. |
+
+File paths are written as the analysis found them, with the separator of the
+machine the core runs on. `UNSUPPORTED_LANGUAGE` leaves out the file in brackets
+when the analysis named none.
+
 ### Execution
 
 | `data.code` | When |
@@ -123,8 +147,8 @@ raise them. Together with the protocol-level codes, these are the complete set.
 | `INFERENCE_APPROVAL_REQUIRED` | A run has inferences to pay for while `inference.require_approval` is on, and its `producer.approval_token` is missing or stale; `data`: `reason` (`missing` or `stale`), `estimate` (as [`estimate_inference`](operations.md#estimate-inference) answers it). Refused before any inference; in `run_pipeline` it fails the `inference` stage with the same code and `data` |
 | `EXECUTION_FAILED` | The run failed while executing |
 | `REBUILD_FAILED` | The API under test could not be built and started again before its replay, so the replay was not sent |
-| `REPLAY_NOT_REPRODUCIBLE` | The recorded trace cannot be replayed against the target; also a `replay_finding` of a finding that cannot be sent alone: a stateful one, which needs its prior requests, or a `refuted` one, which is not a defect. Its `reason` says to replay the analysis instead |
-| `SIDE_EFFECTS_CONSENT_REQUIRED` | A `replay` of a recording that needs [consent](operations.md#replay-consent) did not pass `allow_side_effects`; refused before any request is sent. `data`: `analysis_id`, `parameter` (`allow_side_effects`), `reason` (`recorded_with_side_effects` or `safety_breached`) |
+| `REPLAY_NOT_REPRODUCIBLE` | The recorded trace cannot be replayed against the target; also a `replay_finding` or `verify_finding_fix` of a finding that cannot be sent alone: a stateful one, which needs its prior requests (its `reason` says to replay the analysis instead), a `refuted` one, which is not a defect, one whose trace was pruned, or one whose request is not in the trace. For those four, `data.reason` is the refusal (`stateful`, `refuted`, `trace_pruned` or `not_in_trace`), as each finding's [`replay_alone`](run-detail.md#replay-alone) announces it ahead; every other cause carries no `reason` |
+| `SIDE_EFFECTS_CONSENT_REQUIRED` | A `replay`, `replay_finding` or `verify_finding_fix` of a recording that needs [consent](operations.md#replay-consent) did not pass `allow_side_effects`; refused before any request is sent. `data`: `analysis_id`, `parameter` (`allow_side_effects`), `reasons` (every case that applies, most severe first: `safety_breached`, then `recorded_with_side_effects`) and `reason` (the first of `reasons`) |
 
 ### Results and retention
 

@@ -28,10 +28,19 @@ finds the finding's request in its analysis's recorded trace and sends it at onc
 under the analysis's recipe, behind up to two recorded reads that vouch for the
 server's environment, its **witnesses**: how a fix applied since is checked. How
 the verdict is reached, and what each `inconclusive` reason asks of you, is on
-[Finding replay verdicts](finding-replay.md). A finding
-that needed earlier requests to build its state, or whose request is not in the
-trace, is `REPLAY_NOT_REPRODUCIBLE`, and so is a `refuted` one; an unknown one is
+[Finding replay verdicts](finding-replay.md). An unknown finding is
 `FINDING_NOT_FOUND`.
+
+A finding that needed earlier requests to build its state, a `refuted` one, one
+whose analysis's trace was pruned, and one whose request is not in the trace are
+`REPLAY_NOT_REPRODUCIBLE`, with `data.reason` `stateful`, `refuted`,
+`trace_pruned` or `not_in_trace`. Every finding of a `stateful` analysis is refused
+as `stateful`, an unconfirmed one too. Each finding announces that
+answer ahead in [`replay_alone`](run-detail.md#replay-alone), by the same rule. The
+trace is looked up before the consent the recording needs is checked: a finding
+whose request is not there is `REPLAY_NOT_REPRODUCIBLE` even when the call also
+lacks `allow_side_effects`. A recording that needs consent, called without it, is
+then [`SIDE_EFFECTS_CONSENT_REQUIRED`](operations.md#replay-consent).
 
 A `flaky` or `unverified` finding of a stateless run has no minimal payload, so its
 replay re-sends the first recorded request at its endpoint, in its phase, under its
@@ -134,8 +143,10 @@ finding, `revert_finding_fix` takes it out.
   the service; otherwise, or when nothing can rebuild it, `check_command`
   (`fix.check_command`) or `host` (the toolchain the manifest nearest the edited
   file names). A build that passed, or none that could run, is followed by the
-  replay `replay_finding` sends. A replay that would be refused
-  `SIDE_EFFECTS_CONSENT_REQUIRED` is refused before anything is built.
+  replay `replay_finding` sends. A replay that would be refused is refused before
+  anything is built, with the same code: `REPLAY_NOT_REPRODUCIBLE` for a `refuted`
+  or a stateful finding, or one whose request is not in the trace, and
+  `SIDE_EFFECTS_CONSENT_REQUIRED` for a recording that needs consent.
 - **`revert_finding_fix`** takes `finding_id` and `fix_id`, undoes the fix the same
   two ways, and answers `reverted` or `conflict`.
 
@@ -148,6 +159,42 @@ finding, `revert_finding_fix` takes it out.
 | `fix_status` | `applied`, or `reverted_check_failed` when a compiler error is in a file the fix edited and the fix was taken out again. Any other failure leaves the fix in. |
 | `build` | `status` (`passed`, `failed`, `skipped`), `runner`, `command`, `reason` (why skipped), `failure` (`exit_code`, `timed_out`, `not_ready`), `output` (the last 40 lines), `errors` (the compiler's lines at the tree's paths), `in_fix`, `repeated` (the same errors the previous refused fix had), `duration_ms`. `null` when cancelled. |
 | `replay` | `replay_finding`'s answer; `null` when the build failed or the operation was cancelled. |
+
+## Explaining and fixing an unconfirmed finding { #unconfirmed }
+
+`estimate_finding_explanation`, `explain_finding`, `estimate_finding_fix` and
+`propose_fix` take a finding in any state: `confirmed`, `flaky`, `unverified` or
+`refuted`. The wire is the same for all four states; what changes is what the model
+is told.
+
+- **The model is told what the state means.** A `refuted` finding is probably not a
+  bug: its control request showed the same signal without the suspicious input. A
+  `flaky` or `unverified` one is a possible defect that could not be confirmed. A
+  `confirmed` one is presented as a defect. The explanation reads accordingly, so a
+  client needs no warning of its own.
+- **No reproducer, no payload.** An unconfirmed finding usually has no minimal
+  payload; the model is told it was not kept.
+- **A refuted finding's fix may be empty.** `propose_fix` may conclude there is
+  nothing to change: the answer is `completed`, the fix's `diff` is `""` and its
+  `files` `[]`, and `rationale` says why. Show `rationale` as the answer and offer
+  no "apply": `apply_finding_fix` refuses such a fix with
+  `FIX_EMPTY_OR_UNAPPLICABLE`.
+- **Verifying needs a replay.** `verify_finding_fix` refuses a `refuted` or a
+  stateful finding with `REPLAY_NOT_REPRODUCIBLE` before anything is built, as
+  `replay_finding` does.
+- **The state and the control are part of the cache key.** An explanation, the
+  fixed template's one included, and a fix are reused only for a finding in the
+  same state, judged by the same kind of control: whether it had one, where its
+  answer came from, and whether it failed, never the status it got back. A
+  `refuted` finding never reuses what a `confirmed` one with the same signature
+  was answered, and a chaos attack whose clean request after it failed too never
+  reuses what one that recovered was answered.
+- **Stored answers are paid for once more.** The prompts carry the state and the
+  control, so explanations and fixes a model gave before are asked for again the
+  first time they are needed; the fixed template's explanations are rewritten at no
+  cost.
+
+## Mending a fix the build refused { #mend-build }
 
 What a failed build refused the fix with is kept on the proposed fix as
 `build_failure`, cleared once a build of it passes. `propose_fix` and

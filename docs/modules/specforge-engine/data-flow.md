@@ -400,10 +400,12 @@ sum to the run's totals in every mode) plus a `LatencyStats`
 whose fields all default to zero, so `LatencyStats()` is a valid "no samples"
 value — an endpoint can carry a confirmed crash report with no surviving
 requests to time. It also carries `starved_identities`: the labels of declared
-identities whose share of the endpoint's budget rounded to zero, so they got no
-requests. It is empty unless the endpoint declares more identities than its
-per-phase budget can fund, and only modes that split budget by identity
-(`stateless`, `performance`) ever populate it — the others leave it empty. This
+identities whose share of a phase's budget at the endpoint rounded to zero, the
+union of every `budget_by_phase` entry's `starved`. Such an identity got no examples
+in at least one phase, and may still have been sent requests, and found defects, in
+the others. It is empty unless the endpoint declares more identities than a phase's
+budget can fund, and only modes that split budget by identity (`stateless`,
+`performance`) ever populate it — the others leave it empty. This
 turns an identity that would otherwise be dropped in silence into a reported
 signal. It also carries `undecided_rules`: the ids of any declared rules the
 oracle evaluated at the endpoint and could never decide — undetermined on every
@@ -425,7 +427,7 @@ phase ([ADR-144](adr/engine.md#adr-144)):
 | `by_phase` | the endpoint's requests per `Phase`; they sum to `requests` |
 | `findings_by_phase` | its `findings_raw` per phase of the traffic that produced them, a load step's verdict counted under `valid`; empty where raw findings are not observed (`stateful`, `replay`) |
 | `by_attack_family` | its requests whose intent names an attack family, per `AttackFamily` |
-| `budget_by_phase` | each planned phase's `PhaseBudget`: `planned`, the share it was planned, and `carried_in`, what an earlier pass of the same identity left it ([ADR-142](adr/engine.md#adr-142)); empty in modes that do not plan by phase |
+| `budget_by_phase` | each planned phase's `PhaseBudget`: `planned`, the share it was planned, `carried_in`, what an earlier pass of the same identity left it ([ADR-142](adr/engine.md#adr-142)), and `starved`, the declared identities that phase's share left with zero examples, sorted. A phase planned with zero examples is listed, `planned` `0`, when the run declares identities, every one of them starved. Empty in modes that do not plan by phase |
 
 Last, `truncation` is the `EndpointTruncation` (a `reason` and an optional
 `detail`) that ended the endpoint's own pass; it is `None` when the pass ran to

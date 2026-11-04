@@ -4,7 +4,7 @@
 refused `HANDSHAKE_REQUIRED`.
 
 ```json
-{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.2.1"}}
+{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.2.2"}}
 ```
 
 The response carries the protocol version, the server's identity, what this
@@ -13,7 +13,7 @@ in, and the options a run can be asked for:
 
 ```json
 {"jsonrpc":"2.0","id":1,"result":{
-  "protocol_version":"0.2.1",
+  "protocol_version":"0.2.2",
   "server":{"name":"specforge-core","version":"…","frozen":false},
   "capabilities":{…},
   "catalog":{…},
@@ -74,8 +74,8 @@ matrix and how it is derived are on [Fuzz options](fuzz-options.md).
 **The core serves a range within its own series.** A client is served when its
 `protocol_version` has the core's `major.minor` and a patch between a declared
 floor and the core's own. Each part compares as a number, never as text:
-`0.1.10` is newer than `0.1.9`. This core speaks `0.2.1` and serves `0.2.0`
-up to `0.2.1`: no `0.1.x` client is served. It always answers `hello` with its
+`0.1.10` is newer than `0.1.9`. This core speaks `0.2.2` and serves `0.2.0`
+up to `0.2.2`: no `0.1.x` client is served. It always answers `hello` with its
 own version, and a frontend ignores the keys it does not know.
 
 Anything else — another series, a patch outside the range, or a
@@ -122,8 +122,86 @@ neither. See [ADR-095](../adr/protocol.md#adr-095).
 ## Changelog
 
 The report document that `fuzz`, `replay` and `run_pipeline` answer with is
-`schema_version` 1.25. The protocol's own README holds the full entry for each
+`schema_version` 1.26. The protocol's own README holds the full entry for each
 version; the lines below are the summary.
+
+- **0.2.2** — A run's detail counts its unconfirmed defects once, says in which
+  phase an identity got no examples, keeps a replay's verdicts, and says ahead
+  whether a finding can be replayed alone. **Additive on the wire**: this core
+  serves `0.2.0` up to `0.2.2`. It ships with report `1.26`.
+    - *Added:* `metrics.unconfirmed_unique` in `get_run` (`total`, `flaky`,
+      `unverified`, `refuted`): the run's unconfirmed defects, each counted once by
+      the identity `compare_runs` pairs defects by, leaving out a defect the run
+      also confirmed. `findings_flaky`, `findings_unverified` and
+      `findings_refuted` count occurrences ([The finding counters](run-detail.md#metrics)).
+    - *Added:* `starved` in each phase of an endpoint's `budget_by_phase`, in
+      `get_run` and the report document; a phase planned with zero examples is
+      listed when the run declares identities. `starved_identities` is the union
+      over the phases ([Budget per phase](run-detail.md#budget-by-phase)).
+    - *Changed:* an analysis's replay rules a recorded request `possibly_resolved`
+      only behind a witness, an earlier recorded success of the same identity that
+      answered as recorded, and never when the replay now refuses its credentials
+      (`401` or `403`). The defect recorded there is `inconclusive` with it, in
+      `replay`'s `verdicts`, `defect_verdicts` and `judged`, and in `compare_runs`
+      against that replay. A replay stored before keeps its verdicts
+      ([Replay verdicts](vocabularies.md#replay-verdicts)).
+    - *Added:* `finding_id` on each entry of a replay's `defect_verdicts`, in the
+      `replay` answer, the report document and `get_run`. `judged.recorded_defects`
+      counts the recorded run's confirmed findings, one per phase.
+    - *Added:* `replay` in `get_run` (`judged` and `defect_verdicts`, `null` for a
+      run that is no replay, for a replay stored before and for one whose stored
+      verdicts are incomplete), and `run.judged` in
+      `list_runs` and `get_run` ([A stored replay's verdicts](run-detail.md#replay)).
+    - *Changed:* `compare_runs` against a replay reads its verdicts from the store:
+      pruning its report no longer leaves every defect `inconclusive`. A replay
+      stored before still reads its report and can still raise a
+      `replay_report_*` caveat.
+    - *Added:* `replay_alone` (`possible`, [`reason`](vocabularies.md#replay-alone-reason):
+      `stateful`, `refuted`, `trace_pruned` or `not_in_trace`) on every finding, in
+      `get_run` and `get_finding`. Every finding of a `stateful` analysis is
+      `stateful`. It is `null` when not known ahead: stored before, or by a core
+      whose trace matcher had another version. It covers neither consent nor the
+      live credentials ([Replaying a finding alone](run-detail.md#replay-alone)).
+    - *Added:* `data.reason` in `REPLAY_NOT_REPRODUCIBLE` when a finding is refused
+      for one of `replay_alone`'s reasons; every other cause carries none.
+    - *Changed:* storing a run reads its trace back from the bytes it stores: a
+      trace that does not read back now fails storing the run, instead of every
+      later replay of it.
+    - *Changed:* `replay_finding` and `verify_finding_fix` look for the finding's
+      request in the trace before they ask for consent: a finding whose request is
+      not there is `REPLAY_NOT_REPRODUCIBLE` where it was
+      `SIDE_EFFECTS_CONSENT_REQUIRED`.
+    - *Added:* `reasons` in `SIDE_EFFECTS_CONSENT_REQUIRED`'s `data`: every case
+      that applies, `safety_breached` before `recorded_with_side_effects`; `reason`
+      is the first of them, so a recording made with `allow_side_effects` that
+      also breached the guard reads `safety_breached` where it read
+      `recorded_with_side_effects` ([Replay consent](operations.md#replay-consent)).
+    - *Fixed:* an endpoint with a finding that only a shrink reached, as a
+      `stateful` shrink can, counts as exercised: it is in `coverage.exercised` and
+      the scope `compare_runs` rules by, and no longer in `endpoints_unreached`. Its
+      `requests` still count exploration only.
+    - *Added:* [`link_value_never_produced`](vocabularies.md#unprobed-reason) and
+      `rule_never_drawn` in `unprobed_reason` and `vocabulary.unprobed_reasons`:
+      why a `stateful` run that was not cut short never sent a targeted endpoint;
+      with them, the signal cause `stateful_endpoints_unsent`, named after both,
+      and those endpoints leave `endpoints_unreached`. `rule_never_drawn` also
+      covers a rule whose arguments could never be drawn.
+    - *Changed:* `estimate_finding_explanation`, `explain_finding`,
+      `estimate_finding_fix` and `propose_fix` take a finding in any state, and the
+      model is told what its `state` means. `propose_fix` may answer a `refuted`
+      finding with an empty fix; `apply_finding_fix` refuses it with
+      `FIX_EMPTY_OR_UNAPPLICABLE`. The state, and the control the finding was
+      judged by (whether it had one, its source, whether it failed), are part of
+      the explanation's and the fix's cache key ([Explaining and fixing an unconfirmed finding](replay-and-fixes.md#unconfirmed)).
+    - *Changed:* why static analysis could not resolve an endpoint is an English
+      sentence the core writes for its `code`, in `endpoint_failed`,
+      `analyze_endpoints`' `failures`, `ENDPOINT_ANALYSIS_FAILED`,
+      `STATIC_ANALYSIS_REQUIRED` and `estimate_inference`'s `untraced`. The `code`
+      is unchanged ([the sentences](errors.md#analysis-failure-reasons)).
+
+- **Report 1.26** — Additive; it ships with protocol `0.2.2`. Adds `starved` to
+  each phase of `endpoints[].budget_by_phase`, and `finding_id` to each entry of
+  `replay.defect_verdicts`; a report written before `1.26` has none.
 
 - **0.2.1** — A finding's replay says what it judged and why it could not tell,
   and earns `possibly_resolved` behind witnesses. **Additive on the wire**: this

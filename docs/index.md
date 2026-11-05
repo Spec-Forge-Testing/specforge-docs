@@ -53,6 +53,7 @@ flowchart TD
     - [Core Concepts](user-guide/concepts.md) — what Spec Forge does and the words it uses.
     - [Spec Forge CLI](user-guide/specforge-cli.md) — the packaged client and its two ways to run.
     - [Interactive use](user-guide/cli/interactive.md) — run operations and read their output.
+    - [Desktop app](user-guide/desktop/index.md) — plan, start and read runs in a window.
 
 -   :material-hammer-wrench:{ .lg .middle } __I want to understand or extend the code__
 
@@ -82,7 +83,7 @@ The site is organized by the question you are trying to answer:
 |---|---|
 | **Getting started** | Install Spec Forge and complete a first run. |
 | **Core concepts** | Understand the pipeline, saved runs and vocabulary before using the CLI. |
-| **Using Spec Forge** | Run the shipped client, the core REPL, and read reports. |
+| **Using Spec Forge** | Run the shipped client, the desktop app, the core REPL, and read reports. |
 | **Configuration** | Configure providers and environment variables. |
 | **Help** | Diagnose setup and runtime problems. |
 | **Architecture** | Understand boundaries and data flow across the monorepo. |

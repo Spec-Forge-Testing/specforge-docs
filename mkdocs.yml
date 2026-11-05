@@ -137,6 +137,11 @@ nav:
       - Fixing findings: user-guide/cli/fixing-findings.md
       - CLI operation reference: user-guide/specforge-cli-reference.md
       - Run Report: user-guide/reports.md
+      - Desktop app:
+          - Overview: user-guide/desktop/index.md
+          - New run: user-guide/desktop/new-run.md
+          - LLM rules and side effects: user-guide/desktop/llm-rules-and-side-effects.md
+          - Run detail: user-guide/desktop/run-detail.md
   - Configuration:
       - LLM Providers: user-guide/llm-providers.md
       - Environment Variables: user-guide/environment.md

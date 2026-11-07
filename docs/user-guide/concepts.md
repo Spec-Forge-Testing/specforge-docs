@@ -173,10 +173,10 @@ The `fuzz` command has five modes, chosen with `--mode`, plus the separate `repl
   slower than the threshold you set. With `--concurrency-steps` it instead climbs a
   concurrency ladder — replaying each endpoint across increasing load levels — and flags any
   whose latency grows as the load grows.
-- **`--mode resilience`** sends a fixed battery of malformed-transport requests (slow, partial,
-  oversized, deeply nested, wrong content type) against a valid request to each endpoint, and
-  flags any endpoint that answers with a server error, hangs or crashes instead of refusing
-  cleanly. A server error is resent before it is reported, so an endpoint that fails at random
+- **`--mode resilience`** sends each endpoint its valid request, then 10 broken versions of it
+  (cut bodies, lying lengths, deep nesting, a wrong content type) and 5 repeats of it. Any
+  answer that is not a 5xx counts as handled; a server error is a finding, and so is a dropped
+  connection on a request the server could read whole. A server error is resent before it is reported, so an endpoint that fails at random
   is reported flaky.
 - **`--mode auth`** crosses the identities you declare against each endpoint's access policy
   and flags a caller that succeeds where the policy forbids it. An API whose contract

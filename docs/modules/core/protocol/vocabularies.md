@@ -177,22 +177,24 @@ never sent however long the exploration runs.
 
 Why a run's `signal` is `degraded`, in the order they render. In `get_run` and
 the report document's `run`, beside `signal` (`clean` or `degraded`); `[]` when
-the signal is not `degraded`.
+the signal is not `degraded`. `vocabulary.signal_causes` lists each value with its
+label, in this order, short enough for a verdict line, so a client labels a cause
+without a table of its own ([vocabulary](handshake.md#vocabulary)).
 
-| Value | Meaning |
-| --- | --- |
-| `no_responses` | No request reached the target: every attempt was an availability, timeout or unsendable-request failure. |
-| `requests_unanswered` | Some requests reached the target, but an endpoint left at least three of its requests, and at least 5 % of them, with a timeout or an availability failure, so what the run says of that endpoint rests on the rest. `metrics.by_category` and the endpoint's `by_category` count them. Never raised beside `no_responses`. |
-| `endpoints_excluded` | One or more declared endpoints were excluded from this run. |
-| `contracts_unproduced` | One or more endpoints of a run with a producer are in `producer_exclusions`, whatever their `disposition`: the producer left them without a contract, so they ran on their schema alone or were withheld. An endpoint the static analysis could not trace counts too. |
-| `withheld_by_safety_guard` | The safety guard held back one or more targeted endpoints, so they were never probed: a declared risk flag, or `assumed_write` (an unsafe method no producer judged a write for). |
-| `access_policy_undeclared` | One or more targeted endpoints declare no access policy, so the `auth` run verified nothing there. |
-| `access_preconditions_unmet` | One or more targeted endpoints had an access policy the run could not cross: no producer, no role holder, no owner, no resource it could create, or a state link into a reserved header; each one's [`unprobed_reason`](#unprobed-reason) says which. |
-| `stateful_endpoints_unsent` | One or more targeted endpoints were never sent by a `stateful` run: the value they consume was never produced, or the exploration never drew them or their arguments; each one's [`unprobed_reason`](#unprobed-reason) says which. Those endpoints do not count toward `endpoints_unreached`. |
-| `run_cancelled` | The run was cancelled before it reached every targeted endpoint. |
-| `run_truncated` | The run's `run.status` is `truncated`: it was cut short before its plan was exhausted, even when every targeted endpoint received requests. `run.truncation` says why. It can stand beside `endpoints_unreached`. |
-| `endpoints_unreached` | One or more targeted endpoints never received a request. |
-| `load_unjudged` | One or more endpoints' load profiles judged no step: every `degraded` is `null`, because the baseline or every step was measured on no samples. |
+| Value | Label | Meaning |
+| --- | --- | --- |
+| `no_responses` | No request reached the target | No request reached the target: every attempt was an availability, timeout or unsendable-request failure. |
+| `requests_unanswered` | Some requests went unanswered | Some requests reached the target, but an endpoint left at least three of its requests, and at least 5 % of them, with a timeout or an availability failure, so what the run says of that endpoint rests on the rest. `metrics.by_category` and the endpoint's `by_category` count them. Never raised beside `no_responses`. |
+| `endpoints_excluded` | Some endpoints were excluded | One or more declared endpoints were excluded from this run. |
+| `contracts_unproduced` | Some endpoints ran without rules | One or more endpoints of a run with a producer are in `producer_exclusions`, whatever their `disposition`: the producer left them without a contract, so they ran on their schema alone or were withheld. An endpoint the static analysis could not trace counts too. |
+| `withheld_by_safety_guard` | Held back by the safety guard | The safety guard held back one or more targeted endpoints, so they were never probed: a declared risk flag, or `assumed_write` (an unsafe method no producer judged a write for). |
+| `access_policy_undeclared` | Some endpoints declare no access policy | One or more targeted endpoints declare no access policy, so the `auth` run verified nothing there. |
+| `access_preconditions_unmet` | Some access checks could not be set up | One or more targeted endpoints had an access policy the run could not cross: no producer, no role holder, no owner, no resource it could create, or a state link into a reserved header; each one's [`unprobed_reason`](#unprobed-reason) says which. |
+| `stateful_endpoints_unsent` | Some endpoints were never sent in a flow | One or more targeted endpoints were never sent by a `stateful` run: the value they consume was never produced, or the exploration never drew them or their arguments; each one's [`unprobed_reason`](#unprobed-reason) says which. Those endpoints do not count toward `endpoints_unreached`. |
+| `run_cancelled` | Cancelled before every endpoint was reached | The run was cancelled before it reached every targeted endpoint. |
+| `run_truncated` | The run was cut short | The run's `run.status` is `truncated`: it was cut short before its plan was exhausted, even when every targeted endpoint received requests. `run.truncation` says why. It can stand beside `endpoints_unreached`. |
+| `endpoints_unreached` | Some endpoints were never reached | One or more targeted endpoints never received a request. |
+| `load_unjudged` | Some load profiles judged no step | One or more endpoints' load profiles judged no step: every `degraded` is `null`, because the baseline or every step was measured on no samples. |
 
 The signal and its causes are derived from the run's facts, both for the report
 a run answers with and when a stored run is read, so the persistence layer
@@ -235,10 +237,61 @@ producer ([the effects matrix](fuzz-options.md#effects)), listed in this order;
 | Value | When |
 | --- | --- |
 | `payloads` | The runner draws from the plan, and the strategy's phases restricted to what it takes differ from `default`'s (with their shares, when it takes every planned phase), or its attack families, its contract type or whether it omits read-only fields differ. |
-| `oracles` | The strategy turns on oracles `default` does not, and the runner's opt-in oracles judge what it sends. |
+| `oracles` | The strategy turns on oracles `default` does not, and the runner judges with them. |
 | `examples` | The examples the run would ask of each endpoint differ from `default`'s, after the runner's own cap; never for a runner that honors no count. |
 | `llm_profile` | The producer is `inference` and the strategy's LLM profile differs from `default`'s. |
 | `field_hints` | The producer is `fixture` or `inference`, the runner draws from the plan, and the strategy promotes the fields its contracts hint at where `default` does not. |
+
+`fuzz_options.changes` carries each value with its label.
+
+## `oracle_need` { #oracle-need }
+
+What a response must come with before an invariant can be judged on it
+([what a run can find](fuzz-options.md#what-a-run-can-find)), listed in this order,
+each with its label in `vocabulary.oracle_needs`. `contract`, `chaos_expectation`,
+`access_expectation` and `admitted_caller` are met by the runner and never appear
+in a variant's `invariants_when`.
+
+| Value | Label | Met when |
+| --- | --- | --- |
+| `contract` | Declared contract | The runner judges the response against the endpoint's declared responses and field schemas. |
+| `semantic_properties` | Business rules | A producer declared business rules for the endpoint. |
+| `opt_in` | Opted-in check | The strategy names an optional oracle. |
+| `poisoned_field` | Poisoned field | The strategy plans a phase that poisons one field per request, within its declared schema or outside it. No variant has a row for it: what it lets an oracle find, each variant that meets it reports anyway. |
+| `out_of_schema_field` | Field sent outside its schema | The strategy plans a phase that can send a declared field outside its schema: `boundary` (a length one past a bound), `invalid` or `mutation`, or `attack` allowing a family a field is attacked with by its type alone (`injection`, `xss`, `path_traversal`, `input_validation`, `information_disclosure`, `business_logic` or `resource_abuse`). |
+| `rule_witness` | Witness of an inferred rule | A producer infers a rule the spec does not declare, so the run's valid requests include one whose field breaks only that rule. |
+| `attack_phase` | Attack payloads | The strategy plans the `attack` phase. |
+| `reflecting_attack` | Attack payloads a page can reflect | The strategy plans the `attack` phase and allows a family a page can reflect: `xss`, `injection` or `sql_injection`. |
+| `chaos_expectation` | Chaos expectation | The runner knows what the chaos attack behind the response tolerates. |
+| `access_expectation` | Access expectation | The runner knows which caller the endpoint's access policy admits. |
+| `admitted_caller` | Admitted caller | The runner sends as a caller the endpoint admits, so no access violation names a 2xx first; `auth` sends only callers the policy refuses. |
+| `latency_sla` | Latency SLA | The run sets `load.latency_sla_ms`. |
+
+## Attack families { #attack-family }
+
+The family of payload a poisoned request carried, in a finding's
+`request.attack_family` and an endpoint's `by_attack_family`, and the families a
+strategy's `attack_families` allows. `vocabulary.attack_families` lists each with
+its label and a one-sentence summary of the payloads it sends, in this order.
+
+| Value | Label |
+| --- | --- |
+| `injection` | Injection payloads |
+| `ssrf_filesystem` | SSRF and local file payloads |
+| `auth_bypass` | Auth bypass payloads |
+| `input_validation` | Input validation payloads |
+| `deserialization` | Deserialization payloads |
+| `information_disclosure` | Information disclosure payloads |
+| `resource_abuse` | Resource abuse payloads |
+| `business_logic` | Business logic payloads |
+| `headers_cookie` | Header and cookie payloads |
+| `parser_compatibility` | Parser compatibility payloads |
+| `path_traversal` | Path traversal payloads |
+| `xss` | XSS payloads |
+| `sql_injection` | SQL injection payloads |
+
+`injection` and `sql_injection` draw from one pool of payloads, and their
+summaries say so alike.
 
 ## `category` { #category }
 

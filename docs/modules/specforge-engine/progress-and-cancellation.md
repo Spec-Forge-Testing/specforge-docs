@@ -108,6 +108,9 @@ A cancelled run returns a complete, honest `EngineRunResult`:
   the name that mode has for it. The sequence minimizer's re-sends pass the same
   gate: a cancelled minimization stops and reports the reproducer it had already
   verified, and a budget-cut failure not yet verified is flaky.
+- A stateless or performance run cancelled while [confirming](#the-confirming-stage)
+  keeps every signature it had already confirmed; the signatures still waiting
+  settle at once, unverified.
 - The shared HTTP client is closed on the way out, cancelled or not.
 
 The engine **persists nothing** — a cancelled result is returned to the caller,
@@ -160,7 +163,7 @@ listener switches on `kind` and never guesses a type:
 | `RunStarted` | `started` | `endpoints` | The run began fuzzing this many endpoints, after the safety guard held any back. |
 | `EndpointStarted` | `endpoint_started` | `endpoint_id`, `index`, `total` | Exploration of one endpoint began; `index` is 1-based. |
 | `PhaseStarted` | `phase_started` | `endpoint_id`, `phase` | The endpoint moved on to a new generation phase. |
-| `ProgressTick` | `tick` | `elapsed_s`, `sent`, `total`, `findings`; `passes`, `max_passes` in a stateful run, `None` otherwise | A snapshot of the run's absolute counters. |
+| `ProgressTick` | `tick` | `elapsed_s`, `sent`, `total`, `findings`; `passes`, `max_passes` in a stateful run, `None` otherwise; `stage` (a `RunStage`) in a stateless or performance run, with `signatures_done`, `signatures_total` while it is confirming, `None` otherwise | A snapshot of the run's absolute counters. |
 | `FindingObserved` | `finding` | `report` (the `CrashReport`), read as `endpoint_id`, `status_code`, `invariant`, `phase` | A response broke an invariant. |
 | `InfraFailure` | `infra_failure` | `endpoint_id`, `reason`, `streak`, `limit` | A transport failure advanced an endpoint's infrastructure streak. |
 | `TargetDown` | `target_down` | `base_url`, `verdict` | The run concluded the target itself is down. |
@@ -188,7 +191,7 @@ The events split into two classes, and the split is semantic, not about volume:
 
 | Class | Events | Rule |
 |---|---|---|
-| **State** | `tick` | A snapshot with **absolute** counters, never increments. It is throttled to at most one every `MIN_TICK_INTERVAL_S` (0.1 s, about ten a second) — the `ProgressEmitter` drops a tick that falls inside the window. Because each tick carries the whole state, a slow listener can drop the intermediate ones without losing anything. |
+| **State** | `tick` | A snapshot with **absolute** counters, never increments. It is throttled to at most one every `MIN_TICK_INTERVAL_S` (0.1 s, about ten a second) — the `ProgressEmitter` drops a tick that falls inside the window, unless it changes the run's `stage`. Because each tick carries the whole state, a slow listener can drop the intermediate ones without losing anything. |
 | **Fact** | every other event | Happens once and never repeats. Facts are **always** emitted, never throttled and never dropped. |
 
 The tick's counters are accumulated by the emitter as the run reports them:
@@ -200,6 +203,31 @@ run reports its progress instead through `note_passes`: `passes` is how many
 passes over the state machine it has finished, and `max_passes` is
 `STATEFUL_MAX_PASSES` (100), a ceiling the run usually stops short of, after two
 passes in a row without progress.
+
+### The confirming stage { #the-confirming-stage }
+
+A stateless or performance run ends in a stretch that announces no endpoint and no
+phase: once every endpoint is explored, it re-sends one representative of each
+finding signature to confirm and shrink it. The tick names that stretch with
+`stage`, a `RunStage`:
+
+| `RunStage` | Set by | `signatures_done`, `signatures_total` |
+|---|---|---|
+| `GENERATING` (`generating`) | `note_generating()`, when exploration starts | `None` |
+| `CONFIRMING` (`confirming`) | `note_confirming(done, total)`, when shrinking starts and after each signature settles | signatures settled (confirmed or not), out of the signatures the run set out to confirm |
+
+- A tick whose `stage` differs from the last one sent is never throttled: the
+  run's first tick says `generating`, and `confirming` with `signatures_done` `0`
+  is emitted the moment shrinking starts. A tick also follows each settled
+  signature, and each shrink attempt that starts after another finished.
+- `FindingObserved` events come once shrinking is done, all together. `sent` keeps
+  counting the re-sent requests; `total` does not plan them.
+- A run with no signature to confirm, or one that halted before shrinking
+  (cancelled, or a dead target), never reaches `confirming`.
+- A performance run's latency findings and crashes are judged without shrinking,
+  so they are not among its signatures.
+- Stateful confirms each defect as it goes and has no such stage; its ticks, like
+  replay's, leave the three fields `None`.
 
 ### What each mode emits
 

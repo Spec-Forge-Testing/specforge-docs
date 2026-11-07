@@ -65,7 +65,7 @@ missing here belongs to another module:
 | [engine.md](engine.md) | engine | Requests and their intent, oracles, findings, counters, runners, replay |
 | [measurement.md](measurement.md) | measurement | How the default numbers are measured and set, and what an inferred contract adds |
 | [findings.md](findings.md) | findings | How a finding is classified, what it observed, when a value provably breaks its contract, how findings are told apart, refuted, left unverified and redacted |
-| [strategies.md](strategies.md) | strategies | What a strategy decides, the oracles it opts into, and the traits each runner declares |
+| [strategies.md](strategies.md) | strategies | What a strategy decides, the oracles it opts into, the traits each runner declares, and how what a run can find is derived |
 | [runners.md](runners.md) | runners | How far each runner reaches: what a stateful pass draws, when the run stops and how it tells defects apart, the stateless run corpus, refuting a whole-request rejection, the resilience base request and its confirmation, links into reserved headers |
 
 ## Full index
@@ -221,3 +221,4 @@ missing here belongs to another module:
 | [ADR-191](runners.md#adr-191) | runners | A stateful pass draws the same shape whatever the target answers, the run stops after two dry passes, and one more pass aims at what it never reached |
 | [ADR-192](findings.md#adr-192) | findings | An intrinsic verdict is its own evidence; a verdict that judges needs a control |
 | [ADR-196](engine.md#adr-196) | engine | An unsafe method no producer judged is held as a write under load |
+| [ADR-199](strategies.md#adr-199) | strategies | What a run can find is derived from the engine, not listed |

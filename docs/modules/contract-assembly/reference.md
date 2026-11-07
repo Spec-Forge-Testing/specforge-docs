@@ -288,7 +288,10 @@ for endpoint in endpoints:
 ```
 
 Each `EndpointDefinition` holds `path`, `method`, `operation_id`, `parameters`
-(raw OpenAPI form), `request_body` and `responses`.
+(raw OpenAPI form), `request_body` and `responses`, plus where the contract
+serves it: `server_path`, the base path of the first entry of `servers` (`""` for
+none), and `server_paths`, the base path of every entry, in the contract's order.
+A server's variables are filled with their defaults before its path is read.
 
 ### 3. Fusion — `fuse_contract`
 

@@ -63,7 +63,7 @@ appeared.
 
 ## ADR-157 — A strategy opts into oracles, and `conformance` turns on the undeclared-field invariant { #adr-157 }
 
-**Status:** accepted · `runtime/oracles/registry.py`, `runtime/oracles/undeclared_fields.py`, `runtime/oracles/response_walk.py`, `strategy_compiler/compiler.py`, `main.py`, `profiles/builtin.py`, `models/runtime/taxonomy.py`; core `services/fuzz/projection/schema.py`
+**Status:** accepted · Superseded in part by [ADR-199](#adr-199) · `runtime/oracles/registry.py`, `runtime/oracles/undeclared_fields.py`, `runtime/oracles/response_walk.py`, `strategy_compiler/compiler.py`, `main.py`, `profiles/builtin.py`, `models/runtime/taxonomy.py`; core `services/fuzz/projection/schema.py`
 
 ### Context
 
@@ -128,7 +128,7 @@ a profile.
 
 ## ADR-159 — Runners declare their traits, the effects matrix is derived from them, and `changes` is measured against `default` { #adr-159 }
 
-**Status:** accepted · `models/runtime/runner_traits.py`, `runtime/runners/protocol.py`, `runtime/runners/registry.py`, every runner; `tests/test_runner_traits_gate.py`; core `services/deps/engine_vocabulary.py`, `services/catalog/effects.py`, `services/catalog/fuzz_options.py`
+**Status:** accepted · Superseded in part by [ADR-199](#adr-199) · `models/runtime/runner_traits.py`, `runtime/runners/protocol.py`, `runtime/runners/registry.py`, every runner; `tests/test_runner_traits_gate.py`; core `services/deps/engine_vocabulary.py`, `services/catalog/effects.py`, `services/catalog/fuzz_options.py`
 
 ### Context
 
@@ -181,3 +181,98 @@ A new runner or strategy appears in the matrix with no table to edit. The core
 publishes only the modes its `execution` parameter accepts, so the replay
 runner's traits are declared and gated but never listed. A client renders the
 codes as it likes; the protocol carries no wording.
+
+---
+
+## ADR-199 — What a run can find is derived from the engine, not listed { #adr-199 }
+
+**Status:** accepted · Supersedes in part [ADR-157](#adr-157) (an oracle's flags are read off its needs) and [ADR-159](#adr-159) (`judges_opt_in_oracles` is read off `supplies`) · `models/runtime/oracle_need.py`, `models/runtime/runner_traits.py`, `runtime/oracles/registry.py`, `runtime/oracles/builtin.py`, `runtime/oracles/reportable.py`, `strategy_compiler/supplied_needs.py`, every runner; `tests/test_invariant_claims_gate.py`, `tests/test_reachability_gate.py`; core `services/catalog/reportable.py`, `services/catalog/fuzz_options.py`
+
+### Context
+
+A run picker has to say what a run will judge: which invariants a mode, a strategy
+and a producer can surface, and what a choice would add. With no such fact on the
+wire, a client hardcodes a table of its own, invariant by mode, and such a table
+drifts from the engine at once: one promised `input_validation`
+under `smoke`, which poisons no field; attack-phase checks in `stateful`, which
+draws only valid values; `reflected_payload` only under `security`, though
+`exposure` plans the attack phase too. A client that promises a check the run
+never makes turns an absent finding into a false all-clear, and one that leaves
+out a check the run makes hides what a finding can be.
+
+### Decision
+
+**Oracles and runners declare, the engine derives.** Each oracle registration
+states the invariants it `reports` and what a response must come with before it
+can judge one, as `OracleNeeds`: a set of **alternatives**, each a set of
+`OracleNeed`s, any one of which is enough. `input_validation` judges a request
+that sent a field outside its schema or a witness of a rule a producer inferred;
+`sensitive_data_exposure` judges a response against the contract, or a poisoned
+request without it, or a witness. Each runner variant's `RunnerTraits` state
+whether the oracles' verdicts on its responses become findings
+(`reports_oracle_verdicts`), what it `reports_natively` and which needs it
+`supplies`. `NEED_SUPPLIERS` names who meets each need: the runner, the strategy,
+the producer or the run's request. `reportable_invariants` folds the two into
+`ReportableInvariants`: what the variant reports whatever the run (`always`), and
+what it adds once one need is met (`by_need`), an invariant two needs open being
+under each. `strategy_supplies` derives the needs a strategy meets from its
+profile.
+
+**Each need names one path to a finding.** A need is met by one supplier, so it says
+which request makes the finding possible: `poisoned_field` and
+`out_of_schema_field` are the strategy's draws, `rule_witness` the producer's
+witness, `admitted_caller` a runner that sends as a caller the endpoint admits.
+The streak timeout is judged by the stateless fuzzer itself, so every runner built
+on it reports `input_induced_timeout` natively.
+
+**The core publishes per variant, with the suppliers and a formula.** Each variant
+carries `invariants` and `invariants_when`; each strategy its `supplies`;
+`producer_supplies` and `request_supplies` say what a producer and a run parameter
+meet. The protocol states how a client combines them, so what a run of any mode,
+strategy, producer and parameters can find is computed from data alone.
+
+**Two gates pin the result.** The claims gate holds the declarations: every
+invariant is claimed by an oracle or a runner, every need has a supplier, no
+alternative waits on two needs a runner cannot meet, and each built-in variant's
+derived set is written out, so a change to what a mode can find is a reviewed
+change. The reachability gate holds the runs: each published pair runs its variant
+through the real runner against a target breaking the invariant and must be
+reported, and no run reports an invariant its variant does not publish for the
+needs it met.
+
+### Rejected
+
+- **A hand-written table**, in the core or in a client. It is a second copy of
+  what the oracles and runners do, and the one that already drifted.
+- **One set of needs per oracle.** An oracle reached by two different requests
+  cannot say so with one conjunction: registered with fewer needs it over-claims
+  where neither request is sent, registered with more it under-claims where one
+  is. Alternatives say both paths.
+- **A need met by several suppliers.** A strategy and a producer meeting one need
+  would hide which choice opens the finding, and a client could not tell a person
+  what to change to get it. One supplier per need keeps that answer in the data.
+- **A need per attack family on every oracle.** Only two dependencies on the
+  family of a payload change a published set, so only those are modelled:
+  `reflecting_attack`, met by a strategy that plans `attack` and allows a family in
+  `REFLECTING_FAMILIES`, and `out_of_schema_field`, met also by an `attack` that
+  allows a family a field is attacked with by its type alone. Every other
+  attack-phase oracle needs `attack_phase`.
+- **Several unmet needs per alternative.** An alternative that waits on two needs
+  a runner cannot meet would need a conjunction on the wire; the gate forbids it
+  instead, and one need per entry keeps the client's formula a union.
+
+### Consequences
+
+What a mode can find moves with the engine: a new oracle or runner appears with no
+table to edit, and its words come from the engine's own texts. The published sets
+match what the runners report in both directions: `resilience` lists neither
+`sensitive_data_exposure` nor an opt-in check, since it judges without the
+contract and names no optional oracle; `auth` lists neither
+`sensitive_data_exposure` nor `semantic_property`, since it never sends an
+admitted caller; `exposure` opens no `input_validation` by itself, since its
+`auth_bypass` attacks keep every field within its schema; the streak timeout is in
+`stateless` and both `performance` variants whatever the strategy; a producer's
+witnesses open `input_validation` under any strategy; and `replay` publishes
+nothing. The
+published set says what a run *can* report, never what it will find
+([What a run can find](../reportable-invariants.md)).

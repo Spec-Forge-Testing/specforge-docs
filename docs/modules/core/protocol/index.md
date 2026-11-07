@@ -9,7 +9,7 @@ defines how a message travels, the pages beside it define what the messages say.
 | --- | --- |
 | This page | Transport, framing, the four message shapes, ordering, endpoint naming, payload policy |
 | [Handshake and versioning](handshake.md) | `hello`, capabilities, the catalog, versioning and the changelog |
-| [Fuzz options](fuzz-options.md) | The modes, strategies, producers and presets a run can be asked for, the effects matrix, and examples per endpoint |
+| [Fuzz options](fuzz-options.md) | The modes, strategies, producers and presets a run can be asked for, their labels, the effects matrix, what a run can find, which variant a run gets, and examples per endpoint |
 | [Events and cancellation](events.md) | The 16 event kinds, the progress token, state vs fact, contract production, `$/cancelRequest` |
 | [Operations](operations.md) | The 41 operations by family, what each requires, emits and destroys |
 | [Replay and fixes](replay-and-fixes.md) | `replay_finding`, `inspect_service`, a finding's trace and source, and applying, verifying and reverting a fix |

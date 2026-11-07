@@ -39,9 +39,10 @@ it governs. A number missing here belongs to another module:
 [ADR-148](../../specforge-engine/adr/findings.md#adr-148), the engine's invariant
 registry, classifies what the report shows;
 [ADR-159](../../specforge-engine/adr/strategies.md#adr-159), the runner traits the
-effects matrix is derived from; and
+effects matrix is derived from;
 [ADR-167](../../specforge-engine/adr/findings.md#adr-167), the refuted finding the
-report lists, are the engine's.
+report lists; and [ADR-199](../../specforge-engine/adr/strategies.md#adr-199), what
+a run can find, which `fuzz_options` publishes, are the engine's.
 
 | File | Area | Covers |
 | --- | --- | --- |

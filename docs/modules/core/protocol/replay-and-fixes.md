@@ -122,6 +122,37 @@ analysis is left as it was.
 | `notes` | What was last pasted about the finding with no stack frame in it. |
 | `covering_fixes` | Other findings' applied fixes that edit the handler's files, oldest first: `finding_id`, `fix_id`, `files`. |
 
+## The code the model sees { #code-shown }
+
+`explain_finding` with `include_code`, and `propose_fix`, send the model excerpts
+of the tree the finding's run traced: the handler and what it calls, where the
+server crashed when its stack trace is known, and the places that call the crashing
+function. They also send the lines around **where the code registers the finding's
+route**, eight on each side, when no other excerpt shows them already. A request
+the router refuses, such as a `404` no handler answered, can then be explained and
+fixed where it fails.
+
+- **Which registration.** A route of the finding's method whose path is exactly a
+  server path plus the finding's path, each parameter matched whatever it is named
+  or however it is written (`{id}`, `:id`, `<id>`).
+- **Which server path.** The one the finding's request URL went to: what its path
+  holds before the finding's path. When the finding has no URL, or its URL does not
+  end in the finding's path, every server path the contract's `servers` declare for
+  the operation is tried, and routes matching under more than one add nothing.
+- **When nothing matches exactly.** The one route whose path ends in the finding's
+  path counts, and only when that path has a literal segment: the code may mount a
+  base path the contract leaves out. Two such routes, or a path made only of
+  parameters, add nothing rather than a wrong route.
+- **Which frameworks.** A router that registers routes in a table or a group, as
+  gin does, adds an excerpt. A route declared by a decorator on its handler, as in
+  FastAPI or Flask, adds nothing: the handler's excerpt already shows it.
+- **What it costs.** `estimate_finding_explanation` and `estimate_finding_fix`
+  price the longer prompt: a registration in gin's RealWorld example adds about 240
+  input tokens for an Anthropic model, and `propose_fix` also sends that file's
+  header when no other excerpt shows the file.
+- **The cache.** The code is part of the explanation's and the fix's cache key, so
+  a finding whose registration is shown is explained and fixed again once.
+
 ## Fixing a finding { #fixing-a-finding }
 
 A fix goes through four operations: `propose_fix` asks the model for it,
@@ -149,6 +180,12 @@ finding, `revert_finding_fix` takes it out.
   `SIDE_EFFECTS_CONSENT_REQUIRED` for a recording that needs consent.
 - **`revert_finding_fix`** takes `finding_id` and `fix_id`, undoes the fix the same
   two ways, and answers `reverted` or `conflict`.
+
+**The code is read again after a fix.** Once a fix is applied, reverted, or taken
+out because its build failed, the core forgets what it read of the files the fix
+rewrote: the static analysis caches, and the current analysis's endpoints whose
+code came from one of them. The next explanation or fix reads the code as it is
+now, line numbers included.
 
 `verify_finding_fix` answers:
 

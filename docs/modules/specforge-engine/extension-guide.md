@@ -38,6 +38,7 @@ An `ExecutionRunner` is a Protocol:
 class ExecutionRunner(Protocol):
     mode: ExecutionMode
     options_type: type[BaseModel] | None
+    text: TermText
 
     def run(self, request: RunRequest, orchestrator: AsyncOrchestrator) -> EngineRunResult: ...
 
@@ -50,8 +51,11 @@ class ExecutionRunner(Protocol):
 and `variant_for(options)` names the one a run takes; a runner that runs one way
 returns `only_variant(RunnerTraits(...))` and `DEFAULT_VARIANT`
 ([Declaring a new runner's traits](strategies.md#declaring-a-new-runners-traits)).
-The runner-traits gate drives every registered variant and fails when what it
-sends differs from what it declares.
+`text` is the mode's label and summary, and each variant's traits carry their own;
+`register_runner` raises `RegistrationError` when one is blank or a variant's
+`selected_by_option` names no field of `options_type`. The runner-traits gate
+drives every registered variant and fails when what it sends differs from what it
+declares.
 
 Register it beside the built-ins in `runtime/runners/__init__.py`:
 
@@ -78,7 +82,7 @@ registry — the dispatcher never changes.
 
 A `StrategyProfile` is a frozen value object naming what one strategy decides:
 its `strategy`, `phase_split`, `allowed_fields_by_type`, `contract_type`,
-`allow_contract_subclasses`, `default_max_examples`, `optional_oracles`,
+`allow_contract_subclasses`, `text`, `default_max_examples`, `optional_oracles`,
 `attack_families` and `omits_read_only`
 ([Strategies and runner traits](strategies.md#the-profile)). The built-ins are
 registered in `profiles/builtin.py`. A new one is a `Strategy` member plus one
@@ -87,6 +91,7 @@ call:
 ```python
 from specforge_engine.models import Phase, Strategy, StrategyProfile
 from specforge_engine.models.contracts import ALLOWED_FIELDS_BY_TYPE, BaseStrategyContract
+from specforge_engine.models.term_texts import TermText
 from specforge_engine.profiles import register_profile
 
 register_profile(
@@ -96,9 +101,12 @@ register_profile(
         allowed_fields_by_type=ALLOWED_FIELDS_BY_TYPE,
         contract_type=BaseStrategyContract,
         allow_contract_subclasses=True,
+        text=TermText(label="My strategy", summary="Valid values and edge values only."),
     )
 )
 ```
+
+A profile whose `text` has a blank label or summary raises `RegistrationError`.
 
 The core has to know the new strategy too: its `StrategyKind` and its LLM
 profile ([Adding a strategy](strategies.md#adding-a-strategy)).
@@ -471,11 +479,26 @@ An oracle whose signal can be the endpoint's normal behaviour also adds a row to
 control payload, and whether the control's response shows the same signal
 ([ADR-138](adr/engine.md#adr-138)).
 
-`register_oracle` takes two flags. `requires_contract=True` marks an oracle that
-judges against the endpoint's declarations, so a contract-free judgement (a
-replay's) skips it. `opt_in=True` makes it run only on an endpoint whose strategy
+`register_oracle` takes two sets: `reports`, the invariants the oracle reports,
+and `needs`, the [oracle needs](reportable-invariants.md#oracle-needs) a response
+must meet before it can judge it, as an `OracleNeeds` of alternatives
+([What each oracle declares](reportable-invariants.md#what-each-oracle-declares)).
+An alternative may wait on at most one need no runner meets (one a strategy, a
+producer or the request supplies); `register_oracle` raises `RegistrationError` on
+one that waits on more. `contract` in every alternative marks an oracle that judges against the
+endpoint's declarations, so a contract-free judgement (a replay's) skips it. `opt_in` makes it run only on an endpoint whose strategy
 names it in `optional_oracles`; how to add one is in
-[Adding an opt-in oracle](strategies.md#adding-an-opt-in-oracle).
+[Adding an opt-in oracle](strategies.md#adding-an-opt-in-oracle). The two sets are
+what each runner variant's reportable invariants are derived from
+([Adding to it](reportable-invariants.md#adding-to-it)).
+
+```python
+register_oracle(
+    MyOracle(),
+    reports=frozenset({InvariantViolation.MY_INVARIANT}),
+    needs=OracleNeeds.all_of(OracleNeed.CONTRACT),
+)
+```
 
 ## Add a chaos transport
 

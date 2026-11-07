@@ -161,6 +161,7 @@ decisions this rule produced are in the [decision records](adr/index.md).
 | Follow a DTO from input to output | [Data flow](data-flow.md) |
 | See how contracts become strategies | [Strategy compiler](strategy-compiler.md) |
 | Pick a strategy, or see what a runner takes from it | [Strategies and runner traits](strategies.md) |
+| See which invariants a mode can report, and what a strategy, a producer or an SLA adds | [What a run can find](reportable-invariants.md) |
 | See what a request holds, which field it poisons, and how its body and headers go out | [Requests](requests.md) |
 | See how a nested body field or array element is named, poisoned and focused | [Field addressing](field-addressing.md) |
 | Know when the engine calls a value a violation of its `pattern`, `format` or type | [Proving a violation](provable-violation.md) |

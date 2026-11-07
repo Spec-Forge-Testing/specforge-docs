@@ -235,6 +235,7 @@ nav:
           - Data flow: modules/specforge-engine/data-flow.md
           - Strategy compiler: modules/specforge-engine/strategy-compiler.md
           - Strategies and runner traits: modules/specforge-engine/strategies.md
+          - What a run can find: modules/specforge-engine/reportable-invariants.md
           - Requests: modules/specforge-engine/requests.md
           - Field addressing: modules/specforge-engine/field-addressing.md
           - Proving a violation: modules/specforge-engine/provable-violation.md

@@ -65,12 +65,31 @@ signature and docstring:
 Because there is no hand-written second list, the catalog cannot drift from the
 code. `describe` publishes it, and the handshake embeds the same catalog.
 
+A parameter's `help` is the docstring of its field in the request schema
+(`schemas/execution.py` for a run's parameters), so the words a client shows beside
+a field live next to the field. The catalog joins the docstring's lines with spaces,
+so every `help` is one line.
+
 Two more objects travel beside the catalog, derived the same way. `vocabulary`
-reads the engine's invariant registry. `fuzz_options` reads the engine's strategy
-profiles and runner traits through the engine gateway: `services/catalog/effects.py`
-derives what each strategy changes against `default` in each runner variant,
-`fuzz_options.py` assembles the object, and `presets.py` holds the presets as
-data ([Fuzz options](protocol/fuzz-options.md)).
+reads the engine's invariant registry, its labels, its invariant summaries and its
+attack-family texts, and adds the core's own exclusion dispositions and signal
+causes with their labels (`services/catalog/vocabulary.py`). `fuzz_options` reads
+the engine's strategy profiles, runner traits, reportable invariants and term
+texts through the engine gateway; each mode, variant and strategy carries its own
+text, registered with it. `services/catalog/effects.py` derives what each strategy
+changes against `default` in each runner variant, `reportable.py` orders what each
+variant can report and maps the needs the producers and the run's parameters meet,
+`variant_selection.py` maps the engine option that selects a variant to the run
+parameter that builds it and holds what a mode requires, `fuzz_options.py`
+assembles the object, with `limits` read from the core's own `engine.max_concurrency`
+option, and `presets.py` holds the presets as data
+([Fuzz options](protocol/fuzz-options.md)).
+
+What a client is told depends on the version it negotiated:
+`adapters/stdio/version_view.py` leaves out of `hello`'s and `describe`'s
+`presets` every preset whose runs set a field the client's version does not read,
+so a client older than `0.2.4` is never offered `stress-ladder`
+([Fuzz options](protocol/fuzz-options.md#presets)).
 
 ## Preconditions
 

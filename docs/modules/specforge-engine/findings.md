@@ -31,6 +31,13 @@ rule, the rule's text. Nothing is stored per finding: the core reads the registr
 when it reads a finding, so a stored run is classified as the registry says today
 ([ADR-148](adr/findings.md#adr-148)).
 
+The rule's text is what a finding breaks, and it travels in the finding's `rule`.
+What a person reads about the invariant itself is another table,
+`INVARIANT_SUMMARIES`: one sentence per invariant on what a finding of it
+means, intrinsic and declared alike, which the core publishes as
+`vocabulary.invariants[].summary`. The core publishes an intrinsic invariant's
+rule as `vocabulary.invariants[].description`, `null` for a declared one.
+
 The table is in registry order, which breaks ties within one severity. **Replay**
 says whether a replay's contract-free oracles can see the invariant again
 ([ADR-154](../core/adr/core.md#adr-154)).
@@ -326,8 +333,15 @@ parameter reads `***` in the URL as it does in the payload.
    `SentenceStrategy` to `SENTENCES`. Without one, the finding reads the fallback
    sentence.
 6. If the invariant should judge only when a strategy asks for it, register its
-   oracle with `opt_in=True` and name it in that strategy's `optional_oracles`
-   ([Adding an opt-in oracle](strategies.md#adding-an-opt-in-oracle)).
+   oracle with `opt_in` among its needs and name it in that strategy's
+   `optional_oracles` ([Adding an opt-in oracle](strategies.md#adding-an-opt-in-oracle)).
+7. Give it a one-sentence summary for a person in `INVARIANT_SUMMARIES`
+   (`models/runtime/invariant_summaries.py`), and register the oracle that
+   reports it with `reports` and `needs`, so what each runner variant can report
+   includes it ([What a run can find](reportable-invariants.md)). A test fails
+   while an invariant has no summary, the invariant-claims gate while no oracle or
+   runner reports it, and the reachability gate while a variant that publishes it
+   has no target that makes its run report it.
 
 `TestNewInvariant`, in the engine's extensibility gate, fails while step 2 or 3 is
 missing, and a core test holds `finding_summary.Invariant` to the engine's

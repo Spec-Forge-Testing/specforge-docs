@@ -324,3 +324,85 @@ has too few to climb on; the corpus is the feedback that pays.
 
 No code ships. The measurement is worth repeating if the examples per endpoint grow
 by an order of magnitude.
+
+---
+
+## ADR-200 — The semantic phase gets one example per input rule { #adr-200 }
+
+**Status:** accepted · Refines [ADR-054](engine.md#adr-054), extends [ADR-055](engine.md#adr-055) · `budget/floors.py`, `shared/phase_extensions.py`, `shared/semantic_properties.py`, `phase_extension_builtins.py`, `strategy_compiler/effective_phases.py`, `strategy_compiler/planning.py`
+
+### Context
+
+The semantic phase reserves `SEMANTIC_SHARE` (0.10) of an applicable endpoint's
+budget ([ADR-054](engine.md#adr-054)), and the budget is split across phases by
+largest remainder. At 5 examples per endpoint the phase's share is half an example,
+which rounds to zero: a short run compiles the phase, funds it with nothing, and
+never aims a request at the endpoint's business rules.
+
+The share was measured under the method of [ADR-140](#adr-140): 540 runs crossing
+the shares 0.05, 0.10, 0.20, 0.30 and 0.40 with budgets of 5, 10, 20, 40 and 200
+examples per endpoint, on a lab API with 18 seeded rule bugs, read once with
+hand-written contracts and once with model-inferred ones, plus a second lab with
+many bugs that are not rules (at 20 and 200 examples). Rule bugs found, out of 18,
+as the mean of the repetitions:
+
+| Examples per endpoint | Hand-written, 0.10 | Hand-written, best share | Inferred, 0.10 | Inferred, best share |
+| --- | --- | --- | --- | --- |
+| 5 | 6.2 | 12.3 at 0.40 | 4.6 | 11.1 at 0.40 |
+| 10 | 15.0 | plateau (±1) | 13.9 | plateau; 0.05 loses 3.1 |
+| 20 | 17.4 | plateau | 14.7 | plateau |
+| 40 / 200 | 17.9 / 18 | ceiling | 15.7 / 16 | ceiling |
+
+From 10 examples on no share beats 0.10 by a margin that matters, and 0.05 is
+fragile: the risk weight can lower an endpoint's budget enough to bring the zero
+back. Below 10, the loss is the zero, not the share: 0.20 and 0.30 give the phase
+one example and 0.40 gives it two. On the second lab the bugs found by the other
+phases were the same under all five shares, at 20 and at 200 examples.
+
+### Decision
+
+**The share stays at 0.10, and an endpoint with `k` input constraints gets at least
+`k` semantic examples.** `PhaseExtension` gains an optional `floor`, a callable over
+the `EndpointSpec`; the built-in semantic extension declares
+`input_constraint_count`. The planner allocates with `allocate_with_floors`: the
+split by weight first, then every phase short of its floor raised to it, the
+examples taken from the other phases in proportion to their weights. When the share
+already reaches `k` the allocation is exactly the split by weight. When the budget
+is below `k` the other phases keep one example. Floors are funded deficit first, so
+one phase's surplus never outranks another phase's floor. A floor naming a phase
+outside the split, or a negative floor, raises `ValueError`.
+
+The floor holds wherever the stateless planner allocates: the stateless mode, the
+flat `performance` pass and the shrink of their findings. The latency ladder plans
+`valid` only and the stateful mode does not plan by phase, so neither has a semantic
+budget to raise.
+
+Measured again with the floor, at 5 examples: 9.9 rule bugs of 18 with hand-written
+contracts (from 6.2) and 8.5 with inferred ones (from 4.6). The rules the other
+phases could not reach went from none found to all found. At 10 and 20 examples the
+floor does not act.
+
+### Rejected
+
+- **Raising the share to 0.40.** It finds the most rule bugs at 5 examples, but it
+  takes 40% of every applicable endpoint's budget from the other phases, at every
+  budget, and nothing measured that the other bug classes survive that at 5
+  examples. The floor fixes the measured cause, the zero, without that bet.
+- **A share that grows with the number of rules.** It still rounds: a share sized
+  for `k` rules lands on fewer than `k` examples at a small budget, and more than
+  needed at a large one, where 0.10 already reaches the plateau. A floor is the
+  number the phase needs, stated as a count.
+
+### Consequences
+
+A small budget now tests every declared rule of an endpoint, up to what the budget
+reaches. In exchange, the other phases lose up to `k` examples at small budgets: at
+5 examples the rule bugs that the other phases find fell by 2.1 with hand-written
+contracts and by 1.0 with inferred ones, against the gain above. From 10 examples
+on nothing changes.
+
+A run that spends at least one semantic example per endpoint shrinks more
+`semantic_property` findings: shrinking goes from about 70 to about 3 000 requests
+per run on the lab, and a 5-example run from 12 s to 25 s. That cost belongs to the
+shrink of these findings, not to the floor, and is bounded by the shrink's own
+limits ([Shrink limits](../shrink-limits.md)).

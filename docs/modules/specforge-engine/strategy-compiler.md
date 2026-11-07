@@ -263,14 +263,15 @@ An endpoint that declares none is compiled exactly as before: no `semantic`
 phase, no change to its split, its output byte-for-byte what it was.
 
 A phase extension is a `PhaseExtension` value object — an activation predicate, a
-budget share and a payload refiner declared together — held in a registry at the
-package root and populated once from a composition root
+budget share, a payload refiner and an example floor declared together — held in a
+registry at the package root and populated once from a composition root
 ([Extension guide](extension-guide.md#add-a-phase-extension)). The built-in one
 maps `Phase.SEMANTIC` to a predicate that looks for an `input_constraint` among the
-endpoint's semantic properties, with `SEMANTIC_SHARE` (0.10) as its share.
+endpoint's semantic properties, with `SEMANTIC_SHARE` (0.10) as its share and
+`input_constraint_count` as its floor: one example per input rule.
 
-Two pure functions in `strategy_compiler/effective_phases.py` read that registry,
-and the compiler wires both so an endpoint is never funded for a phase it does not
+Three pure functions in `strategy_compiler/effective_phases.py` read that registry,
+and the compiler wires them so an endpoint is never funded for a phase it does not
 compile, or the reverse:
 
 - `effective_phases(endpoint, base_phases)` appends every applicable extension's
@@ -282,16 +283,48 @@ compile, or the reverse:
   `(1 - share)`, and the phase added at exactly its share. Reservation runs over
   whatever split was resolved first — the profile's static split, a custom
   `phase_split` (even one summing below 1, or one without a `valid` row), or the
-  aggressiveness-derived `security` split — so the semantic phase always lands at 10%
-  of the endpoint's budget and the other phases keep their proportions among the
-  remaining 90%. As with any phase, a very small budget can round its share to
-  zero.
+  aggressiveness-derived `security` split — so the semantic phase is weighted at
+  10% of the endpoint's budget and the other phases keep their proportions among
+  the remaining 90%.
+- `effective_floors(endpoint)` maps each applicable extension's phase to its floor
+  at that endpoint. The planner passes it to `allocate_with_floors`, which first
+  splits the budget by weight, then raises a phase whose weight falls short of its
+  floor ([The semantic floor](#the-semantic-floor)).
 
 The predicate itself, `has_input_constraint(endpoint)`, lives in the neutral leaf
 `specforge_engine/shared/semantic_properties.py`, imported by the composition root that
 registers the extension, so the compiler (which decides the phase exists) and the
 engine (which decides how it draws) cannot disagree on which properties constrain
 an input.
+
+### The semantic floor
+
+A share alone rounds to zero on a small budget: at 5 examples, 10% is half an
+example, and the largest-remainder split gives the semantic phase none, so a short
+run never tests the endpoint's rules. The floor guarantees an endpoint that declares
+`k` input constraints at least `k` semantic examples
+([ADR-200](adr/measurement.md#adr-200)).
+
+| Budget against `k` | What the endpoint gets |
+|---|---|
+| the share already reaches `k` | exactly the split by weight; the floor changes nothing |
+| the share falls short of `k` | `k` semantic examples; the other phases split the rest by their weights |
+| the budget is below `k` | the other phases keep one example; the semantic phase takes the rest |
+
+When more than one phase has a floor, the floors are funded deficit first: a phase
+the weights already lift above its floor never keeps examples another phase's floor
+needs. The phases keep the order of the split, and the result always sums to the
+budget.
+
+The floor holds wherever the stateless planner allocates: the stateless mode, the
+flat `performance` pass, and the shrink of their findings. The latency
+ladder plans `valid` only, and the stateful mode does not plan by phase, so neither
+carries a semantic floor.
+
+The semantic budget is shared across the run's identities like any phase's
+([ADR-142](adr/engine.md#adr-142)). A floor smaller than the number of identities
+funds the first ones and lists the others as `starved` in the phase's
+`budget_by_phase` entry.
 
 ## Dispatch is a table, not a cascade
 
@@ -661,7 +694,7 @@ object, built in one place, never mutated afterwards
 - `estimated_combinations` is `estimate_parameter_space` over every zone's
   parameters, capped at `COMBINATION_SPACE_CAP` (10⁹).
 - `allowed_combinations` clamps the estimate into `1..max_combinations_per_case`.
-- `examples_per_phase` is `allocate_examples(max_examples, phase_split)`.
+- `examples_per_phase` is `allocate_with_floors(max_examples, phase_split, effective_floors(endpoint))`: the split by weight, with each applicable phase extension raised to its floor.
 
 `estimate_parameter_space` multiplies a per-parameter choice count. The count
 is the enum length when the field is an enum, otherwise a table by type:
@@ -684,6 +717,8 @@ planning calls it, and nothing else computes a share.
 | Function | What it does |
 |---|---|
 | `allocate_examples(max_examples, split)` | splits a budget across phases by largest remainder, ties broken by phase name; the result always sums to the budget |
+| `allocate_with_floors(max_examples, split, floors)` | `allocate_examples`, then every phase in `floors` raised to its floor out of the others by weight, deficit first; when the budget cannot meet the floors, the unfloored phases keep one example. A floor that names a phase outside `split`, or a negative floor, raises `ValueError` |
+| `reserve_share(split, phase, share)` | normalizes `split`, rescales it by `(1 - share)` and adds `phase` at exactly `share` |
 | `derive_attack_split(base_split, aggressiveness)` | sets the `attack` share to 0.05 per aggressiveness point, capped at `MAX_AGGRESSIVENESS` points (0.5), in place of the base split's own, and rescales the other phases to fit, keeping their proportions |
 | `weight_by_risk(max_examples, risk_score)` | scales the budget by `EndpointRisk.risk_score`: ×0.75 at 0, neutral at 50, ×1.25 at 100, never below 1; `None` leaves it unchanged |
 | `share_budget(total, identities)` | splits a budget evenly across the declared identities into `BudgetShare`s (the remainder goes to the first ones); with no identities, one anonymous share takes it all; an identity the budget cannot reach gets no share |

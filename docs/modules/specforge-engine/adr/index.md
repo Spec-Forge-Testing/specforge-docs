@@ -222,3 +222,4 @@ missing here belongs to another module:
 | [ADR-192](findings.md#adr-192) | findings | An intrinsic verdict is its own evidence; a verdict that judges needs a control |
 | [ADR-196](engine.md#adr-196) | engine | An unsafe method no producer judged is held as a write under load |
 | [ADR-199](strategies.md#adr-199) | strategies | What a run can find is derived from the engine, not listed |
+| [ADR-200](measurement.md#adr-200) | measurement | The semantic phase gets one example per input rule |

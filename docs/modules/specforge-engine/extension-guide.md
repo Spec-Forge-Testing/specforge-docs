@@ -296,8 +296,8 @@ phase that could find nothing
 ([Strategy compiler](strategy-compiler.md#the-semantic-phase)). The built-in one is
 `semantic`, applicable to an endpoint that declares an `input_constraint`.
 
-A `PhaseExtension` is a frozen value object that declares, in one place, the three
-things a phase extension decides:
+A `PhaseExtension` is a frozen value object that declares, in one place, what a
+phase extension decides:
 
 | Field | What it decides |
 |---|---|
@@ -305,6 +305,7 @@ things a phase extension decides:
 | `applies` | a predicate over the `EndpointSpec` — the endpoints that activate the phase |
 | `share` | the fraction of the endpoint's budget the phase reserves (strictly between 0 and 1) |
 | `refiner` | a `(strategy, endpoint) -> strategy` callable that rewrites the assembled per-field draw before it goes on the wire |
+| `floor` | optional, a `PhaseFloor`: an `(endpoint) -> int` callable giving the fewest examples the phase gets at that endpoint, whatever its share rounds to. It defaults to no floor (`0`) |
 
 Because a phase extension spans two layers — the compiler decides *which endpoints*
 draw the phase and *how much* budget it gets, and the engine *refines* its
@@ -317,6 +318,7 @@ from specforge_engine.models.phase import Phase
 from specforge_engine.shared import (
     PhaseExtension,
     has_input_constraint,
+    input_constraint_count,
     register_phase_extension,
 )
 from specforge_engine.strategy_compiler.constants import SEMANTIC_SHARE
@@ -329,11 +331,12 @@ def register_builtin_phase_extensions() -> None:
             applies=has_input_constraint,
             share=SEMANTIC_SHARE,
             refiner=build_semantic_payloads,
+            floor=input_constraint_count,
         )
     )
 ```
 
-The compiler's `effective_phases` and `effective_split`
+The compiler's `effective_phases`, `effective_split` and `effective_floors`
 (`strategy_compiler/effective_phases.py`) read the registry so the endpoints that
 compile the phase are exactly the ones that fund it; the engine's `refine_for_phase`
 (`runtime/fuzzers/phases.py`) reads it too, applying the extension's `refiner` to a
@@ -344,10 +347,17 @@ the whole payload, not of any one field, lives here rather than in a per-field
 builder. The refiner receives the `CompiledExecutionEndpoint`, so it can read the
 endpoint's declared schemas and semantic properties.
 
-A `PhaseExtension` validates itself at construction: a non-callable `applies` or
-`refiner` raises `TypeError`, and a `share` outside `(0, 1)` raises `ValueError`,
-so a half-declared extension fails loudly the moment it is built rather than
-silently skewing a budget. Register the phase's per-field builders first
+A `PhaseExtension` validates itself at construction: a non-callable `applies`,
+`refiner` or `floor` raises `TypeError`, and a `share` outside `(0, 1)` raises
+`ValueError`, so a half-declared extension fails loudly the moment it is built
+rather than silently skewing a budget. A floor is read per endpoint when the
+planner allocates (`effective_floors`, then `allocate_with_floors`): a floor
+callable that returns a negative count raises `ValueError` there, naming the phase.
+Give a floor only when the phase must be tested on every applicable endpoint even
+on a small budget; it takes its examples from the other phases by weight
+([The semantic floor](strategy-compiler.md#the-semantic-floor)).
+
+Register the phase's per-field builders first
 ([Add a phase](#add-a-phase)) — the extension decides *which endpoints* draw the
 phase and *how* the whole payload is refined, not *how* a single field compiles for
 it.

@@ -32,7 +32,8 @@ constraints, alternatives or trade-offs behind a decision.
 
 Numbers stay global across the whole site and are never reused — the number
 tells you when it was written, the file tells you what it governs. A number
-missing here belongs to another module.
+missing here belongs to another module; the worst case the estimate prices for a
+cost cap is the core's [ADR-197](../../core/adr/inference.md#adr-197).
 
 | File | Area | Covers |
 | --- | --- | --- |
@@ -45,3 +46,4 @@ missing here belongs to another module.
 | [ADR-090](llm.md#adr-090) | llm | Every failed attempt is classified once, and the class decides retry, fallback or stop |
 | [ADR-091](llm.md#adr-091) | llm | The structured-output mode is chosen per provider from a table |
 | [ADR-092](llm.md#adr-092) | llm | Cost is estimated without calling the model, and an unknown price is never free |
+| [ADR-198](llm.md#adr-198) | llm | Anthropic's structured output is read out of a fenced block |

@@ -70,7 +70,10 @@ call; see [LLM › Prompt caching](../llm/reference.md#prompt-caching).
 | `default.j2` | A neutral structured inference engine. | no |
 
 Both profile templates end their guidelines with the same rule: do not invent
-fields the code does not justify.
+fields the code does not justify. Just before it, `qa_default.j2` tells the model
+that a cross-field check, a field rejected at a literal, or a rule a description
+states is not a bound: it goes in `semantic_properties`
+([The business rules](#the-business-rules)).
 
 ## The partials
 
@@ -160,6 +163,35 @@ into. An endpoint that produces nothing is told to omit `transitions`; one that
 consumes nothing is told never to use `owner_only`. The `transitions` and
 `access` sections point the model at these names, which it must spell exactly.
 
+### The business rules
+
+`section_semantic_properties.j2` teaches the `semantic_properties` section. Besides
+the expression grammar, it tells the model which input rules to state as an
+`input_constraint`:
+
+- a check that compares two request fields, or ties one to an arithmetic of
+  others, and rejects the request when it fails: `if end <= start: return 400`, a
+  validator comparing `password` with `password_confirm`,
+  `quantity * unit_price != total`;
+- a rejecting comparison of a field with a literal (`if amount_cents == 4217:
+  return 400` gives `amount_cents != 4217`); with a named constant, only when its
+  value appears in the source context, never a guessed value;
+- a rule a schema, field, parameter or operation description states, even when
+  the code does not enforce it. When the code checks a different or weaker rule
+  than the description states, only the description's rule is stated: the gap is
+  what the fuzzer's check finds.
+
+A body field is named by its dotted path as the request body schema shapes it
+(`booking.end` when the body is wrapped in `booking`). The partial gives one
+worked example per property class. The operation's `summary` and `description`
+reach the model inside the OpenAPI definition, so a rule stated only there is
+visible to it.
+
+`section_risk.j2` asks the model to always state `write_operation`, `true` or
+`false`: left out, the [safety guard](../specforge-engine/engine-internals.md#safety-guard)
+treats any method but `GET`, `HEAD` or `OPTIONS` as a write and holds it out of the
+load modes.
+
 ## The prompt context
 
 `contract_prompt_context(request, profile)` builds the variables every contract
@@ -170,7 +202,7 @@ template renders with.
 | `method`, `path_url` | the request's identity |
 | `system_context` | the source context |
 | `is_partial_context` | whether the context is partial |
-| `openapi_endpoint` | the OpenAPI definition, `security` included |
+| `openapi_endpoint` | the OpenAPI definition, `security`, the operation's `summary` and `description` included |
 | `state_hints` | the request's `StateHints`, or an empty one |
 | `sections` | `prompt_sections(profile)`: the profile's section names, in the order `ContractSection` declares them |
 | `vocab` | `CONTRACT_VOCABULARY` |

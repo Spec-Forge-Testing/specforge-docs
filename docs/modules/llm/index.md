@@ -55,7 +55,7 @@ internal.
 | Configure | `LLMSettings`, `get_settings`, `ensure_credentials`, `get_required_api_key_env_vars`, `has_credentials_for_model` |
 | Know a model | `ModelCatalog` |
 | Read what a call cost | `LLMUsageMetrics`, `StructuredCompletionMetrics`, `format_cost_usd` |
-| Price calls before sending them | `estimate_structured_calls`, `CostEstimate`, `CallEstimate`, `TokenBasis` |
+| Price calls before sending them | `estimate_structured_calls`, `AttemptBound`, `CostEstimate`, `CallEstimate`, `TokenBasis` |
 | Understand a failure | `FailureKind`, `ModelFailure` |
 | Catch a failure | `LLMError`, `EmptyCompletionError`, `LLMConfigurationError`, `LLMCompletionError`, `LLMAuthenticationError`, `LLMRequestRejectedError`, `LLMCallBudgetExceededError`, `LLMAllProvidersExhaustedError`, `LLMEstimationError` |
 

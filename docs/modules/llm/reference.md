@@ -99,7 +99,13 @@ a structured call asks for `0.0` under the same rule.
 "Retry" means two different things here. `LLM_MAX_RETRIES` counts transport
 retries of one model after a classified failure. The `max_retries` argument of
 `complete_structured` counts instructor's re-asks when an answer fails
-validation; those happen inside a single attempt.
+validation or cannot be parsed; those happen inside a single attempt, each sent
+with only what is left of the call budget, and stop when too little is left for
+another request.
+
+A transport retry repeats the model's first ask only. A provider failure that
+arrives after a re-ask gives the model up and moves on to the next one, so the
+re-asks a model already billed are never sent again.
 
 ## Failures and the policy
 
@@ -186,13 +192,13 @@ per provider from `PROVIDER_INSTRUCTOR_MODES`:
 
 | instructor mode | Providers | The schema travels |
 | --- | --- | --- |
-| `JSON` | `anthropic` | in the prompt |
+| `MD_JSON` | `anthropic` | in the prompt, with an instruction to answer inside a fenced `json` block, which is read out of the fence |
 | `JSON_SCHEMA` | `gemini`, `vertex_ai`, `openai`, `mistral`, and any provider not listed | as the provider's response schema |
 | `TOOLS` | `groq` | as a tool definition |
 
 One exception: `gemini` and `vertex_ai` refuse a response schema whose
 references loop back on themselves. When the response model's schema is
-recursive, those two providers get `JSON` mode, where the schema travels in the
+recursive, those two providers get `JSON` mode, where the schema also travels in the
 prompt and instructor still validates the answer and re-asks. A caller that
 passes `mode=` to `complete_structured` overrides the table.
 
@@ -215,7 +221,7 @@ The estimator uses that threshold to decide whether a prefix is priced as cached
 ## Estimating a batch
 
 `estimate_structured_calls(calls, *, response_model, model, expected_output_tokens,
-prompt_cache=True, catalog=None)` prices a batch of structured calls **without a
+prompt_cache=True, catalog=None, attempts=SINGLE_ATTEMPT)` prices a batch of structured calls **without a
 network call and without a credential**. Each entry of `calls` is the message
 list of one call.
 
@@ -242,10 +248,20 @@ soon as one call is unpriced, and an empty batch costs `0.0`. An entry that
 LiteLLM cannot use, or a request instructor cannot prepare, raises
 `LLMEstimationError` with the `model` and the `cause`.
 
+**The worst case.** `attempts`, an `AttemptBound(fallback_models, max_reasks)`,
+says how far one call may go: up to `max_reasks` re-asks on each model, then on
+to the next of `fallback_models`. Each call's `worst_case_cost_usd` adds every
+attempt on every model of that chain, each priced as writing the cache prefix,
+each re-ask resending the rejected answers with their validation errors (about
+512 tokens per error). A model of the chain that is unpriced, or a fallback the
+estimator cannot count, leaves the worst case `None` and is listed in
+`unpriced_models`. The default, `SINGLE_ATTEMPT`, is one
+ask on the primary model, so the worst case equals the expected cost.
+
 **What is not estimated.** The output size is the caller's
-`expected_output_tokens`. Re-asks and fallbacks are not estimated: one model,
-one attempt per call. A limit on real spend is enforced against the metrics a
-run returns; the estimate is what a run is approved on.
+`expected_output_tokens`, in the expected cost and the worst case alike, and
+transport retries are not counted. A limit on real spend is enforced against
+the metrics a run returns; the estimate is what a run is approved on.
 
 | `CostEstimate` | Meaning |
 | --- | --- |
@@ -255,10 +271,13 @@ run returns; the estimate is what a run is approved on.
 | `calls` | one `CallEstimate` per call, in order |
 | `input_tokens`, `output_tokens` | the batch totals |
 | `cost_usd` | the batch total, or `None` when any call is unpriced |
+| `worst_case_cost_usd` | the batch's worst case, or `None` when any call's worst case is unpriced |
+| `unpriced_models` | the models of the chain a call's worst case has no price on |
 | `priced` | `cost_usd is not None` — `False` means no price is known, never free |
 
 A `CallEstimate` carries `input_tokens` (cache tokens included),
-`cache_write_tokens`, `cache_read_tokens`, `output_tokens` and `cost_usd`.
+`cache_write_tokens`, `cache_read_tokens`, `output_tokens`, `cost_usd` and
+`worst_case_cost_usd`.
 
 ## The model catalog
 

@@ -51,5 +51,5 @@ name, that name follows in `code font`.
 | **Contract cache** | The inferred contracts kept in storage, keyed by everything that shaped the prompt, so a later run reuses them without calling the model (`run.contract_cache`). |
 | **Cost estimate** | What a run's inferences would cost, priced before any model is called (`estimate_inference`). |
 | **Approval token** | The token an estimate returns; a run that has inferences to pay for passes it to show those exact inferences were approved (`producer.approval_token`). |
-| **Cost cap** | A spending limit in US dollars: no inference starts once the run's spend would pass it, and the endpoints left over run schema-only (`producer.max_cost_usd`). |
-| **Withheld endpoint** | An endpoint whose produced contract declared a risk flag but could not be used, so it is never fuzzed as a target (`disposition` `withheld`). |
+| **Cost cap** | A spending limit in US dollars: no inference starts once the run's spend, with each inference's worst case held up front, would pass it, and the endpoints left over run schema-only (`producer.max_cost_usd`). |
+| **Withheld endpoint** | In a run recorded by a core older than protocol `0.1.18`: an endpoint whose produced contract declared a risk flag but could not be used, so it was never fuzzed as a target (`disposition` `withheld`). A current core fuzzes it schema-only under the safety guard instead. |

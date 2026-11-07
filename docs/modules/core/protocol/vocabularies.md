@@ -105,7 +105,7 @@ counts each one: in `get_run` under `coverage.counts`, in `list_analyses` and
 | Value | The endpoints that were... |
 | --- | --- |
 | `targeted` | Declared and fuzzed. |
-| `excluded` | Declared, and rejected by the compiler or [withheld](#producer-exclusion-disposition); `excluded_endpoints` lists each with its `reason`. |
+| `excluded` | Declared, and rejected by the compiler or, in a run recorded by a core older than `0.1.18`, [withheld](#producer-exclusion-disposition); `excluded_endpoints` lists each with its `reason`. |
 | `filtered` | Declared, and left out by the run's endpoint selection. |
 | `reached_by_transition` | Never declared, and reached only by a stateful transition; `reached_by_transition_endpoints` lists each as `{method, path}`. |
 
@@ -121,14 +121,15 @@ What the run did with an endpoint whose produced contract it could not use. In
 
 | Value | Meaning |
 | --- | --- |
-| `schema_only` | The endpoint stayed targeted and was fuzzed from its schema alone. |
-| `withheld` | Its contract declared a risk flag and could not be used, so it was never fuzzed as a target; the coverage also counts it `excluded`, with a `reason` starting `withheld:`. In a mode that does not hold its flag, transition probes and same-route siblings may still reach its route. |
+| `schema_only` | The endpoint stayed targeted and was fuzzed from its schema alone. When the unusable contract declared a risk flag, the `reason` ends `; the safety guard still holds its declared <flags>`, and the guard holds the endpoint in the modes it would hold a usable contract's (`held_back_by` on its entry of `endpoints`). |
+| `withheld` | Only in runs recorded by a core older than `0.1.18`: its contract declared a risk flag and could not be used, so it was never fuzzed as a target; the coverage also counts it `excluded`, with a `reason` starting `withheld:`. |
 
-An endpoint is withheld only when the producer returned a contract and adopting
-it failed: an identity that does not match the endpoint, a fusion failure, or a
-construct the projection does not support. A failure before a validated contract
+Every failure leaves the endpoint `schema_only`: one before a validated contract
 exists (an inference error, an output that failed validation, a vanished cache
-entry, the cost cap, an untraced endpoint) leaves it `schema_only`. The two
+entry, the cost cap, an untraced endpoint), and one after it, when adopting the
+contract failed (an identity that does not match the endpoint, a fusion failure,
+or a construct the projection does not support). Only the second can carry the
+contract's declared risk flags to the safety guard. The two
 lists answer different questions and share the `(method, path)` key: the
 coverage says where the endpoint ended up, `producer_exclusions` what failed in
 the producer. The persistence layer stores these two values under a CHECK
@@ -183,7 +184,8 @@ the signal is not `degraded`.
 | `no_responses` | No request reached the target: every attempt was an availability, timeout or unsendable-request failure. |
 | `requests_unanswered` | Some requests reached the target, but an endpoint left at least three of its requests, and at least 5 % of them, with a timeout or an availability failure, so what the run says of that endpoint rests on the rest. `metrics.by_category` and the endpoint's `by_category` count them. Never raised beside `no_responses`. |
 | `endpoints_excluded` | One or more declared endpoints were excluded from this run. |
-| `withheld_by_safety_guard` | The safety guard held back one or more targeted endpoints, so they were never probed. |
+| `contracts_unproduced` | One or more endpoints of a run with a producer are in `producer_exclusions`, whatever their `disposition`: the producer left them without a contract, so they ran on their schema alone or were withheld. An endpoint the static analysis could not trace counts too. |
+| `withheld_by_safety_guard` | The safety guard held back one or more targeted endpoints, so they were never probed: a declared risk flag, or `assumed_write` (an unsafe method no producer judged a write for). |
 | `access_policy_undeclared` | One or more targeted endpoints declare no access policy, so the `auth` run verified nothing there. |
 | `access_preconditions_unmet` | One or more targeted endpoints had an access policy the run could not cross: no producer, no role holder, no owner, no resource it could create, or a state link into a reserved header; each one's [`unprobed_reason`](#unprobed-reason) says which. |
 | `stateful_endpoints_unsent` | One or more targeted endpoints were never sent by a `stateful` run: the value they consume was never produced, or the exploration never drew them or their arguments; each one's [`unprobed_reason`](#unprobed-reason) says which. Those endpoints do not count toward `endpoints_unreached`. |

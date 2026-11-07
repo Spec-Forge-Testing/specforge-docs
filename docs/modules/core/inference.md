@@ -51,7 +51,7 @@ what lets a token name exactly the inferences a run would pay for.
 | `lib/semantic_inference` and `lib/llm` installed | They render the prompt and call the model. | `CONTRACT_PRODUCER_FAILED`, naming the import failure |
 | `core_ast` installed | It traces each endpoint's handler into its source context. | `CONTRACT_PRODUCER_FAILED` |
 | A model chain and its keys | `llm.primary_model` or `LLM_MODEL`, plus a provider key for every model of the chain ([Environment Variables](../../user-guide/environment.md#llm-configuration)). | `CONTRACT_PRODUCER_FAILED` before `started` |
-| `producer.source_repo` | The code the handlers are traced in; relative to the project root. | — |
+| `producer.source_repo` | The code the handlers are traced in; relative to the project root. | `INVALID_PARAMS` with `data.parameter` `producer.source_repo`; a path that is not a directory is `CONTRACT_PRODUCER_FAILED` (`data.source`, `data.detail` `not a directory`), before any inference |
 | `storage`, optional | The contract cache lives in the store. | The run is uncached; a store that failed to open is refused `CONTRACT_PRODUCER_FAILED` with the cause after `contract cache:` |
 
 The core reaches the semantic inference package through the `ai` gateway, the
@@ -69,7 +69,7 @@ For each producible endpoint the producer builds one inference request:
 | `is_partial_context` | `true` when some called code could not be resolved |
 | `estimated_tokens` | `core_ast`'s size estimate of that context |
 | `method`, `path_url` | The endpoint's identity |
-| `openapi_endpoint` | The endpoint's OpenAPI definition |
+| `openapi_endpoint` | The endpoint's OpenAPI definition, the operation's `summary` and `description` included: a description may state a rule the schema cannot |
 | `state_hints` | The state-link bundles the endpoint produces and consumes, when it has any |
 
 The run's strategy picks the agent profile: `default`, `conformance` and `smoke`
@@ -113,6 +113,10 @@ order:
    was produced for.
 2. **Fusion.** It must fuse onto the endpoint's OpenAPI definition.
 3. **Projection.** The fused contract must project into what the engine compiles.
+   A business rule must name fields the endpoint declares. A bare name the model
+   wrote for a nested body field (`end` for `booking.end`) is resolved to the one
+   declared path that ends in it; a name two paths end in stays as written and
+   fails the check.
 
 A contract that passes all three replaces the endpoint's definition for the run,
 and the run keeps it with its results. A failure leaves an entry in
@@ -123,10 +127,12 @@ and the run keeps it with its results. A failure leaves an entry in
 | --- | --- | --- |
 | Before a validated contract exists: an inference error, an output that failed validation, an untraced endpoint, the cost cap, a cache entry gone since the plan | `schema_only` | Fuzzes the endpoint from its schema alone. |
 | A validated contract that fails a check above and declares no risk flag | `schema_only` | The same. |
-| A validated contract that fails a check above and **declares a risk flag** | `withheld` | Never fuzzes it as a target; its flag still vetoes its route. |
+| A validated contract that fails a check above and **declares a risk flag** | `schema_only` | Fuzzes it from its schema alone, carrying only the declared flags; the `reason` ends `; the safety guard still holds its declared <flags>`, and the guard holds it in the modes those flags hold in. |
 
 The boundary is the risk flag: a contract that said the endpoint writes or has
-side effects is not ignored because another part of it failed. The run goes on in
+side effects is not ignored because another part of it failed. The value
+`withheld` only appears in runs recorded by a core older than `0.1.18`, which
+never fuzzed such an endpoint as a target. The run goes on in
 every case. The fixture producer is the exception: a hand-written contract the
 core cannot use aborts the run with `CONTRACT_PRODUCER_FAILED`, because it is an
 explicit request.
@@ -175,7 +181,11 @@ how many contracts the cache served and how many the model inferred. On a
 `estimate_inference` takes the selection a `fuzz` would take and builds the same
 plan: it traces every endpoint, keys it, looks it up, and prices the pending
 prompts in one batch through the LLM package's estimator, without calling the
-model. It builds the same producer a run would, so it needs the same model chain
+model. Each call is priced twice. The **expected** cost assumes one answer of the
+profile's measured length (`qa` 656 output tokens, `security` 928). The **worst
+case** assumes the same answer length, re-asked up to twice on each model, on
+every model of the chain in turn: it is what one inference may cost when every
+answer is unusable. It builds the same producer a run would, so it needs the same model chain
 and keys. Its result is listed in
 [What `estimate_inference` answers](protocol/operations.md#estimate-inference);
 how the tokens are counted and what `priced: false` means is in
@@ -206,20 +216,23 @@ gained or lost since the estimate. In
 
 `producer.max_cost_usd`, greater than `0`, caps what one run spends on
 inferences. It is predictive: when an inference is admitted, the producer adds
-its estimate to what has been spent plus the estimates still held by inferences
-in flight, and admits it only if that total stays within the cap. When it does
+its worst case to what has been spent plus the worst cases still held by
+inferences in flight, and admits it only if that total stays within the cap. Re-asks
+and fallbacks are reserved up front, so they do not carry the run past the cap. When it does
 not fit, admission waits for the inferences in flight to settle, then decides on
 the actual spend. Each settled inference replaces its hold with what it really
 cost.
 
-- An endpoint the cap refuses runs schema-only, listed in `producer_exclusions`.
-- A cap with pending inferences on an unpriced model is refused `INVALID_PARAMS`:
-  there is no price to hold it to.
+- An endpoint the cap refuses runs schema-only, listed in `producer_exclusions`;
+  the run's signal is then `degraded` with `contracts_unproduced`.
+- A cap whose pending inferences' worst case has no price is refused
+  `INVALID_PARAMS`, naming the model of the chain that has none (a fallback model
+  missing from the price map is the usual one): there is no price to hold it to.
 - An inference whose cost is unknown makes the run's spend unknown, and every
   later one is refused under the cap.
 - The cap falls on the same endpoints as a one-at-a-time run unless an inference
-  in flight pays more than its estimate; then up to `inference.max_workers − 1`
-  more inferences may run past it.
+  in flight pays more than its worst case (an answer longer than the measured
+  length); then up to `inference.max_workers − 1` more inferences may run past it.
 
 ### What the run records
 
@@ -282,7 +295,7 @@ is refused before the first inference.
 | --- | --- |
 | Change what the cache key covers | `services/fuzz/producers/cache/key.py` |
 | Change how a contract is adopted | `services/fuzz/adoption.py` |
-| Change when a failure withholds instead of dropping | `ProducerExclusion.from_failure` in `services/fuzz/models.py` |
+| Change when a failed contract's risk flags still reach the safety guard | `ProducerExclusion.from_failure` in `services/fuzz/models.py` |
 | Change how the approval token is computed | `services/fuzz/producers/cost/approval.py` |
 | Change how the cap holds and settles | `services/fuzz/producers/cost/budget.py` |
 | Change how production is scheduled | `services/fuzz/production_loop.py` |

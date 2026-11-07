@@ -271,8 +271,9 @@ derived when the finding is read
 ### `run_producer_exclusions` — `RunProducerExclusionRecord` { #run_producer_exclusions }
 
 One row per endpoint whose produced contract the run could not use: a `schema_only` one stayed
-targeted without its contract; a `withheld` one was never fuzzed as a target, because its contract
-declared a risk flag and could not be used. It is a fact about the run, not about the endpoint
+targeted without its contract; a `withheld` one, written only by a core older than protocol
+`0.1.18`, was never fuzzed as a target, because its contract declared a risk flag and could not be
+used. It is a fact about the run, not about the endpoint
 catalog.
 
 | Column | Type | Null | Default | Meaning |

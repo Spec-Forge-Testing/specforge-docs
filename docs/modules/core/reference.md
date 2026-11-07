@@ -156,11 +156,13 @@ for each endpoint's enriched contract, and hands everything to the engine. The
 producer's failures are handled by intent: a producer that cannot honor an
 explicit request aborts the run, while an inference producer that cannot enrich
 one endpoint soft-drops it rather than failing the whole run. A dropped endpoint
-is fuzzed from its schema alone, unless the contract the producer returned
-declared a risk flag and could not be used: then it is **withheld**, handed to
-the compiler as a `WithheldEndpoint` so its flag still vetoes its route, and
-never fuzzed as a target. `producer_exclusions` records which of the two
-happened as its [`disposition`](protocol/vocabularies.md#producer-exclusion-disposition).
+is fuzzed from its schema alone. When the contract the producer returned
+declared a risk flag and could not be used, the endpoint keeps only those flags,
+and the safety guard holds it in the modes they hold in. `producer_exclusions`
+records each such endpoint with its
+[`disposition`](protocol/vocabularies.md#producer-exclusion-disposition),
+`schema_only`; `withheld` only appears in runs recorded by a core older than
+`0.1.18`.
 When a targeted
 endpoint draws no requests, the run records **why** as an `unprobed_reason`, so
 the report can tell a by-design skip from an endpoint it never reached. How the

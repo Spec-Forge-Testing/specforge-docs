@@ -23,7 +23,7 @@ The bottleneck is not the pipe, it is the UI. Hence a **semantic** distinction:
 
 | Class | `kind` | Rule |
 | --- | --- | --- |
-| **State** | `tick` | A snapshot, not a log entry. **Absolute** counters, never increments; ceiling ~10/s. A slow client can **drop intermediate ticks without losing anything**. |
+| **State** | `tick` | A snapshot, not a log entry. **Absolute** counters, never increments; at most ten per second, plus one at each stage change. A slow client can **drop intermediate ticks without losing anything**. |
 | **Fact** | everything else | Happens once and never repeats. All emitted, **never dropped, never batched**. |
 
 There is never one event per HTTP request: there would be thousands per second,
@@ -44,7 +44,7 @@ which one framed the event.
 | `contract_failed` | fact | `endpoint` (ref), `reason`, `disposition` (`schema_only` or `aborted`; `withheld` only from a core older than `0.1.18`) | The endpoint's contract could not be produced or used |
 | `endpoint_started` | fact | `endpoint` (ref), `index`, `total` | An endpoint begins |
 | `phase_started` | fact | `endpoint` (ref), `phase` | A phase changes within the endpoint |
-| `tick` | state | `elapsed_s` always; on `fuzz`, `sent`, `total` and `findings`, plus `passes` and `max_passes` (int) in a `stateful` run; on `analyze_endpoints`, `resolved` and `failed` | Absolute counters, ≤10/s |
+| `tick` | state | `elapsed_s` always; on `fuzz`, `sent`, `total` and `findings`, plus `passes` and `max_passes` (int) in a `stateful` run, and `stage` (`generating` or `confirming`) in a `stateless` or `performance` run, with `signatures_done` and `signatures_total` (int) while it is `confirming`; on `analyze_endpoints`, `resolved` and `failed` | Absolute counters, at most ten per second, plus one at each stage change |
 | `finding` | fact | `endpoint` (ref), `status`, `invariant`, `phase`, `category` and `severity` (see [`category`](vocabularies.md#category) and [`severity`](vocabularies.md#severity)), `summary` | A finding is confirmed |
 | `infra_failure` | fact | `endpoint` (ref), `reason`, `streak`, `limit` | A timeout or transport failure |
 | `target_down` | fact | `base_url` (the URL the run's requests go to, server path included), `reason` | The run concluded the API is down: a liveness probe failed, or every circuit breaker opened; `reason` says which |
@@ -70,6 +70,33 @@ target, since the run usually stops earlier, after two passes in a row without
 progress. `findings` rises by one with each `finding` event. Every other mode
 omits both fields, and so does a core older than `0.2.3`, whose `stateful` ticks
 also leave `findings` at `0`.
+
+**A `stateless` or `performance` run's `tick` says when it is confirming.** Once
+every endpoint is explored, the run re-sends one representative of each distinct
+finding, a *signature*, to confirm and shrink it. That can take a while, and no
+`endpoint_started` or `finding` arrives meanwhile.
+
+| `stage` | What the run does | `signatures_done`, `signatures_total` |
+| --- | --- | --- |
+| `generating` | Explores the endpoints | absent |
+| `confirming` | Re-sends each signature to confirm and shrink it | how many signatures it settled, confirmed or not, out of how many it set out to confirm |
+
+- A tick's `stage` is the run's own, unrelated to the pipeline stage that
+  `stage_started` and `stage_finished` name in `run_pipeline`.
+- A tick that changes `stage` is never held back by the rate limit: the run's
+  first tick says `generating`, and `confirming` with `signatures_done` `0`
+  arrives the moment confirming starts.
+- The `finding` events arrive together once confirming is done. `sent` keeps
+  rising with the re-sent requests; `total` does not count them.
+- A run with nothing to confirm never says `confirming`, nor does one that stopped
+  before confirming (cancelled, or the target down); the latter leaves what it
+  found unverified.
+- A run cancelled while confirming keeps the signatures it confirmed; the rest
+  settle at once, unverified.
+- A `performance` run's latency findings and crashes need no confirming, so they
+  are not among its signatures.
+- A `stateful` run confirms each violation as it finds it, so it has no such
+  stage. It, every other mode and a core older than `0.2.4` omit the three fields.
 
 Which operation emits which kind is published in `capabilities.event_kinds` and,
 per operation, in the catalog. Whether the engine emits `infra_failure` and
@@ -121,7 +148,9 @@ A `$/cancelRequest` also reaches a request still **queued** because
 
 **A cancelled operation keeps what it already produced.** The partial run is
 returned *and* persisted, and a cancelled `run_pipeline` answers with the stages
-that had already finished — cancelling is not losing.
+that had already finished — cancelling is not losing. A run cancelled while it
+is [confirming](#the-event-catalog) keeps the findings it confirmed; the rest are
+kept unverified.
 
 **Cancelling while contracts are produced.** No new inference starts; the ones
 already sent finish, are paid for, and are written to the inferred-contract

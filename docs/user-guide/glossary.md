@@ -32,7 +32,7 @@ name, that name follows in `code font`.
 | **Concurrency ladder** | A strictly increasing list of load levels (`--concurrency-steps 1,4,8`) a performance run replays an endpoint across, comparing each level's latency against the first to see if it grows under load. |
 | **Load profile** | Per-endpoint latency measured at each step of a concurrency ladder — the distribution at every level, and whether that level degraded. |
 | **Degradation tolerance** | How much slower a higher load level may be than its concurrency predicts before it counts as degraded — a ratio over the baseline level's p95 latency scaled by the ratio of concurrencies (`--degradation-tolerance`). |
-| **Resilience** | A mode that sends malformed-transport requests and flags endpoints that fail instead of refusing cleanly. |
+| **Resilience** | A mode that sends each endpoint its valid request plus 10 broken versions of it and 5 repeats, and flags endpoints that fail instead of refusing cleanly. |
 | **Replay** | Re-sending a saved run's recorded requests verbatim, to check whether a bug is still there. |
 | **Trace** | The ordered list of requests a run actually sent, recorded so the run can be replayed. |
 | **Trace (static)** | Reading the API's source code without running it to locate an endpoint's handler and the code it calls (`core_ast`). |
@@ -41,7 +41,7 @@ name, that name follows in `code font`.
 | **Fidelity** | How closely a replay reproduced the original run, i.e. how much to trust its result. |
 | **Strategy** | What a run generates and which extra checks judge the answers: `default` (schema-only), `security` (widened toward adversarial values), `conformance` (schema-only, also flagging response fields the contract does not declare), `smoke` (a short run of valid requests) or `exposure` (read-only fields and mass assignment). |
 | **Examples per endpoint** | How many generated requests a run asks of each endpoint (`examples_per_endpoint`); without it, the strategy's own default, held under the mode's cap. |
-| **Preset** | A named sequence of runs the core publishes (`quick-check`, `contract-audit`, `security-scan`, `exposure-scan`, `load`, `full`); a client runs them one after the other. |
+| **Preset** | A named sequence of runs the core publishes, each with a label and a one-line question it answers (`quick-check`, `contract-audit`, `security-scan`, `exposure-scan`, `load`, `full`, `stateful-flows`, `resilience-check`, `access-check`, `stress-ladder`); a client runs them one after the other. |
 | **Producer contract** | An extra per-endpoint contract you supply (`--contracts`) that enriches the run beyond the OpenAPI schema. |
 | **State link** | A data dependency between operations derived from the spec, letting a stateful sequence carry a value from one request into the next. |
 | **Handler** | The function in your source code that serves an endpoint. |

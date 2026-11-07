@@ -422,6 +422,10 @@ share (`server_path_of`) and composes it into the target URL
 - the comparison is by whole path segments, never by string suffix: a target that
   already ends in the server path (`/api`, `/v1/api`) is left as given, and
   `/xapi` does not end in `/api`;
+- a target that names another server the contract declares is left as given too,
+  so it is never sent to the first server's path under its own: the first server
+  counts when the target's path starts or ends with it, any other only when the
+  path ends with it;
 - scheme, credentials, host, port, query and fragment are kept;
 - a target URL that cannot be split is handed to the engine as given, so the
   engine's own validation names what is wrong with it;
@@ -435,7 +439,10 @@ the core no longer sets it.
 
 **A follow-up path is normalized once, where the transition is adopted.**
 `merge_transitions` strips a leading server path from the follow-up path, by whole
-segments, so the engine sees one spelling and its routing, its vetoes and its
+segments, and only when what is left is one of the specification's paths and the
+follow-up path is not. Any server the contract declares can lead it; when more than
+one does, the longest goes first, so `/api/v1/users` loses `/api/v1`, not `/api`.
+The engine then sees one spelling and its routing, its vetoes and its
 injector agree without change.
 
 **A follow-up goes to its trigger's server.** The probe of a transition inherits

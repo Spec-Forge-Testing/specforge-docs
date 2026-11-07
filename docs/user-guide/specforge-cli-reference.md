@@ -159,6 +159,11 @@ flags, every endpoint.
 specforge list_endpoints --method GET --json-output
 ```
 
+Each row says `requires_auth`: `true` when the endpoint needs a login, `false` when it is
+public or the login is optional, and `null` when the spec declares no security for it, which
+means unknown, not public ([which endpoints need a login](../modules/core/protocol/operations.md#requires-auth)).
+`get_endpoint` says the same for one endpoint.
+
 #### `get_endpoint`
 
 Everything the document declares about one endpoint.
@@ -466,7 +471,9 @@ explained: `template` and `cache` are free, `model` is priced and carries the `a
 | `--refresh` | boolean | no | `false` |
 | `--include-prompt` | boolean | no | `false` |
 
-`--include-code` prices the explanation with the handler's code in the prompt; `--refresh` prices
+`--include-code` prices the explanation with the handler's code in the prompt, and the lines
+where the code registers the finding's route when the handler does not show them
+([the code the model sees](../modules/core/protocol/replay-and-fixes.md#code-shown)); `--refresh` prices
 a new one even when one is already stored. `--include-prompt` answers the prompt itself, so you
 can read what would be sent.
 

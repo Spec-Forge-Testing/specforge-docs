@@ -166,7 +166,8 @@ special case.
 `progress` is a `Progress` Protocol, not the raw observer: a `ProgressEmitter`
 sits behind it and owns the run's clock, the tick throttle and the three counters
 (`sent`, `total`, `findings`). It forwards a **fact** event straight through and
-**throttles** a `tick` to at most one per `MIN_TICK_INTERVAL_S`, reading the live
+**throttles** a `tick` to at most one per `MIN_TICK_INTERVAL_S`, unless the tick
+changes the run's `stage` (`note_generating`, `note_confirming`), reading the live
 wire-request count from the orchestrator each time. The emitter is built only when
 an observer is supplied; otherwise `run` wires the no-op `NULL_PROGRESS` and
 computes no counters at all. Cancellation is read as a plain value — a sticky
@@ -364,7 +365,7 @@ OracleVerdict` — and precedence is a named `IntEnum` value, never a magic gap
 | `INFORMATION_DISCLOSURE` (420) | `information_disclosure` | a non-2xx whose body shows a [leak marker](disclosure.md#markers) outside the echo of what the request sent; a poisoned request cites its field, any other the whole request (non-terminal) |
 | `SENSITIVE_DATA_EXPOSURE` (430) | `sensitive_data_exposure` | a 2xx, to a poisoned request or under a declared body schema, that carries a secret-looking key the object holding it does not declare (non-terminal) |
 | `INPUT_VALIDATION` (440) | `input_validation` | a 2xx to a request whose poisoned field was sent provably outside its declared schema (non-terminal) |
-| `REFLECTED_PAYLOAD` (450) | `reflected_payload` | an HTML response that echoes the active payload of a reflectable family unescaped (non-terminal) |
+| `REFLECTED_PAYLOAD` (450) | `reflected_payload` | an HTML response that echoes the active payload of a reflecting family (`REFLECTING_FAMILIES`: `xss`, `injection`, `sql_injection`) unescaped (non-terminal) |
 | `CONTRACT_COMPLETENESS` (460) | `contract_completeness` | a 400 or 422 to an unpoisoned request that provably conforms to its declared contract, or to a poisoned one whose value [only an inferred rule forbids](witnesses.md) (non-terminal) |
 | `STATUS_CODE` (500) | `status_code` | a status no response contract declared |
 | `CONTENT_TYPE` (510) | `content_type` | a body whose `Content-Type` misses the declared one |
@@ -424,7 +425,8 @@ the endpoint's response contract for the status by exact code → status class �
 `semantic_properties` onto the context — and evaluates it;
 `evaluate_contract_free(result)` evaluates against no contract, which is what a
 replay and a transition probe use; it runs only the intrinsic oracles, those
-registered neither `opt_in` nor `requires_contract`. `check_response` passes the
+whose registration is neither `opt_in` nor `requires_contract`
+([What each oracle declares](reportable-invariants.md#what-each-oracle-declares)). `check_response` passes the
 endpoint's `optional_oracles` on, and `evaluate` keeps an opt-in oracle only when
 its name is among them ([Strategies](strategies.md#opt-in-oracles)). `build_context(result, responses, *,
 latency_sla_ms=, chaos=None, semantic_properties=(), access_expectation=None)` is

@@ -81,6 +81,11 @@ event, that notifications precede their response); and — only when validating
 all of them — that every `kind` shows up in some fixture and that every invalid
 fixture is rejected for its own reason.
 
+The envelope does not type a `result`'s content. The validator types three results
+by correlating on `id`: `hello`'s, `list_endpoints`' and `get_endpoint`'s, against
+`hello_result`, `list_endpoints_result` and `get_endpoint_result`. What keeps a
+captured fixture's other results honest is the `shape` check above.
+
 ## How a client uses them
 
 There is **no direction marker** in a file: direction is inferred from a

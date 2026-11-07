@@ -4,7 +4,7 @@
 refused `HANDSHAKE_REQUIRED`.
 
 ```json
-{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.2.3"}}
+{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.2.4"}}
 ```
 
 The response carries the protocol version, the server's identity, what this
@@ -13,7 +13,7 @@ in, and the options a run can be asked for:
 
 ```json
 {"jsonrpc":"2.0","id":1,"result":{
-  "protocol_version":"0.2.3",
+  "protocol_version":"0.2.4",
   "server":{"name":"specforge-core","version":"…","frozen":false},
   "capabilities":{…},
   "catalog":{…},
@@ -49,15 +49,18 @@ lists it among the result's required fields.
 | --- | --- | --- |
 | `categories` | strings | Every [`category`](vocabularies.md#category), in the engine's declaration order |
 | `severities` | strings | Every [`severity`](vocabularies.md#severity), most severe first |
-| `invariants` | `{value, label, category, severity, rule_source, description}` | Every invariant the engine checks, in registry order, the order that breaks ties within one severity. `rule_source` is `intrinsic` (the invariant states its rule, and `description` carries it) or `declared` (the contract states it; `description` is `null`) |
+| `invariants` | `{value, label, category, severity, rule_source, description, summary}` | Every invariant the engine checks, in registry order, the order that breaks ties within one severity. `rule_source` is `intrinsic` (the invariant states its rule, which `description` carries) or `declared` (the contract states it; `description` is `null`). `summary` is one sentence for a person on what a finding of it means, never `null` |
 | `truncation_reasons` | `{value, label}` | Every [`truncation.reason`](vocabularies.md#truncation-reason) |
 | `target_down_verdicts` | `{value, label}` | Every [`target_down_verdict`](vocabularies.md#target-down-verdict) |
 | `finding_states` | `{value, label}` | Every state a finding is reported in: `confirmed`, `flaky`, `unverified`, `refuted` |
 | `unprobed_reasons` | `{value, label}` | Every [`unprobed_reason`](vocabularies.md#unprobed-reason) |
 | `hold_reasons` | `{value, label}` | Every value of `held_back_by` |
 | `exclusion_dispositions` | `{value, label}` | The core's own: every [`producer_exclusions[].disposition`](vocabularies.md#producer-exclusion-disposition), plus `aborted`, a failed contract that stopped the run |
+| `signal_causes` | `{value, label}` | The core's own: every [`run.signal_causes`](vocabularies.md#signal-causes) value, in the order they render, each with a label short enough for a verdict line |
+| `attack_families` | `{value, label, summary}` | Every [attack family](vocabularies.md#attack-family) a request's `attack_family` or a strategy's `attack_families` names, in declaration order, with a one-sentence `summary` of the payloads it sends |
+| `oracle_needs` | `{value, label}` | Every [`oracle_need`](vocabularies.md#oracle-need), in declaration order: what a response must come with before an invariant can be judged on it |
 
-Every list but `exclusion_dispositions` comes from the engine
+Every list but `exclusion_dispositions` and `signal_causes` comes from the engine
 ([ADR-148](../../specforge-engine/adr/findings.md#adr-148)). Without the engine
 the object is present with those lists empty, never missing.
 
@@ -65,17 +68,19 @@ the object is present with those lists empty, never missing.
 
 `fuzz_options` lists the execution modes and their runner variants, the
 strategies, the producers, what each strategy changes against `default` in each
-variant under each producer, and the presets a client chains. `describe` carries
-the same object, and the schema requires it in `hello`. Its keys, the effects
-matrix and how it is derived are on [Fuzz options](fuzz-options.md).
+variant under each producer, what each variant can find and who meets what it
+needs, and the presets a client chains, each term with its label and summary.
+`describe` carries the same object, and the schema requires it in `hello`. Its
+keys, the effects matrix and how it is derived are on
+[Fuzz options](fuzz-options.md).
 
 ## Versioning { #versioning }
 
 **The core serves a range within its own series.** A client is served when its
 `protocol_version` has the core's `major.minor` and a patch between a declared
 floor and the core's own. Each part compares as a number, never as text:
-`0.1.10` is newer than `0.1.9`. This core speaks `0.2.3` and serves `0.2.0`
-up to `0.2.3`: no `0.1.x` client is served. It always answers `hello` with its
+`0.1.10` is newer than `0.1.9`. This core speaks `0.2.4` and serves `0.2.0`
+up to `0.2.4`: no `0.1.x` client is served. It always answers `hello` with its
 own version, and a frontend ignores the keys it does not know.
 
 Anything else — another series, a patch outside the range, or a
@@ -125,6 +130,79 @@ The report document that `fuzz`, `replay` and `run_pipeline` answer with is
 `schema_version` 1.27. The protocol's own README holds the full entry for each
 version; the lines below are the summary.
 
+- **0.2.4** — The run picker reads its words and facts from the core: what each
+  mode, variant, strategy, phase and preset is, what a run can find and what
+  selects a variant. An endpoint says whether it needs a login, and a finding's
+  explanation and fix see where its route is registered. A run's ticks say when it
+  is confirming its findings, and a base URL that names any declared server is
+  sent as given. **Additive on the wire,
+  with semantic changes**: this core serves `0.2.0` up to `0.2.4`. It ships with
+  report `1.27`, as `0.2.3` did.
+    - *Added:* `label` and `summary` on every mode, variant, strategy and preset of
+      `fuzz_options`, and two lists: `fuzz_options.phases` (`{value, label,
+      summary}`) and `fuzz_options.changes` (`{value, label}`). `auth` reads
+      *Authorization* ([labels and summaries](fuzz-options.md#labels-and-summaries)).
+      A mode's `summary` says what it sends, never what a finding means (the
+      invariant's `summary`) nor what it needs (its variants' `requires`).
+    - *Added:* `vocabulary.attack_families`, each attack family as `{value, label,
+      summary}` ([attack families](vocabularies.md#attack-family)). `injection` and
+      `sql_injection` send the same payloads, and their summaries say so alike.
+    - *Added:* `vocabulary.invariants[].summary`, a sentence for a person on what a
+      finding of the invariant means, for every invariant; never `null`.
+      `description` keeps carrying an `intrinsic` invariant's rule, `null` for a
+      `declared` one.
+    - *Added:* `vocabulary.signal_causes`, each `run.signal_causes` value as
+      `{value, label}`, in the order they render
+      ([signal causes](vocabularies.md#signal-causes)). The core's own, like
+      `exclusion_dispositions`.
+    - *Added:* what a run can find: `invariants` and `invariants_when` on every
+      variant, `supplies` on every strategy, `fuzz_options.producer_supplies`,
+      `fuzz_options.request_supplies` and `vocabulary.oracle_needs`
+      ([what a run can find](fuzz-options.md#what-a-run-can-find),
+      [ADR-199](../../specforge-engine/adr/strategies.md#adr-199)). An invariant
+      more than one need lets a variant report, such as `input_validation` through
+      a strategy's `out_of_schema_field` or a producer's `rule_witness`, sits in a
+      row for each.
+    - *Added:* how a run gets a variant: `selected_by` (`null`, or `{parameter,
+      when}`), `requires` and `examples_cap` on every variant; `omits_read_only` and
+      `promotes_attack_hints` on every strategy; and
+      `fuzz_options.limits.max_concurrency_default`, the default of the core's
+      `engine.max_concurrency` option, which a project's config can change
+      ([which variant a run gets](fuzz-options.md#which-variant)).
+    - *Added:* four presets, `stateful-flows`, `resilience-check`, `access-check`
+      and `stress-ladder`; `load` and `variant` on every preset run, and `requires`
+      on every preset ([presets](fuzz-options.md#presets)). A client of `0.2.0` up
+      to `0.2.3` is not offered a preset with a run that carries `load` or
+      `variant`, today `stress-ladder`, which it would run as plain `flat` load.
+    - *Added:* a `help` for every parameter of `fuzz`, `run_pipeline`'s run
+      parameters and `estimate_inference`, nested fields included. *Changed:* the
+      `help` of `examples_per_endpoint` and `allow_side_effects` says what they do:
+      what the count means for a `stateful` run, and everything the safety guard
+      holds back, a declared transition to an endpoint outside the run included.
+      *Changed:* every parameter's `help` is one line.
+    - *Added:* `requires_auth` (`true`, `false` or `null`) on each row of
+      `list_endpoints` and on `get_endpoint`; the schema types both results
+      ([which endpoints need a login](operations.md#requires-auth)).
+    - *Changed:* `explain_finding` (with `include_code`) and `propose_fix` also send
+      the model the lines where the code registers the finding's route; their
+      estimates price the longer prompt, and a finding whose registration is now
+      shown is explained and fixed again once
+      ([the code the model sees](replay-and-fixes.md#code-shown)). The route is
+      looked for under the server path the finding's request URL went to, else
+      under each server the contract declares; matches under more than one show
+      none.
+    - *Fixed:* a `base_url` that already ends in a server path the contract
+      declares, any of its `servers`, is sent as given: `http://h/v2` against
+      servers `/v1` and `/v2` went to `http://h/v2/v1`. A `stateful` follow-up
+      written with any declared server path in front loses it, the longest first
+      ([the target base URL](operations.md#base-url)).
+    - *Added:* `stage` (`generating` or `confirming`) in a `stateless` or
+      `performance` run's `tick`, with `signatures_done` and `signatures_total`
+      while it is `confirming`, the stretch where the run re-sends each distinct
+      finding to confirm and shrink it. A tick that changes `stage` is sent
+      whatever the rate limit, so `tick` is at most ten per second plus one at
+      each stage change ([events](events.md#the-event-catalog)).
+
 - **0.2.3** — An inference failure is never a quiet `clean`: the cost cap holds
   each inference's worst case, an endpoint nobody judged a write is held under
   load, and a `stateful` run's ticks say how far it went. **Additive on the
@@ -165,7 +243,7 @@ version; the lines below are the summary.
       still `INVALID_PARAMS`, now with `data.parameter`
       ([errors](errors.md#producer-invalid-params)).
 
-- **Report 1.27** — Additive; it ships with protocol `0.2.3`. Adds
+- **Report 1.27** — Additive; it ships with protocol `0.2.3` and `0.2.4`. Adds
   `contracts_unproduced` to `run.signal_causes`.
 
 - **0.2.2** — A run's detail counts its unconfirmed defects once, says in which

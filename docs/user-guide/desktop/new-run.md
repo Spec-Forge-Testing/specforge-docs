@@ -19,19 +19,19 @@ one empty run that you build on the map.
 | Custom | One run whose mode and strategy you choose on the map | — |
 | Quick check | `stateless` + `smoke` | Does every endpoint answer? |
 | Contract audit | `stateless` + `conformance` | Do responses match the contract? |
-| Security scan | `stateless` + `security` | Attack and mutated inputs on every endpoint |
-| Exposure scan | `stateless` + `exposure` | Can clients write read-only fields? |
-| Load | `performance` (steady load) + `default` | Steady load; set a limit to judge speed |
-| Full | `stateless` + `default`, then `stateful` + `default` | Each endpoint alone, then call sequences |
-| Call sequences | `stateful` + `default` | Create, read, change, delete in order |
+| Security scan | `stateless` + `security` | Attack and mutated inputs on every endpoint. |
+| Exposure scan | `stateless` + `exposure` | Can clients set privileged fields like role or is_admin? |
+| Load | `performance` (steady load) + `default` | Steady load; set a latency limit to judge speed. |
+| Full | `stateless` + `default`, then `stateful` + `default` | Each endpoint alone, then call sequences. |
+| Call sequences | `stateful` + `default` | Create, read, change, delete in order. |
 | Resilience check | `resilience` + `default` | Broken traffic: rejected cleanly? |
-| Access check | `auth` + `default` | Can one user reach another's data? |
+| Access check | `auth` + `default` | Can a caller reach what its access policy refuses? |
 | Stress ladder | `performance` (concurrency ladder, steps 1, 4, 16) + `default` | Rising load: who slows down first? |
 
-The first six are the core's own presets. The last four are offered by the app for modes the
-core has no preset for, and only when the core runs that mode. A card marked **Needs users**
-needs a [users file](#users-and-side-effects); a card marked **Needs rules** has nothing to test
-with the spec alone. If the core runs without the engine package there is no test to choose, and
+Every card but Custom is one of the core's [presets](../../modules/core/protocol/fuzz-options.md#presets),
+in the order the core lists them, with the core's title and question. A card marked **Needs
+users** needs a [users file](#users-and-side-effects); a card marked **Needs rules** has nothing
+to test with the spec alone. If the core runs without the engine package there is no test to choose, and
 the screen links to Doctor.
 
 Editing any run of a preset turns the plan into Custom, and the header says which preset it

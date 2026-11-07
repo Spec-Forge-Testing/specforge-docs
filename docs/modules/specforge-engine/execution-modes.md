@@ -64,7 +64,9 @@ variant, which part of the compiled plan it sends
 
 `runner_traits_for(mode, options)` returns the traits a run with those options
 takes; the `performance` variant is `ladder` exactly when the options carry a
-`concurrency_ladder`.
+`concurrency_ladder`. Which invariants each variant can report, and which a
+strategy, a producer or a latency SLA adds, is derived from the same traits
+([What a run can find](reportable-invariants.md)).
 
 ## Cancelling a run
 
@@ -523,6 +525,11 @@ every endpoint:
   over a raw socket instead (see below).
 - **Repeated requests** — the same request sent several times in a row, probing
   for a rate limit or a duplicate-submission fault.
+
+So an endpoint gets its clean base request, ten broken versions of it (the first
+two groups) and `REPEATED_REQUEST_COUNT` (5) repeats: the counts the mode's
+published summary states, computed from the battery itself
+([Labels and summaries](strategies.md#labels-and-summaries)).
 
 Each attack names the transport key that delivers it (`resolve_transport`) and a
 builder that shapes it from the base blueprint; the runner never branches on the

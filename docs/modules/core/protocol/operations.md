@@ -73,6 +73,25 @@ still uses the URL the file declares.
 | `get_endpoint` | contract | — |
 | `generate_contract` | project | `started`, `contract_*`, `finished`; cancellable. Writes an OpenAPI from the source code and loads it; see [below](#generate-contract) |
 
+### Which endpoints need a login { #requires-auth }
+
+`list_endpoints` answers a row per endpoint the filters keep, and `get_endpoint`
+opens one: its parameters, body, responses, response links and the deviations
+anchored on it. Both carry `requires_auth`, read from the security requirement in
+force: the operation's own, else the document's.
+
+| `requires_auth` | When |
+| --- | --- |
+| `true` | Every alternative of the requirement names a scheme |
+| `false` | The requirement is an empty list (`security: []`), or one alternative is empty, so a login is optional (`[{}, {"bearer": []}]`) |
+| `null` | Neither the operation nor the document declares one |
+
+A `null` is unknown, never public: a document that leaves security out may still
+guard the endpoint, so a client counts it apart ("N of M endpoints need a login;
+K declare nothing"). The schema types both results (`list_endpoints_result`,
+`get_endpoint_result`), and the fixture validator checks them
+([Fixtures](fixtures.md)).
+
 ### `generate_contract` { #generate-contract }
 
 | Parameter | Default | What it changes |
@@ -152,8 +171,13 @@ What each stage of `run_pipeline` works on:
 Without a count, a run asks each endpoint the strategy's own default, held under
 the runner's cap; a count asked of a runner that honors none (the `performance`
 ladder, `auth`, `resilience`) is refused `INVALID_PARAMS`. What each choice
-changes in each mode, and the presets a client chains, are published in the
-handshake's [`fuzz_options`](fuzz-options.md).
+changes in each mode, what a run can find, and the presets a client chains, are
+published in the handshake's [`fuzz_options`](fuzz-options.md).
+
+Every parameter of `fuzz`, the run parameters of `run_pipeline` and the parameters
+of `estimate_inference`, nested fields such as `load.concurrency_steps` and
+`producer.kind` included, carry a `help` in the catalog: one line on what the
+parameter does, which a client shows beside its field.
 
 ### The `producer` object { #producer }
 
@@ -220,10 +244,26 @@ request is sent, with a reason that names `base_url` and never repeats the URL,
 since it may carry `user:pass@`. The `started` event of a `fuzz` names the target
 without its userinfo.
 
-The specification's server path is joined on once, by whole segments: a base
-URL whose path already ends or starts with it is kept as given, and otherwise the
-two are joined on their longest overlap, so `/api` and a server path `/api/v1`
-give `/api/v1`, never `/api/api/v1`.
+The specification's server path is joined on once, by whole segments. A base URL
+that already names one of the servers the specification declares is sent as given:
+
+- the first server counts when the base URL's path ends or starts with its path;
+- any other server counts only when the base URL's path ends with its path.
+
+Otherwise the first server's path is joined on their longest overlap, so `/api`
+and a server path `/api/v1` give `/api/v1`, never `/api/api/v1`.
+
+| Base URL | `servers` | The run's requests go to |
+| --- | --- | --- |
+| `http://h` | `/v1`, `/v2` | `http://h/v1` |
+| `http://h/v2` | `/v1`, `/v2` | `http://h/v2` |
+| `http://h/api` | `/api/v1`, `/api` | `http://h/api` |
+| `http://h/api` | `/api/v1` | `http://h/api/v1` |
+
+A `stateful` transition's follow-up path written with a declared server path in
+front loses it, so it is matched against the specification's paths. When more than
+one server path leads it, the longest one that leaves one of those paths is
+removed; a follow-up path that already is one is kept as written.
 
 ## `results`
 

@@ -301,30 +301,35 @@ and in the [`finding` event](events.md#the-event-catalog). Fixed per invariant b
 the engine's [registry](../../specforge-engine/findings.md#taxonomy) and derived
 when the finding is read, so a run stored before reads back classified as the
 registry says today; `null` only when the core runs without the engine.
+`vocabulary.categories` lists each as `{value, label, summary}`, in the engine's
+declaration order, the order of this table; `summary` is one sentence on the
+kind of defect it holds.
 
-| Value | Meaning |
-| --- | --- |
-| `crash` | The API failed: a 5xx, or a broken request it did not reject cleanly. |
-| `security` | The API leaked, accepted or reflected what it should not, or an input stalled it. |
-| `access` | A caller reached what its access policy forbids. |
-| `business_rule` | A rule the contract declares, or a state transition, did not hold. |
-| `contract_hygiene` | The API and its contract disagree: status, Content-Type, schema, validation, or a response field the contract does not declare. |
-| `performance` | A clean response was too slow, or slowed down under load. |
+| Value | Label | Meaning |
+| --- | --- | --- |
+| `crash` | Crash | The API failed: a 5xx, or a broken request it did not reject cleanly. |
+| `contract_hygiene` | Contract hygiene | The API and its contract disagree: status, Content-Type, schema, validation, or a response field the contract does not declare. |
+| `security` | Security | The API leaked, accepted or reflected what it should not, or an input stalled it. |
+| `access` | Access | A caller reached what its access policy forbids. |
+| `business_rule` | Business rule | A rule the contract declares, or a state transition, did not hold. |
+| `performance` | Performance | A clean response was too slow, or slowed down under load. |
 
 ## `severity` { #severity }
 
 How serious a finding is, beside `category` and wherever it is. Listed from the
 most severe; the report's `defects` and `unconfirmed_findings` sort by it first,
 then by the invariant's place in the engine's registry. `null` only without the
-engine, and then neither orders anything.
+engine, and then neither orders anything. `vocabulary.severities` lists each as
+`{value, label, summary}`, most severe first; `summary` is one sentence on the
+defects it holds.
 
-| Value | Meaning |
-| --- | --- |
-| `critical` | An access boundary was crossed. |
-| `high` | A server error, a broken business rule or state transition, sensitive data exposed or a privileged field accepted. |
-| `medium` | Internal details leaked, input reflected or stalling the API, invalid input accepted, a response off its schema, a latency defect, a malformed request handled badly. |
-| `low` | A valid request rejected, a Content-Type off its contract, or a response field the contract does not declare. |
-| `info` | A status the contract does not declare. |
+| Value | Label | Meaning |
+| --- | --- | --- |
+| `critical` | Critical | An access boundary was crossed. |
+| `high` | High | A server error, a broken business rule or state transition, sensitive data exposed or a privileged field accepted. |
+| `medium` | Medium | Internal details leaked, input reflected or stalling the API, invalid input accepted, a response off its schema, a latency defect, a malformed request handled badly. |
+| `low` | Low | A valid request rejected, a Content-Type off its contract, or a response field the contract does not declare. |
+| `info` | Info | A status the contract does not declare. |
 
 ## `observation.location.scope` { #location-scope }
 

@@ -4,7 +4,7 @@
 refused `HANDSHAKE_REQUIRED`.
 
 ```json
-{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.2.4"}}
+{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.2.5"}}
 ```
 
 The response carries the protocol version, the server's identity, what this
@@ -13,7 +13,7 @@ in, and the options a run can be asked for:
 
 ```json
 {"jsonrpc":"2.0","id":1,"result":{
-  "protocol_version":"0.2.4",
+  "protocol_version":"0.2.5",
   "server":{"name":"specforge-core","version":"…","frozen":false},
   "capabilities":{…},
   "catalog":{…},
@@ -47,8 +47,8 @@ lists it among the result's required fields.
 
 | Key | Items | What it lists |
 | --- | --- | --- |
-| `categories` | strings | Every [`category`](vocabularies.md#category), in the engine's declaration order |
-| `severities` | strings | Every [`severity`](vocabularies.md#severity), most severe first |
+| `categories` | `{value, label, summary}` | Every [`category`](vocabularies.md#category), in the engine's declaration order; `summary` is the kind of defect it holds. Plain strings to a client that asked for a version before `0.2.5` |
+| `severities` | `{value, label, summary}` | Every [`severity`](vocabularies.md#severity), most severe first; `summary` is the defects it holds. Plain strings to a client that asked for a version before `0.2.5` |
 | `invariants` | `{value, label, category, severity, rule_source, description, summary}` | Every invariant the engine checks, in registry order, the order that breaks ties within one severity. `rule_source` is `intrinsic` (the invariant states its rule, which `description` carries) or `declared` (the contract states it; `description` is `null`). `summary` is one sentence for a person on what a finding of it means, never `null` |
 | `truncation_reasons` | `{value, label}` | Every [`truncation.reason`](vocabularies.md#truncation-reason) |
 | `target_down_verdicts` | `{value, label}` | Every [`target_down_verdict`](vocabularies.md#target-down-verdict) |
@@ -79,8 +79,8 @@ keys, the effects matrix and how it is derived are on
 **The core serves a range within its own series.** A client is served when its
 `protocol_version` has the core's `major.minor` and a patch between a declared
 floor and the core's own. Each part compares as a number, never as text:
-`0.1.10` is newer than `0.1.9`. This core speaks `0.2.4` and serves `0.2.0`
-up to `0.2.4`: no `0.1.x` client is served. It always answers `hello` with its
+`0.1.10` is newer than `0.1.9`. This core speaks `0.2.5` and serves `0.2.0`
+up to `0.2.5`: no `0.1.x` client is served. It always answers `hello` with its
 own version, and a frontend ignores the keys it does not know.
 
 Anything else — another series, a patch outside the range, or a
@@ -129,6 +129,58 @@ neither. See [ADR-095](../adr/protocol.md#adr-095).
 The report document that `fuzz`, `replay` and `run_pipeline` answer with is
 `schema_version` 1.27. The protocol's own README holds the full entry for each
 version; the lines below are the summary.
+
+- **0.2.5** — A finding's category and severity read like the other terms, with a
+  label and a summary; a capped run says which model has no price before it is
+  sent; a capped `generate_contract` holds every call it sends within its cap; and
+  `auth` says it needs the access policies a producer declares, with each producer
+  saying whether it meets that.
+  **Changes the shape of two fields, kept for older clients**: this core serves
+  `0.2.0` up to `0.2.5`. It ships with report `1.27`, as `0.2.4` did.
+    - *Changed:* `vocabulary.categories` and `vocabulary.severities`, in `hello`
+      and `describe`, list each term as `{value, label, summary}`, in the same
+      order as before: a category in the engine's declaration order, a severity
+      from the most severe ([category](vocabularies.md#category),
+      [severity](vocabularies.md#severity)). A client that asked `hello` for a
+      version before `0.2.5` still gets plain strings in both.
+    - *Changed:* a variant's `requires` is read off the engine's runners, and
+      `auth`'s is `["identities", "access_policies"]`. `access_policies` is a new
+      value: the endpoints' access policies a producer's contracts declare,
+      without which an `auth` run sends nothing. A variant's `invariants` are what
+      it reports once its `requires` are met
+      ([which variant a run gets](fuzz-options.md#which-variant)). `requires` is
+      an open list, so a client of any version gets the new value.
+    - *Changed:* a preset's `requires` is what the variant each of its runs takes
+      requires, where it was what any variant of the run's mode required;
+      `access-check`'s is `["identities", "access_policies"]`.
+    - *Added:* `meets` in each row of `fuzz_options.producer_supplies`: the values
+      of a variant's `requires` the producer's contracts can meet,
+      `["access_policies"]` for `fixture` and `inference` and `[]` for `none`, so a
+      client tells a requirement met without a table of its own
+      ([the object](fuzz-options.md#the-object)).
+    - *Changed:* a capped `fuzz`, `run_pipeline` or `generate_contract` refused
+      because a model of its chain has no price is still `INVALID_PARAMS`, now
+      with `data.parameter` naming the cap it was given, `producer.max_cost_usd`
+      or, for `generate_contract`, `max_cost_usd`, and `data.model`, the model
+      with no price ([errors](errors.md#producer-invalid-params)).
+    - *Fixed:* a capped `generate_contract` with `use_llm` whose chain has a model
+      with no price is refused before its route discovery is sent, rather than
+      after paying for the discovery and writing the contract.
+    - *Fixed:* a capped `generate_contract` with `use_llm` holds every call it
+      sends against `max_cost_usd`: its two route discovery calls and its response
+      calls besides the contract inferences, so a discovery that alone passes the
+      cap is no longer sent. Each call is held at its estimated worst case, the
+      input as sent and the output at the expected answer length. A discovery the
+      cap cannot hold is refused `CONTRACT_PRODUCER_FAILED` before its next call,
+      with nothing written; a response call it cannot hold is not sent, and its
+      endpoint's `refinement_error` says so. A discovery one call paid for is kept
+      for the next call, which does not pay for it again, even when the first was
+      refused after it ([its cap](operations.md#generate-contract-cap)).
+    - *Added:* `unpriced_models` (list of strings) in `estimate_inference`, and so
+      in the `data.estimate` of `INFERENCE_APPROVAL_REQUIRED`: the models, primary
+      or fallback, a pending inference's worst case has no price on; empty when
+      every model is priced. It names the model a capped run would be refused for
+      before the run is sent ([the estimate](operations.md#estimate-inference)).
 
 - **0.2.4** — The run picker reads its words and facts from the core: what each
   mode, variant, strategy, phase and preset is, what a run can find and what
@@ -243,7 +295,7 @@ version; the lines below are the summary.
       still `INVALID_PARAMS`, now with `data.parameter`
       ([errors](errors.md#producer-invalid-params)).
 
-- **Report 1.27** — Additive; it ships with protocol `0.2.3` and `0.2.4`. Adds
+- **Report 1.27** — Additive; it ships with protocol `0.2.3`, `0.2.4` and `0.2.5`. Adds
   `contracts_unproduced` to `run.signal_causes`.
 
 - **0.2.2** — A run's detail counts its unconfirmed defects once, says in which

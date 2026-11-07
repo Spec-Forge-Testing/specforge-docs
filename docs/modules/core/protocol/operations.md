@@ -99,7 +99,7 @@ K declare nothing"). The schema types both results (`list_endpoints_result`,
 | `repo_root` | The project root. | Where routes are looked for. Not a directory, or no route in it: `CONTRACT_GENERATION_FAILED` (`data.path`, `data.reason`). |
 | `use_llm` | `false` | See the table below. |
 | `approval_token` | — | Only with `use_llm`. Without a valid one nothing is spent and the call is refused `INFERENCE_APPROVAL_REQUIRED` with `data.estimate`. |
-| `max_cost_usd` | No cap. | Only with `use_llm`. Caps the parameter and body inference, not the response calls. The estimate's `exceeds_cap` judges the worst case of every call against it, the discovery and response calls included. |
+| `max_cost_usd` | No cap. | Only with `use_llm`. Caps what this one call sends, every model call of it: see [the cap](#generate-contract-cap). The estimate's `exceeds_cap` judges the worst case of every call against it. |
 | `destination` | `openapi.generated.yaml` | Where the document is written. |
 | `overwrite` | `false` | An existing `destination` is refused `INVALID_PARAMS` before anything is written; `true` replaces it. |
 | `adopt` | `false` | `true` also declares the file as `openapi_spec` in `specforge.toml`. |
@@ -120,6 +120,30 @@ carries `path`, `adopted`, `endpoints` (`method`, `path`, `handler`, `file`,
 `line`, `source`, `refined`, `refinement_error`), `llm_files`,
 `security_schemes`, `estimated_cost_usd`, `cost_usd` and `contract`, the shape
 `load_contract` answers with.
+
+#### The cap { #generate-contract-cap }
+
+`max_cost_usd` caps one `generate_contract` call, never several: a call that
+answers `INFERENCE_APPROVAL_REQUIRED` and the call that follows it with the token
+each get the whole cap. Within the call, every model call is held against what is
+left of the cap before it is sent, at its estimated worst case: the input as it
+will be sent, and the output at the expected answer length. That worst case is an
+estimate, not a strict bound: a model that answers longer than expected can spend
+past it. What each call held is replaced by what it really cost once it answers.
+
+| Call | Held | When the cap cannot hold it |
+| --- | --- | --- |
+| Route discovery: the file selection and the extraction | Both together, before the file selection is sent; the extraction again, on the files it really sends, before it is sent. | `CONTRACT_PRODUCER_FAILED` (`data.source` `route discovery`, `data.detail` the reason) before the next call is sent; nothing is written or loaded. |
+| Contract inferences (parameters and body) | Each one as it is admitted, as `producer.max_cost_usd` holds a run's ([the cap](../inference.md#the-cap)). | The endpoint is left without its inferred contract, and its `refinement_error` says why. |
+| Response calls | Each one before it is sent. | It is not sent, and its endpoint's `refinement_error` says the cap held it back. |
+
+A capped call whose model chain has a model with no price is refused up front with
+`INVALID_PARAMS` before discovery is sent: `data.parameter` is `max_cost_usd` and
+`data.model` the model with no price
+([errors](errors.md#producer-invalid-params)). A discovery that was paid for is
+kept, per project, for the next call with the token it was approved under, even
+when the call that paid for it was then refused: that call does not pay for it
+again.
 
 ## `analysis`
 
@@ -191,7 +215,7 @@ requires one. A relative path resolves against the project root.
 | `source_repo` | The code to infer from, for `inference`; required there (`INVALID_PARAMS` with `data.parameter` `producer.source_repo`). A path that is not a directory is refused `CONTRACT_PRODUCER_FAILED` before any inference. |
 | `refresh` | Skip the inferred-contract cache and replace every entry this run infers. Default `false`. |
 | `approval_token` | An approved estimate's token, required while inferences remain to pay for and `inference.require_approval` is on. A missing or stale one is refused `INFERENCE_APPROVAL_REQUIRED`. |
-| `max_cost_usd` | The most the run may spend on inferences, in USD, greater than `0`. Each inference holds its worst case when it is admitted; no inference starts once that would pass the cap, and the endpoints left over run schema-only. A run whose worst case has no price on some model of the chain is refused `INVALID_PARAMS` naming that model. |
+| `max_cost_usd` | The most the run may spend on inferences, in USD, greater than `0`. Each inference holds its worst case when it is admitted; no inference starts once that would pass the cap, and the endpoints left over run schema-only. A run whose worst case has no price on some model of the chain is refused `INVALID_PARAMS` with `data.parameter` `producer.max_cost_usd` and `data.model` naming that model ([errors](errors.md#producer-invalid-params)). |
 
 `refresh`, `approval_token` and `max_cost_usd` apply to `inference` only; with
 another `kind` they are refused `INVALID_PARAMS`.
@@ -213,6 +237,7 @@ example count does not change the estimate.
 | `cached`, `pending` | How many contracts the cache would serve, and how many the model would infer. |
 | `input_tokens`, `output_tokens`, `cost_usd` | The totals at the expected answer length, one answer per call; `cost_usd` is `null` when unpriced. |
 | `worst_case_cost_usd` | The pending inferences' worst case at the expected answer length: every re-ask and every fallback model included. `null` when some model of the chain has no price. |
+| `unpriced_models` | The models of the chain, primary or fallback, the pending inferences' worst case has no price on; `[]` when every model is priced. A capped run is refused naming one of them, so a client can say which before sending it. |
 | `max_cost_usd` | The `producer.max_cost_usd` echoed back, or `null`. |
 | `exceeds_cap` | Whether `worst_case_cost_usd` passes that cap; `null` without a cap or when the worst case is unpriced. |
 | `approval_required` | Whether a run of this selection needs a token. |

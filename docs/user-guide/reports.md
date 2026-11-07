@@ -86,7 +86,7 @@ its metrics, endpoint stats and crashes stay queryable through `history` and
 ## The `report.json` schema
 
 `ReportDocument` is a frozen, `extra="forbid"` Pydantic model: a pure function
-of persisted run data, never a live object. Its `schema_version` is `1.26`.
+of persisted run data, never a live object. Its `schema_version` is `1.27`.
 The version changes when a reader must account for a new or changed field.
 
 The changelog is intentionally compact: **additive** versions preserve the
@@ -98,6 +98,7 @@ the schema table below.
 
     | Version | Compatibility | Changes |
     | --- | --- | --- |
+    | `1.27` | Additive over 1.26 | Adds the signal cause `contracts_unproduced`. |
     | `1.26` | Additive over 1.25 | Adds `starved` to each phase of `endpoints[].budget_by_phase`, and `finding_id` to each entry of `replay.defect_verdicts`. |
     | `1.25` | **Not additive** over 1.24 | Removes `analysis.strategy_mode`; `run.truncation.endpoint_id` is `null` with reason `flaky_generation`; adds the signal causes `run_truncated` and `requests_unanswered` and the observation marker `inferred_rule_database_error`. |
     | `1.24` | Additive over 1.23 | A `control` can carry `attribution`, `peer`, `occupancy` and `known_answer`, and carries `source`. |
@@ -296,7 +297,8 @@ compilation-time fact a replay never produces, so trustworthiness there is
 read from `fidelity` instead); `run.signal_causes` lists why when degraded, in
 render order - `no_responses`, `requests_unanswered` (an endpoint left at least
 three of its requests, and at least 5 % of them, with a timeout or an availability
-failure), `endpoints_excluded`, `withheld_by_safety_guard`,
+failure), `endpoints_excluded`, `contracts_unproduced` (the producer left one or
+more endpoints without a contract), `withheld_by_safety_guard`,
 `access_policy_undeclared`, `access_preconditions_unmet` (an `auth` or
 `resilience` run left a targeted endpoint with an access policy unprobed for one
 of the `owner_*`, `owner_identity_missing`, `required_role_unheld` or `link_target_reserved` reasons above), `stateful_endpoints_unsent` (a `stateful` run never sent a targeted endpoint, for `link_value_never_produced` or `rule_never_drawn`), `run_cancelled`,

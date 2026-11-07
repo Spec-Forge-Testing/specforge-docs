@@ -1439,7 +1439,7 @@ account for them, carries an empty list and pays nothing.
 
 ## ADR-058 — Endpoints with declared side effects are held back by a safety guard, not fuzzed { #adr-058 }
 
-**Status:** accepted · Superseded in part by [ADR-102](#adr-102) · `runtime/safety_guard.py`, `runtime/__init__.py`, `models/runtime/execution.py`, `models/runtime/stats.py`
+**Status:** accepted · Superseded in part by [ADR-102](#adr-102), [ADR-196](#adr-196) · `runtime/safety_guard.py`, `runtime/__init__.py`, `models/runtime/execution.py`, `models/runtime/stats.py`
 
 ### Context
 
@@ -3701,3 +3701,63 @@ not split the header, and RFC 9110 lets a server trim each element.
 The bytes on the wire change for path and header values that are not strings, and
 match what an OpenAPI client sends. A boolean path parameter is judged as the
 server received it, and a path value drawn `None` makes the request unsendable.
+
+---
+
+## ADR-196 — An unsafe method no producer judged is held as a write under load { #adr-196 }
+
+**Status:** accepted · Supersedes in part [ADR-058](#adr-058): which endpoints `write_operation` holds · `runtime/safety_guard/policy.py`, `models/runtime/stats.py`, `models/runtime/labels.py`
+
+### Context
+
+The safety guard held an endpoint out of `performance` and `resilience` only when
+a producer declared `write_operation`. Two kinds of endpoint reached those modes
+with no such declaration: every endpoint of a run without a producer, and an
+endpoint whose contract could not be produced or used, since a failed contract
+declares nothing. The risk defaults read an omitted `write_operation` as `false`,
+so a `POST`, `PUT` or `DELETE` nobody judged looked exactly like one a producer
+had judged harmless, and received the mode's whole load against a live API.
+
+### Decision
+
+**An unjudged write on an unsafe method is held as `assumed_write`.** `RiskFlag`
+gains `ASSUMED_WRITE`, raised when the endpoint has no declared risk, or a risk
+whose `write_operation` is unset, and its method is not safe (`is_safe_method`:
+anything but `GET`, `HEAD` and `OPTIONS`). It holds in the modes
+`write_operation` holds in — `performance`, `resilience` and any custom mode —
+and never in `stateless`, `stateful`, `auth` or `replay`. `allow_side_effects`
+lifts it with the rest of the guard.
+
+**`EndpointRisk` tells an unjudged write from a declared non-write.**
+`write_operation` and `external_side_effects` default to `None`, not `false`.
+Only a declared `write_operation` wins over the method: `false` sends the
+endpoint, `true` holds it as `write_operation`. An unset `external_side_effects`
+holds nothing: no method says an endpoint reaches past the API.
+
+**A declared flag outranks an assumed one.** `assumed_write` comes last in
+`RiskFlag`'s precedence, so a route vetoed by both names the declared flag. The
+hold is reported like any other: `held_back_by` `assumed_write`, a new member of
+`HoldReason`, and the run's signal names `withheld_by_safety_guard`.
+
+### Rejected
+
+- **Holding unjudged writes only when a contract failed.** It protects an
+  inference run whose producer failed for an endpoint, and leaves every run
+  without a producer — the most common load run — sending its whole battery to
+  every write endpoint. The guard cannot tell why nobody judged an endpoint, and
+  it does not need to: nobody did.
+- **Trusting the risk defaults.** Reading an omitted `write_operation` as `false`
+  turns a contract that is silent about writes into a declaration that the
+  endpoint does not write. A partial `risk` section, or one the producer only
+  half filled, is the case where the default does the most harm.
+
+### Consequences
+
+A `performance`, `resilience` or custom run without a producer, or with contracts
+that leave `write_operation` out, now holds back every endpoint whose method is
+not safe, and its signal comes out `degraded` with `withheld_by_safety_guard`.
+Such a run measures only the safe endpoints until the operator either declares
+`write_operation: false` where it is true (in a contract, or through a producer
+that judges it) or passes `allow_side_effects`. The prompt asks the inference
+producer to always state `write_operation`, so an inferred contract normally
+judges it. `stateless`, `stateful` and `auth` runs are unchanged.

@@ -4,7 +4,7 @@
 refused `HANDSHAKE_REQUIRED`.
 
 ```json
-{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.2.2"}}
+{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.2.3"}}
 ```
 
 The response carries the protocol version, the server's identity, what this
@@ -13,7 +13,7 @@ in, and the options a run can be asked for:
 
 ```json
 {"jsonrpc":"2.0","id":1,"result":{
-  "protocol_version":"0.2.2",
+  "protocol_version":"0.2.3",
   "server":{"name":"specforge-core","version":"…","frozen":false},
   "capabilities":{…},
   "catalog":{…},
@@ -74,8 +74,8 @@ matrix and how it is derived are on [Fuzz options](fuzz-options.md).
 **The core serves a range within its own series.** A client is served when its
 `protocol_version` has the core's `major.minor` and a patch between a declared
 floor and the core's own. Each part compares as a number, never as text:
-`0.1.10` is newer than `0.1.9`. This core speaks `0.2.2` and serves `0.2.0`
-up to `0.2.2`: no `0.1.x` client is served. It always answers `hello` with its
+`0.1.10` is newer than `0.1.9`. This core speaks `0.2.3` and serves `0.2.0`
+up to `0.2.3`: no `0.1.x` client is served. It always answers `hello` with its
 own version, and a frontend ignores the keys it does not know.
 
 Anything else — another series, a patch outside the range, or a
@@ -122,8 +122,51 @@ neither. See [ADR-095](../adr/protocol.md#adr-095).
 ## Changelog
 
 The report document that `fuzz`, `replay` and `run_pipeline` answer with is
-`schema_version` 1.26. The protocol's own README holds the full entry for each
+`schema_version` 1.27. The protocol's own README holds the full entry for each
 version; the lines below are the summary.
+
+- **0.2.3** — An inference failure is never a quiet `clean`: the cost cap holds
+  each inference's worst case, an endpoint nobody judged a write is held under
+  load, and a `stateful` run's ticks say how far it went. **Additive on the
+  wire**: this core serves `0.2.0` up to `0.2.3`. It ships with report `1.27`.
+    - *Added:* `contracts_unproduced` in `run.signal_causes`: one or more
+      endpoints of the run are in `producer_exclusions`
+      ([signal causes](vocabularies.md#signal-causes)).
+    - *Added:* `worst_case_cost_usd` in `estimate_inference` and in the
+      `data.estimate` of `INFERENCE_APPROVAL_REQUIRED`: every re-ask and fallback
+      model included, `null` when unpriced
+      ([the estimate](operations.md#estimate-inference)).
+    - *Changed:* `producer.max_cost_usd` holds each inference's worst case when it
+      is admitted, and `exceeds_cap` judges `worst_case_cost_usd`; so does the
+      estimate `generate_contract` asks approval for. A capped `fuzz` or
+      `run_pipeline` whose worst case has no price is refused `INVALID_PARAMS`
+      naming the unpriced model, before any inference.
+    - *Changed:* a contract inference's expected `output_tokens` are measured per
+      profile, and higher for the `security` and `exposure` strategies.
+    - *Changed:* the safety guard holds as `assumed_write` an endpoint whose method
+      is not safe and whose risk no producer declared, or that leaves
+      `write_operation` out, in `performance`, `resilience` and a custom mode,
+      unless `allow_side_effects`. `assumed_write` is a new value of
+      `vocabulary.hold_reasons` and of `held_back_by`
+      ([ADR-196](../../specforge-engine/adr/engine.md#adr-196)).
+    - *Changed:* the `inference` prompt asks for the rules that tie two input
+      fields, a field to a literal, or that a description declares, and reads the
+      operation's `summary` and `description`. Every cached inferred contract is
+      inferred again once, on its endpoint's next run.
+    - *Added:* `passes` and `max_passes` in a `stateful` run's `tick`.
+      *Fixed:* its `findings` rises with each `finding`
+      ([events](events.md#the-event-catalog)).
+    - *Fixed:* an Anthropic model's contract answered inside a fenced block is
+      read. An unparsable answer is re-asked up to twice on each model, each time
+      within what is left of the call's time; a provider failure after a re-ask
+      moves on to the next model.
+    - *Changed:* a `producer.source_repo` that is not a directory answers
+      `CONTRACT_PRODUCER_FAILED` (`data.source`, `data.detail`); a missing one is
+      still `INVALID_PARAMS`, now with `data.parameter`
+      ([errors](errors.md#producer-invalid-params)).
+
+- **Report 1.27** — Additive; it ships with protocol `0.2.3`. Adds
+  `contracts_unproduced` to `run.signal_causes`.
 
 - **0.2.2** — A run's detail counts its unconfirmed defects once, says in which
   phase an identity got no examples, keeps a replay's verdicts, and says ahead

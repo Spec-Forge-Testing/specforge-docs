@@ -70,17 +70,20 @@ without sending any. Both methods render through the same step, so the estimate
 covers exactly the `system` and `user` messages a run sends, under the same
 profile and the same template. The messages go to
 `llm.estimate_structured_calls` with `EndpointContract` as the response model
-and the settings' primary model.
+and the settings' primary model, and with the attempts a call may make: up to
+two re-asks on each model, the primary and every fallback model of the chain.
 
 | Assumption | Value |
 | --- | --- |
-| Output per call | `EXPECTED_CONTRACT_OUTPUT_TOKENS`, 366 tokens, the mean output of a contract inference measured on a live run |
+| Output per call | `EXPECTED_CONTRACT_OUTPUT_TOKENS[profile]`: `qa` 656 tokens, `security` 928, the mean output of a contract inference over a measured sample of endpoints, rounded up to a multiple of 16 |
 | Prompt cache | modelled when `prompt_cache` is true: the shared `system` block is written once and read by every later call, if the provider caches and the block is long enough |
-| Model | the primary model only; fallback models are not estimated |
-| Attempts | one per call; transport retries and output re-asks are not estimated |
+| Expected cost | the primary model, one answer per call |
+| Worst case | every re-ask on every model of the chain, each at the expected output length and resending the rejected answers with their validation errors; `None` when some model of the chain is unpriced |
+| Not estimated | transport retries of a provider failure, and an answer longer than the expected length |
 
-The result is an `llm.CostEstimate`: per-call and total tokens, and a cost that
-is `None` when the model has no known price. How tokens are counted and priced
+The result is an `llm.CostEstimate`: per-call and total tokens, a cost that
+is `None` when the model has no known price, a `worst_case_cost_usd` and the
+`unpriced_models` of the chain. How tokens are counted and priced
 is in [LLM › Estimating a batch](../llm/reference.md#estimating-a-batch).
 
 ## `prompt_fingerprint`
@@ -144,7 +147,7 @@ which holds the key for `model`.
 
 | To | Change |
 | --- | --- |
-| Change the output size an estimate assumes | `EXPECTED_CONTRACT_OUTPUT_TOKENS` in `engine.py` |
+| Change the output size an estimate assumes | `EXPECTED_CONTRACT_OUTPUT_TOKENS` in `engine.py`, one value per profile, measured as the mean output of a sample of live inferences |
 | Change what a profile fills | `_PROFILE_SECTIONS` in `agents/profiles.py` |
 | Change what the model is told | the templates and partials, see [Prompts](prompts.md) |
 | Change retries, fallbacks or the model chain | `llm` settings, see [LLM](../llm/index.md) |

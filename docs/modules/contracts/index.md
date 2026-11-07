@@ -67,7 +67,7 @@ kinds of content, each with its own wire dialect:
 | Section | Model | What it says | Wire names |
 | --- | --- | --- | --- |
 | `parameters` (path/query/header), `body` | `SchemaProperty` | The request shape as JSON Schema, refined by the LLM with the constraints the spec leaves implicit | camelCase aliases (`minLength`), snake_case in Python |
-| `risk` | `EndpointRisk` | How critical and sensitive the endpoint is: score, criticality, sensitivity, auth surface, write operation, external side effects | snake_case, no alias |
+| `risk` | `EndpointRisk` | How critical and sensitive the endpoint is: score, criticality, sensitivity, auth surface, write operation, external side effects; the last two are `null` when not judged, which the safety guard reads differently from `false` | snake_case, no alias |
 | `attack` | `EndpointAttack` | Where to focus, which fields are sensitive, how hard (`aggressiveness`, `mutation_depth`), and the per-field hints in `field_hints` keyed by `zone.field` (`FieldAttack`) — each hint carries the payload families (`attack_profiles`) for that field | snake_case, no alias |
 | `transitions` | `TransitionInvariant` | What a follow-up request must observe after this endpoint succeeds: expected statuses, echoed fields, trigger statuses | snake_case, no alias |
 | `semantic_properties` | `SemanticProperty` | Business rules as a closed expression tree of six node kinds discriminated by `kind` | snake_case, no alias |

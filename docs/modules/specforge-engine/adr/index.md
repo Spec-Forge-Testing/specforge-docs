@@ -220,3 +220,4 @@ missing here belongs to another module:
 | [ADR-188](runners.md#adr-188) | runners | A stateful run keeps a witness Hypothesis calls flaky, and its passes are bounded |
 | [ADR-191](runners.md#adr-191) | runners | A stateful pass draws the same shape whatever the target answers, the run stops after two dry passes, and one more pass aims at what it never reached |
 | [ADR-192](findings.md#adr-192) | findings | An intrinsic verdict is its own evidence; a verdict that judges needs a control |
+| [ADR-196](engine.md#adr-196) | engine | An unsafe method no producer judged is held as a write under load |

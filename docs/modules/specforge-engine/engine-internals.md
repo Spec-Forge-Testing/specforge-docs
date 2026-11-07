@@ -20,22 +20,29 @@ split is `partition_by_safety`, applied once — after the risk ordering, before
 the shared HTTP client opens — so the runners never see a held endpoint and stay
 untouched.
 
-The decision reads each endpoint's `EndpointRisk` and the run's `ExecutionMode`.
-Two risk flags hold an endpoint back, each in the modes where sending a probe
-would do real, irreversible harm:
+The decision reads each endpoint's `EndpointRisk`, its method and the run's
+`ExecutionMode`. Three risk flags hold an endpoint back, each in the modes where
+sending a probe would do real harm:
 
-| Risk flag | Held out of | Why |
-|---|---|---|
-| `external_side_effects` | every request-generating mode — `stateless`, `performance`, `resilience`, `auth`, `stateful` | a probe reaches past the API (sends mail, charges a card, calls a third party) and cannot be undone |
-| `write_operation` | `performance`, `resilience` only | the load and malformed-transport batteries would hammer a mutating endpoint; the correctness modes still probe it |
+| Risk flag | Raised by | Held out of | Why |
+|---|---|---|---|
+| `external_side_effects` | the producer declared `external_side_effects: true` | every request-generating mode — `stateless`, `performance`, `resilience`, `auth`, `stateful`, a custom mode | a probe reaches past the API (sends mail, charges a card, calls a third party) and cannot be undone |
+| `write_operation` | the producer declared `write_operation: true` | `performance`, `resilience`, a custom mode | the load and malformed-transport batteries would hammer a mutating endpoint; the correctness modes still probe it |
+| `assumed_write` | no producer judged it: no declared risk, or a risk that leaves `write_operation` out, on a method that is not safe (anything but `GET`, `HEAD`, `OPTIONS`) | `performance`, `resilience`, a custom mode | an unjudged write is treated as a write, so a schema-only endpoint is never sent the load batteries by default |
 
-`replay` is exempt from both: it re-sends a recorded trace verbatim, never a
+Only a declared `write_operation` wins over the method: `false` lets an unsafe
+method through, `true` holds it as `write_operation`. An `external_side_effects`
+left out holds nothing. `is_safe_method` is the one reading of a safe method, the
+same one the follow-up rule below uses ([ADR-196](adr/engine.md#adr-196)).
+
+`replay` is exempt from all three: it re-sends a recorded trace verbatim, never a
 fresh probe. Re-sending a recording made without the guard, or whose run breached it, needs the caller's
 consent again, which the core asks for before the engine runs (see
 [consent to re-send](execution-modes.md#consent-to-re-send)). `RiskFlag`'s
-declaration order is precedence — `external_side_effects` outranks
-`write_operation` — so an endpoint carrying both is held for the stronger, less
-reversible reason.
+declaration order is precedence — `external_side_effects`, then
+`write_operation`, then `assumed_write` — so an endpoint carrying more than one
+is held for the stronger, less reversible reason, and a declared risk outranks an
+assumed one.
 
 The guard is off by **policy**, not by engine stability:
 `ExecutionConfig.allow_side_effects` (default `False`, set by the CLI's
@@ -647,15 +654,37 @@ for any phase with no extension; `plan_passes` calls it as it builds each pass.
   schema already rules out — yields nothing, so the phase never sends a
   schema-invalid value to fake a violation. This constructor covers path, body and
   query fields — every zone but the header, whose values are strings on the wire.
-- **Two fields sharing a declared schema** are built by rearranging the drawn
-  values: swapped for an order comparison, copied for equality or inequality. It is
-  type-agnostic — numbers, strings and dates compare the way the evaluator already
-  compares them.
+- **Two fields whose schemas reject the same values** are built by rearranging the
+  drawn values: swapped for an order comparison, copied for equality or inequality.
+  The schemas are compared by their validating keywords only: annotations
+  (`title`, `description`, `examples`, `default`, `readOnly`, …), provenance
+  markers and `x-` extensions never keep two fields apart. It is type-agnostic —
+  numbers, strings and dates compare the way the evaluator already compares them.
+- Both constructors address a field **nested in the body** by its dotted path, so
+  `order.end > order.start` is built like `end > start`; the value is written only
+  where the draw has an object to hold it.
 - **Everything else** — aggregations, conditionals, logical combinations,
-  arithmetic inside a comparison, dotted paths, `multipleOf`, boolean literals, a
-  header built for a numeric comparison — falls back to **filtering** valid draws by
-  the rule: the violating arm keeps draws the evaluator scores `False`, the
-  conforming arm those it scores `True`.
+  arithmetic inside a comparison, a literal compared with a field that declares
+  `multipleOf`, boolean literals, a header built for a numeric comparison — falls
+  back to **filtering** valid draws by the rule: the violating arm keeps draws the
+  evaluator scores `False`, the conforming arm those it scores `True`.
+
+The violating arm also aims at the **edge** of the relation, the violating value
+nearest where the rule stops holding, since an off-by-one check fails only there:
+
+| Rule | Edge sent |
+| --- | --- |
+| `end > start`, `end < start` | `end == start` |
+| `end >= start`, `end <= start` | `end` one step past `start` on the violated side |
+| `x > 10`, `x < 10` | `x == 10` |
+| `x >= 10`, `x <= 10` | `x` one step past `10` on the violated side |
+
+A step is `1` for an `integer`. Between two `number` fields it is their declared
+`multipleOf`; a `number` with none has no next value, so its non-strict
+comparisons get no edge and keep the interior violations, and so do non-numeric
+fields (strings, dates), whose strict comparisons still get the copied edge. An
+edge outside the field's declared bounds is not sent. Equality and inequality
+have no edge beyond the copy above.
 
 The unfiltered valid arm is the safety net. A rule no arm can decide — a numeric
 rule over a header declared `integer`, say, whose value is stringified and then

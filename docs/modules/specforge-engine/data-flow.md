@@ -121,7 +121,7 @@ The two kernel DTOs an endpoint may carry:
 
 | DTO | Fields |
 |---|---|
-| `EndpointRisk` | `risk_score` (0–100, default 50), `criticality`, `sensitivity`, `auth_surface`, `write_operation`, `external_side_effects` |
+| `EndpointRisk` | `risk_score` (0–100, default 50), `criticality`, `sensitivity`, `auth_surface`, `write_operation`, `external_side_effects` (each of the last two `None` when the producer did not judge it; the [safety guard](engine-internals.md#safety-guard) then goes by the method) |
 | `EndpointAttack` | `focus_fields`, `sensitive_fields`, `aggressiveness` (0–10), `mutation_depth` (0–10), `field_hints` keyed by zone-qualified field path — each hint carries that field's `attack_profiles` |
 
 `EndpointBudgetContract` is the engine's own: `max_examples` (default

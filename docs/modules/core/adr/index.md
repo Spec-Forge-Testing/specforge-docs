@@ -83,3 +83,4 @@ report lists, are the engine's.
 | [ADR-190](core.md#adr-190) | core | A run cut short, or one that left an endpoint's requests unanswered, is never clean |
 | [ADR-194](core.md#adr-194) | core | A finding's replay earns `possibly_resolved` behind witnesses, and says why when it cannot |
 | [ADR-195](core.md#adr-195) | core | A comparison rules each defect within the endpoints the later run exercised |
+| [ADR-197](inference.md#adr-197) | inference | The cost cap holds an inference's worst case |

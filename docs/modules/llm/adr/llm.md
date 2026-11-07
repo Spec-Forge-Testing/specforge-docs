@@ -62,7 +62,7 @@ endpoint is bounded by the call budget whatever the chain length.
 
 ## ADR-091 — The structured-output mode is chosen per provider from a table { #adr-091 }
 
-**Status:** accepted · `constants.py`, `router/modes.py`, `router/schema.py`
+**Status:** accepted · Superseded in part by [ADR-198](#adr-198) · `constants.py`, `router/modes.py`, `router/schema.py`
 
 ### Context
 
@@ -104,7 +104,7 @@ client is inside the typed failure boundary: a mode instructor cannot build is a
 
 ## ADR-092 — Cost is estimated without calling the model, and an unknown price is never free { #adr-092 }
 
-**Status:** accepted · `estimation/`, `catalog.py`, `observability/metrics.py`
+**Status:** accepted · Superseded in part by [ADR-197](../../core/adr/inference.md#adr-197) · `estimation/`, `catalog.py`, `observability/metrics.py`
 
 ### Context
 
@@ -146,3 +146,40 @@ checked. It is an approval figure, not a brake: the output size is the caller's
 `expected_output_tokens`, re-asks and fallbacks are not counted, and a limit on
 real spend is enforced against the metrics a run returns. Every reader of a cost
 has to handle `None`; that is the price of never lying about it.
+
+---
+
+## ADR-198 — Anthropic's structured output is read out of a fenced block { #adr-198 }
+
+**Status:** accepted · Supersedes in part [ADR-091](#adr-091): the mode for `anthropic` · `constants.py`, `router/modes.py`, `estimation/`
+
+### Context
+
+`claude-haiku-4-5` wraps its JSON answer in a ```` ```json ```` fence every time.
+instructor's `JSON` mode validates the raw text, so every structured call to it
+failed validation, was re-asked, and paid three calls before the router gave the
+model up. instructor's Anthropic-specific modes, `ANTHROPIC_JSON` and
+`ANTHROPIC_TOOLS`, cannot be used here: the router builds its client through
+`from_litellm`, which registers the OpenAI provider, and those modes do not
+build through it.
+
+### Decision
+
+**`anthropic` uses `MD_JSON`.** `PROVIDER_INSTRUCTOR_MODES` maps `anthropic` to
+`instructor.Mode.MD_JSON`, which asks for the answer inside a fenced `json`
+block and extracts the JSON from the fence before validating it. The schema still travels in the prompt. The extra
+instruction the mode adds is a closing message, after the cache-marked prefix,
+so the shared prefix the provider caches is unchanged. The estimator prepares
+each request in the same mode, so the instruction is counted.
+
+### Rejected
+
+**`TOOLS` mode for `anthropic`.** A tool call is more robust than parsing text,
+but it changes the shape of every request, the model catalog's flag for the
+provider and what each call costs. It is a separate change, not taken here.
+
+### Consequences
+
+An inference on an Anthropic model costs one call again instead of three, and
+the contract is read: a measured run produced 19 of 19 contracts with
+`claude-haiku-4-5`. Every other provider keeps its mode.

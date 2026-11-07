@@ -160,7 +160,7 @@ listener switches on `kind` and never guesses a type:
 | `RunStarted` | `started` | `endpoints` | The run began fuzzing this many endpoints, after the safety guard held any back. |
 | `EndpointStarted` | `endpoint_started` | `endpoint_id`, `index`, `total` | Exploration of one endpoint began; `index` is 1-based. |
 | `PhaseStarted` | `phase_started` | `endpoint_id`, `phase` | The endpoint moved on to a new generation phase. |
-| `ProgressTick` | `tick` | `elapsed_s`, `sent`, `total`, `findings` | A snapshot of the run's absolute counters. |
+| `ProgressTick` | `tick` | `elapsed_s`, `sent`, `total`, `findings`; `passes`, `max_passes` in a stateful run, `None` otherwise | A snapshot of the run's absolute counters. |
 | `FindingObserved` | `finding` | `report` (the `CrashReport`), read as `endpoint_id`, `status_code`, `invariant`, `phase` | A response broke an invariant. |
 | `InfraFailure` | `infra_failure` | `endpoint_id`, `reason`, `streak`, `limit` | A transport failure advanced an endpoint's infrastructure streak. |
 | `TargetDown` | `target_down` | `base_url`, `verdict` | The run concluded the target itself is down. |
@@ -191,11 +191,15 @@ The events split into two classes, and the split is semantic, not about volume:
 | **State** | `tick` | A snapshot with **absolute** counters, never increments. It is throttled to at most one every `MIN_TICK_INTERVAL_S` (0.1 s, about ten a second) — the `ProgressEmitter` drops a tick that falls inside the window. Because each tick carries the whole state, a slow listener can drop the intermediate ones without losing anything. |
 | **Fact** | every other event | Happens once and never repeats. Facts are **always** emitted, never throttled and never dropped. |
 
-The tick's three counters are accumulated by the emitter as the run reports them:
+The tick's counters are accumulated by the emitter as the run reports them:
 `sent` is the orchestrator's live wire-request count, `total` is the sum of the
 example budgets the run has planned so far, and `findings` counts raw findings as
-they are observed. `total` is `0` for a mode that plans no example budget, as
-every stateful tick is.
+they are observed (`note_finding_observed`), a stateful run's included. `total` is
+`0` for a mode that plans no example budget, as every stateful tick is; a stateful
+run reports its progress instead through `note_passes`: `passes` is how many
+passes over the state machine it has finished, and `max_passes` is
+`STATEFUL_MAX_PASSES` (100), a ceiling the run usually stops short of, after two
+passes in a row without progress.
 
 ### What each mode emits
 

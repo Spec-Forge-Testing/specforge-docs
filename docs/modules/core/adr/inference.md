@@ -93,7 +93,7 @@ The key is also what an approval names ([ADR-100](#adr-100)).
 
 ## ADR-100 — No inference without an approved estimate, and a predictive cap { #adr-100 }
 
-**Status:** accepted · `services/fuzz/producers/cost/`, `services/fuzz/estimate.py`, `services/config/definitions.py`
+**Status:** accepted · Superseded in part by [ADR-197](#adr-197) · `services/fuzz/producers/cost/`, `services/fuzz/estimate.py`, `services/config/definitions.py`
 
 ### Context
 
@@ -176,3 +176,62 @@ end out of order. A cancellation can take as long as the slowest inference in
 flight, and what was paid for serves the next run from the cache. The spend is
 `run.inference_cost.actual`, never a sum of event fields. On a run cancelled
 after production, [ADR-072](core.md#adr-072) still applies.
+
+---
+
+## ADR-197 — The cost cap holds an inference's worst case { #adr-197 }
+
+**Status:** accepted · Supersedes in part [ADR-100](#adr-100): what the cap holds · Supersedes in part [ADR-092](../../llm/adr/llm.md#adr-092): re-asks and fallbacks are estimated · `services/fuzz/producers/cost/`, `services/fuzz/estimate.py`, `services/fuzz/producers/inference.py`, `lib/llm/src/llm/estimation/`, `lib/semantic_inference/src/ai/engine.py`
+
+### Context
+
+The cap admitted an inference against its estimate: one answer, on the primary
+model. A contract call may be re-asked twice on a model when its answer cannot be
+parsed or validated, and then move on to every fallback model of the chain. One
+admitted inference could therefore spend about three times its estimate on the
+primary model alone, and more with each fallback, none of it counted when it was
+admitted. The estimate also assumed one output length for every profile, below
+what either profile produces.
+
+### Decision
+
+**The worst case is priced with the estimate.** An inference's worst case is
+every re-ask on every model of the chain, the primary first, each at the
+expected answer length and resending the rejected answers with their validation
+errors. `estimate_inference` reports it as `worst_case_cost_usd` beside the
+expected `cost_usd`, and `exceeds_cap` judges the worst case.
+
+**The cap reserves the worst case at admission.** An inference is admitted only
+if what was spent, plus the worst cases still held by the inferences in flight,
+plus its own, stays within `producer.max_cost_usd`. A settled inference replaces
+its hold with what it really cost. An endpoint the cap refuses runs
+schema-only, as before.
+
+**A cap needs a priced worst case.** A capped `fuzz` or `run_pipeline` whose
+pending inferences have no price on some model of the chain, a fallback
+included, is refused `INVALID_PARAMS` naming that model, before any inference.
+
+**The expected output is measured per profile.** `EXPECTED_CONTRACT_OUTPUT_TOKENS`
+holds one value per profile, the mean output of a measured sample of live
+inferences: `qa` 656 tokens, `security` 928.
+
+### Rejected
+
+- **Refusing the whole run when its worst case passes the cap.** A cap trims a
+  run to what it can pay for and runs the rest schema-only; that is the
+  documented contract of `producer.max_cost_usd`, and refusing the run would
+  change it into an all-or-nothing gate.
+- **A strict bound: `max_tokens` on every call and a reservation per attempt.**
+  It makes the worst case a ceiling, but it truncates long contracts and moves
+  admission into every attempt of the LLM client. It is a redesign of the cost
+  contract, not a correction of what the cap holds.
+
+### Consequences
+
+The same cap admits fewer inferences, and more endpoints of a capped run run
+schema-only, listed in `producer_exclusions` and named `contracts_unproduced` in
+the run's signal. An approval figure now shows both the expected cost and what
+the run may cost if the model has to be asked again. The worst case is not a
+strict ceiling: it assumes the expected answer length, so an answer longer than
+that, or a transport retry, can still spend past it; `run.inference_cost.actual`
+records what was spent.

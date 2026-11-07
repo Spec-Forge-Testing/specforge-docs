@@ -86,13 +86,13 @@ as writing, or as having effects outside the API.
 
 | Switch | What the runs do |
 | --- | --- |
-| Off | Endpoints the rules mark as writing (`POST`, `PUT`, `PATCH`, `DELETE`) are held back from `performance` and `resilience` runs. Endpoints with effects outside the API are held back from every run |
-| Off, with Spec only | The spec marks no endpoint, so nothing is held back |
+| Off | Endpoints that change data (`POST`, `PUT`, `PATCH`, `DELETE`) are held back from `performance` and `resilience` runs, unless the rules judged they don't. Endpoints with effects outside the API are held back from every run |
+| Off, with Spec only | No rules judge any endpoint, so every endpoint that changes data is held back from `performance` and `resilience` runs, with the reason **Assumed write** |
 | On | Write endpoints get real requests in every run. The start opens a review that says so: use a test environment |
 
 A held endpoint is never sent a request; the run detail's **Endpoints** tab shows it as
 **Held back**, with the reason and, when another endpoint's flag decided it, which one. The core's
-side of this is described in [ADR-058](../../modules/specforge-engine/adr/engine.md#adr-058).
+side of this is described in [ADR-058](../../modules/specforge-engine/adr/engine.md#adr-058) and [ADR-196](../../modules/specforge-engine/adr/engine.md#adr-196).
 
 ### The default in Settings
 

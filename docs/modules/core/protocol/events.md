@@ -41,10 +41,10 @@ which one framed the event.
 | `finished` | fact | `operation`, `status` (`completed`, `cancelled`, `failed` or `safety_breached`; see [operation status](vocabularies.md#operation-status)), and operation-specific fields | An operation ends |
 | `contract_started` | fact | `endpoint` (ref), `index`, `total` | The run starts producing one endpoint's contract |
 | `contract_finished` | fact | `endpoint` (ref), `source` (`cache`, `model`, `fixture` or `absent`); with `model`, `input_tokens`, `output_tokens` (int) and `cost_usd` (number, absent when the model has no price) | The endpoint's contract is ready to fuzz with, or (`absent`) the endpoint runs schema-only |
-| `contract_failed` | fact | `endpoint` (ref), `reason`, `disposition` (`schema_only`, `withheld` or `aborted`) | The endpoint's contract could not be produced or used |
+| `contract_failed` | fact | `endpoint` (ref), `reason`, `disposition` (`schema_only` or `aborted`; `withheld` only from a core older than `0.1.18`) | The endpoint's contract could not be produced or used |
 | `endpoint_started` | fact | `endpoint` (ref), `index`, `total` | An endpoint begins |
 | `phase_started` | fact | `endpoint` (ref), `phase` | A phase changes within the endpoint |
-| `tick` | state | `elapsed_s` always; on `fuzz`, `sent`, `total` and `findings`; on `analyze_endpoints`, `resolved` and `failed` | Absolute counters, ≤10/s |
+| `tick` | state | `elapsed_s` always; on `fuzz`, `sent`, `total` and `findings`, plus `passes` and `max_passes` (int) in a `stateful` run; on `analyze_endpoints`, `resolved` and `failed` | Absolute counters, ≤10/s |
 | `finding` | fact | `endpoint` (ref), `status`, `invariant`, `phase`, `category` and `severity` (see [`category`](vocabularies.md#category) and [`severity`](vocabularies.md#severity)), `summary` | A finding is confirmed |
 | `infra_failure` | fact | `endpoint` (ref), `reason`, `streak`, `limit` | A timeout or transport failure |
 | `target_down` | fact | `base_url` (the URL the run's requests go to, server path included), `reason` | The run concluded the API is down: a liveness probe failed, or every circuit breaker opened; `reason` says which |
@@ -62,6 +62,14 @@ finding's one-sentence account: the same three values the report's defect
 carries ([findings](../../specforge-engine/findings.md)). All three are absent
 when the core runs without the engine, and from a core older than `0.1.19`.
 There is no `finding_id`: an id exists only once a finding is persisted.
+
+**A `stateful` run's `tick` counts passes, not examples.** It plans no example
+budget, so its `total` is `0`. `passes` is how many passes over the state machine
+it has finished, and `max_passes` the most it may run (100): a ceiling, not a
+target, since the run usually stops earlier, after two passes in a row without
+progress. `findings` rises by one with each `finding` event. Every other mode
+omits both fields, and so does a core older than `0.2.3`, whose `stateful` ticks
+also leave `findings` at `0`.
 
 Which operation emits which kind is published in `capabilities.event_kinds` and,
 per operation, in the catalog. Whether the engine emits `infra_failure` and
@@ -85,7 +93,7 @@ between the `inference` stage's `stage_started` and `stage_finished`.
 - Every endpoint whose production started gets exactly one start and one end. A
   cancellation or an abort leaves the endpoints not yet started with no event.
 - `disposition` says what the run does without the contract: fuzz the endpoint
-  schema-only, withhold it (see
+  schema-only, under the safety guard when its contract declared a risk flag (see
   [`producer_exclusions[].disposition`](vocabularies.md#producer-exclusion-disposition)),
   or stop (`aborted`: the operation then fails).
 - These events do not add up to the run's spend: what a failed inference paid is

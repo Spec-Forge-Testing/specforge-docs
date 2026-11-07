@@ -556,7 +556,11 @@ unexpectedly.
     default the engine holds back any endpoint a producer's contract marks with a
     `risk` flag: `external_side_effects` is held out of **every** request-generating
     mode (`stateless`, `performance`, `resilience`, `auth`, `stateful`), and
-    `write_operation` is held out of `performance` and `resilience` only. Replay is
+    `write_operation` is held out of `performance` and `resilience` only. An
+    endpoint nobody judged — no `risk`, or a `risk` that leaves `write_operation`
+    out — whose method is not `GET`, `HEAD` or `OPTIONS` is held out of the same two
+    modes as `assumed_write`, so a load run without a producer probes only the safe
+    endpoints; `write_operation: false` lets one through. Replay is
     exempt — it re-sends a recorded trace, never a fresh probe. A held endpoint
     still appears in the run with zero requests, and the summary lists it under
     **Endpoints held back by the safety guard** (with the risk flag as the reason)
@@ -1095,7 +1099,8 @@ vocabulary is closed:
 | `no_responses` | No request reached the target at all — every attempt was an availability, timeout or unsendable-request failure. |
 | `requests_unanswered` | An endpoint left at least three of its requests, and at least 5 % of them, with a timeout or an availability failure, so its evidence rests on the rest. |
 | `endpoints_excluded` | A declared endpoint was selected but the compiler rejected it. |
-| `withheld_by_safety_guard` | A targeted endpoint was held out of the run by the safety guard (a declared side effect). |
+| `contracts_unproduced` | The producer left one or more endpoints without a contract, so they ran on their schema alone. |
+| `withheld_by_safety_guard` | A targeted endpoint was held out of the run by the safety guard (a declared side effect, or a write nobody judged). |
 | `access_policy_undeclared` | A targeted endpoint drew no requests because its access policy was not declared, so the run could not tell what to probe. |
 | `access_preconditions_unmet` | A targeted endpoint had an access policy the run could not cross: no producer, no role holder, no owner, or no resource it could create. |
 | `stateful_endpoints_unsent` | A `stateful` run never sent a targeted endpoint: the value it consumes was never produced, or the exploration never drew it. Its `unprobed_reason` says which, and it does not count as unreached. |

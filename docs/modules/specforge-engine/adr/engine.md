@@ -1093,7 +1093,7 @@ several identities, and cross-tenant isolation is still not expressible.
 
 ## ADR-054 — The semantic phase steers generation toward a declared input constraint { #adr-054 }
 
-**Status:** accepted · Supersedes the "never steers generation" clause of [ADR-048](#adr-048) · Superseded in part by [ADR-056](#adr-056) · `models/phase.py`, `strategy_compiler/conditional_phases.py`, `strategy_compiler/fields/builtin.py`, `budget/reservation.py`, `runtime/fuzzers/phases.py`, `runtime/fuzzers/semantic/`, `runtime/oracles/semantic/scope.py`, `runtime/oracles/semantic/declared.py`
+**Status:** accepted · Supersedes the "never steers generation" clause of [ADR-048](#adr-048) · Superseded in part by [ADR-056](#adr-056) · Refined by [ADR-200](measurement.md#adr-200) · `models/phase.py`, `strategy_compiler/conditional_phases.py`, `strategy_compiler/fields/builtin.py`, `budget/reservation.py`, `runtime/fuzzers/phases.py`, `runtime/fuzzers/semantic/`, `runtime/oracles/semantic/scope.py`, `runtime/oracles/semantic/declared.py`
 
 ### Context
 
@@ -1120,7 +1120,9 @@ It is **conditional**, not a static split row. `CONDITIONAL_PHASES` maps
 compiles the phase only for an applicable endpoint, and `effective_split` reserves
 its 10% out of whatever split was already resolved (`reserve_share` normalizes the
 rest and rescales it by `(1 - share)`), so it works for a profile split, a custom `phase_split`, or
-the aggressiveness-derived `security` split alike. An endpoint with no such rule is
+the aggressiveness-derived `security` split alike. The 10% is the phase's weight, not
+its whole budget: an endpoint with `k` input constraints gets at least `k` semantic
+examples, as far as its budget reaches ([ADR-200](measurement.md#adr-200)). An endpoint with no such rule is
 compiled exactly as before. At the field level the phase is a valid strategy; the
 whole-payload direction lives in the engine, applied once per endpoint through
 `refine_for_phase`, because a cross-field relation is a property of the assembled
@@ -1183,7 +1185,7 @@ valid draws.
 
 ## ADR-055 — A phase extension is one registered value object, and every finding names its rule { #adr-055 }
 
-**Status:** accepted · Extends [ADR-054](#adr-054), completes [ADR-049](#adr-049) · `phase_extensions.py`, `phase_extension_builtins.py`, `__init__.py`, `strategy_compiler/effective_phases.py`, `runtime/fuzzers/phases.py`, `runtime/oracles/verdict.py`, `runtime/oracles/rules.py`, `models/runtime/crash_report.py`, `runtime/oracles/builtin.py`, `runtime/oracles/latency.py`, `runtime/oracles/resilience.py`, `runtime/fuzzers/stateful/transitions.py`
+**Status:** accepted · Extends [ADR-054](#adr-054), completes [ADR-049](#adr-049) · Extended by [ADR-200](measurement.md#adr-200) · `phase_extensions.py`, `phase_extension_builtins.py`, `__init__.py`, `strategy_compiler/effective_phases.py`, `runtime/fuzzers/phases.py`, `runtime/oracles/verdict.py`, `runtime/oracles/rules.py`, `models/runtime/crash_report.py`, `runtime/oracles/builtin.py`, `runtime/oracles/latency.py`, `runtime/oracles/resilience.py`, `runtime/fuzzers/stateful/transitions.py`
 
 ### Context
 

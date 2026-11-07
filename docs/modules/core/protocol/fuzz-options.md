@@ -47,7 +47,7 @@ or parameter meeting a need without the engine.
 | `presets` | `{name, label, summary, runs, requires}` | Named sequences of `{execution, strategy, load, variant}` runs |
 | `phases` | `{value, label, summary}` | Every generation phase a `phase_split` or a variant's `phases` can name |
 | `changes` | `{value, label}` | Every value an effect's [`changes`](vocabularies.md#changes) can take, in that order |
-| `producer_supplies` | `{producer, supplies}` | One row per producer: the [oracle needs](vocabularies.md#oracle-need) the contracts it produces meet; `none` meets none |
+| `producer_supplies` | `{producer, supplies, meets}` | One row per producer: the [oracle needs](vocabularies.md#oracle-need) the contracts it produces meet (`supplies`), and the values of a variant's [`requires`](#which-variant) they can meet (`meets`); `none` meets neither |
 | `request_supplies` | `{need, parameter}` | One row per oracle need a run meets by a parameter it is given, its dotted path among the run's parameters |
 | `limits` | `{max_concurrency_default}` | The default of the core's `engine.max_concurrency` option (20): the concurrency a run that leaves `max_concurrency` unset gets, unless the project's config sets the option to another value. A `stress-ladder` step above the value in force when the run starts is refused then, never earlier |
 
@@ -75,8 +75,9 @@ An excerpt of what this core publishes:
      "omits_read_only": false, "promotes_attack_hints": true}
   ],
   "producers": ["none", "fixture", "inference"],
-  "producer_supplies": [{"producer": "none", "supplies": []},
-    {"producer": "fixture", "supplies": ["semantic_properties", "rule_witness"]}, "…"],
+  "producer_supplies": [{"producer": "none", "supplies": [], "meets": []},
+    {"producer": "fixture", "supplies": ["semantic_properties", "rule_witness"],
+     "meets": ["access_policies"]}, "…"],
   "request_supplies": [{"need": "latency_sla", "parameter": "load.latency_sla_ms"}],
   "presets": [
     {"name": "stress-ladder", "label": "Stress ladder",
@@ -122,14 +123,25 @@ A run asks for a mode, never a variant. The mode's variant whose `selected_by` i
 only condition: the parameter is given. So `performance` runs `ladder` when the
 run sets `load.concurrency_steps`, and `flat` otherwise.
 
-`requires` lists what a run of the mode needs besides its parameters before it
-starts: `identities`, on `auth`, which the project's identities file supplies. It
-is an open list a client shows rather than enforces.
+`requires` lists what a run of the variant needs besides its parameters before it
+can verify anything. It is read off the engine's runners, and it is an open list a
+client shows rather than enforces:
+
+| Value | What supplies it |
+| --- | --- |
+| `identities` | The project's identities file: the callers the run sends requests as. |
+| `access_policies` | The endpoints' access policies, which only a producer's contracts declare: a producer meets it when its row of `producer_supplies` lists it in `meets`, as `fixture` and `inference` do. |
+
+Today only `auth` requires anything, and it requires both. An `auth` run with
+producer `none` sends nothing: it only crosses an endpoint whose access policy a
+contract declares. A client tells a requirement met from the data alone: the
+project has an identities file for `identities`, and the run's producer lists the
+value in `meets` for `access_policies`.
 
 ## What a run can find { #what-a-run-can-find }
 
 A variant's `invariants` are what it can report whatever the strategy, the
-producer and the parameters. Each row of `invariants_when`, `{need, invariants}`,
+producer and the parameters, once its `requires` are met. Each row of `invariants_when`, `{need, invariants}`,
 adds what it can report once the run's strategy, its producer or a parameter it
 sets meets that [oracle need](vocabularies.md#oracle-need). An invariant more than
 one need lets the variant report sits in each of their rows, any one of them being
@@ -242,7 +254,8 @@ strategy's default examples per endpoint
 
 Each run is `{execution, strategy, load, variant}`. `load` is the `load` parameter
 to send with it (`null` for none), and `variant` the variant it selects (`null` for
-the mode's default). `requires` is what the modes of its runs require. `variant` is
+the mode's default). `requires` is what the variant each of its runs takes requires,
+in the order of the table above. `variant` is
 worked out from the same variants `modes` publishes, by the rule of
 [Which variant a run gets](#which-variant): an engine whose `performance` mode
 registers no `ladder` variant gives `stress-ladder` a `variant` of `null`.
@@ -257,7 +270,7 @@ registers no `ladder` variant gives `stress-ladder` a `variant` of `null`.
 | `full` | Full | `stateless` + `default`, then `stateful` + `default` | Each endpoint alone, then call sequences. |
 | `stateful-flows` | Call sequences | `stateful` + `default` | Create, read, change, delete in order. |
 | `resilience-check` | Resilience check | `resilience` + `default` | Broken traffic: rejected cleanly? |
-| `access-check` | Access check | `auth` + `default`; requires `identities` | Can a caller reach what its access policy refuses? |
+| `access-check` | Access check | `auth` + `default`; requires `identities`, `access_policies` | Can a caller reach what its access policy refuses? |
 | `stress-ladder` | Stress ladder | `performance` + `default`, `load.concurrency_steps` `[1, 4, 16]`, variant `ladder` | Rising load: who slows down first? |
 
 `access-check` crosses each endpoint as another user, as an anonymous caller and

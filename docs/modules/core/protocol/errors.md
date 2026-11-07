@@ -82,9 +82,20 @@ check runs on `get_config`, `set_config`, `fuzz`, `run_pipeline` and `replay`;
 An `inference` producer without `source_repo` is refused `INVALID_PARAMS` with
 `data.parameter` `producer.source_repo`, so a client can mark the field. A run
 with `producer.max_cost_usd` whose pending inferences have no price on some model
-of the chain, the primary or a fallback, is refused `INVALID_PARAMS`, its message naming that
-model, before any inference: a cap cannot hold a worst case it cannot price (see
-[the cap](../inference.md#the-cap)).
+of the chain, the primary or a fallback, is refused `INVALID_PARAMS` before any
+inference: a cap cannot hold a worst case it cannot price (see
+[the cap](../inference.md#the-cap)). Its `data` carries `parameter`, the cap
+the operation was given and the field to mark, and `model`, the model with no
+price; its message names that model. `parameter` is `producer.max_cost_usd` on
+`fuzz`, `run_pipeline` and `estimate_inference`, and `max_cost_usd` on a
+`generate_contract` with `use_llm`, which is refused before its route discovery is
+sent ([its cap](operations.md#generate-contract-cap)). The estimate's
+[`unpriced_models`](operations.md#estimate-inference) names the same models
+before the run is sent.
+
+```json
+"data":{"code":"INVALID_PARAMS","parameter":"producer.max_cost_usd","model":"…"}
+```
 
 ## The domain codes
 
@@ -152,7 +163,7 @@ when the analysis named none.
 | `IDENTITIES_INVALID` | The declared identities are malformed |
 | `UNSUPPORTED_SCHEMA` | The contract's schema version is not supported |
 | `NO_COMPILABLE_ENDPOINTS` | No endpoint could be compiled into a strategy |
-| `CONTRACT_PRODUCER_FAILED` | A contract producer could not honor an explicit request. A `producer.source_repo` that is not a directory is one, on `fuzz` and `estimate_inference` and in `run_pipeline`'s `inference` stage, before any inference: `data.source` names the path and `data.detail` is `not a directory` |
+| `CONTRACT_PRODUCER_FAILED` | A contract producer could not honor an explicit request. A `producer.source_repo` that is not a directory is one, on `fuzz` and `estimate_inference` and in `run_pipeline`'s `inference` stage, before any inference: `data.source` names the path and `data.detail` is `not a directory`. A capped `generate_contract` whose route discovery its `max_cost_usd` cannot hold is another, before the discovery call the cap cannot hold is sent and with nothing written: `data.source` is `route discovery` and `data.detail` the reason ([its cap](operations.md#generate-contract-cap)) |
 | `INFERENCE_APPROVAL_REQUIRED` | A run has inferences to pay for while `inference.require_approval` is on, and its `producer.approval_token` is missing or stale; `data`: `reason` (`missing` or `stale`), `estimate` (as [`estimate_inference`](operations.md#estimate-inference) answers it). Refused before any inference; in `run_pipeline` it fails the `inference` stage with the same code and `data` |
 | `EXECUTION_FAILED` | The run failed while executing |
 | `REBUILD_FAILED` | The API under test could not be built and started again before its replay, so the replay was not sent |

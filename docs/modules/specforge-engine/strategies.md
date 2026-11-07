@@ -152,6 +152,7 @@ as a `RunnerTraits` (`models/runtime/runner_traits.py`):
 | `supplies` | The [oracle needs](reportable-invariants.md#oracle-needs) met for the oracles that reach its responses; one a strategy, a producer or the request supplies is met only when it declares it |
 | `text` | The variant's label and one-sentence summary for a person |
 | `selected_by_option` | The field of the runner's options that, once set, makes a run take this variant; `None` for the variant a run takes otherwise |
+| `requires` | The `RunPrecondition`s without which the variant verifies nothing; what it can report assumes they are met. Empty by default |
 
 `judges_opt_in_oracles`, a property, is `opt_in in supplies`: whether the
 strategy's opt-in oracles judge what the runner sends. What a variant can report
@@ -166,6 +167,22 @@ variant, `default` (`DEFAULT_VARIANT`, built with `only_variant(traits)`);
 `selected_by_option="concurrency_ladder"`, so a run whose options carry a
 `concurrency_ladder` takes it, and `flat` declares none. The core publishes the
 selector as the run parameter it builds that option from, `load.concurrency_steps`
+([Which variant a run gets](../core/protocol/fuzz-options.md#which-variant)).
+
+**What a run must be given.** `requires` names what a variant cannot verify
+anything without, as `RunPrecondition` members:
+
+| Member | Value | What the run must be given |
+| --- | --- | --- |
+| `IDENTITIES` | `identities` | Identities to send its requests as |
+| `DECLARED_ACCESS` | `declared_access` | A producer's contract declaring the endpoints' access policies |
+
+Only `auth` declares any, both: it sends each request as the callers an access
+policy refuses, so without identities it has no caller and without a declared
+policy it crosses no endpoint. The core publishes `IDENTITIES` as the
+requirement `identities` and `DECLARED_ACCESS` as `access_policies`, which a
+producer's contracts meet, on the variant and on every preset with a run that
+takes it
 ([Which variant a run gets](../core/protocol/fuzz-options.md#which-variant)).
 
 | Mode | Variant | `consumes` | Honors a count | Cap | Opt-in oracles |
@@ -314,7 +331,9 @@ variants has a blank label or summary, or when a variant's `selected_by_option`
 names no field of the runner's `options_type`. A variant selected by an option
 reaches the published options only once the core maps that option to the run
 parameter it builds it from (`OPTION_PARAMETERS` in
-`services/catalog/variant_selection.py`). `runner_traits()` lists its variants as
+`services/catalog/variant_selection.py`). A variant that verifies nothing without identities or a declared
+access policy says so in `requires`, for example
+`requires=frozenset({RunPrecondition.IDENTITIES})`. `runner_traits()` lists its variants as
 soon as it is registered, the gates drive them, and the core publishes them, with what each can
 report, in `fuzz_options.modes` once the mode is one the core's `execution`
 parameter accepts.
@@ -333,6 +352,8 @@ so it cannot be registered without one:
 | strategy | `StrategyProfile.text` | `register_profile`, the same way |
 | generation phase | `PHASE_TEXTS` (`models/term_texts.py`), keyed by `Phase` | a test over every member |
 | attack family | `ATTACK_FAMILY_TEXTS` (`strategy_compiler/fields/attack/texts.py`), keyed by `AttackFamily`; no two families share a label | a test over every member |
+| finding category | `CATEGORY_TEXTS` (`models/runtime/finding_texts.py`), keyed by `FindingCategory` in declaration order: what kind of defect it holds; no two share a label | a test over every member and its order |
+| severity | `SEVERITY_TEXTS` (`models/runtime/finding_texts.py`), keyed by `Severity`, most severe first: what defects it holds; no two share a label | a test over every member and its order |
 | invariant | `INVARIANT_SUMMARIES` (`models/runtime/invariant_summaries.py`), keyed by `InvariantViolation`: one sentence on what a finding of it means | a test over every member |
 
 `mode_texts()` maps every registered mode to its runner's text; a variant's text

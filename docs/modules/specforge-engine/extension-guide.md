@@ -55,7 +55,18 @@ returns `only_variant(RunnerTraits(...))` and `DEFAULT_VARIANT`
 `register_runner` raises `RegistrationError` when one is blank or a variant's
 `selected_by_option` names no field of `options_type`. The runner-traits gate
 drives every registered variant and fails when what it sends differs from what it
-declares.
+declares. A variant that verifies nothing without something the run must be given
+declares it in `requires`, as `RunPrecondition` members
+([What a run must be given](strategies.md#runner-traits)):
+
+```python
+from specforge_engine.models.runtime import RunPrecondition, RunnerTraits
+
+RunnerTraits(
+    ...,
+    requires=frozenset({RunPrecondition.IDENTITIES, RunPrecondition.DECLARED_ACCESS}),
+)
+```
 
 Register it beside the built-ins in `runtime/runners/__init__.py`:
 
@@ -77,6 +88,20 @@ evidence=...)` (`runtime/bulkhead.py`) so a failing endpoint is isolated as
 ([Engine internals](engine-internals.md#isolating-a-failing-endpoint)). The options
 type is resolved per runner by `resolve_options(runner, options)` beside the
 registry — the dispatcher never changes.
+
+### Add a run precondition
+
+A new `RunPrecondition` member goes in `models/runtime/runner_traits.py`, with a
+one-line docstring on what the run must be given. The core publishes every member
+as a run requirement: add the `RunRequirement` it is published as and a row to
+`RUN_REQUIREMENT_OF_PRECONDITION` (`services/catalog/variant_selection.py`), keyed
+by the member's value. A core test fails until every member has its row. When a
+producer's contracts are what meets the new requirement, add it to
+`PRODUCED_REQUIREMENTS` (`services/catalog/reportable.py`) too, so it shows in the
+`meets` of `fixture` and `inference` in `producer_supplies`. The new
+value reaches clients in every variant's and preset's `requires`, an open list, so
+it is a protocol patch with its changelog entry
+([Which variant a run gets](../core/protocol/fuzz-options.md#which-variant)).
 
 ## Add a profile
 
@@ -440,6 +465,16 @@ with its family, whenever the family is in the field's
 row of `DEFAULT_ATTACK_PROFILES_BY_TYPE`; to make an endpoint's data earn it, add
 a row to `SENSITIVITY_ATTACK_PROFILES`. Both live in the compiler's `constants.py`
 ([ADR-127](adr/compiler.md#adr-127)).
+
+## Add a finding category or a severity
+
+A new `FindingCategory` or `Severity` member (`models/runtime/taxonomy.py`) needs
+its `TermText` in `CATEGORY_TEXTS` or `SEVERITY_TEXTS`
+(`models/runtime/finding_texts.py`), at the member's place in declaration order:
+a label no other member shares and one sentence on the defects it holds. A test
+over each table fails on a missing, blank, duplicated or misplaced entry. The core
+publishes both tables as `vocabulary.categories` and `vocabulary.severities`
+([Vocabularies](../core/protocol/vocabularies.md#category)).
 
 ## Add an oracle
 

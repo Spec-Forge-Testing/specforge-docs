@@ -80,7 +80,8 @@ text, registered with it. `services/catalog/effects.py` derives what each strate
 changes against `default` in each runner variant, `reportable.py` orders what each
 variant can report and maps the needs the producers and the run's parameters meet,
 `variant_selection.py` maps the engine option that selects a variant to the run
-parameter that builds it and holds what a mode requires, `fuzz_options.py`
+parameter that builds it and publishes each of the engine's run preconditions as
+the requirement a variant and a preset list in `requires`, `fuzz_options.py`
 assembles the object, with `limits` read from the core's own `engine.max_concurrency`
 option, and `presets.py` holds the presets as data
 ([Fuzz options](protocol/fuzz-options.md)).
@@ -89,7 +90,9 @@ What a client is told depends on the version it negotiated:
 `adapters/stdio/version_view.py` leaves out of `hello`'s and `describe`'s
 `presets` every preset whose runs set a field the client's version does not read,
 so a client older than `0.2.4` is never offered `stress-ladder`
-([Fuzz options](protocol/fuzz-options.md#presets)).
+([Fuzz options](protocol/fuzz-options.md#presets)), and hands a client older than
+`0.2.5` `vocabulary.categories` and `vocabulary.severities` as plain values
+([Vocabulary](protocol/handshake.md#vocabulary)).
 
 ## Preconditions
 

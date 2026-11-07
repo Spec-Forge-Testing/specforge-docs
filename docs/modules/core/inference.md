@@ -226,10 +226,14 @@ cost.
 - An endpoint the cap refuses runs schema-only, listed in `producer_exclusions`;
   the run's signal is then `degraded` with `contracts_unproduced`.
 - A cap whose pending inferences' worst case has no price is refused
-  `INVALID_PARAMS`, naming the model of the chain that has none (a fallback model
+  `INVALID_PARAMS` with `data.parameter` `producer.max_cost_usd` and `data.model`, the model of the chain that has none (a fallback model
   missing from the price map is the usual one): there is no price to hold it to.
+  The estimate lists every such model in `unpriced_models`.
 - An inference whose cost is unknown makes the run's spend unknown, and every
   later one is refused under the cap.
+- `generate_contract` holds its own `max_cost_usd` the same way, over its route
+  discovery and response calls as well as its contract inferences
+  ([its cap](protocol/operations.md#generate-contract-cap)).
 - The cap falls on the same endpoints as a one-at-a-time run unless an inference
   in flight pays more than its worst case (an answer longer than the measured
   length); then up to `inference.max_workers − 1` more inferences may run past it.

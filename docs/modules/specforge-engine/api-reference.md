@@ -117,8 +117,9 @@ What a strategy decides and what each runner takes from it
 | `StrategyProfile` | what one strategy decides: `phase_split`, `allowed_fields_by_type`, `contract_type`, `allow_contract_subclasses`, `text`, `default_max_examples`, `optional_oracles`, `attack_families`, `omits_read_only`, and the derived `promotes_attack_hints` |
 | `profile_for(strategy) -> StrategyProfile` | the registered profile, or `PolicyError` when none is |
 | `registered_strategies() -> frozenset[Strategy]` | the strategies with a profile registered |
-| `RunnerTraits` | what one runner variant takes from a plan and what it judges: `consumes`, `honors_examples_per_endpoint`, `examples_cap`, `reports_oracle_verdicts`, `reports_natively`, `supplies`, `text`, `selected_by_option`, and the derived `judges_opt_in_oracles` |
+| `RunnerTraits` | what one runner variant takes from a plan and what it judges: `consumes`, `honors_examples_per_endpoint`, `examples_cap`, `reports_oracle_verdicts`, `reports_natively`, `supplies`, `text`, `selected_by_option`, `requires`, and the derived `judges_opt_in_oracles` |
 | `PlanPhases` | `ALL`: the `consumes` of a runner that takes every phase the strategy plans |
+| `RunPrecondition` | what a run must be given before a variant can verify anything: `IDENTITIES` (identities to send its requests as), `DECLARED_ACCESS` (a producer's contract declaring the endpoints' access policies) |
 | `runner_traits()` | the `RunnerTraits` of every variant of every registered runner, keyed by `(mode, variant)` |
 | `runner_traits_for(mode, options) -> RunnerTraits` | the traits of the variant a run in that mode, with those options resolved, takes |
 
@@ -143,6 +144,8 @@ The words a client shows for each term ([Labels and summaries](strategies.md#lab
 | `mode_texts()` | the text of every registered mode, its runner's `text`; a variant's is its `RunnerTraits.text`, a strategy's its `StrategyProfile.text` |
 | `PHASE_TEXTS` | the text of every generation phase |
 | `ATTACK_FAMILY_TEXTS` | the text of every `AttackFamily` |
+| `CATEGORY_TEXTS` | the text of every `FindingCategory`, in declaration order: what kind of defect it holds |
+| `SEVERITY_TEXTS` | the text of every `Severity`, most severe first: what defects it holds |
 | `INVARIANT_SUMMARIES` | one sentence per invariant on what a finding of it means |
 
 ## Cancellation and progress

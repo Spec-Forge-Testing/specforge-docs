@@ -72,8 +72,13 @@ so every `help` is one line.
 
 Two more objects travel beside the catalog, derived the same way. `vocabulary`
 reads the engine's invariant registry, its labels, its invariant summaries and its
-attack-family texts, and adds the core's own exclusion dispositions and signal
-causes with their labels (`services/catalog/vocabulary.py`). `fuzz_options` reads
+attack-family texts, and adds the core's own exclusion dispositions, contract
+failure causes and signal causes with their labels
+(`services/catalog/vocabulary.py`). The contract failure causes are
+`ContractFailureCause` in `services/fuzz/exceptions.py`. A new member needs its
+label in `vocabulary.py`'s `_CONTRACT_FAILURE_CAUSE_LABELS`, or building the
+vocabulary raises `KeyError`, and its value in the `contract_failed` event's
+`cause` enum in `protocol/envelope.schema.json`. `fuzz_options` reads
 the engine's strategy profiles, runner traits, reportable invariants and term
 texts through the engine gateway; each mode, variant and strategy carries its own
 text, registered with it. `services/catalog/effects.py` derives what each strategy

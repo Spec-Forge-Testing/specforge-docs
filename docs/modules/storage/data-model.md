@@ -284,6 +284,7 @@ catalog.
 | `path` | TEXT | no | — | URL path, e.g. `/api/v1/users`. |
 | `reason` | TEXT | no | — | Why the producer's contract was dropped for this endpoint. |
 | `disposition` | TEXT | no | — | What the run did with the endpoint: `schema_only` or `withheld`. |
+| `cause` | TEXT | yes | — | Why the contract failed, as the core's [contract failure cause](../core/protocol/vocabularies.md#contract-failure-cause) (`spend_cap`, `inference_failed`, …); storage does not check it. NULL in a row written before the column existed. |
 
 Constraints: `disposition` CHECK in its [two values](#closed-vocabularies).
 

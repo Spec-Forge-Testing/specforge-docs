@@ -41,7 +41,7 @@ which one framed the event.
 | `finished` | fact | `operation`, `status` (`completed`, `cancelled`, `failed` or `safety_breached`; see [operation status](vocabularies.md#operation-status)), and operation-specific fields | An operation ends |
 | `contract_started` | fact | `endpoint` (ref), `index`, `total` | The run starts producing one endpoint's contract |
 | `contract_finished` | fact | `endpoint` (ref), `source` (`cache`, `model`, `fixture` or `absent`); with `model`, `input_tokens`, `output_tokens` (int) and `cost_usd` (number, absent when the model has no price) | The endpoint's contract is ready to fuzz with, or (`absent`) the endpoint runs schema-only |
-| `contract_failed` | fact | `endpoint` (ref), `reason`, `disposition` (`schema_only` or `aborted`; `withheld` only from a core older than `0.1.18`) | The endpoint's contract could not be produced or used |
+| `contract_failed` | fact | `endpoint` (ref), `cause` (a [contract failure cause](vocabularies.md#contract-failure-cause); absent from a core older than `0.2.6`), `reason` (its English detail), `disposition` (`schema_only` or `aborted`; `withheld` only from a core older than `0.1.18`) | The endpoint's contract could not be produced or used |
 | `endpoint_started` | fact | `endpoint` (ref), `index`, `total` | An endpoint begins |
 | `phase_started` | fact | `endpoint` (ref), `phase` | A phase changes within the endpoint |
 | `tick` | state | `elapsed_s` always; on `fuzz`, `sent`, `total` and `findings`, plus `passes` and `max_passes` (int) in a `stateful` run, and `stage` (`generating` or `confirming`) in a `stateless` or `performance` run, with `signatures_done` and `signatures_total` (int) while it is `confirming`; on `analyze_endpoints`, `resolved` and `failed` | Absolute counters, at most ten per second, plus one at each stage change |
@@ -119,6 +119,9 @@ between the `inference` stage's `stage_started` and `stage_finished`.
   order.**
 - Every endpoint whose production started gets exactly one start and one end. A
   cancellation or an abort leaves the endpoints not yet started with no event.
+- `cause` says why the contract failed, as a code to branch on; `reason` is the
+  English detail beside it ([codes and English detail](errors.md#codes-and-detail)).
+  The same `cause` is kept with the endpoint's `producer_exclusions` entry.
 - `disposition` says what the run does without the contract: fuzz the endpoint
   schema-only, under the safety guard when its contract declared a risk flag (see
   [`producer_exclusions[].disposition`](vocabularies.md#producer-exclusion-disposition)),

@@ -56,11 +56,13 @@ lists it among the result's required fields.
 | `unprobed_reasons` | `{value, label}` | Every [`unprobed_reason`](vocabularies.md#unprobed-reason) |
 | `hold_reasons` | `{value, label}` | Every value of `held_back_by` |
 | `exclusion_dispositions` | `{value, label}` | The core's own: every [`producer_exclusions[].disposition`](vocabularies.md#producer-exclusion-disposition), plus `aborted`, a failed contract that stopped the run |
+| `contract_failure_causes` | `{value, label}` | The core's own: every [contract failure cause](vocabularies.md#contract-failure-cause), the `cause` of `contract_failed` and `producer_exclusions[]` and the `data.cause` of `CONTRACT_PRODUCER_FAILED`, in declaration order |
 | `signal_causes` | `{value, label}` | The core's own: every [`run.signal_causes`](vocabularies.md#signal-causes) value, in the order they render, each with a label short enough for a verdict line |
 | `attack_families` | `{value, label, summary}` | Every [attack family](vocabularies.md#attack-family) a request's `attack_family` or a strategy's `attack_families` names, in declaration order, with a one-sentence `summary` of the payloads it sends |
 | `oracle_needs` | `{value, label}` | Every [`oracle_need`](vocabularies.md#oracle-need), in declaration order: what a response must come with before an invariant can be judged on it |
 
-Every list but `exclusion_dispositions` and `signal_causes` comes from the engine
+Every list but `exclusion_dispositions`, `contract_failure_causes` and
+`signal_causes` comes from the engine
 ([ADR-148](../../specforge-engine/adr/findings.md#adr-148)). Without the engine
 the object is present with those lists empty, never missing.
 
@@ -127,8 +129,45 @@ neither. See [ADR-095](../adr/protocol.md#adr-095).
 ## Changelog
 
 The report document that `fuzz`, `replay` and `run_pipeline` answer with is
-`schema_version` 1.27. The protocol's own README holds the full entry for each
+`schema_version` 1.28. The protocol's own README holds the full entry for each
 version; the lines below are the summary.
+
+- **0.2.6** — Where a client read English prose to tell one case from another,
+  the core sends a stable code beside it: why a contract producer failed, why a
+  repository cannot be traced, why a provider's model list fell back to the
+  catalog, which requirement each `diagnose` check probes, and which parameter an
+  overwrite refusal is about. The English text beside each code (`reason`,
+  `detail`, `fallback_reason`, `message`) stays, as technical detail that may
+  change; a client branches on the code
+  ([codes and English detail](errors.md#codes-and-detail)).
+  **Additive**: every new field goes to a client of any version. It ships with
+  report `1.28`.
+  <!-- TODO 0.2.6: session locale section -->
+    - *Added:* `data.cause` in `CONTRACT_PRODUCER_FAILED`, one of the
+      [contract failure causes](vocabularies.md#contract-failure-cause), beside
+      `source` and `detail` ([errors](errors.md#execution)).
+    - *Added:* `cause` in the `contract_failed` event, required, with the same
+      values ([events](events.md#the-event-catalog)).
+    - *Added:* `vocabulary.contract_failure_causes` in `hello` and `describe`:
+      every cause as `{value, label}`, present with or without the engine
+      ([vocabulary](#vocabulary)).
+    - *Added:* `cause` in each `producer_exclusions[]` entry of `get_run` and of
+      the report document; `null` for a run stored before this version.
+    - *Added:* `data.cause` in `REPO_ROOT_INVALID`: `not_found` or
+      `not_a_directory`, beside `repo_root` and `reason`
+      ([errors](errors.md#analysis)).
+    - *Added:* `fallback_cause` and `fallback_status` in each provider entry of
+      `list_llm_models`, always present and `null` for a list the account
+      answered ([the causes](vocabularies.md#llm-fallback-cause)).
+    - *Added:* `id` and `category_id` in each check of `diagnose`, beside the
+      unchanged `name` and `category` ([the codes](vocabularies.md#diagnose-check)).
+    - *Added:* `data.parameter` `overwrite` in the `INVALID_PARAMS` that refuses
+      to replace an existing file without `overwrite`: `generate_contract`'s
+      `destination` and `init_project` over a kept `specforge.toml`
+      ([errors](errors.md#overwrite-invalid-params)).
+
+- **Report 1.28** — Additive; it ships with protocol `0.2.6`. Adds `cause` to each
+  `producer_exclusions` entry, `null` in a document of a run stored before it.
 
 - **0.2.5** — A finding's category and severity read like the other terms, with a
   label and a summary; a capped run says which model has no price before it is

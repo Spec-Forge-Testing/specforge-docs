@@ -53,7 +53,8 @@ of keeping its own list.
 `name`, `openapi_spec` and `base_url` are what the file declares. A value given
 empty, one UTF-8 cannot encode, an `openapi_spec` that names no file, or a value
 given over an existing file without `overwrite`, is refused `INVALID_PARAMS`
-(`data.reason`, `data.settings`) before anything is written. The result carries
+(`data.reason`, `data.settings`) before anything is written; the last also carries
+`data.parameter` `overwrite` ([errors](errors.md#overwrite-invalid-params)). The result carries
 `settings`, what `specforge.toml` declares afterwards in the shape
 `open_project` answers with, and `spec_found`, whether that spec exists.
 
@@ -101,7 +102,7 @@ K declare nothing"). The schema types both results (`list_endpoints_result`,
 | `approval_token` | — | Only with `use_llm`. Without a valid one nothing is spent and the call is refused `INFERENCE_APPROVAL_REQUIRED` with `data.estimate`. |
 | `max_cost_usd` | No cap. | Only with `use_llm`. Caps what this one call sends, every model call of it: see [the cap](#generate-contract-cap). The estimate's `exceeds_cap` judges the worst case of every call against it. |
 | `destination` | `openapi.generated.yaml` | Where the document is written. |
-| `overwrite` | `false` | An existing `destination` is refused `INVALID_PARAMS` before anything is written; `true` replaces it. |
+| `overwrite` | `false` | An existing `destination` is refused `INVALID_PARAMS`, `data.parameter` `overwrite`, before anything is written ([errors](errors.md#overwrite-invalid-params)); `true` replaces it. |
 | `adopt` | `false` | `true` also declares the file as `openapi_spec` in `specforge.toml`. |
 
 | | `use_llm: false` | `use_llm: true` |
@@ -355,12 +356,24 @@ one is on [Replay and fixes](replay-and-fixes.md#unconfirmed).
 | `reset_config` | project |
 | `list_llm_models` | none |
 
+`list_llm_models` answers one entry per provider. An entry whose list did not come
+from the provider's own account (`source` `catalog`) says why in
+`fallback_cause`, a [code](vocabularies.md#llm-fallback-cause), and
+`fallback_status`, the HTTP status the provider answered when it answered one.
+Both are always present, `null` for a list the account answered.
+`fallback_reason` beside them is the English detail.
+
 ## `environment`
 
 | Operation | `requires` | Events |
 | --- | --- | --- |
 | `diagnose` | none | reports progress |
 | `apply_fix_plan` | none | reports progress |
+
+Each check `diagnose` answers carries `id`, the requirement it probes, and
+`category_id`, the area it belongs to: [codes](vocabularies.md#diagnose-check) a
+client keys its own text and grouping on. `name` and `category` beside them are
+the English labels, and `detail` the English finding.
 
 ## `catalog`
 

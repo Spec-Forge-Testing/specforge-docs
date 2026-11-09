@@ -1,8 +1,10 @@
 # Run detail
 
 `get_run` reads a stored run back: its `run`, `metrics`, `endpoints`, `findings`
-(paged with `limit`), `producer_exclusions` and, for a replay, what the replay
-concluded. Most of it is the report document's own shape. This page explains the
+(paged with `limit`), `producer_exclusions` (each with its `reason`, its
+[`disposition`](vocabularies.md#producer-exclusion-disposition) and its
+[`cause`](vocabularies.md#contract-failure-cause), `null` for a run stored by a
+core older than `0.2.6`) and, for a replay, what the replay concluded. Most of it is the report document's own shape. This page explains the
 facts a client has to read with care: what each finding counter counts, how an
 endpoint's budget was spent per phase, what a stored replay ruled, and whether a
 finding can be replayed alone. The closed values these fields take are on

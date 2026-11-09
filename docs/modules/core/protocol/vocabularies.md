@@ -161,7 +161,7 @@ each as `{value, label}`, in the order of this table, with or without the engine
 | `contract_rejected` | Contract rejected | The produced contract could not be fused with the endpoint's specification. |
 | `unsupported_schema` | Unsupported schema | The fused contract uses a schema construct the engine cannot compile. |
 | `foreign_endpoint` | Contract for another endpoint | The produced contract declares a different method or path from the endpoint it was produced for. |
-| `unexpected` | Unexpected error | An error the producer does not name. The run stops: only a `contract_failed` with `disposition` `aborted` carries it. |
+| `unexpected` | Unexpected error | An error no producer, engine or cache names. The run stops: only a `contract_failed` with `disposition` `aborted` carries it. |
 
 Which ones a client meets depends on the producer. The inference producer drops
 a failed endpoint and goes on (`disposition` `schema_only`), so `spend_cap`,
@@ -172,7 +172,10 @@ failures arrive as a `contract_failed` with `disposition` `aborted` and then
 `CONTRACT_PRODUCER_FAILED`. A producer that cannot start (`not_a_directory`,
 `kernel_unavailable`, `duplicate_contract`, `malformed_contract`,
 `engine_unavailable`, `cache_unavailable`) fails the operation with
-`CONTRACT_PRODUCER_FAILED` before any `contract_*` event.
+`CONTRACT_PRODUCER_FAILED` before any `contract_*` event. If the inference engine
+or its contract cache fails while contracts are already being produced, the run
+stops with a `contract_failed` (`disposition` `aborted`) that carries
+`engine_unavailable` or `cache_unavailable`.
 
 A `producer_exclusions[]` entry of a run stored by a core older than `0.2.6` has
 `cause` `null`: its cause was never recorded.

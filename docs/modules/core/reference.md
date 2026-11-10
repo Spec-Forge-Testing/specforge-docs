@@ -76,7 +76,7 @@ attack-family texts, and adds the core's own exclusion dispositions, contract
 failure causes and signal causes with their labels
 (`services/catalog/vocabulary.py`). The contract failure causes are
 `ContractFailureCause` in `services/fuzz/exceptions.py`. A new member needs its
-label in `vocabulary.py`'s `_CONTRACT_FAILURE_CAUSE_LABELS`, or building the
+label in `vocabulary.py`'s `CONTRACT_FAILURE_CAUSE_LABELS`, or building the
 vocabulary raises `KeyError`, and its value in the `contract_failed` event's
 `cause` enum in `protocol/envelope.schema.json`. `fuzz_options` reads
 the engine's strategy profiles, runner traits, reportable invariants and term
@@ -98,6 +98,43 @@ so a client older than `0.2.4` is never offered `stress-ladder`
 ([Fuzz options](protocol/fuzz-options.md#presets)), and hands a client older than
 `0.2.5` `vocabulary.categories` and `vocabulary.severities` as plain values
 ([Vocabulary](protocol/handshake.md#vocabulary)).
+
+## Locales { #locales }
+
+Every text the core or the engine writes for a person is a `Wording`: one string
+per served locale, side by side in the same entry, every one required. The core's
+`Locale` and `Wording` live in `utils/locale.py`; the engine's `Language` and
+`Wording` in `specforge_engine.models.wording`, and the engine gateway converts one
+into the other. `assemble()` in `services/catalog/service.py` walks the facade once
+and builds the published description in every `Locale`; `hello` and `describe`
+hand out the one the session negotiated
+([Session locale](protocol/handshake.md#session-locale)).
+
+`hello` settles the session's client in `adapters/stdio/client.py`:
+`negotiated_client` checks the version and `negotiated_locale` reads the tag's
+primary subtag (`primary_subtag` splits at the first `-` or `_` and lowercases,
+so `es-AR`, `es_AR` and `ES` are `es`), with `null` or no tag at all served as
+`DEFAULT_LOCALE`. The server replaces its client only when `hello` succeeds: a
+refused one, for its version or a `locale` that is not a string, leaves the
+version and locale negotiated before in force.
+
+The negotiated locale reaches an operation the way `progress` and `cancel` do:
+`locale` is one of `PROTOCOL_PARAMETERS` (`utils/constants.py`), so the catalog
+never publishes it, and the dispatcher injects the session's `Locale` into every
+facade function that declares a `locale` parameter: `describe`, `get_config`,
+`set_config`, `reset_config`, `fuzz`, `run_pipeline`, `get_run`, `get_finding` and
+`explain_finding`. A function called without a
+client (a test, an internal call) gets `DEFAULT_LOCALE`, English. A finding's
+summary keeps its choice of sentence apart from its words: the sentence strategies
+pick a `Phrase`, and `services/finding_summary/phrases.py` holds each phrase's
+`Wording`. The facts handed to the LLM are always told in English.
+
+**Adding a locale.** Add the member to `Locale` in `utils/locale.py` and a field
+of the same name to its `Wording`; add the same language to the engine's
+`Language` and `Wording`, since the core serves only what the engine can say; add
+the value to `hello_result.locale` in `protocol/envelope.schema.json`. A `Wording`
+cannot be built without the new field, so every text without its translation
+fails at import.
 
 ## Preconditions
 

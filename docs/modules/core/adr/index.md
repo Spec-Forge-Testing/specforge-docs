@@ -48,7 +48,7 @@ a run can find, which `fuzz_options` publishes, are the engine's.
 | --- | --- | --- |
 | [core.md](core.md) | the headless core | Unprobed reasons, dependency gateways, the busy guard, cancelled-run evidence, oracle scope, breached-run evidence, engine option precedence, when the inference gateway loads, the report's labels for the engine's outcomes, the run's URL, a finding's summary, replay verdicts per defect, presets, examples per endpoint, the deleted-resource transition, when a run is clean, a finding's replay behind witnesses, comparison scope |
 | [inference.md](inference.md) | contract production | Adopting a produced contract, the inference cache, approval and the spend cap, watching and cancelling production |
-| [protocol.md](protocol.md) | the wire | How fixtures are captured, how versions are matched, one name and `null` for every reader, how `shutdown` ends a session, the strategy's one name, the `0.2` series |
+| [protocol.md](protocol.md) | the wire | How fixtures are captured, how versions are matched, one name and `null` for every reader, how `shutdown` ends a session, the strategy's one name, the `0.2` series, the session's locale |
 
 ## Full index
 
@@ -85,3 +85,4 @@ a run can find, which `fuzz_options` publishes, are the engine's.
 | [ADR-194](core.md#adr-194) | core | A finding's replay earns `possibly_resolved` behind witnesses, and says why when it cannot |
 | [ADR-195](core.md#adr-195) | core | A comparison rules each defect within the endpoints the later run exercised |
 | [ADR-197](inference.md#adr-197) | inference | The cost cap holds an inference's worst case |
+| [ADR-201](protocol.md#adr-201) | protocol | The session's locale is negotiated in `hello`, and texts are told in it when they are read |

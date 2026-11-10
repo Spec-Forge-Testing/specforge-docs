@@ -362,7 +362,7 @@ evidence is exactly what a reader must see.
 (the state column is free text, so no migration), reads them back in `get_run` and
 `get_finding`, and the report lists the finding in `unconfirmed_findings` with
 `state` `refuted`, its `control`, and a summary ending *"refuted: its control
-request showed it is not a defect"*. The report's explanation of the state says a
+request showed the value sent does not cause it"*. The report's explanation of the state says a
 refutation can be wrong and points at the control. The mass-assignment sentence of
 a refuted finding says the response without the key echoed it too. Protocol
 `0.1.23` adds `refuted` to `finding_states`; the report is `schema_version` 1.23.

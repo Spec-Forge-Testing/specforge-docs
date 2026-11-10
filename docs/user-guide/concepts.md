@@ -140,7 +140,7 @@ flowchart TD
 Some findings are also checked against a **control request**: the same request
 without the value suspected of causing them, or, for a rejection that names no
 field, the same request with fresh values, sent twice. When the control shows the
-finding is not a defect, the finding is **refuted**: counted apart
+suspected value does not cause the finding, it is **refuted**: counted apart
 (`findings_refuted` in the [report](reports.md)) and listed with that control,
 never as a defect. A server error under the `resilience` mode is checked by
 resending its attack instead, and is flaky unless it comes back every time.

@@ -266,7 +266,7 @@ most first. The three **states** answer *why* a finding never became a crash:
 | --- | --- |
 | `flaky` | Seen, but it did not reproduce when the engine tried to confirm it. Stateless, stateful, performance (for a finding judged against the contract) and resilience runs report these (a resilience server error is flaky when its attack, resent twice, does not get it back every time), and `metrics.findings_flaky` counts every such event. |
 | `unverified` | Collected but never checked: the run stopped before it could be confirmed, or its control request got no answer, or an answer that cannot judge it (a rejection, a success with nothing to echo in), so there was nothing to judge it against. Such an entry carries that control in `control`. In an `auth` run, every finding judged against the contract is unverified: the crossing controls access, not the contract its answer may break. An access breach and a crash are confirmed. |
-| `refuted` | It reproduced, but its control request showed it is not a defect: the same request without the suspicious input showed the same signal, or, for a rejection that names no field, the same request with fresh values was accepted once and rejected the same way when sent again, a conflict with stored state such as a unique field; or another identity got the same rejection for a value the first caller had accepted; or the same request from the same caller was accepted earlier in the run (`control.source` `earlier`). Stateless, stateful and performance runs report these. A refuted finding has no request to replay alone: `replay_finding` fails with `REPLAY_NOT_REPRODUCIBLE`. Its `control` is the request that refuted it (the accepted one, for a state conflict), and `metrics.findings_refuted` counts it. A refutation can be wrong: check the control. |
+| `refuted` | It reproduced, but its control request showed the value sent does not cause it: the same request without the suspicious input showed the same signal, or, for a rejection that names no field, the same request with fresh values was accepted once and rejected the same way when sent again, a conflict with stored state such as a unique field; or another identity got the same rejection for a value the first caller had accepted; or the same request from the same caller was accepted earlier in the run (`control.source` `earlier`). Stateless, stateful and performance runs report these. A refuted finding has no request to replay alone: `replay_finding` fails with `REPLAY_NOT_REPRODUCIBLE`. Its `control` is the request that refuted it (the accepted one, for a state conflict), and `metrics.findings_refuted` counts it. A refutation can be wrong: check the control. |
 
 A confirmed resilience defect also carries a `control`: the clean base request
 sent after its attack was confirmed, and its `summary` says whether the attack
@@ -281,8 +281,8 @@ regression or a fix.
 The HTML report gains a matching **Unconfirmed findings** section, listing the
 same entries with a one-line explanation of each state: a flaky finding reads
 *"seen N time(s) but could not be reproduced"*, an unverified one *"never
-checked because the run stopped"*, a refuted one that a control request showed it
-is not a defect and that the control is worth checking. That table carries a **Rule** column, showing
+checked because the run stopped"*, a refuted one that a control request showed the
+value sent does not cause it and that the control is worth checking. That table carries a **Rule** column, showing
 the rule id only for a finding whose rule the contract declared (a business-rule
 or access-control finding) and a placeholder for every intrinsic invariant, whose
 rule id merely repeats the invariant.

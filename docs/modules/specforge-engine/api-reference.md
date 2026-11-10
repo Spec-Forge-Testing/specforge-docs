@@ -84,7 +84,7 @@ Field names of this family are stable: they are persisted as columns.
 | `Finding` | the discriminated union of `ConfirmedFinding`, `FlakyFinding`, `UnverifiedFinding`, `RefutedFinding` on `state` |
 | `ConfirmedFinding` | a settled reproducer: carries its `report` |
 | `FlakyFinding`, `UnverifiedFinding` | a settled group: its `signature` and how many raw `occurrences` it stands for |
-| `RefutedFinding` | a group a control request showed is not a defect: its `signature`, `occurrences`, `first_seen` and the `control` that refuted it |
+| `RefutedFinding` | a group whose control request showed the value sent does not cause it: its `signature`, `occurrences`, `first_seen` and the `control` that refuted it |
 | `RunStats`, `EndpointStats`, `LatencyStats` | run, endpoint and latency counters — `EndpointStats.unprobed_reason` names why a targeted endpoint drew no requests |
 | `LoadStepStats` | one concurrency-ladder step on an endpoint's `load_profile`: its `concurrency`, measured `latency`, `degraded` verdict (`None` when unjudged) and, when the step was measured twice to confirm a degradation, the second window as `remeasured` |
 | `UnprobedReason` | why the auth mode crossed nothing, or resilience sent nothing, at a targeted endpoint: `declared_public` or `access_undeclared` (by design), `owner_producer_missing`, `owner_chain_cyclic`, `owner_resource_unprovisioned`, `required_role_unheld`, `owner_identity_missing` or `link_target_reserved` (a precondition the run could not meet) — each one in [Execution modes](execution-modes.md#auth) —, or why a `stateful` run that was not cut short never sent an endpoint: `link_value_never_produced` or `rule_never_drawn` |

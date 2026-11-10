@@ -342,7 +342,7 @@ unexpectedly.
       under (when any), its **State** (`flaky`, `unverified` or `refuted`) and how many times
       it was **Seen**. A flaky finding was seen but did not reproduce; an
       unverified one was collected before the run could check it; a refuted one
-      reproduced, but a control request showed it is not a defect. The section is
+      reproduced, but a control request showed the value sent does not cause it. The section is
       absent when a run confirmed everything it saw. These are the same findings
       `report.json` carries in `unconfirmed_findings` (see [Run report](reports.md)).
     - **Identities the budget could not reach** — a table, endpoint → labels,

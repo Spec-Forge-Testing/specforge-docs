@@ -475,7 +475,7 @@ the one `replay_finding` refuses the finding with, `REPLAY_NOT_REPRODUCIBLE`, wh
 | Value | Meaning |
 | --- | --- |
 | `stateful` | The finding, or the analysis it was recorded in, needed prior requests to build its state: replay its analysis instead. Every finding of a `stateful` analysis reads it, an unconfirmed one too. |
-| `refuted` | Its control request showed it is not a defect, so it has no request to replay alone. |
+| `refuted` | Its control request showed the value sent does not cause it, so it has no request to replay alone. |
 | `trace_pruned` | Retention pruned its analysis's recorded trace. |
 | `not_in_trace` | Its analysis's recorded trace does not hold the request it was reported from. |
 

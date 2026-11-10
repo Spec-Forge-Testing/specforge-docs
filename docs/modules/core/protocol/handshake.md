@@ -112,7 +112,8 @@ translated: a client branches on them in any locale
 | Every label and summary of [`vocabulary`](#vocabulary) and [`fuzz_options`](#fuzz-options), presets included, in `hello` and `describe` | Every error's `message` and the prose in its `data` (`reason`, `detail`) |
 | Each option's `help` in `get_config`, `set_config` and `reset_config` | `diagnose`'s `name`, `category`, `detail` and remedies, and a model list's `fallback_reason` |
 | A finding's `summary` in `get_run`, `get_finding`, the live `finding` event, and the run document `fuzz` and `run_pipeline` return | The `reason` of `contract_failed` and of `producer_exclusions[]` |
-| A template explanation (`source` `template`) in `explain_finding` and `get_finding`, written from the finding's evidence when it is read | Everything the LLM writes: a model explanation and its fix, the rules it infers, and an intrinsic rule's `description` |
+| A template explanation (`source` `template`) in `explain_finding` and `get_finding`, written from the finding's evidence when it is read | Everything the LLM writes: a model explanation and its fix, and the rules it infers; a rule the contract declares, and an access-control rule |
+| The `description` of a rule the engine writes: `vocabulary.invariants[].description`, and a finding's `rule_description` in `get_run`, `get_finding` and the run document `fuzz` and `run_pipeline` return | A stored `rule_description` that no longer reads as the engine wrote it (its sent values scrubbed, for instance): it is returned as stored |
 | | The stored artifacts `report_json` and `report_html`, and the text of every `replay` result |
 | | `describe`'s `catalog` (each operation's `summary`, `description` and parameter `help`), `events` and `error_codes` |
 

@@ -371,5 +371,6 @@ numbers' digits (50). Tests check that each table covers its whole vocabulary an
 nothing else, that no label or summary is blank, and that each count is stated.
 
 An invariant's summary is not its rule: an intrinsic rule's text stays in the
-taxonomy, which the core publishes as the invariant's `description`, and reaches
-each finding's `rule` ([Findings](findings.md#taxonomy)).
+taxonomy, written in every language like a label. The core publishes it as the
+invariant's `description` in the session's locale, and each finding's `rule`
+keeps its English ([Findings](findings.md#taxonomy)).

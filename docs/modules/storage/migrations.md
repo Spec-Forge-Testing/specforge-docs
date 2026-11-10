@@ -27,6 +27,7 @@ file outside the naming.
 | 11 | `0011_strategy_column_and_cut_without_endpoint.sql` | `analyses.strategy_mode` renamed `strategy`; `runs` rebuilt so a `flaky_generation` cut records no endpoint. |
 | 12 | `0012_replay_defect_verdicts.sql` | The table `replay_defect_verdicts`; `runs.replay_recorded_defects`. |
 | 13 | `0013_finding_replay_request_recorded.sql` | `findings.replay_request_recorded` and `replay_matcher_version`. |
+| 14 | `0014_producer_exclusion_cause.sql` | `run_producer_exclusions.cause`. |
 
 The tables and their columns, as the latest version leaves them, are on
 [Data model](data-model.md) and [Finding follow-up records](finding-records.md).

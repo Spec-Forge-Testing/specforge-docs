@@ -120,7 +120,9 @@ order:
 
 A contract that passes all three replaces the endpoint's definition for the run,
 and the run keeps it with its results. A failure leaves an entry in
-`producer_exclusions` with its `reason` and a
+`producer_exclusions` with its `reason`, its
+[`cause`](protocol/vocabularies.md#contract-failure-cause), the code a client
+branches on, and a
 [`disposition`](protocol/vocabularies.md#producer-exclusion-disposition):
 
 | Failure | `disposition` | What the run does |
@@ -267,7 +269,7 @@ Each endpoint's production is reported with
 [contract production events](protocol/events.md#contract-production):
 `contract_started` in selection order, then `contract_finished` (with its
 `source`, `cache`, `model`, `fixture` or `absent`, and, for `model`, the tokens
-and cost) or `contract_failed` (with its `reason` and `disposition`) as each one
+and cost) or `contract_failed` (with its `cause`, `reason` and `disposition`) as each one
 ends. Pair them by `endpoint`. A `contract_failed` with `disposition` `aborted`
 means the operation fails.
 

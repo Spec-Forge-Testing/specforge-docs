@@ -389,7 +389,7 @@ producer:
 | `findings_confirmed` | shrink attempts that reproduced and became a crash report; for a finding a mode does not shrink (a `resilience` finding, an `auth` access breach or crash, a `performance` latency finding or crash), each defect observed |
 | `findings_unique` | distinct defects after collapsing reports with the same minimal reproducer (and, for `access_control`, the same identity); equal to the count of `ConfirmedFinding`s, never above `findings_confirmed` |
 | `findings_flaky` | attempted during shrinking and did not reproduce; in `resilience`, a server error its resent attacks did not get back on every resend |
-| `findings_refuted` | reproduced, and its control request showed it is not a defect: the input was not the cause, or the rejection was a state conflict ([ADR-151](adr/findings.md#adr-151), [ADR-167](adr/findings.md#adr-167)) |
+| `findings_refuted` | reproduced, and its control request showed the value sent does not cause it: the input was not the cause, or the rejection was a state conflict ([ADR-151](adr/findings.md#adr-151), [ADR-167](adr/findings.md#adr-167)) |
 | `findings_collapsed` | not shrunk because a faithful representative of their signature stands for them |
 | `findings_unverified` | never judged: the run was cut before shrinking, no candidate could be produced, the control request got no answer or one that cannot judge it, or, in `auth`, a finding judged against the contract, which the crossing does not control |
 | `requests_shrink` | requests the shrinking phase put on the wire (in a stateful run, Hypothesis's shrink re-sends plus the sequence minimizer's; in `resilience`, the confirmation's resends, controls and provisioning); not part of `total_requests` |

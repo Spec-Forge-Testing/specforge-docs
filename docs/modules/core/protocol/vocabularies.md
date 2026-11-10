@@ -117,7 +117,7 @@ values under a CHECK constraint.
 
 What the run did with an endpoint whose produced contract it could not use. In
 `get_run` and the report document's `producer_exclusions`, beside `method`,
-`path` and `reason`.
+`path`, `reason` and [`cause`](#contract-failure-cause).
 
 | Value | Meaning |
 | --- | --- |
@@ -134,6 +134,51 @@ lists answer different questions and share the `(method, path)` key: the
 coverage says where the endpoint ended up, `producer_exclusions` what failed in
 the producer. The persistence layer stores these two values under a CHECK
 constraint.
+
+## Contract failure cause { #contract-failure-cause }
+
+Why a contract producer could not give an endpoint its contract, or could not run
+at all. It is the `cause` of a [`contract_failed`](events.md#the-event-catalog)
+event and of each `producer_exclusions[]` entry in `get_run` and the report
+document, and the `data.cause` of a
+[`CONTRACT_PRODUCER_FAILED`](errors.md#execution) error. The `reason` or
+`data.detail` beside it is English detail ([codes and English
+detail](errors.md#codes-and-detail)). `vocabulary.contract_failure_causes` lists
+each as `{value, label}`, in the order of this table, with or without the engine.
+
+| Value | Label | Meaning |
+| --- | --- | --- |
+| `not_a_directory` | Not a directory | The fixture directory or `producer.source_repo` is not a directory. |
+| `kernel_unavailable` | Contracts kernel unavailable | The fixture producer cannot read contracts: the shared contracts library is not installed. |
+| `duplicate_contract` | Duplicate contract | Two fixture files declare a contract for the same endpoint. |
+| `malformed_contract` | Malformed contract | A fixture file is not valid JSON, not a JSON object, or fails the contract's validation. |
+| `engine_unavailable` | Inference engine unavailable | The inference engine is not installed, cannot be used as configured, or could not price the run. |
+| `cache_unavailable` | Contract cache unavailable | The inferred-contract cache could not be read or written. |
+| `spend_cap` | Spend cap reached | The call's worst case does not fit in what is left of the cost cap, so it was not sent. |
+| `inference_failed` | Inference failed | The inference engine could not produce a contract for the endpoint. |
+| `cache_entry_vanished` | Cached contract vanished | A cached contract the run counted on was gone when it was read; it is never inferred again in that run. |
+| `untraced` | Handler not traced | Static analysis could not reach the endpoint's handler, so there is nothing to infer from. |
+| `contract_rejected` | Contract rejected | The produced contract could not be fused with the endpoint's specification. |
+| `unsupported_schema` | Unsupported schema | The fused contract uses a schema construct the engine cannot compile. |
+| `foreign_endpoint` | Contract for another endpoint | The produced contract declares a different method or path from the endpoint it was produced for. |
+| `unexpected` | Unexpected error | An error no producer, engine or cache names. The run stops: only a `contract_failed` with `disposition` `aborted` carries it. |
+
+Which ones a client meets depends on the producer. The inference producer drops
+a failed endpoint and goes on (`disposition` `schema_only`), so `spend_cap`,
+`inference_failed`, `cache_entry_vanished`, `untraced` and the three adoption
+causes, `contract_rejected`, `unsupported_schema` and `foreign_endpoint`, end up in
+`producer_exclusions`. The fixture producer stops the run instead, so its
+failures arrive as a `contract_failed` with `disposition` `aborted` and then
+`CONTRACT_PRODUCER_FAILED`. A producer that cannot start (`not_a_directory`,
+`kernel_unavailable`, `duplicate_contract`, `malformed_contract`,
+`engine_unavailable`, `cache_unavailable`) fails the operation with
+`CONTRACT_PRODUCER_FAILED` before any `contract_*` event. If the inference engine
+or its contract cache fails while contracts are already being produced, the run
+stops with a `contract_failed` (`disposition` `aborted`) that carries
+`engine_unavailable` or `cache_unavailable`.
+
+A `producer_exclusions[]` entry of a run stored by a core older than `0.2.6` has
+`cause` `null`: its cause was never recorded.
 
 ## `endpoints[].unprobed_reason` { #unprobed-reason }
 
@@ -430,7 +475,7 @@ the one `replay_finding` refuses the finding with, `REPLAY_NOT_REPRODUCIBLE`, wh
 | Value | Meaning |
 | --- | --- |
 | `stateful` | The finding, or the analysis it was recorded in, needed prior requests to build its state: replay its analysis instead. Every finding of a `stateful` analysis reads it, an unconfirmed one too. |
-| `refuted` | Its control request showed it is not a defect, so it has no request to replay alone. |
+| `refuted` | Its control request showed the value sent does not cause it, so it has no request to replay alone. |
 | `trace_pruned` | Retention pruned its analysis's recorded trace. |
 | `not_in_trace` | Its analysis's recorded trace does not hold the request it was reported from. |
 
@@ -521,3 +566,48 @@ and of each entry in the reply's stage list.
 
 The execution stage reads the run's own outcome: a run that breached the safety
 guard ends the stage `failed`, a cancelled one `stopped`.
+
+## `list_llm_models` fallback cause { #llm-fallback-cause }
+
+Why a provider's model list in `list_llm_models` came from litellm's catalog
+(`source` `catalog`) rather than from the provider's own account. Each provider
+entry carries it in `fallback_cause`, with `fallback_status` beside it, and both
+are always present: `null` for a list the account answered. `fallback_reason` is
+the English detail.
+
+| Value | Meaning | `fallback_status` |
+| --- | --- | --- |
+| `no_key` | No API key is set for the provider. | `null` |
+| `key_not_askable` | The provider's account cannot be asked with an API key (Vertex AI). | `null` |
+| `key_rejected` | The provider refused the key. | `401` or `403` |
+| `http_error` | The provider answered another error status. | That status |
+| `unreachable` | The provider could not be reached: a network error or a timeout. | `null` |
+| `not_json` | The provider answered with something that is not JSON. | `null` |
+
+## `diagnose` checks { #diagnose-check }
+
+Each check `diagnose` answers carries `id`, the requirement it probes, and
+`category_id`, the area of the environment it belongs to. A client keys its own
+text, icons and grouping on these two. `name` and `category` beside them are the
+English labels, which may be reworded.
+
+| `id` | `category_id` | `name` |
+| --- | --- | --- |
+| `python_interpreter` | `runtime` | Python interpreter |
+| `core_runtime` | `runtime` | Core runtime |
+| `contract_assembly` | `contract_assembly` | Contract Assembly |
+| `ast_parser` | `ast_parser` | AST parser |
+| `llm_integration` | `llm_integration` | LLM integration |
+| `execution_engine` | `execution_engine` | Execution engine |
+| `storage` | `storage` | Storage |
+| `shared_contracts` | `shared_contracts` | Shared contracts |
+| `test_runtime` | `test_runtime` | Test runtime |
+| `llm_env_file` | `environment` | LLM env file |
+| `llm_model` | `environment` | LLM model |
+| `llm_credentials` | `environment` | LLM credentials |
+| `database` | `storage` | Database |
+
+`category_id` takes nine values: `runtime`, `contract_assembly`, `ast_parser`,
+`llm_integration`, `execution_engine`, `storage`, `shared_contracts`,
+`test_runtime` and `environment`. Not every check runs everywhere: a packaged
+build never runs `test_runtime`, which is needed only to develop Spec Forge.

@@ -291,3 +291,59 @@ is `null` with reason `flaky_generation`, and the `truncated` event omits
 A client moves to `0.2.0` once, reading `strategy` and treating `endpoint_id` as
 nullable. The core has one serializer per field again, and a new strategy is one
 enum member.
+
+## ADR-201 — The session's locale is negotiated in `hello`, and texts are told in it when they are read { #adr-201 }
+
+**Status:** accepted · Extends [ADR-094](#adr-094) · `adapters/stdio/client.py`, `adapters/stdio/server.py`, `utils/locale.py`, `services/catalog/service.py`, `services/finding_summary/phrases.py`, `services/explanation/templates.py`
+
+### Context
+
+A client that shows the core's texts to a person who reads Spanish had two
+choices: show English, or keep its own translation of every label, summary and
+sentence the core writes, which drifts the moment the core changes a word. A
+finding's summary cannot be translated after the fact at all: it is a sentence
+built from evidence, not a key.
+
+### Decision
+
+**The client asks once, the core answers what it serves.** `hello.params.locale`
+is a BCP 47 tag (a POSIX `es_AR` reads the same); the core matches its primary
+subtag against its locales and falls back to `en` (a lookup with a default, as
+RFC 4647 describes). `result.locale` is always sent, so a client never guesses.
+The locale lives beside the negotiated version in the adapter's client, and a
+second `hello` replaces both for what is sent after it; a refused one replaces
+neither.
+
+**The locale reaches an operation as protocol machinery.** Like `progress` and
+`cancel`, it is injected by the dispatcher into the facade functions that declare
+it, and never published as a parameter. A call without a client is English.
+
+**Every text is a `Wording`, one string per locale side by side.** A change to the
+English shows its Spanish in the same diff, and a text missing a locale does not
+build.
+
+**Told when read, stored in English.** A finding's summary and a template
+explanation are written from the evidence in the reader's locale; the stored row,
+its cache key and the run's artifacts stay English. A code, an id or an enum value
+is never translated, and the prose beside a code (an error's `message`,
+`diagnose`'s `detail`) stays English as technical detail.
+
+### Rejected
+
+- **Refusing a locale the core does not serve.** The client has nothing to correct;
+  English is a correct answer.
+- **A catalog file per language.** A key-parity check stays green while the second
+  language goes stale; side-by-side wordings make the stale text visible.
+- **The locale in a thread-local or in the workspace session.** A thread-local does
+  not cross the worker pool, and some operations take no workspace; the language
+  belongs to the client.
+- **Artifacts in the session's language.** One run would be stored differently by
+  two clients, and a stored record would depend on who ran it.
+
+### Consequences
+
+A client renders the core's own texts in its user's language without a table of
+its own, and branches on codes in any locale. What the LLM writes stays in the
+language it was written in. A new locale is a member of `Locale` and a field of
+`Wording` in the core and in the engine, and every text has to be written in it
+before the core builds.

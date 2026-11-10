@@ -30,18 +30,30 @@ has a file.
 | `shape` | The client lines are unchanged, the event kinds match the scenario's declared shape, every line validates, and every reply and event keeps the skeleton the core answers today — counts Hypothesis is free to vary. |
 | `none` | Not reproducible by the harness; the entry carries the reason. |
 
-The thirteen scenarios: a short operation; a long one with events; a long one
-with no token (so not a single event); a cancellation mid-run; domain errors; a
-rejected project switch; the `analyze_endpoints` events; the four `run_pipeline`
-stages; a build where the engine **does** raise `infra_failure` and
-`target_down` (kept `none` — the harness cannot reproduce it cheaply); a `fuzz`
-with a fixture producer, whose `contract_*` events all precede the engine's,
-with typed parameters, a paginated result and a refused enum; a
-deadline-truncated run; an analysis over a repository with no controllers; and
-`13-contract-production`, a `fuzz` whose fixture contract the core cannot
-project, so `contract_failed` (`aborted`) arrives before the engine and the run
-fails `CONTRACT_PRODUCER_FAILED`. The last three exist so that **no event `kind`
-in the schema goes unexercised**.
+The seventeen scenarios:
+
+| File | Scenario | Captured |
+| --- | --- | --- |
+| `01-short` | A short operation | `exact` |
+| `02-long-with-events` | A long operation with events | `shape` |
+| `03-long-no-token` | A long operation with no token, so not a single event | `shape` |
+| `04-cancel` | A cancellation mid-run: the run keeps and persists what it had | `shape` |
+| `05-domain-error` | Domain errors: no project, a value outside its enum, an unknown operation | `exact` |
+| `06-project-switch-rejected` | A project switch rejected by operations still alive | `shape` |
+| `07-analyze-endpoints` | The `analyze_endpoints` events, plus an inline payload | `shape` |
+| `08-run-pipeline` | The four `run_pipeline` stages; with no producer, `inference` ends `skipped` | `shape` |
+| `09-engine-events` | A build where the engine **does** raise `infra_failure` and `target_down`: the API goes down, the result is `status: failed` and the document's `run.status` is `aborted` (the harness cannot reproduce it cheaply) | `none` |
+| `10-typed-parameters` | A `fuzz` with a fixture producer, whose `contract_*` events all precede the engine's, with typed parameters, a paginated `get_run` and a refused enum | `shape` |
+| `11-deadline-truncated` | A `fuzz` under a per-endpoint deadline nothing can meet: `truncated`, and the run still ends with a result | `shape` |
+| `12-analysis-unresolved` | An analysis over a repository with no controllers: every endpoint fails, and the payload request is refused | `shape` |
+| `13-contract-production` | A `fuzz` whose fixture contract the core cannot project: `contract_failed` (`aborted`) before the engine, and the run fails `CONTRACT_PRODUCER_FAILED` | `shape` |
+| `14-flaky-generation-truncated` | A stateful run cut by `flaky_generation`: a `truncated` event with no `endpoint`, and `run.truncation.endpoint_id` `null` | `none` |
+| `15-replay-run` | A `fuzz`, then a `replay` of its whole analysis, read back through `get_run`, `list_runs` and `get_finding` | `shape` |
+| `16-stateful-finding` | A stateful `fuzz` whose finding's `replay_alone` is refused with `reason` `stateful` | `shape` |
+| `17-regional-locale` | A `hello` that asks for `es-AR` is served `es`: its vocabulary and fuzz options come in Spanish | `exact` |
+
+`11`, `12` and `13` exist so that **no event `kind` in the schema goes
+unexercised**.
 
 No fixture records `estimate_inference` or the approval flow: an estimate
 carries a model's price, which no placeholder can hold still, so the core's own

@@ -157,7 +157,7 @@ answer that cannot judge it. A `mass_assignment` finding says which: "the reques
 was not accepted" or "the response held nothing to echo", with the control's
 status. A
 finding stored without an observation still gets a sentence:
-"`` `METHOD /path` `` broke *label* with *status*."
+"`` `METHOD /path` `` answered *status*: *label*."
 
 ## The evidence { #evidence }
 
@@ -216,7 +216,7 @@ counts in `requests_shrink`.
 | `confirmed` | The shrunk payload reproduced the finding, and a control request, when its invariant has one, did not show the same signal. | `findings_confirmed` |
 | `flaky` | The shrunk payload did not reproduce it. | `findings_flaky` |
 | `unverified` | Never checked: the run stopped first or the member was never attempted, or its control request got no answer (a timeout, a refused connection) or an answer that cannot judge it (a rejection, a success with nothing to echo in), so there is nothing to judge it against. | `findings_unverified` |
-| `refuted` | The shrunk payload reproduced it, and its control request showed it is not a defect: the input was not the cause, or the rejection was a conflict with stored state. Listed as a `RefutedFinding` with that control, never as a defect. | `findings_refuted` |
+| `refuted` | The shrunk payload reproduced it, and its control request showed the value sent does not cause it: the input was not the cause, or the rejection was a conflict with stored state. Listed as a `RefutedFinding` with that control, never as a defect. | `findings_refuted` |
 
 The four states are the members of `FindingState`. Each mode reaches them its own
 way ([ADR-192](adr/findings.md#adr-192)):

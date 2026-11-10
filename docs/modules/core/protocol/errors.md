@@ -26,6 +26,26 @@ machine-readable error codes any other surface enumerates, so the two never
 disagree. `describe` publishes the complete set (`error_codes`) so a frontend
 can handle them exhaustively rather than discover one at a time.
 
+## Codes and English detail { #codes-and-detail }
+
+The same rule holds beyond `data.code`. Wherever the core says *why* something
+happened, it sends a **stable code** a client branches on, and beside it an
+**English text** that is technical detail for a log or a tooltip:
+
+| Code to branch on | English detail beside it | Where |
+| --- | --- | --- |
+| `data.code` | `message` | Every error |
+| `data.cause` | `data.detail` | [`CONTRACT_PRODUCER_FAILED`](#execution) |
+| `data.cause` | `data.reason` | [`REPO_ROOT_INVALID`](#analysis) |
+| `data.parameter` | `data.reason` | [`INVALID_PARAMS`](#protocol-level-codes) when it names a parameter |
+| `cause` | `reason` | The [`contract_failed`](events.md#the-event-catalog) event and `producer_exclusions[]` ([values](vocabularies.md#contract-failure-cause)) |
+| `fallback_cause`, `fallback_status` | `fallback_reason` | [`list_llm_models`](vocabularies.md#llm-fallback-cause) |
+| `id`, `category_id` | `name`, `category`, `detail` | [`diagnose`](vocabularies.md#diagnose-check) checks |
+
+The codes are closed vocabularies: a new value is a protocol change with its own
+changelog entry. The English text may be reworded in any version, so a client
+shows it, logs it, or ignores it, and never parses it.
+
 ## Protocol-level codes
 
 Nine codes ride the JSON-RPC integers directly:
@@ -76,6 +96,22 @@ range), and `reason`. When the value came from the project's `specforge.toml`
 rather than the request, `data` also carries `source: "specforge.toml"`. That
 check runs on `get_config`, `set_config`, `fuzz`, `run_pipeline` and `replay`;
 `reset_config` never checks, and is the way out of a bad file value.
+
+### `INVALID_PARAMS` for an existing file { #overwrite-invalid-params }
+
+An operation that would replace a file it was not told to replace is refused
+`INVALID_PARAMS` before anything is written, with `data.parameter` `overwrite`, the
+parameter that allows it, so a client offers to retry with it. That is
+`generate_contract` over an existing `destination`, and `init_project` given
+`name`, `openapi_spec` or `base_url` over a `specforge.toml` it would keep.
+`data.reason` is the English detail, naming the file.
+
+```json
+"data":{"code":"INVALID_PARAMS","method":"generate_contract","reason":"…","parameter":"overwrite"}
+```
+
+`init_project`'s `data` carries `settings`, the settings given, in place of
+`method`.
 
 ### `INVALID_PARAMS` from the producer { #producer-invalid-params }
 
@@ -128,7 +164,7 @@ raise them. Together with the protocol-level codes, these are the complete set.
 | `NO_STATIC_ANALYSIS` | An operation that `requires` `analysis` was called before any `analyze_endpoints` in this session |
 | `ENDPOINT_NOT_ANALYZED` | The endpoint has no static analysis yet |
 | `ENDPOINT_ANALYSIS_FAILED` | Static analysis of the endpoint failed |
-| `REPO_ROOT_INVALID` | The repository to trace does not exist or is not a directory |
+| `REPO_ROOT_INVALID` | The repository to trace does not exist or is not a directory. `data`: `repo_root`, `cause` (`not_found` or `not_a_directory`) and `reason`, its English detail |
 | `STATIC_ANALYSIS_REQUIRED` | A finding's handler code was needed and could not be reached: its run traced no tree, or tracing its endpoint there found no handler |
 
 #### Why an endpoint could not be resolved { #analysis-failure-reasons }
@@ -163,11 +199,11 @@ when the analysis named none.
 | `IDENTITIES_INVALID` | The declared identities are malformed |
 | `UNSUPPORTED_SCHEMA` | The contract's schema version is not supported |
 | `NO_COMPILABLE_ENDPOINTS` | No endpoint could be compiled into a strategy |
-| `CONTRACT_PRODUCER_FAILED` | A contract producer could not honor an explicit request. A `producer.source_repo` that is not a directory is one, on `fuzz` and `estimate_inference` and in `run_pipeline`'s `inference` stage, before any inference: `data.source` names the path and `data.detail` is `not a directory`. A capped `generate_contract` whose route discovery its `max_cost_usd` cannot hold is another, before the discovery call the cap cannot hold is sent and with nothing written: `data.source` is `route discovery` and `data.detail` the reason ([its cap](operations.md#generate-contract-cap)) |
+| `CONTRACT_PRODUCER_FAILED` | A contract producer could not honor an explicit request. `data`: `source` (the path, endpoint or step that failed), `cause` (a [contract failure cause](vocabularies.md#contract-failure-cause)) and `detail`, its English detail. A `producer.source_repo` that is not a directory is one, on `fuzz` and `estimate_inference` and in `run_pipeline`'s `inference` stage, before any inference: `data.source` names the path and `data.cause` is `not_a_directory`. A capped `generate_contract` whose route discovery its `max_cost_usd` cannot hold is another, before the discovery call the cap cannot hold is sent and with nothing written: `data.source` is `route discovery` and `data.cause` is `spend_cap` ([its cap](operations.md#generate-contract-cap)) |
 | `INFERENCE_APPROVAL_REQUIRED` | A run has inferences to pay for while `inference.require_approval` is on, and its `producer.approval_token` is missing or stale; `data`: `reason` (`missing` or `stale`), `estimate` (as [`estimate_inference`](operations.md#estimate-inference) answers it). Refused before any inference; in `run_pipeline` it fails the `inference` stage with the same code and `data` |
 | `EXECUTION_FAILED` | The run failed while executing |
 | `REBUILD_FAILED` | The API under test could not be built and started again before its replay, so the replay was not sent |
-| `REPLAY_NOT_REPRODUCIBLE` | The recorded trace cannot be replayed against the target; also a `replay_finding` or `verify_finding_fix` of a finding that cannot be sent alone: a stateful one, which needs its prior requests (its `reason` says to replay the analysis instead), a `refuted` one, which is not a defect, one whose trace was pruned, or one whose request is not in the trace. For those four, `data.reason` is the refusal (`stateful`, `refuted`, `trace_pruned` or `not_in_trace`), as each finding's [`replay_alone`](run-detail.md#replay-alone) announces it ahead; every other cause carries no `reason` |
+| `REPLAY_NOT_REPRODUCIBLE` | The recorded trace cannot be replayed against the target; also a `replay_finding` or `verify_finding_fix` of a finding that cannot be sent alone: a stateful one, which needs its prior requests (its `reason` says to replay the analysis instead), a `refuted` one, whose control request showed the value sent does not cause it, one whose trace was pruned, or one whose request is not in the trace. For those four, `data.reason` is the refusal (`stateful`, `refuted`, `trace_pruned` or `not_in_trace`), as each finding's [`replay_alone`](run-detail.md#replay-alone) announces it ahead; every other cause carries no `reason` |
 | `SIDE_EFFECTS_CONSENT_REQUIRED` | A `replay`, `replay_finding` or `verify_finding_fix` of a recording that needs [consent](operations.md#replay-consent) did not pass `allow_side_effects`; refused before any request is sent. `data`: `analysis_id`, `parameter` (`allow_side_effects`), `reasons` (every case that applies, most severe first: `safety_breached`, then `recorded_with_side_effects`) and `reason` (the first of `reasons`) |
 
 ### Results and retention

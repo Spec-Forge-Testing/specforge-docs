@@ -702,7 +702,7 @@ business rule the verdict names, the seed case's expectation, or the access
 policy, unless the specification's own security already requires a credential.
 A finding of an invariant that stands on the very rule it cites
 (`rests_on_its_rule`: `input_validation`, `contract_completeness`,
-`business_rule`, `expected_rejection`, `expected_acceptance`, `access_control`)
+`semantic_property`, `expected_rejection`, `expected_acceptance`, `access_control`)
 whose rule's `basis` is `assumed` settles as `LlmSuspicionFinding`, state
 `llm_suspicion`. Every other reproduced finding settles `confirmed`, as before: a
 rule the specification declares, a stated rule, or one no producer grounded.
@@ -774,8 +774,8 @@ resource, never a seeded value.
 
 **Two invariants judge the expectation.** `expected_rejection`: the case expects
 rejection and the server answered 2xx. `expected_acceptance`: it expects
-acceptance and the server answered 400 or 422. Both are `business_rule`,
-`medium`, with the case's id as `rule_id`. A 5xx stays a `not_a_server_error`
+acceptance and the server answered 400 or 422. Both are of category `business_rule`,
+severity `medium`, with the case's id as `rule_id`. A 5xx stays a `not_a_server_error`
 finding; any other answer is not judged.
 
 **A case is judged only when it is what it says.** It is sent unjudged
@@ -787,7 +787,7 @@ is still sent, so a server error it provokes is still a finding. A case
 expecting rejection is judged whatever its values break.
 
 **A rule outranks a case on the same response.** `input_validation` and
-`business_rule` subsume `expected_rejection`: when the response that accepted a
+`semantic_property` subsume `expected_rejection`: when the response that accepted a
 case also breaks an input rule or a business rule, only that rule's finding is
 reported. `expected_acceptance` subsumes `contract_completeness`: the case states
 the stronger claim about the same rejection.

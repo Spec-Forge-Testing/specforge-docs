@@ -20,6 +20,9 @@ name, that name follows in `code font`.
 | **Unverified** | A finding collected but never checked, because the run stopped first or its control request got no answer. Reported as an unconfirmed finding. |
 | **Refuted** | A finding whose control request showed it is not a defect: sent without the suspicious input, it showed the same signal, or, for a rejection that names no field, fresh values were accepted once and rejected the same way when sent again, a conflict with stored state. Listed as an unconfirmed finding with its control, never as a crash. |
 | **Control request** | A request sent beside a finding's minimal reproducer, without the value suspected of causing it, to check that value is the cause. |
+| **LLM suspicion** | A finding that reproduced against a rule only the model assumed, not one your code or spec states: listed apart from crashes, never counted as a defect, never in the signal ([Defects and LLM suspicions](findings-and-suspicions.md)). |
+| **Grounds** | What a rule a producer gives rests on: `stated`, with the quote found in your code or spec and where it is written, or `assumed` by the model. |
+| **Seed case** | A whole request a producer offers to send as given, optionally with the outcome the server should give it (`expected_rejection`, `expected_acceptance`). |
 | **Unconfirmed finding** | A finding the run saw but never confirmed as a crash — flaky, unverified or refuted. Carries its signature and what its first occurrence observed, but no reproducer. |
 | **Category / severity** | What kind of defect a finding is (`crash`, `security`, `access`, `business_rule`, `contract_hygiene`, `performance`) and how serious (`critical` to `info`); fixed per invariant. |
 | **Summary** | A finding's one-sentence account of what happened, built from what it observed. |

@@ -5,8 +5,9 @@ core: how a run explains an endpoint it did not probe, how optional libraries
 are owned, how the busy guard is scoped, what a cancelled or a safety-breached
 run keeps, how a run's oracle scope bounds a comparison, how the engine options
 resolve, when the inference gateway loads, how a finding's summary is told, how
-a replay judges the defects it re-sends, and how a deleted resource is checked
-without a model.
+a replay judges the defects it re-sends, how a deleted resource is checked
+without a model, and when a run is refused for lacking a requirement or for
+verifying nothing.
 
 ---
 
@@ -858,3 +859,59 @@ A focused re-run tells resolved from untested. Scope is kept per method and path
 not per identity: a defect recorded under one identity, on an endpoint the later
 run exercised only under another, is ruled as usual and can read
 `possibly_resolved`.
+
+---
+
+## ADR-213 — A run that lacks what its mode requires is refused before it is produced, and one that would verify nothing is refused with the endpoints and why { #adr-213 }
+
+**Status:** accepted · Supersedes in part [ADR-102](../../specforge-engine/adr/engine.md#adr-102) · `controllers/execution/requirements.py`, `controllers/execution/translation.py`, `controllers/execution/producers.py`, `errors/execution.py`, `services/fuzz/exceptions.py`, `services/fuzz/runner.py`, `services/catalog/vocabulary.py`; engine `exceptions.py`, `runtime/facade.py`, `runtime/runners/auth/runner.py`
+
+### Context
+
+The catalog already said what each runner variant `requires`: `auth` needs
+identities the target accepts and a producer whose contracts declare access
+policies. A client showed it; the core did not enforce it. An `auth` run without
+a valid identity paid for its inferences and then failed with a free-text
+`EXECUTION_FAILED`; one with producer `none` ended `completed` without sending
+anything. A run whose every endpoint the safety guard held back also ended
+`completed`, its signal `degraded`, with nothing sent. Each read as a run that
+had tested the API, and none told the client which parameter would fix it.
+
+### Decision
+
+**A requirement is checked before anything is traced, produced or sent.** For the
+variant the run takes, each value of its `requires` is checked against the
+request; the first unmet one refuses the run with `REQUIREMENT_UNMET` (`-32602`,
+a parameter refusal), `data.requirement` naming it and `data.parameter` naming
+the parameter that meets it: `identities_path` for `identities`, `producer` for
+`access_policies`. No inference is paid for.
+
+**A run that would verify no endpoint is refused.** With its contracts produced,
+the core refuses with `NOTHING_VERIFIED` when the engine can verify nothing:
+
+| `data.cause` | When | Lifted by |
+| --- | --- | --- |
+| `held_back` | The safety guard holds back every endpoint of the run; the engine refuses before sending | `allow_side_effects`, in `data.parameter` |
+| `access_uncrossable` | An `auth` run crossed no endpoint: none that is not public declares an access policy, or none it declares can be crossed | A producer whose contracts declare crossable policies |
+
+`data.endpoints` lists each endpoint with its reason: a `hold_reason` for
+`held_back`, an `unprobed_reason` for `access_uncrossable`. Inferred contracts
+stay in the cache, so asking again does not pay for them again.
+
+### Rejected
+
+- **Keeping `requires` informative.** A client that ignores it gets a run that
+  costs money and says nothing; the core is the one authority that refuses.
+- **A `completed` run with an empty plan.** It is indistinguishable from a run
+  that tested everything and found nothing, which is the false green the core
+  never reports.
+- **Refusing every unmet run before production.** Whether anything can be
+  verified depends on what the contracts declare, so `NOTHING_VERIFIED` can only
+  be decided once they exist.
+
+### Consequences
+
+Two error codes a client handles by marking the parameter named. An `auth` run
+whose endpoints declare no access policy, which the engine used to complete with
+zero requests, is now refused as `access_uncrossable` like one whose policies
+cannot be crossed.

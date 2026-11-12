@@ -1005,7 +1005,7 @@ with `boundary` and `invalid`.
 
 ## ADR-129 — Aggressiveness is one knob: the attack share of the budget { #adr-129 }
 
-**Status:** accepted · Superseded in part by [ADR-141](measurement.md#adr-141) · `budget/aggressiveness.py`, `strategy_compiler/planning.py`, `strategy_compiler/fields/context.py`, `strategy_compiler/fields/security.py`
+**Status:** accepted · Superseded in part by [ADR-141](measurement.md#adr-141), [ADR-204](measurement.md#adr-204) · `budget/aggressiveness.py`, `strategy_compiler/planning.py`, `strategy_compiler/fields/context.py`, `strategy_compiler/fields/security.py`
 
 ### Context
 
@@ -1375,7 +1375,7 @@ run is never mutated, and `invalid` and `attack` still cover it.
 
 ## ADR-181 — Mass assignment is slipped inside each object of the body, and never judged under an object that admits extra keys { #adr-181 }
 
-**Status:** accepted · Supersedes in part [ADR-134](#adr-134) · `strategy_compiler/fields/attack/mass_assignment.py`, `strategy_compiler/fields/variants.py`, `strategy_compiler/fields/generation_phase.py`, `strategy_compiler/fields/field_tree.py`, `strategy_compiler/body.py`, `shared/extra_keys.py`, `runtime/oracles/security/mass_assignment.py`, `runtime/oracles/sent_value.py`, `runtime/fuzzers/stateless/control_payloads.py`
+**Status:** accepted · Superseded in part by [ADR-209](#adr-209) · Supersedes in part [ADR-134](#adr-134) · `strategy_compiler/fields/attack/mass_assignment.py`, `strategy_compiler/fields/variants.py`, `strategy_compiler/fields/generation_phase.py`, `strategy_compiler/fields/field_tree.py`, `strategy_compiler/body.py`, `shared/extra_keys.py`, `runtime/oracles/security/mass_assignment.py`, `runtime/oracles/sent_value.py`, `runtime/fuzzers/stateless/control_payloads.py`
 
 ### Context
 
@@ -1428,3 +1428,40 @@ On the lab API, keys echoed from inside `user` and from the elements of a bulk
 array are confirmed, and the Go API, which echoes nothing, reports none. One echo
 still yields one finding per key the server accepts, so a server that binds every
 key reports up to six findings for one defect at each object.
+
+---
+
+## ADR-209 — Mass assignment is tried on every object but a free-form one { #adr-209 }
+
+**Status:** accepted · Supersedes in part [ADR-181](#adr-181) · `shared/extra_keys.py`, `strategy_compiler/fields/attack/mass_assignment.py`, `strategy_compiler/fields/variants.py`, `strategy_compiler/body.py`, `strategy_compiler/zone.py`, `runtime/oracles/security/mass_assignment.py`
+
+### Context
+
+[ADR-181](#adr-181) never slipped a privileged key into an object whose contract
+admits extra keys, and never judged one there: such an object cannot be blamed
+for echoing a key it was allowed to take. Specifications often open
+`additionalProperties` on a model that also declares its properties, so the rule
+exempted the very objects mass assignment is about: a user model with declared
+`name` and `email`, open to extra keys, that binds `role` from the request.
+
+### Decision
+
+**Only a free-form object is exempt.** `holder_is_free_form` is the one
+definition: an object that admits extra keys and whose specification declares no
+property of its own, a map that takes any key by design. The generator skips such
+an object, the top of the body included, and the oracle judges nothing under one.
+An object that declares properties and admits extra keys is attacked and judged
+like a closed one.
+
+### Rejected
+
+- **Trusting `additionalProperties` as written.** On a model with declared
+  properties it says the parser tolerates other keys, not that any key may be
+  stored.
+- **Attacking free-form objects too.** A map such as `metadata` stores whatever it
+  is sent; echoing a key there is its contract.
+
+### Consequences
+
+More `mass_assignment` findings on specifications that leave objects open, each
+on a declared model that stored a key it does not declare.

@@ -51,8 +51,11 @@ missing here belongs to another module:
   [ADR-161](../../core/adr/core.md#adr-161), how a run's examples per endpoint
   resolve; [ADR-168](../../core/adr/core.md#adr-168), how a `DELETE`
   invalidates what it consumes and how a deleted-resource transition is derived;
-  [ADR-189](../../core/adr/protocol.md#adr-189), the `0.2` series; and
-  [ADR-190](../../core/adr/core.md#adr-190), when a run is clean, are the core's.
+  [ADR-189](../../core/adr/protocol.md#adr-189), the `0.2` series;
+  [ADR-190](../../core/adr/core.md#adr-190), when a run is clean;
+  [ADR-201](../../core/adr/inference.md#adr-201), how a model's rule is grounded in
+  a quote; and [ADR-213](../../core/adr/core.md#adr-213), when a run is refused
+  for verifying nothing, are the core's.
 - [ADR-136](../../semantic-inference/adr/prompts.md#adr-136), the plausible values
   the prompt asks for, is Semantic Inference's.
 
@@ -63,10 +66,10 @@ missing here belongs to another module:
 | [api.md](api.md) | facade / policy | What `run` takes, what the facade exports, how input is validated |
 | [compiler.md](compiler.md) | strategy_compiler | How a field becomes a strategy, which leaves of a body are poisoned, and how mutation and mass assignment reach them |
 | [engine.md](engine.md) | engine | Requests and their intent, oracles, findings, counters, runners, replay |
-| [measurement.md](measurement.md) | measurement | How the default numbers are measured and set, and what an inferred contract adds |
-| [findings.md](findings.md) | findings | How a finding is classified, what it observed, when a value provably breaks its contract, how findings are told apart, refuted, left unverified and redacted |
+| [measurement.md](measurement.md) | measurement | How the default numbers are measured and set, what an inferred contract adds, and how what a producer's contract gives is funded and accounted for |
+| [findings.md](findings.md) | findings | How a finding is classified, what it observed, when a value provably breaks its contract, how findings are told apart, refuted, left unverified and redacted, when one is an LLM suspicion, and how a seed case and a latency finding are judged |
 | [strategies.md](strategies.md) | strategies | What a strategy decides, the oracles it opts into, the traits each runner declares, and how what a run can find is derived |
-| [runners.md](runners.md) | runners | How far each runner reaches: what a stateful pass draws, when the run stops and how it tells defects apart, the stateless run corpus, refuting a whole-request rejection, the resilience base request and its confirmation, links into reserved headers |
+| [runners.md](runners.md) | runners | How far each runner reaches: what a stateful pass draws, how a consumer gets its values, when the run stops and how it tells defects apart, how a sequence is re-sent and replayed, the later echo, the stateless run corpus, refuting a whole-request rejection, the resilience base request and its confirmation, provisioning a resource, links into reserved headers |
 
 ## Full index
 
@@ -223,3 +226,14 @@ missing here belongs to another module:
 | [ADR-196](engine.md#adr-196) | engine | An unsafe method no producer judged is held as a write under load |
 | [ADR-199](strategies.md#adr-199) | strategies | What a run can find is derived from the engine, not listed |
 | [ADR-200](measurement.md#adr-200) | measurement | The semantic phase gets one example per input rule |
+| [ADR-202](findings.md#adr-202) | findings | A finding that stands on a rule the model assumed is an LLM suspicion, never a defect |
+| [ADR-203](findings.md#adr-203) | findings | A seed case is judged against the outcome it expects, only when it was sent whole and does not contradict its own contract |
+| [ADR-204](measurement.md#adr-204) | measurement | What a producer's contract gives is sent on top of the strategy's budget, once per identity, and accounted for item by item |
+| [ADR-205](runners.md#adr-205) | runners | A stateful consumer with an empty pool sends its producer chain first, and a read may take what its identity built in an earlier pass, history included |
+| [ADR-206](runners.md#adr-206) | runners | A stateful run stops after four passes without progress, never before it has sent its exploration floor, and keeps aiming at what it never reached while that finds something |
+| [ADR-207](runners.md#adr-207) | runners | A re-sent stateful sequence is bound to the values its own producers return, and a stateful finding replays alone through its minimal sequence |
+| [ADR-208](runners.md#adr-208) | runners | A declared echo is checked on every later read of the resource, and broken only by what another resource of the same sequence was sent |
+| [ADR-209](compiler.md#adr-209) | strategy_compiler | Mass assignment is tried on every object but a free-form one |
+| [ADR-210](findings.md#adr-210) | findings | A latency finding shows the payload slow most often, and its request is re-sent alone to say whether it is slow by itself |
+| [ADR-211](findings.md#adr-211) | findings | A finding stays on the keyword its request first broke, a rejection worded for another field is not this field's, and an accepted write is confirmed on fresh strings |
+| [ADR-212](runners.md#adr-212) | runners | A resource is provisioned with its producer's simplest request first, and a `role_only` endpoint is crossed against a resource a holder of the role created |

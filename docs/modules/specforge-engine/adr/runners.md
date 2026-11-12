@@ -12,7 +12,7 @@ described in [Run depth](../run-depth.md) and [Stateful depth](../stateful-depth
 
 ## ADR-162 — A stateful run continues until a pass finds nothing new, under a ceiling of 25 distinct defects { #adr-162 }
 
-**Status:** accepted · Its stop condition superseded by [ADR-191](#adr-191) · `constants.py`, `models/runtime/options.py`, `runtime/fuzzers/stateful/supervisor.py`, `runtime/fuzzers/stateful/constants.py`
+**Status:** accepted · Superseded in part by [ADR-206](#adr-206) · Its stop condition superseded by [ADR-191](#adr-191) · `constants.py`, `models/runtime/options.py`, `runtime/fuzzers/stateful/supervisor.py`, `runtime/fuzzers/stateful/constants.py`
 
 ### Context
 
@@ -668,7 +668,7 @@ field-level `contract_completeness` on an inferred rule comes from stateless run
 
 ## ADR-188 — A stateful run keeps a witness Hypothesis calls flaky, and its passes are bounded { #adr-188 }
 
-**Status:** accepted · Extends [ADR-162](#adr-162) · `runtime/fuzzers/stateful/outcome.py`, `runtime/fuzzers/stateful/minimizer.py`, `runtime/fuzzers/stateful/supervisor.py`, `runtime/fuzzers/stateful/constants.py`
+**Status:** accepted · Superseded in part by [ADR-207](#adr-207) · Extended by [ADR-206](#adr-206) · Extends [ADR-162](#adr-162) · `runtime/fuzzers/stateful/outcome.py`, `runtime/fuzzers/stateful/minimizer.py`, `runtime/fuzzers/stateful/supervisor.py`, `runtime/fuzzers/stateful/constants.py`
 
 ### Context
 
@@ -710,7 +710,7 @@ past it. A run reaching the limit is `truncated`, and does not compare as a comp
 
 ## ADR-191 — A stateful pass draws the same shape whatever the target answers, the run stops after two dry passes, and one more pass aims at what it never reached { #adr-191 }
 
-**Status:** accepted · Supersedes in part [ADR-162](#adr-162) · `runtime/fuzzers/stateful/rule.py`, `runtime/fuzzers/stateful/machine_builder.py`, `runtime/fuzzers/stateful/step_witnesses.py`, `runtime/fuzzers/stateful/supervisor.py`, `runtime/fuzzers/stateful/reach_pass.py`, `runtime/fuzzers/stateful/probes.py`, `runtime/fuzzers/stateful/minimizer.py`
+**Status:** accepted · Superseded in part by [ADR-205](#adr-205), [ADR-206](#adr-206) · Supersedes in part [ADR-162](#adr-162) · `runtime/fuzzers/stateful/rule.py`, `runtime/fuzzers/stateful/machine_builder.py`, `runtime/fuzzers/stateful/step_witnesses.py`, `runtime/fuzzers/stateful/supervisor.py`, `runtime/fuzzers/stateful/reach_pass.py`, `runtime/fuzzers/stateful/probes.py`, `runtime/fuzzers/stateful/minimizer.py`
 
 ### Context
 
@@ -766,3 +766,326 @@ and the probe follows a resource the trigger's accepted write moved.
 A stateful run goes deeper on a real API and ends after two passes that found
 nothing. A sequence with a skipped step is shorter than its step count. A run that
 keeps going flaky reads `truncated`, never `completed`.
+
+---
+
+## ADR-205 — A stateful consumer with an empty pool sends its producer chain first, and a read may take what its identity built in an earlier pass, history included { #adr-205 }
+
+**Status:** accepted · Supersedes in part [ADR-191](#adr-191) · `runtime/state_link/chain.py`, `runtime/fuzzers/stateful/chains.py`, `runtime/fuzzers/stateful/provision.py`, `runtime/fuzzers/stateful/link_payloads.py`, `runtime/fuzzers/stateful/run_corpus.py`, `runtime/fuzzers/stateful/corpus_reads.py`, `runtime/fuzzers/stateful/slices.py`, `runtime/fuzzers/stateful/step_witnesses.py`, `runtime/fuzzers/stateful/unsent.py`, `runtime/fuzzers/stateful/constants.py`, `models/runtime/stats.py`
+
+### Context
+
+With pools in place of bundles ([ADR-191](#adr-191)), a step whose pool was empty
+was skipped. On a large specification most consumers sit behind a chain: a
+comment needs an article, which needs a user. Hypothesis reaches such a consumer
+only when it happens to draw the chain in order first, so most draws of a deep
+endpoint sent nothing, and a run of many passes still left it unsent. Each
+sequence also started from nothing: a read whose producer failed in this
+sequence found nothing to read, though an earlier pass of the same caller had
+built that resource.
+
+### Decision
+
+**A consumer drawn with an empty pool sends its producer chain first, inside its
+step.** The run plans, once, each consumer's chain through the producers among
+its endpoints, dependencies first, keeping only producers no caller's
+credentials or transport would overwrite a bound value of. Each link is sent as a
+step of its own, consuming the newest value of each pool it reads, and the
+consumer goes out once every pool it reads holds a value. A link whose producer
+returned no value is not sent again in that sequence
+(`INLINE_CHAIN_ATTEMPTS_PER_SEQUENCE`, 1). A chain that cannot be planned leaves
+the consumer unsent with `link_producer_missing`, `link_chain_cyclic` or
+`link_target_reserved`; a producer cut off first, with `link_producer_cut_off`;
+producers that answered without a usable value, with `link_value_never_produced`.
+
+**A chain link sends its producer's simplest request as often as a drawn one.**
+The simplest valid request carries the specification's examples, the values a
+producer most surely accepts, and a finding's chain shrinks toward it. Its
+strings are rotated by a drawn step, so two links do not collide on a unique
+value.
+
+**A read takes what its identity built earlier, with the steps that built it.**
+When a sequence ends, each value it produced that is still in its pool is
+published to the run's corpus with its resource's history: the steps of that
+sequence that built and changed the resource. The corpus is frozen for each pass
+and keeps the newest `RUN_CORPUS_VALUES_PER_BUNDLE` (32) values per identity and
+bundle. A read (a safe method that invalidates nothing) whose chain gave nothing
+takes a corpus value of its own identity, and that value's history is inserted
+into its sequence, so the sequence still reproduces on a fresh server. When only
+another identity holds such a value, the read sends nothing,
+`link_value_other_identity`: a sequence never borrows another caller's
+resources.
+
+**A step now and then sends a declared value.** One draw in ten
+(`VALID_STEPS_PER_AIMED_STEP`, 9 to 1) sends an inferred-rule witness or one of
+the field's declared `enum` or `boolean` values, so a value that changes the
+handler's branch is sent at least sometimes.
+
+### Rejected
+
+- **Letting Hypothesis find the chain.** Its odds fall with every link; on a real
+  API deep endpoints went unsent run after run.
+- **A run-wide pool shared across sequences.** A value whose history is not in
+  the sequence cannot be rebuilt when the sequence is re-sent, so its finding
+  would never reproduce on a clean server.
+- **Borrowing another identity's values.** A read under one caller of another
+  caller's resource is an access question, judged by `auth`, not a state flow.
+
+### Consequences
+
+Deep endpoints are reached in most runs, and a stateful sequence is longer: it
+carries its chains and, for a read from the corpus, the history inserted ahead.
+`consumer_values` counts, per endpoint, how often its values came from the pool,
+from a chain, or did not come and why; `stateful_chains` counts the chains a run
+sent.
+
+---
+
+## ADR-206 — A stateful run stops after four passes without progress, never before it has sent its exploration floor, and keeps aiming at what it never reached while that finds something { #adr-206 }
+
+**Status:** accepted · Supersedes in part [ADR-162](#adr-162), [ADR-191](#adr-191) · Extends [ADR-188](#adr-188) · `runtime/fuzzers/stateful/supervisor.py`, `runtime/fuzzers/stateful/exploration_floor.py`, `runtime/fuzzers/stateful/reach_pass.py`, `runtime/fuzzers/stateful/pass_reaction.py`, `runtime/fuzzers/stateful/controlled.py`, `runtime/fuzzers/stateful/suppression.py`, `runtime/fuzzers/stateful/constants.py`
+
+### Context
+
+Two dry passes stopped a run ([ADR-191](#adr-191)). Measured over instrumented
+runs against a lab API, most passes ended on a symptom the run had already seen,
+almost all of them one a control had left unverified, and none of those ever
+turned confirmed. Each such pass counted as progress, spent most of the run's
+shrink requests minimizing it again, and ended before it had explored anything
+else. That false progress was also what carried a run across long stretches with
+nothing new before a real defect: with it gone, two dry passes would cut those
+runs short. Once those passes stopped shrinking, the requests they had spent
+were no longer spent at all, and a run sent far fewer requests than the caller's
+`examples_per_endpoint` suggests. And the single extra pass at the unreached
+endpoints stopped there even when it found something.
+
+### Decision
+
+**What counts as progress is named.** A pass makes progress when the run gains a
+confirmed defect, a flaky signature, a refuted or unverified finding, a widened
+suppression, one of its first `STATEFUL_UNEXPLAINED_FLAKY_PASSES` (2) flaky
+passes without a recovered violation, or loses a live endpoint to its breaker.
+
+**A judged signature is covered whole.** Once a control has refuted a stateful
+finding or left it unverified, every later step showing that signature is
+suppressed, unless the run also confirmed it: a second cause of a confirmed
+symptom is still reported. A pass no longer ends on a signature already judged.
+
+**Four dry passes stop the run.** `STATEFUL_NO_PROGRESS_PASSES` is 4. With judged
+signatures covered, a dry pass is a whole pass, and four of them span longer than
+the longest stretch measured before a confirmed defect.
+
+**Not before the exploration floor.** Dry passes do not stop a run that has sent
+fewer than `examples_per_endpoint × STATEFUL_EXPLORATION_REQUESTS_PER_EXAMPLE
+(9) × live endpoints` exploration requests on the wire, as long as its last pass
+sent at least one. Shrink and control requests do not count toward it.
+`STATEFUL_MAX_PASSES` (100) and `max_distinct_bugs` still bound the run.
+
+**The reach passes repeat while they find something.** When the passes stop with
+live targeted endpoints never sent and at least one sent, a pass runs on the
+unsent ones and their transitive producers; another follows while each one
+makes progress.
+
+### Rejected
+
+- **Covering a symptom by endpoint, invariant and status after any first
+  finding.** It hides a confirmed defect that shares the symptom.
+- **Longer sequences or more sequences per pass.** Either overrides an option the
+  caller set, makes every witness longer to minimize, and multiplies the dry tail
+  a run ends on.
+- **Many more dry passes instead of a floor.** A stopping rule is not a budget:
+  what it costs depends on when the dry streak falls, and it adds thousands of
+  requests to a two-endpoint API that never had any to recover.
+- **A floor in time.** `deadline_ms` may be unset, and a slow target would get
+  fewer requests for the same promise.
+
+### Consequences
+
+A stateful run sends about `9 × examples_per_endpoint` exploration requests per
+live endpoint before it may stop, then stops after four dry passes; its passes
+keep the size the caller asked for. Shrink requests fall, since a judged symptom
+is minimized once. The catalog's summary of the `stateful` mode says what the run
+sends.
+
+---
+
+## ADR-207 — A re-sent stateful sequence is bound to the values its own producers return, and a stateful finding replays alone through its minimal sequence { #adr-207 }
+
+**Status:** accepted · Supersedes in part [ADR-089](engine.md#adr-089), [ADR-188](#adr-188) · `runtime/fuzzers/stateful/recipe.py`, `runtime/fuzzers/stateful/resend.py`, `runtime/fuzzers/stateful/bindings.py`, `runtime/fuzzers/stateful/slices.py`, `runtime/fuzzers/stateful/minimizer.py`, `runtime/fuzzers/stateful/probes.py`, `runtime/fuzzers/stateful/violation.py`, `runtime/fuzzers/stateful/reporting.py`, `runtime/state_link/rebinding.py`, `runtime/replay/sequence.py`, `runtime/runners/replay.py`, `models/runtime/step_link.py`, `models/runtime/replay.py`; core `services/persistence/reproducer.py`, `services/replay/steps.py`, `services/replay/finding.py`, `services/replay/preparation.py`
+
+### Context
+
+The minimizer verified each candidate sequence by re-sending the recorded
+requests verbatim ([ADR-089](engine.md#adr-089)). A create re-sent on a live
+server returns a new id, and the steps after it still carried the old one: the
+re-sent sequence acted on resources the run had created earlier, not on the ones
+it had just rebuilt. A finding then reproduced only because the run's own
+leftovers were still on the server, and a reader re-running its sequence on a
+fresh server saw nothing. A re-sent create could also be refused because its
+unique strings were now taken. A re-sent transition probe compared the follow-up
+with the value the original trigger sent, though the fresh trigger may have sent
+another. And `replay_finding` refused every stateful finding: its request means
+nothing without the state its sequence builds.
+
+### Decision
+
+**Each step records how it is rebuilt.** Its recipe names its endpoint and
+identity, and for each value it consumes, the earlier step whose answer produced
+it (`LinkConsumption`); a transition probe names the step it followed
+(`LinkProbe`); a producer carries the schemas its strings may be rotated within.
+
+**A re-send rebinds.** Every re-send of a sequence, to minimize it, verify it or
+send its controls, rebuilds each step with the values the re-sent producers
+returned this time. A re-sent producer the target rejects without returning a
+value goes once more with its strings rotated (`REBIND_PRODUCER_RETRIES`, 1).
+
+**The minimal sequence keeps what changed the resource.** Beside the steps the
+last one needs through the values they moved, it keeps every earlier step that
+consumed one of those values, such as a first delete or a payment, so a finding
+that depends on the resource's state reproduces.
+
+**A re-sent step is judged against the sequence it was re-sent in.** A
+transition's expected echo is what the fresh trigger sent.
+
+**A confirmed stateful finding replays alone.** Its minimal sequence's steps are
+stored with it (where the run's trace holds each one, and how it binds) when
+every step reached the wire. `replay_finding`, and so `verify_finding_fix`,
+sends them in order, each rebound to what the steps before it returned this
+time, the finding's own request last. A step that needs a value no step before it
+returned stops the replay before the finding's request, `inconclusive` with
+`state_not_rebuilt`. The answer lists every step (`steps`: `sequence`, `method`,
+`path`, `recorded_status`, `observed_status`, `rebound`, `diverged`) and names
+the step that stopped it (`failed_step`). A finding stored without its steps,
+and an unconfirmed stateful finding, are still refused `stateful`.
+
+### Rejected
+
+- **Verbatim re-sends with a reset of the target between them.** The engine
+  cannot reset a target it does not own, and a reset would also erase what the
+  sequence needs.
+- **Replaying the whole recorded run for a stateful finding.** It re-sends
+  hundreds of requests to rebuild a state a handful of steps build.
+- **Re-sending with the recorded unique strings.** A server that refuses a
+  duplicate makes every re-send of a create fail for a reason the run caused.
+
+### Consequences
+
+A stateful finding's sequence reproduces on a server that never saw the run, and
+a reader can replay it alone. A re-sent sequence costs at most one more request
+per rejected producer. A finding's `transition_sequence` may hold steps that do
+not feed the last one but changed its resource.
+
+---
+
+## ADR-208 — A declared echo is checked on every later read of the resource, and broken only by what another resource of the same sequence was sent { #adr-208 }
+
+**Status:** accepted · `runtime/fuzzers/stateful/later_echo.py`, `runtime/fuzzers/stateful/echo.py`, `runtime/fuzzers/stateful/rule.py`, `runtime/fuzzers/stateful/transitions.py`, `models/runtime/observation.py`; core `services/finding_summary/`
+
+### Context
+
+A transition that declares echoed fields is checked by the probe sent right after
+its trigger: create a payee with an alias, read it back, compare. A server that
+keeps the alias in one record shared by every payee passes that probe every
+time, since nothing else has written in between, and returns the latest alias to
+every later read. The run then reads the first payee hundreds of times as an
+ordinary step, judged by that endpoint's own oracles, which know nothing of the
+transition. A lost update or shared state is the defect the echo exists to catch,
+and it shows only after another write.
+
+### Decision
+
+**A later read is judged against the echo its producer declared.** After each
+step, the engine checks whether it is a read that follows a declared echo of the
+same sequence, and flags it only when four guards hold:
+
+1. **The echo is in force.** The step that produced the value the read consumes
+   was sent in this sequence (not inserted from an earlier pass's history), and
+   declares a transition on that value with echoed fields that applies after its
+   status.
+2. **The read is that transition's follow-up.** Its endpoint is the follow-up's,
+   it sends the produced value where the transition says, and it was answered
+   with one of the transition's expected statuses. Only ordinary steps are read
+   this way; the transition's own probe keeps its own check.
+3. **Nothing rewrote it since.** No unsafe step between the producer and the read
+   consumed the same value; after an update the echo no longer says what the
+   resource should hold.
+4. **The value returned is another resource's.** The field holds what the latest
+   other producer of the same bundle in the sequence sent at that field. A flag,
+   a zero or an empty value is not taken as proof, since any sender may produce
+   it.
+
+The finding is a `state_transition` on the read, marked `echo_overwritten`:
+`expected` is the value this resource was sent, `observed` the other's, and
+`location` the field in the response body. Its summary names both values.
+
+### Rejected
+
+- **A probe that creates a second resource after every trigger.** Two more
+  writes per trigger against the target, and it catches only the case of a
+  create overwriting a create.
+- **A run-wide notebook of the last value sent per id.** It is mutable global
+  state, and the minimal sequence would not hold what the notebook remembered, so
+  the finding would not reproduce on a clean server.
+- **Flagging any difference.** A sibling's legitimate side effect (a default
+  flag cleared, a counter, a normalized value) would read as a defect; the
+  fourth guard keeps only a value that provably came from elsewhere.
+
+### Consequences
+
+The minimal sequence of such a finding holds the two creations and the read, all
+ordinary steps, so it is re-sent and replayed alone like any other
+([ADR-207](#adr-207)). No request is added: the check reads steps the run
+already sent.
+
+---
+
+## ADR-212 — A resource is provisioned with its producer's simplest request first, and a `role_only` endpoint is crossed against a resource a holder of the role created { #adr-212 }
+
+**Status:** accepted · Supersedes in part [ADR-053](engine.md#adr-053), [ADR-102](engine.md#adr-102) · `runtime/runners/provisioning/payloads.py`, `runtime/runners/provisioning/owner_resources.py`, `runtime/runners/auth/planners.py`, `runtime/runners/auth/registries.py`, `runtime/runners/auth/crossing.py`, `runtime/runners/auth/runner.py`
+
+### Context
+
+`auth` and `resilience` create the resource an endpoint acts on before they cross
+or attack it, trying up to `PROVISIONING_ATTEMPTS` (5) payloads with the simplest
+one last ([ADR-102](engine.md#adr-102)). The simplest valid request carries the
+specification's examples, which usually name things the target holds: a
+category that exists, a currency it supports. Drawn payloads name things it does
+not, so an API that validates references refused every drawn attempt, and the
+endpoint was left `owner_resource_unprovisioned` before the simplest one was
+tried, or never tried when the attempts ran out.
+
+A `role_only` endpoint provisioned nothing ([ADR-053](engine.md#adr-053)). One
+that names a resource in its path (`DELETE /admin/articles/{id}`) was crossed at
+the strategy's minimal id, which the target usually lacks: every caller got a
+404, the role check that may run after the lookup never ran, and a missing guard
+went unseen.
+
+### Decision
+
+**The simplest request leads.** Each round of attempts sends the producer's
+simplest valid request first, counted within the attempt cap; drawn payloads
+follow when it is refused.
+
+**A `role_only` endpoint acts on a resource a holder of the role created.** The
+resources it consumes that some endpoint of the run produces are provisioned
+under the first identity holding the required role, then the endpoint is crossed
+as before: under every identity without the role, and anonymously. Each creator
+keeps its own registry, since a resource belongs to whoever created it, and a
+crossing that yields a finding evicts what it used, as for `owner_only`. A
+resource nothing produces is crossed at the simplest value its contract gives; a
+resource that cannot be created leaves the endpoint unprobed with the
+provisioning's reason.
+
+### Rejected
+
+- **More attempts.** Drawn payloads keep naming what the target lacks; the
+  example in the specification is the one most likely to be accepted.
+- **Creating a `role_only` endpoint's resource under the identity being crossed.**
+  A caller without the role may not be allowed to create it, and a resource it
+  owns would test ownership, not the role.
+
+### Consequences
+
+Fewer endpoints end `owner_resource_unprovisioned` on APIs that validate
+references. A `role_only` endpoint with a path resource costs its provisioning
+requests, and can now be left unprobed for a resource it could not create.

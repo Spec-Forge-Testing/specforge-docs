@@ -111,7 +111,7 @@ the observation existed reads it back `null`.
 
 ## ADR-150 — Findings are told apart by the field they poisoned and, without one, by the cause a probe confirms { #adr-150 }
 
-**Status:** accepted · `models/runtime/findings.py`, `runtime/findings/grouper.py`, `runtime/findings/shrinker.py`, `runtime/findings/causes/walk.py`, `runtime/findings/causes/triggers.py`, `runtime/findings/constants.py`
+**Status:** accepted · Superseded in part by [ADR-211](#adr-211) · `models/runtime/findings.py`, `runtime/findings/grouper.py`, `runtime/findings/shrinker.py`, `runtime/findings/causes/walk.py`, `runtime/findings/causes/triggers.py`, `runtime/findings/constants.py`
 
 ### Context
 
@@ -577,7 +577,7 @@ infrastructure check is not a finding's control and keeps its own rule.
 
 ## ADR-186 — A rejection is confirmed only against a value the run shows free { #adr-186 }
 
-**Status:** accepted · Supersedes in part [ADR-166](runners.md#adr-166), [ADR-183](runners.md#adr-183) · `runtime/http/accepted_values.py`, `runtime/fuzzers/stateless/free_controls.py`, `runtime/fuzzers/stateless/sibling_verdict.py`, `runtime/fuzzers/stateless/control_verdict.py`
+**Status:** accepted · Extended by [ADR-211](#adr-211) · Supersedes in part [ADR-166](runners.md#adr-166), [ADR-183](runners.md#adr-183) · `runtime/http/accepted_values.py`, `runtime/fuzzers/stateless/free_controls.py`, `runtime/fuzzers/stateless/sibling_verdict.py`, `runtime/fuzzers/stateless/control_verdict.py`
 
 ### Context
 
@@ -633,7 +633,7 @@ earlier run reads as free, and a quota that fills mid-run can still confirm
 
 ## ADR-192 — An intrinsic verdict is its own evidence; a verdict that judges needs a control { #adr-192 }
 
-**Status:** accepted · `runtime/runners/performance/runner.py`, `runtime/runners/shrink_phase.py`, `runtime/runners/auth/runner.py`, `runtime/findings/stats.py`, `models/runtime/taxonomy.py`
+**Status:** accepted · Extended by [ADR-210](#adr-210) · `runtime/runners/performance/runner.py`, `runtime/runners/shrink_phase.py`, `runtime/runners/auth/runner.py`, `runtime/findings/stats.py`, `models/runtime/taxonomy.py`
 
 ### Context
 
@@ -675,3 +675,254 @@ module (`shrink_phase.py`): re-send, minimize, control. It can end `flaky`,
 A `performance` run spends shrink requests on its contract findings, counted in
 `requests_shrink`. An `auth` report may list unverified findings beside its
 confirmed access breaches and crashes.
+
+---
+
+## ADR-202 — A finding that stands on a rule the model assumed is an LLM suspicion, never a defect { #adr-202 }
+
+**Status:** accepted · Builds on [ADR-201](../../core/adr/inference.md#adr-201) · `models/runtime/grounds.py`, `models/runtime/taxonomy.py`, `models/runtime/crash_report.py`, `models/runtime/findings.py`, `models/runtime/events.py`, `runtime/oracles/grounds.py`, `runtime/findings/standing.py`, `runtime/findings/stats.py`; core `services/report/builder/entry.py`, `services/report/grounds_text.py`, `services/compare/service.py`, `controllers/finding_code.py`
+
+### Context
+
+A producer's contract gives rules the specification does not declare, and each
+rule now says what it rests on ([ADR-201](../../core/adr/inference.md#adr-201)): a
+quote found in the code or the operation, or the model's assumption. A server
+that breaks a stated rule breaks its own code's promise. A server that breaks an
+assumed rule may be wrong, or the model may be: a minimum of one on a quantity
+the API lets be zero is the model's guess, not the API's defect. Counting both as
+defects makes a run with a model look worse than the same run without one, for
+reasons no one can check, and turns a clean signal into a list of guesses.
+
+### Decision
+
+**The engine settles each reproduced finding by the grounds of the rule it
+cites.** Every verdict that cites a producer's rule carries that rule's grounds,
+read by the invariant broken: the inferred keyword the poisoned value broke, the
+business rule the verdict names, the seed case's expectation, or the access
+policy, unless the specification's own security already requires a credential.
+A finding of an invariant that stands on the very rule it cites
+(`rests_on_its_rule`: `input_validation`, `contract_completeness`,
+`business_rule`, `expected_rejection`, `expected_acceptance`, `access_control`)
+whose rule's `basis` is `assumed` settles as `LlmSuspicionFinding`, state
+`llm_suspicion`. Every other reproduced finding settles `confirmed`, as before: a
+rule the specification declares, a stated rule, or one no producer grounded.
+
+**A suspicion is reported apart and counted apart.** `findings_llm_suspicions`
+counts them, in the run and per endpoint; they never enter `findings_confirmed`,
+`findings_unique` or the run's signal, so a run whose only findings are
+suspicions is `clean`. The report document lists them in `llm_suspicions`,
+shaped like `defects`; a finding in `get_run` and `get_finding` has `kind`
+`llm_suspicion`; the `finding` event carries `state`; `compare_runs` matches them
+in `llm_suspicion_changes`, apart from `changes`.
+
+**A suspicion is reproduced like a defect.** It went through the same shrink,
+re-send and control. The only difference is the standing of its rule, so a
+reader judges one rule, not the server's behaviour.
+
+**A downgraded rule is a suspicion.** A rule the model called stated without a
+quote found is `assumed` (`grounds.downgraded`), and its findings are
+suspicions.
+
+### Rejected
+
+- **Dropping findings against assumed rules.** The rules worth assuming are the
+  ones no source declares; a server that accepts a negative quantity is often a
+  real bug, and only a person can tell.
+- **A lower severity instead of a separate state.** A low defect still counts as
+  a defect and still degrades the signal; the question a reader answers is not
+  how serious it is but whether the rule holds.
+- **Settling in the core.** The engine knows which rule a verdict cites; the core
+  would have to re-derive it from the observation.
+
+### Consequences
+
+A run with a producer reports fewer defects and a separate list of suspicions,
+each with the quote-less rule it stands on. A client before protocol `0.2.6`
+does not see `llm_suspicions` and, through the `finding` event, shows a
+suspicion live as a finding while the run's document keeps it out of `defects`.
+A replay judges no suspicion: against a replay, every suspicion that is not
+`new` is `inconclusive`.
+
+---
+
+## ADR-203 — A seed case is judged against the outcome it expects, only when it was sent whole and does not contradict its own contract { #adr-203 }
+
+**Status:** accepted · `models/contracts` (kernel `specforge_contracts.seed`), `models/runtime/invariant.py`, `models/runtime/taxonomy.py`, `models/runtime/intent.py`, `models/runtime/contract_usage.py`, `runtime/oracles/case_expectation.py`, `runtime/oracles/precedence.py`, `runtime/fuzzers/stateless/seed_sends.py`, `runtime/fuzzers/stateless/seed_contradictions.py`
+
+### Context
+
+A field's `examples` seed one value at a time. Handlers branch on combinations:
+a discount above the subtotal, a loan whose installments exceed its term, a
+coupon valid only for one country. A producer that reads the handler can name
+those combinations as whole requests, and often knows what the server should do
+with each. Drawing values never meets most of them, and a case sent without its
+expectation is judged only by the generic oracles.
+
+### Decision
+
+**A contract carries seed cases.** Each has an `id`, a `description` for the
+reader, `values` (each field's value, a body field by its dotted path) and an
+optional `expects`, `rejected` or `accepted`, with its own grounds. An endpoint
+carries at most `MAX_SEED_CASES` (20).
+
+**Every case is sent once per identity, as given, before any draw.** The valid pass of
+`stateless` and of `performance`'s `flat` variant sends each case on the
+simplest valid request, its values written in. Its request is marked
+`origin` `seeded` with the case's id and description. A value for a path
+parameter is dropped when the contract is adopted: a path names a stored
+resource, never a seeded value.
+
+**Two invariants judge the expectation.** `expected_rejection`: the case expects
+rejection and the server answered 2xx. `expected_acceptance`: it expects
+acceptance and the server answered 400 or 422. Both are `business_rule`,
+`medium`, with the case's id as `rule_id`. A 5xx stays a `not_a_server_error`
+finding; any other answer is not judged.
+
+**A case is judged only when it is what it says.** It is sent unjudged
+(`unjudged_because`) when one of its values could not be sent, declared nowhere,
+of another type or with no place to land (`value_left_out`), or when it expects
+acceptance of a value its own field's contract provably forbids, a text past its
+`maxLength` or a value outside its `enum` (`forbidden_acceptance`). Such a case
+is still sent, so a server error it provokes is still a finding. A case
+expecting rejection is judged whatever its values break.
+
+**A rule outranks a case on the same response.** `input_validation` and
+`business_rule` subsume `expected_rejection`: when the response that accepted a
+case also breaks an input rule or a business rule, only that rule's finding is
+reported. `expected_acceptance` subsumes `contract_completeness`: the case states
+the stronger claim about the same rejection.
+
+### Rejected
+
+- **Judging every case sent.** A case with a value left out is another request;
+  judging it against the whole case's expectation blames the server for a
+  request nobody wrote.
+- **Dropping a self-contradicting case.** It still exercises the handler, and a
+  server error on it is a defect whatever the case expects.
+- **Sending cases as draws.** A case drawn now and then may never be sent in a
+  short run; one send per case is cheap and certain.
+
+### Consequences
+
+A run with a producer reports `expected_*` findings beside the rule findings, and
+an expectation the model assumed settles as an LLM suspicion
+([ADR-202](#adr-202)). The cases are sent on top of the strategy's budget
+([ADR-204](measurement.md#adr-204)), and each one's use is in the endpoint's
+contract account, `judged_against_expects` saying whether it was judged.
+
+---
+
+## ADR-210 — A latency finding shows the payload slow most often, and its request is re-sent alone to say whether it is slow by itself { #adr-210 }
+
+**Status:** accepted · Extends [ADR-192](#adr-192) · `runtime/findings/representative.py`, `runtime/runners/performance/latency_control.py`, `runtime/runners/performance/constants.py`, `runtime/runners/performance/runner.py`, `runtime/fuzzers/stateless/shrinking.py`, `models/runtime/evidence.py`, `models/runtime/observation.py`
+
+### Context
+
+A `latency_sla` finding groups every slow sample of one endpoint. Its report
+showed the first one seen, which under a ramp of load is often an ordinary
+request that happened to queue. A reader could not tell whether the request is
+slow because of what it carries or only because the server was busy, and the
+two call for different fixes: an index or a query plan, against capacity.
+
+[ADR-192](#adr-192) keeps a latency finding unshrunk: a sample re-sent alone
+measures another load, so it cannot refute the finding. It can still describe it.
+
+### Decision
+
+**The report shows the payload slow most often.** Among the group's slow
+samples, the payload sent most often is the representative; on a tie, the one
+with the slowest sample, then the first seen.
+
+**Its request is re-sent alone once the load is over.** `LATENCY_CONTROL_SAMPLES`
+(3) times, one after another. The finding's `control` holds the median as
+`latency_ms` and every send's latency, in order, as `latency_samples_ms`. When
+every send came back clean and the median is within `latency_sla_ms`, the
+observation's marker is `slow_only_under_load`; without it, the request is slow
+by itself.
+
+**The finding stays confirmed either way.** The sends describe the finding; they
+do not judge it. Its `control` is `null` when the run was halted or the sends
+were cut short.
+
+### Rejected
+
+- **Refuting a finding that is fast alone.** The SLA was breached under the load
+  the run was asked to apply; that is the finding.
+- **The slowest sample as the representative.** One outlier is the least
+  representative sample of a group.
+- **One send alone.** A single latency is as noisy as the sample it explains; the
+  median of three is the cheapest number that is not.
+
+### Consequences
+
+A `performance` run sends three more requests per latency finding, after the
+load. A reader of the finding sees whether to look at the request or at the
+capacity, and a client shows each latency of `latency_samples_ms`.
+
+---
+
+## ADR-211 — A finding stays on the keyword its request first broke, a rejection worded for another field is not this field's, and an accepted write is confirmed on fresh strings { #adr-211 }
+
+**Status:** accepted · Supersedes in part [ADR-150](#adr-150) · Extends [ADR-186](#adr-186) · `runtime/findings/broken_keyword.py`, `runtime/findings/grouper.py`, `runtime/findings/shrinker.py`, `runtime/oracles/rejection_attribution.py`, `runtime/oracles/contract_completeness.py`, `runtime/fuzzers/stateless/enforcement.py`, `runtime/fuzzers/stateless/control_verdict.py`, `runtime/fuzzers/stateless/untaken_resend.py`, `runtime/fuzzers/stateless/constants.py`, `models/runtime/observation.py`
+
+### Context
+
+Grounds made the identity of a finding's rule matter: one field can carry a
+stated `maximum` and an assumed `minimum`, and a finding settles by the grounds
+of the one it breaks ([ADR-202](#adr-202)). Four ways of confirming a finding
+could move it to the wrong rule, or to no rule at all:
+
+- A breach of one keyword could shrink onto a value breaking another keyword of
+  the same field, and settle by that keyword's grounds: a stated maximum ended
+  as a suspicion of an assumed minimum.
+- A rejection message in free text that named another field was read as the
+  poisoned field's rule being enforced.
+- A server that accepts the value under test but rejects others breaking the
+  same rule enforces the rule in part; the control that accepted the value
+  refuted the finding.
+- A write the target accepted, re-sent to confirm it, could be refused only
+  because the first send had taken its unique strings.
+
+### Decision
+
+**The broken keyword tells two violations of one field apart.** For
+`input_validation` and `contract_completeness`, the pre-shrink grouping, the
+shrink and the materialized report key a finding by the inferred keyword its
+request breaks, so a shrink never crosses from one keyword to another. A control
+still judges a rejection by its rule alone.
+
+**A rejection worded for another field is that field's.** A 400 or 422 whose
+message spells, as a whole word, a declared field off the poisoned branch and
+none on it does not confirm that the server enforces the poisoned field's rule.
+
+**An accepted value is tried against the rest of its rule.** When the control
+accepts a value only an inferred rule forbids, up to `ENFORCEMENT_WITNESSES` (3)
+other values breaking part of the same rule go in the same plain request. One
+rejected as invalid confirms the finding, marked `partly_enforced_rule`. Every
+one accepted marks it `unenforced_inferred_rule`: refuted when the rule has no
+grounds, as before, and reproduced when it has them, so it stands as its grounds
+say, `confirmed` for a stated rule and an LLM suspicion for an assumed one. Any
+other answer leaves it unverified.
+
+**An accepted write is re-sent on fresh strings when its value is now taken.**
+When confirming a finding the target accepted, a re-sent write refused as taken
+(a `409`, or a store refusing what it holds) goes once more, its free strings
+rotated to values the run never saw accepted, the first of `UNTAKEN_ROTATIONS`
+(64) candidate rotations that qualifies. The value under test, a seed case's
+values and the values from the run's corpus stay as sent. The one re-send serves
+the reproduction, the shrink and the report.
+
+### Rejected
+
+- **Keying by the field alone.** It is the cause of the cross-keyword shrink: the
+  two keywords are two rules with two grounds.
+- **Refuting a partly enforced rule.** The server applies the rule elsewhere;
+  accepting this value is the defect.
+- **Retrying a taken write with the same strings.** It is refused for the same
+  reason, and the finding would read flaky for a cause the run itself created.
+
+### Consequences
+
+More `input_validation` findings are confirmed, marked `partly_enforced_rule`,
+where they were refuted. A field with two inferred keywords can carry one
+finding per keyword. Confirming a write can cost one more request.

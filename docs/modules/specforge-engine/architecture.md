@@ -43,7 +43,7 @@ src/specforge_engine/
 │   ├── violation.py       # first_provable_violation, DECIDABLE_FORMATS: what provably breaks a contract
 │   ├── ecma_pattern.py    # ecma_match: a pattern read as ECMA-262, or undecidable
 │   ├── shape_check.py     # meets_declared_shape: pattern, format and collection keywords, by policy
-│   ├── extra_keys.py      # holder_admits_extra_keys: one rule for the mass-assignment generator and oracle
+│   ├── extra_keys.py      # holder_is_free_form: one rule for the mass-assignment generator and oracle
 │   ├── wire/              # how a value travels: spelling · texts · carried (read as declared)
 │   ├── semantic_properties.py # has_input_constraint: the neutral leaf both layers read
 │   ├── schema_check.py    # validate_value: the shape predicate the oracles and the attack filter share
@@ -62,7 +62,7 @@ src/specforge_engine/
 │   ├── header_sparing.py  # spares_reserved_header: keep a phase off credential and transport headers
 │   ├── body.py            # compile_body: object fields as a zone, or the root as the field `$`
 │   ├── planning.py        # build_generation_plan, estimate_parameter_space
-│   ├── effective_phases.py # effective_phases / effective_split: read the extension registry
+│   ├── effective_phases.py # effective_phases / extension_draws: read the extension registry
 │   ├── constants.py       # boundary tables, alphabets per phase, seed share, choice counts, attack-family maps, MAX_FIELD_DEPTH
 │   ├── format_constants.py # FORMAT_PATTERNS with their lengths, SHAPE_PROBES
 │   └── fields/            # Field → SearchStrategy

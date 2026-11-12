@@ -154,9 +154,12 @@ objects, and one key of `MASS_ASSIGNMENT_KEYS` (`role`, `is_admin`, `admin`,
   as an array gets the same branch through `mass_assignment_root_variant`, into the
   objects of its elements (`0.role`). An object without properties has nothing to
   compare an echo against and gets no key.
-- **Not where extra keys are allowed.** An object whose contract admits undeclared
-  keys (`allow_extra_fields`) gets no key, and the oracle judges no key under such
-  an object (`holder_admits_extra_keys`, `shared/extra_keys.py`). The top of the
+- **Not in a free-form object.** An object whose contract admits undeclared
+  keys (`allow_extra_fields`) and whose spec declares no property of its own gets
+  no key, and the oracle judges no key under such
+  an object (`holder_is_free_form`, `shared/extra_keys.py`). An object that
+  admits extra keys but declares properties is attacked like a closed one
+  ([ADR-209](adr/compiler.md#adr-209)). The top of the
   body follows the same rule.
 - **Room.** The object's own declared draw is capped one key below its
   `maxProperties` (`MASS_ASSIGNMENT_KEY_ROOM`); `minProperties` is never lowered,

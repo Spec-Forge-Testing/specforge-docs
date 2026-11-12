@@ -169,7 +169,7 @@ sequenceDiagram
     participant Rule as execute_rule_step
     participant Cls as run_pass
     participant Min as settle_outcome
-    participant WR as WireResender
+    participant WR as RebindingResender
 
     SR->>Sup: fuzz_sequence(endpoints, config, StatefulOptions)
     loop supervisor loop
@@ -182,7 +182,7 @@ sequenceDiagram
         HS-->>Cls: violation | flaky | exhausted | budget cut
         Cls-->>Sup: MachineOutcome (honor_budget_cut applied)
         Sup->>Min: settle_outcome(outcome, resender, budget)
-        Min->>WR: re-send data slice, then candidate deletions
+        Min->>WR: re-send the slice, rebound, then candidate deletions
         WR-->>Min: fresh results, or None if a send is blocked
         Min-->>Sup: PassOutcome (Reported with the verified, minimal sequence)
     end
@@ -191,50 +191,80 @@ sequenceDiagram
 
 A stateful finding can end `refuted` or `unverified` as a stateless one does: its last
 step is judged by the same [control requests](control-requests.md), after the minimal
-sequence is re-sent. One step in ten sends an inferred-rule [witness](witnesses.md#stateful)
-instead of a valid draw.
+sequence is re-sent. One step in ten (`VALID_STEPS_PER_AIMED_STEP`, 9 to 1) sends an
+inferred-rule [witness](witnesses.md#stateful), or one of a field's declared `enum`
+or `boolean` values, instead of a valid draw.
 
 The machine runs Hypothesis's `explicit`, `generate` and `shrink` phases only.
 Hypothesis's `explain` phase is left out: it re-runs the whole machine against the
 target hundreds of times only to annotate Hypothesis's printed report, which the
 engine never reads.
 
-A pass that ends on a violation is **settled** before the supervisor reacts to it.
-The sequence minimizer keeps the steps the violating step depends on through
-bundle values, deletes every other step it can, and verifies each candidate by
-re-sending the recorded requests verbatim. The reported `transition_sequence` is
-therefore one that reproduced on the wire, and it holds only the steps the
-violation needs. When the shrink budget cut a pass short, its best failure is
-re-sent once to verify it before it is reported; one that does not reproduce is a
-flaky finding. The mechanism is laid out in
-[Engine internals](engine-internals.md#shrinking-and-minimizing-a-stateful-finding)
-and the choice in [ADR-089](adr/engine.md#adr-089).
+**How a consumer gets its values.** Captured values live in pools a rule draws
+from, so what a pass may send never depends on the target's answers, and the
+machine leads with a harmless read. A consumer drawn while a pool it reads is
+empty sends its **producer chain** first, inside its step: the producers of what
+it consumes, dependencies first, each link sent as a step of its own and as its
+producer's simplest request as often as a drawn one. A read (a safe method that
+invalidates nothing) whose chain gave nothing takes a value its own identity
+produced in an earlier pass, and the steps that built that value are inserted
+into its sequence ([ADR-205](adr/runners.md#adr-205)). A `DELETE` removes the
+value it consumes from its pool, and a read that declares 404 or 410 is probed
+after a delete of the same route.
 
-A stateful run keeps running passes until two in a row find nothing new: each
-reported defect is suppressed, by its signature and its trigger fields, before the
-next pass. It stops early once the distinct defects, or the distinct flaky
-signatures, reach `max_distinct_bugs` (default 25); `1` reports the first defect
-only. When the passes stop with targeted endpoints never reached, one further pass
-runs on them and on what produces their values. Captured values live in pools a
-rule draws from, so what a pass may send never depends on the target's answers,
-and the machine leads with a harmless read. A `DELETE` removes the value it
-consumes from its pool, and a read that declares 404 or 410 is probed after a
-delete of the same route. The rules are on
-[Run depth](stateful-depth.md#stateful-depth). A flaky pass outcome becomes a flaky
-finding, counted in `findings_flaky` by occurrence and folded away when a
-confirmed report already covers its signature ([ADR-047](adr/engine.md#adr-047)). When a state
-link cannot be honored the run raises `StatefulLinkError` carrying the partial
-exploration.
+**When the run stops.** A pass makes progress when the run gains a confirmed
+defect, a flaky signature, a refuted or unverified finding, a widened
+suppression, or loses a live endpoint to its breaker. A signature a control has
+refuted or left unverified is suppressed whole for the rest of the run, unless
+the run also confirmed it. The run stops after `STATEFUL_NO_PROGRESS_PASSES` (4)
+passes in a row without progress, but never before it has sent its exploration
+floor: `max_examples × STATEFUL_EXPLORATION_REQUESTS_PER_EXAMPLE (9) × live
+endpoints` exploration requests, as long as its last pass sent one. It stops
+early once the distinct defects, or the distinct flaky signatures, reach
+`max_distinct_bugs` (default 25), and never runs more than `STATEFUL_MAX_PASSES`
+(100) passes. When the passes stop with targeted endpoints never reached, further
+passes run on them and on what produces their values, as long as each one finds
+something ([ADR-206](adr/runners.md#adr-206)). The rules are on
+[Stateful depth](stateful-depth.md#stateful-depth). A flaky pass outcome becomes a
+flaky finding, counted in `findings_flaky` by occurrence and folded away when a
+confirmed report already covers its signature ([ADR-047](adr/engine.md#adr-047)).
+When a state link cannot be honored the run raises `StatefulLinkError` carrying
+the partial exploration.
 
-The exploration counts, per endpoint, how often it drew the endpoint's rule and how
-often an empty consumed pool left that rule nothing to send (`RuleAttempts`). A
-targeted endpoint the run never sent anything to gets its `unprobed_reason` from
-those counts: `rule_never_drawn` when its rule was never drawn (also when its
-arguments could never be drawn, so no draw of the rule completed), and
-`link_value_never_produced` when every draw found a pool it consumes empty. A run cut
-short sets neither, since its truncation already explains the silence. Either reason
-makes the run's signal `degraded` with `stateful_endpoints_unsent` instead of
-`endpoints_unreached` ([the values](../core/protocol/vocabularies.md#unprobed-reason)).
+**A finding's sequence is settled and re-sent with fresh values.** A pass that
+ends on a violation is settled before the supervisor reacts to it. The sequence
+minimizer keeps the steps the violating step depends on through bundle values,
+and every earlier step that changed one of those resources (an update, a payment,
+a first delete), deletes every other step it can, and verifies each candidate by
+re-sending it. Each re-sent step is rebuilt with the values the re-sent producers
+returned this time, and a producer the target rejects without a value goes once
+more with its strings rotated; a re-sent step is judged against the sequence it
+was re-sent in ([ADR-207](adr/runners.md#adr-207)). The reported
+`transition_sequence` is therefore one that reproduced on the wire, and a
+confirmed finding keeps its steps, so `replay_finding` can replay it alone. When
+the shrink budget cut a pass short, its best failure is re-sent once to verify it
+before it is reported; one that does not reproduce is a flaky finding. The
+mechanism is laid out in
+[Engine internals](engine-internals.md#shrinking-and-minimizing-a-stateful-finding).
+
+**A declared echo is checked on every later read.** Beside the probe right after
+a trigger, an ordinary read of a resource whose producer declared echoed fields
+is a `state_transition` finding marked `echo_overwritten` when it returns, in an
+echoed field, what another resource of the same sequence was sent there, and no
+write touched the resource in between ([ADR-208](adr/runners.md#adr-208)).
+
+**Why an endpoint was never sent.** The exploration counts, per endpoint, how
+often it drew the endpoint's rule and where its consumed values came from
+(`consumer_values`: its own pool, a chain, or none and why). A targeted endpoint
+the run never sent anything to gets an `unprobed_reason`: `rule_never_drawn` when
+its rule was never drawn (also when its arguments could never be drawn), or the
+`link_*` reason most of its draws met: `link_value_never_produced` (its producers
+were sent first and returned nothing it could use), `link_producer_missing`,
+`link_chain_cyclic`, `link_target_reserved`, `link_producer_cut_off` or
+`link_value_other_identity`. A run cut short sets none, since its truncation
+already explains the silence. Each makes the run's signal `degraded` with
+`stateful_endpoints_unsent` instead of `endpoints_unreached`
+([the values](../core/protocol/vocabularies.md#unprobed-reason)).
 
 A dead target costs the run at most `MAX_INFRA_FAILURES` requests plus one
 liveness probe: a run-wide watch feeds the shared `TargetLivenessMonitor` and, once
@@ -335,6 +365,17 @@ it. Every finding judged against the contract goes through the stateless shrink 
 re-send and its [control request](control-requests.md), so one that does not
 reproduce ends `flaky` and one its control refutes ends `refuted`
 ([ADR-192](adr/findings.md#adr-192)).
+
+A `latency_sla` finding shows, as its request, the payload sent most often among
+its group's slow samples (on a tie, the one with the slowest sample, then the
+first seen). Once the load is over, that request is sent alone
+`LATENCY_CONTROL_SAMPLES` (3) times: its `control` holds their median as
+`latency_ms` and each latency in `latency_samples_ms`, and the observation is
+marked `slow_only_under_load` when every send came back clean and the median is
+within `latency_sla_ms`. The finding stays confirmed either way
+([ADR-210](adr/findings.md#adr-210)). Only the `flat` variant sends what a
+producer's contract adds on top of the strategy's budget; each ladder step sends
+the strategy's `valid` traffic alone.
 
 ```mermaid
 sequenceDiagram
@@ -618,10 +659,9 @@ Cross the declared identities against each endpoint's access policy and watch
 for a 2xx a caller should not have obtained — the BOLA/IDOR, broken-function-level
 (BFLA) and broken-authentication classes. The runner reads the `access` section
 the producer declared; an endpoint with no `access`, or a `public` one, is never
-sent. A run whose contracts declare no `access` at all therefore passes its
-preconditions, sends nothing and completes with zero requests: the engine treats
-that as a valid empty plan, not an error, and telling the user the mode had
-nothing to check is the caller's job.
+sent. A run that crosses nothing while some endpoint is not public, because no
+policy is declared or none can be crossed, raises `AccessUncrossableError`, and
+the core refuses it `NOTHING_VERIFIED` (below).
 
 For every targeted endpoint the run crossed nothing against, the engine folds a
 typed reason into `EndpointStats.unprobed_reason` (`UnprobedReason`):
@@ -638,17 +678,19 @@ typed reason into `EndpointStats.unprobed_reason` (`UnprobedReason`):
 
 The first two are by-design skips; the other five are access preconditions the
 run could not meet. Either way the endpoint is recorded and the run moves on to
-the next one. `UnprobedReason` has three more members. `owner_identity_missing`
-only `resilience` reports: an auth run without a valid identity stops before any
-request instead. `link_value_never_produced` and `rule_never_drawn` only a
+the next one. `UnprobedReason` has more members. `owner_identity_missing` only
+`resilience` reports: an auth run without a valid identity stops before any
+request instead. `rule_never_drawn` and the other `link_*` reasons only a
 `stateful` run reports ([stateful](#stateful)).
 
 The run **fails fast before any request** on one condition only: no **valid**
-identity is declared (`AccessIdentityError`). Everything else degrades per
-endpoint. The run fails afterwards, with `AccessUncrossableError` carrying the
-unprobed endpoints and their reasons, only when it had access policies to cross
-and crossed none of them; a run cut short by cancellation or a dead target does
-not raise it ([ADR-102](adr/engine.md#adr-102)). For
+identity is declared (`AccessIdentityError`); the core refuses such a run earlier
+still, `REQUIREMENT_UNMET`, before producing its contracts. Everything else
+degrades per endpoint. The run fails afterwards, with `AccessUncrossableError`
+carrying the unprobed endpoints and their reasons, when it crossed nothing while
+some endpoint was not public: its policy could not be crossed, or it declares
+none. A run cut short by cancellation or a dead target does not raise it
+([ADR-102](adr/engine.md#adr-102), [ADR-213](../core/adr/core.md#adr-213)). For
 an `owner_only` endpoint the owner is always the first valid identity
 (`config.valid_identities[0]`); a `role_only` endpoint privileges every valid
 identity whose `role` equals its `required_role`, wherever it sits in the list.
@@ -669,7 +711,8 @@ The package `runtime/runners/auth/` is split by the question each module answers
 | `runner.py` | `AuthRunner`: crosses the declared identities against each endpoint's declared access policy |
 | `crossing.py` | `EndpointCrosser`: crosses one endpoint — plans it, binds its owner resources, sends its crossings and judges them |
 | `plan.py` | the vocabulary of one endpoint's access plan, and the request builders that produce it; no Hypothesis |
-| `planners.py` | one planner per access policy: which bundles it needs, and which identities it crosses |
+| `planners.py` | one planner per access policy: which bundles it needs, who creates them, and which identities it crosses |
+| `registries.py` | one resource registry per identity resources are created under: a resource belongs to whoever created it |
 | `preconditions.py` | the precondition checked before anything is sent |
 
 Owner-resource provisioning is shared with `resilience`, in
@@ -678,10 +721,9 @@ Owner-resource provisioning is shared with `resilience`, in
 | Module | Role |
 |---|---|
 | `owner_resources.py` | the run's owner resources: one per bundle, provisioned once and reused by every consumer |
-| `chain.py` | orders the producers an owner resource needs, dependencies first, before anything is sent |
-| `payloads.py` | the Hypothesis draws of the valid payloads a plan crosses and provisions with, and the minimal one |
+| `payloads.py` | the Hypothesis draws of the valid payloads a plan crosses and provisions with, the minimal one first |
 | `plan.py` | the shared inputs of a provisioning plan, its owner bundle, and how one request is built |
-| `producers.py` | the run's producer index: every endpoint that produces each bundle |
+| `reserved_links.py` | whether a producer's state link would write into a reserved header |
 | `producer_watch.py` | watches the provisioning's producer requests as the run watches its own |
 | `constants.py` | `PROVISIONING_ATTEMPTS` and the other provisioning constants |
 
@@ -703,6 +745,7 @@ sequenceDiagram
             AR->>Pl: write the value into the consuming zone/field
             AR->>Orch: re-send under every other identity, and anonymously
         else role_only
+            AR->>Orch: provision what it acts on (first holder of the role)
             AR->>Orch: send under every identity lacking the role, and anonymously
         else authenticated
             AR->>Orch: one anonymous probe (config headers stripped), and one under each invalid credential
@@ -725,7 +768,7 @@ runner does with the request depends on the policy:
 |---|---|
 | `authenticated` | one anonymous probe, with the config credential headers stripped so it is truly anonymous, plus one probe under **each** invalid identity's credential |
 | `owner_only` | provision the owner's resource under the **first** valid identity, capture the bundle value from the response, write it into the endpoint's consuming zone/field, then re-send under every **other** valid identity and once anonymously. Invalid identities cross as ordinary non-privileged callers |
-| `role_only` | provision nothing; send under every valid identity whose `role` is **not** the `required_role` (an identity with no role included) and once anonymously. Holders of the role are never sent; when every identity holds it, only the anonymous request goes out. Invalid identities cross as ordinary role-less callers |
+| `role_only` | provision each resource the endpoint consumes that the run can produce under the **first** valid identity holding the `required_role`, and write it into the request (a resource nothing produces keeps the simplest value its contract gives); then send under every valid identity whose `role` is **not** the `required_role` (an identity with no role included) and once anonymously. Holders of the role are never sent; when every identity holds it, only the anonymous request goes out. Invalid identities cross as ordinary role-less callers |
 
 A crossing is a finding when the `access_control` oracle sees a success for a
 caller the policy excludes: another identity or an anonymous request on an
@@ -746,15 +789,17 @@ report its legitimate 2xx as a bypass of a correctly guarded endpoint. Declaring
 an identity with exactly the required role fixes the run
 ([ADR-053](adr/engine.md#adr-053)).
 
-Provisioning is where an `owner_only` endpoint can be left unprobed. The owner
-resource is provisioned **once per bundle per run** and reused by every endpoint
-that consumes it; it is provisioned again only after a crossing that needed it
+Provisioning is where an `owner_only` or `role_only` endpoint can be left
+unprobed. A resource is provisioned **once per bundle per run** under the
+identity that creates it (the owner, or the first holder of the role), each
+creator with its own registry, and reused by every endpoint that consumes it; it is provisioned again only after a crossing that needed it
 produced a finding. When the owner's producer itself consumes other bundles,
 `plan_bundle_chain` orders the producers dependencies first and provisions each
 link of the chain in turn; a chain that comes back on itself in every candidate
 leaves the endpoint `owner_chain_cyclic`. Each bundle gets up to
-`PROVISIONING_ATTEMPTS` (5) attempts with distinct payloads, drawn from a seed
-fresh for each run, the simplest payload last. A status that captures nothing, or
+`PROVISIONING_ATTEMPTS` (5) attempts with distinct payloads: the producer's
+simplest valid request first, which carries the specification's examples, then
+payloads drawn from a seed fresh for each run ([ADR-212](adr/runners.md#adr-212)). A status that captures nothing, or
 a value no path segment can carry, moves on to the next payload; a qualifying
 status whose declared field is null or missing means the producer broke its own
 contract and ends the attempts. When no attempt yields a value the endpoint is

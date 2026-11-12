@@ -40,6 +40,7 @@ the run's request meets a need only when it declares what the need asks for.
 | `poisoned_field` | strategy | The strategy plans a phase that poisons one field per request, within its declared schema or outside it |
 | `out_of_schema_field` | strategy | The strategy plans a phase that can send a declared field outside its schema |
 | `rule_witness` | producer | A producer infers a rule the spec does not declare, so the valid pass sends a [witness](witnesses.md) that breaks only that rule |
+| `seed_case_expectation` | producer | A producer offers a seed case that says whether the server should reject or accept it, so the valid pass sends that case, judged when every one of its values was sent ([ADR-203](adr/findings.md#adr-203)) |
 | `attack_phase` | strategy | The strategy plans the `attack` phase |
 | `reflecting_attack` | strategy | The strategy plans `attack` and allows a family in `REFLECTING_FAMILIES` |
 | `chaos_expectation` | runner | The runner knows what the chaos attack behind the response tolerates |
@@ -90,6 +91,7 @@ The two flags the pipeline reads are properties of the needs: `opt_in` and
 | resilience | `resilience_degradation` | `chaos_expectation` |
 | access control | `access_control` | `access_expectation` |
 | latency SLA | `latency_sla` | `latency_sla` |
+| seed case expectation | `expected_rejection`, `expected_acceptance` | `admitted_caller` + `contract` + `seed_case_expectation` |
 
 The infrastructure oracle reports no invariant: it stops the pipeline on a
 transport failure.
@@ -118,10 +120,10 @@ reports it natively.
 
 | Mode · variant | `reports_natively` | `supplies` |
 | --- | --- | --- |
-| `stateless` · `default` | `STREAK_INVARIANTS` | `ADMITTED_JUDGEMENT` ∪ `POISONING_DRAWS` ∪ `rule_witness` |
+| `stateless` · `default` | `STREAK_INVARIANTS` | `ADMITTED_JUDGEMENT` ∪ `POISONING_DRAWS` ∪ `VALID_PASS_SENDS_AS_BUILT` (`rule_witness`, `seed_case_expectation`) |
 | `stateful` · `default` | `state_transition` | `ADMITTED_JUDGEMENT` ∪ `rule_witness` |
-| `performance` · `flat` | `STREAK_INVARIANTS` | `ADMITTED_JUDGEMENT` ∪ `latency_sla` ∪ `rule_witness` ∪ `POISONING_DRAWS` |
-| `performance` · `ladder` | `STREAK_INVARIANTS`, `latency_degradation` | `ADMITTED_JUDGEMENT` ∪ `latency_sla` ∪ `rule_witness` |
+| `performance` · `flat` | `STREAK_INVARIANTS` | `ADMITTED_JUDGEMENT` ∪ `latency_sla` ∪ `POISONING_DRAWS` ∪ `VALID_PASS_SENDS_AS_BUILT` |
+| `performance` · `ladder` | `STREAK_INVARIANTS`, `latency_degradation` | `ADMITTED_JUDGEMENT` ∪ `latency_sla`: each step sends the strategy's `valid` traffic alone, nothing a contract adds |
 | `resilience` · `default` | — | `chaos_expectation`, `admitted_caller` |
 | `auth` · `default` | — | `ENDPOINT_JUDGEMENT` ∪ `access_expectation` |
 | `replay` · `default` | — | — (`reports_oracle_verdicts` is `False`) |
@@ -170,7 +172,8 @@ That gives `default` `poisoned_field` and `out_of_schema_field`; `security`
 `poisoned_field` and `attack_phase` (`auth_bypass` is neither a typed nor a
 reflecting family); `smoke` nothing. The needs a producer or the request meets are
 read off `NEED_SUPPLIERS`: the core maps each producer-supplied need
-(`semantic_properties`, `rule_witness`) to the `fixture` and `inference` producers,
+(`semantic_properties`, `rule_witness`, `seed_case_expectation`) to the `fixture`
+and `inference` producers,
 and each request-supplied need to the run parameter that sets it.
 
 A need a strategy meets may open no row. `poisoned_field` opens none: the two
@@ -193,10 +196,10 @@ recur:
 
 | Mode · variant | Always | When |
 | --- | --- | --- |
-| `stateless` · `default` | the judged set, `input_induced_timeout` | the endpoint rows · `out_of_schema_field`: `input_validation` · `rule_witness`: `input_validation` · `attack_phase`: `mass_assignment` · `reflecting_attack`: `reflected_payload` |
+| `stateless` · `default` | the judged set, `input_induced_timeout` | the endpoint rows · `out_of_schema_field`: `input_validation` · `rule_witness`: `input_validation` · `seed_case_expectation`: `expected_rejection`, `expected_acceptance` · `attack_phase`: `mass_assignment` · `reflecting_attack`: `reflected_payload` |
 | `stateful` · `default` | the judged set, `state_transition` | the endpoint rows · `rule_witness`: `input_induced_timeout`, `input_validation` |
 | `performance` · `flat` | the judged set, `input_induced_timeout` | everything `stateless` adds, plus `latency_sla`: `latency_sla` |
-| `performance` · `ladder` | the judged set, `input_induced_timeout`, `latency_degradation` | the endpoint rows · `rule_witness`: `input_validation` · `latency_sla`: `latency_sla` |
+| `performance` · `ladder` | the judged set, `input_induced_timeout`, `latency_degradation` | the endpoint rows · `latency_sla`: `latency_sla` |
 | `resilience` · `default` | `not_a_server_error`, `information_disclosure`, `resilience_degradation` | — |
 | `auth` · `default` | the judged set but `sensitive_data_exposure`, plus `access_control` | `opt_in`: `undeclared_response_field` |
 | `replay` · `default` | — | — |

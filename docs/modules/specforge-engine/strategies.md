@@ -42,8 +42,8 @@ spellings. Each member has one profile in `profiles/builtin.py`.
 
 The `default` and `security` splits and the default budget of 200 are measured
 ([ADR-140](adr/measurement.md#adr-140), [ADR-141](adr/measurement.md#adr-141)).
-Under `security`, an endpoint that declares an aggressiveness sets its own
-`attack` share through `derive_attack_split`
+Under `security`, an endpoint that declares an aggressiveness adds attack examples
+on top of the strategy's through `attack_extra`
 ([Strategy compiler](strategy-compiler.md#the-plan-arithmetic)).
 
 **`security`** draws every phase the engine has. Its `attack` pass poisons one

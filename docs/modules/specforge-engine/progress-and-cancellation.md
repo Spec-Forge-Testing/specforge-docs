@@ -201,7 +201,8 @@ they are observed (`note_finding_observed`), a stateful run's included. `total` 
 `0` for a mode that plans no example budget, as every stateful tick is; a stateful
 run reports its progress instead through `note_passes`: `passes` is how many
 passes over the state machine it has finished, and `max_passes` is
-`STATEFUL_MAX_PASSES` (100), a ceiling the run usually stops short of, after two
+`STATEFUL_MAX_PASSES` (100), a ceiling the run usually stops short of: once it
+has sent its exploration floor, after four
 passes in a row without progress.
 
 ### The confirming stage { #the-confirming-stage }

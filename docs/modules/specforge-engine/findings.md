@@ -128,14 +128,15 @@ What each invariant puts in the slots:
 | `reflected_payload` | — | the reflected text | the poisoned field | the attack family |
 | `input_induced_timeout` | — | the elapsed ms | the poisoned field (none for a valid value) | — |
 | `semantic_property` | — | `{field: value}` for each field the rule references | — | the property class |
-| `state_transition` | the expected statuses, or the value sent | the status, or the value echoed; `null` when the response left it out | `follow_up`, or the `response_body` pointer | `status`; `echo` for a value returned changed; `echo_missing` for a value the response left out |
-| `input_validation` | `{keyword: declared}` of the first mismatch, `pattern` and `format` included | the value sent, on a text wire the text sent (`"+4"`) | the poisoned field | — |
+| `state_transition` | the expected statuses, or the value sent | the status, or the value echoed; `null` when the response left it out | `follow_up`, or the `response_body` pointer | `status`; `echo` for a value returned changed; `echo_missing` for a value the response left out; `echo_overwritten` for a later read returning what another resource of the sequence was sent ([ADR-208](adr/runners.md#adr-208)) |
+| `input_validation` | `{keyword: declared}` of the first mismatch, `pattern` and `format` included | the value sent, on a text wire the text sent (`"+4"`) | the poisoned field | `partly_enforced_rule` or `unenforced_inferred_rule` for a rule only the produced contract declares ([Witnesses](witnesses.md#what-it-reports)) |
 | `response_schema_conformance` | `{keyword: declared}` | the value at the pointer | `response_body` pointer | — |
 | `contract_completeness` | — | the server's message for the field it blames | the blamed field (none: the whole request) | `loc` or `message_key` |
 | `contract_completeness`, a [rule only the produced contract declares](witnesses.md) | `{keyword: declared}` | the value sent | the poisoned field | `inferred_rule`; `inferred_rule_database_error` when the rejection's body shows a [database error](witnesses.md#what-it-reports) |
 | `content_type_conformance` | the declared type | the received type, or `null` | `response_header` `content-type` | — |
 | `status_code_conformance` | the declared status keys | the status | — | — |
-| `latency_sla` | the SLA in ms | the latency in ms | — | — |
+| `latency_sla` | the SLA in ms | the latency in ms | — | `slow_only_under_load` when its request, sent alone after the load, came back within the SLA ([ADR-210](adr/findings.md#adr-210)) |
+| `expected_rejection`, `expected_acceptance` | the outcome the seed case expects (`rejected` or `accepted`) | the status | — | — |
 | `latency_degradation` | `{p95_ms, baseline_concurrency, baseline_p95_ms}` | the confirmed step's p95 | `load_step` | `confirmed` |
 | `resilience_degradation` | — | the status, or the transport error | — | the chaos attack |
 
@@ -214,12 +215,26 @@ counts in `requests_shrink`.
 | State | Meaning | Counted in |
 | --- | --- | --- |
 | `confirmed` | The shrunk payload reproduced the finding, and a control request, when its invariant has one, did not show the same signal. | `findings_confirmed` |
+| `llm_suspicion` | Reproduced exactly as a confirmed finding, but the rule it stands on is one the model assumed: its `grounds.basis` is `assumed`. Listed as an `LlmSuspicionFinding`, never as a defect, and never in the signal. | `findings_llm_suspicions` |
 | `flaky` | The shrunk payload did not reproduce it. | `findings_flaky` |
 | `unverified` | Never checked: the run stopped first or the member was never attempted, or its control request got no answer (a timeout, a refused connection) or an answer that cannot judge it (a rejection, a success with nothing to echo in), so there is nothing to judge it against. | `findings_unverified` |
 | `refuted` | The shrunk payload reproduced it, and its control request showed it is not a defect: the input was not the cause, or the rejection was a conflict with stored state. Listed as a `RefutedFinding` with that control, never as a defect. | `findings_refuted` |
 
-The four states are the members of `FindingState`. Each mode reaches them its own
-way ([ADR-192](adr/findings.md#adr-192)):
+The five states are the members of `FindingState`.
+
+**Which reproduced findings are suspicions.** Every verdict that cites a
+producer's rule carries that rule's grounds: the inferred keyword the poisoned
+value broke, the business rule the verdict names, the seed case's expectation, or
+the access policy, unless the specification's own security already requires a
+credential. A finding of an invariant that stands on the very rule it cites
+(`rests_on_its_rule` in the registry: `input_validation`, `contract_completeness`,
+`semantic_property`, `expected_rejection`, `expected_acceptance`, `access_control`)
+settles as an LLM suspicion when that rule's `basis` is `assumed`, a rule the
+model called stated and could not back included. A rule the specification
+declares, a stated one, and one no producer grounded keep the finding `confirmed`
+([ADR-202](adr/findings.md#adr-202)).
+
+Each mode reaches the states its own way ([ADR-192](adr/findings.md#adr-192)):
 
 | Mode | How a finding gets its state |
 | --- | --- |

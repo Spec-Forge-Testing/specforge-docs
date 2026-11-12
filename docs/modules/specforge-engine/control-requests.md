@@ -197,7 +197,8 @@ with every field below since report `schema_version` 1.24.
 | Field | Holds |
 | --- | --- |
 | `status_code`, `latency_ms`, `error` | What the control got back |
-| `source` | `sent`; `reproduction`, when no control could be built and the answer is the reproduced rejection; `earlier`, when nothing was sent because the same request from the same caller was accepted earlier in the run |
+| `source` | `sent`; `reproduction`, when no control could be built and the answer is the reproduced rejection; `earlier`, when nothing was sent because the same request from the same caller was accepted earlier in the run; `not_tried`, on an `unverified` finding standing for the members of a group never retried because the group's representatives had already used its tries and were refuted: nothing was sent for it, and the evidence is what the first representative's control got |
+| `latency_samples_ms` | The latency of each time a `latency_sla` finding's request was sent alone after the load, in order, `latency_ms` being their median ([ADR-210](adr/findings.md#adr-210)); `[]` on any other control |
 | `attribution` | The request sent after a rejected control: for an inferred rule, the field at a valid value; for a whole-request rejection, the rotated form of an accepted request |
 | `peer` | The same control under another identity, once the finding's caller had it accepted twice |
 | `occupancy` | The attribution's value sent again; its own `peer` is the same request under another identity |

@@ -234,6 +234,18 @@ model called stated and could not back included. A rule the specification
 declares, a stated one, and one no producer grounded keep the finding `confirmed`
 ([ADR-202](adr/findings.md#adr-202)).
 
+Two rules keep a suspicion from hiding a defect. A value that breaks several
+inferred keywords of a field rests on the firmest: when the first keyword broken
+is assumed, the finding cites the first broken keyword the producer did not
+assume ([ADR-211](adr/findings.md#adr-211)). And where one invariant subsumes
+another on the same response, the subsuming finding hides the other only when it
+stands at least as firm, so one response can give a defect and a suspicion, both
+reported. A seed case expecting acceptance is judged only on a rejection of its
+own values: a rejection naming only a field the case leaves free, or refusing what
+the store holds, is judged as a rejected valid request instead, and one refusing
+values the run already saw accepted at the endpoint is left unverified
+([ADR-203](adr/findings.md#adr-203)).
+
 Each mode reaches the states its own way ([ADR-192](adr/findings.md#adr-192)):
 
 | Mode | How a finding gets its state |

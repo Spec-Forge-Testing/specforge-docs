@@ -680,7 +680,7 @@ confirmed access breaches and crashes.
 
 ## ADR-202 — A finding that stands on a rule the model assumed is an LLM suspicion, never a defect { #adr-202 }
 
-**Status:** accepted · Builds on [ADR-201](../../core/adr/inference.md#adr-201) · `models/runtime/grounds.py`, `models/runtime/taxonomy.py`, `models/runtime/crash_report.py`, `models/runtime/findings.py`, `models/runtime/events.py`, `runtime/oracles/grounds.py`, `runtime/findings/standing.py`, `runtime/findings/stats.py`; core `services/report/builder/entry.py`, `services/report/grounds_text.py`, `services/compare/service.py`, `controllers/finding_code.py`
+**Status:** accepted · Builds on [ADR-201](../../core/adr/inference.md#adr-201) · `models/runtime/grounds.py`, `models/runtime/taxonomy.py`, `models/runtime/crash_report.py`, `models/runtime/findings.py`, `models/runtime/events.py`, `runtime/oracles/grounds.py`, `runtime/findings/standing.py`, `runtime/findings/stats.py`, `runtime/fuzzers/stateless/folding.py`; core `services/report/builder/entry.py`, `services/report/grounds_text.py`, `services/compare/service.py`, `controllers/finding_code.py`
 
 ### Context
 
@@ -723,6 +723,14 @@ reader judges one rule, not the server's behaviour.
 quote found is `assumed` (`grounds.downgraded`), and its findings are
 suspicions.
 
+**A finding absorbs another only when it stands at least as firm.** Where one
+invariant subsumes another on the same response (a broken rule over a seed case's
+expected rejection, a case's expected acceptance over a rejected valid request),
+the subsuming finding hides the other unless it rests on an assumed rule and the
+other does not. A suspicion never hides a defect: one response can
+give both, and both are reported. Resting on an assumed rule has one definition
+(`rests_on_an_assumed_rule`), shared by the settlement and the absorption.
+
 ### Rejected
 
 - **Dropping findings against assumed rules.** The rules worth assuming are the
@@ -747,7 +755,7 @@ A replay judges no suspicion: against a replay, every suspicion that is not
 
 ## ADR-203 — A seed case is judged against the outcome it expects, only when it was sent whole and does not contradict its own contract { #adr-203 }
 
-**Status:** accepted · `models/contracts` (kernel `specforge_contracts.seed`), `models/runtime/invariant.py`, `models/runtime/taxonomy.py`, `models/runtime/intent.py`, `models/runtime/contract_usage.py`, `runtime/oracles/case_expectation.py`, `runtime/oracles/precedence.py`, `runtime/fuzzers/stateless/seed_sends.py`, `runtime/fuzzers/stateless/seed_contradictions.py`
+**Status:** accepted · `models/contracts` (kernel `specforge_contracts.seed`), `models/runtime/invariant.py`, `models/runtime/taxonomy.py`, `models/runtime/intent.py`, `models/runtime/contract_usage.py`, `runtime/oracles/case_expectation.py`, `runtime/oracles/precedence.py`, `runtime/fuzzers/stateless/seed_sends.py`, `runtime/fuzzers/stateless/seed_contradictions.py`, `runtime/fuzzers/stateless/control_judgement.py`, `runtime/oracles/semantic/declared.py`
 
 ### Context
 
@@ -790,7 +798,17 @@ expecting rejection is judged whatever its values break.
 `semantic_property` subsume `expected_rejection`: when the response that accepted a
 case also breaks an input rule or a business rule, only that rule's finding is
 reported. `expected_acceptance` subsumes `contract_completeness`: the case states
-the stronger claim about the same rejection.
+the stronger claim about the same rejection. Either absorption holds only when the
+absorbing finding stands at least as firm ([ADR-202](#adr-202)): a suspicion never
+hides a defect.
+
+**A case expecting acceptance is judged only on a rejection of its own values.**
+A 400 or 422 that names only a field the case leaves free, or that refuses what the
+store already holds, is not the case's finding: it is judged as the rejection of a
+request sent as declared (`contract_completeness`), with that finding's controls.
+When the reproduced rejection refuses values the run had already seen accepted at
+the endpoint, the store may now hold them, and the finding is left unverified
+rather than confirmed.
 
 ### Rejected
 
@@ -863,7 +881,7 @@ capacity, and a client shows each latency of `latency_samples_ms`.
 
 ## ADR-211 — A finding stays on the keyword its request first broke, a rejection worded for another field is not this field's, and an accepted write is confirmed on fresh strings { #adr-211 }
 
-**Status:** accepted · Supersedes in part [ADR-150](#adr-150) · Extends [ADR-186](#adr-186) · `runtime/findings/broken_keyword.py`, `runtime/findings/grouper.py`, `runtime/findings/shrinker.py`, `runtime/oracles/rejection_attribution.py`, `runtime/oracles/contract_completeness.py`, `runtime/fuzzers/stateless/enforcement.py`, `runtime/fuzzers/stateless/control_verdict.py`, `runtime/fuzzers/stateless/untaken_resend.py`, `runtime/fuzzers/stateless/constants.py`, `models/runtime/observation.py`
+**Status:** accepted · Supersedes in part [ADR-150](#adr-150) · Extends [ADR-186](#adr-186) · `runtime/findings/broken_keyword.py`, `runtime/findings/grouper.py`, `runtime/findings/shrinker.py`, `runtime/oracles/rejection_attribution.py`, `runtime/oracles/contract_completeness.py`, `runtime/fuzzers/stateless/enforcement.py`, `runtime/fuzzers/stateless/control_verdict.py`, `runtime/fuzzers/stateless/untaken_resend.py`, `runtime/oracles/inferred_rule.py`, `runtime/oracles/input_validation.py`, `runtime/fuzzers/stateless/constants.py`, `models/runtime/observation.py`
 
 ### Context
 
@@ -911,6 +929,13 @@ rotated to values the run never saw accepted, the first of `UNTAKEN_ROTATIONS`
 (64) candidate rotations that qualifies. The value under test, a seed case's
 values and the values from the run's corpus stay as sent. The one re-send serves
 the reproduction, the shrink and the report.
+
+**A value breaking several inferred keywords rests on the firmest.** When the
+first keyword the validator reports for a field rests on an assumption, the finding
+cites the first broken keyword the producer did not assume. Its grounds, the
+keyword that tells it apart and its observation all name that keyword, so a text
+past a stated `maxLength` that also breaks an assumed `pattern` is a defect on the
+`maxLength`.
 
 ### Rejected
 

@@ -227,6 +227,12 @@ finding signature to confirm and shrink it. The tick names that stretch with
   (cancelled, or a dead target), never reaches `confirming`.
 - A performance run's latency findings and crashes are judged without shrinking,
   so they are not among its signatures.
+- A stateless run with `DELETE` endpoints and others confirms the other endpoints'
+  signatures before it explores the `DELETE` ones, under `UnannouncedConfirming`,
+  a progress that forwards everything but `note_confirming`: those ticks still say
+  `generating`, with `sent` rising. `confirming` is announced once, for the
+  `DELETE` endpoints' signatures, and `signatures_total` counts only those
+  ([ADR-214](adr/runners.md#adr-214)).
 - Stateful confirms each defect as it goes and has no such stage; its ticks, like
   replay's, leave the three fields `None`.
 

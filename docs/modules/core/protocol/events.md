@@ -94,6 +94,13 @@ finding, a *signature*, to confirm and shrink it. That can take a while, and no
 - A tick that changes `stage` is never held back by the rate limit: the run's
   first tick says `generating`, and `confirming` with `signatures_done` `0`
   arrives the moment confirming starts.
+- A `stateless` run whose endpoints include a `DELETE` explores and confirms the
+  other endpoints first and its `DELETE` endpoints after them, so a delete never
+  removes what a finding needs to be confirmed. The other endpoints' signatures
+  are confirmed while `stage` still says `generating` (`sent` rises with their
+  re-sent requests), and `confirming`, from `0`, counts only the `DELETE`
+  endpoints' signatures. A client still sees `generating`, then `confirming`
+  once, no `endpoint_started` after it, and every `finding` together at the end.
 - The `finding` events arrive together once confirming is done. `sent` keeps
   rising with the re-sent requests; `total` does not count them.
 - A run with nothing to confirm never says `confirming`, nor does one that stopped

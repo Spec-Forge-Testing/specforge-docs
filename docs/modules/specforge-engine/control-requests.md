@@ -8,6 +8,11 @@ what a control may send, and what each one leaves in the report. The list of
 checks is `CONTROL_CHECKS` (`runtime/fuzzers/stateless/control_checks.py`); the
 states they lead to are on [Findings](findings.md#states).
 
+Controls are sent while a finding is confirmed. In a stateless run with `DELETE`
+endpoints, the other endpoints' findings are confirmed, and their controls sent,
+before any `DELETE` is explored, so a control never addresses a resource a delete
+already removed ([ADR-214](adr/runners.md#adr-214)).
+
 ## Which control applies
 
 A finding gets the first check of its invariant that applies to it.

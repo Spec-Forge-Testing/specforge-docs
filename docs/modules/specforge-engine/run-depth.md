@@ -91,6 +91,13 @@ are sorted by their layer in the state-link graph, a producer before its
 consumers. The sort is stable over the risk order (`order_by_risk`), which still
 breaks ties. Endpoints that produce for one another in a cycle share a layer.
 
+A run with `DELETE` endpoints and others runs in **two rounds**: it explores the
+other endpoints and confirms and shrinks their findings, then explores the
+`DELETE` endpoints and confirms theirs. A delete therefore never removes the
+resource a finding's confirmation re-sends to. The first confirmation announces
+no `confirming` stage; the run's ticks keep saying `generating`
+([ADR-214](adr/runners.md#adr-214), [the confirming stage](progress-and-cancellation.md#the-confirming-stage)).
+
 ### A rejection that is a state conflict
 
 Once requests reuse real values, some 400 and 422 answers are conflicts with stored

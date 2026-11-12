@@ -207,7 +207,7 @@ in the engine's log.
 
 ## ADR-165 — Stateless draws path and query values from what the run's successful responses returned, and runs producers first and deletes last { #adr-165 }
 
-**Status:** accepted · `runtime/fuzzers/stateless/corpus.py`, `runtime/fuzzers/stateless/corpus_overlay.py`, `runtime/fuzzers/stateless/constants.py`, `runtime/fuzzers/stateless/folding.py`, `runtime/fuzzers/stateless/shrinking.py`, `runtime/fuzzers/stateless/example_counts.py`, `models/runtime/draw.py`, `runtime/ordering.py`, `runtime/runners/stateless.py`, `constants.py`
+**Status:** accepted · Superseded in part by [ADR-214](#adr-214) · `runtime/fuzzers/stateless/corpus.py`, `runtime/fuzzers/stateless/corpus_overlay.py`, `runtime/fuzzers/stateless/constants.py`, `runtime/fuzzers/stateless/folding.py`, `runtime/fuzzers/stateless/shrinking.py`, `runtime/fuzzers/stateless/example_counts.py`, `models/runtime/draw.py`, `runtime/ordering.py`, `runtime/runners/stateless.py`, `constants.py`
 
 ### Context
 
@@ -1089,3 +1089,50 @@ provisioning's reason.
 Fewer endpoints end `owner_resource_unprovisioned` on APIs that validate
 references. A `role_only` endpoint with a path resource costs its provisioning
 requests, and can now be left unprobed for a resource it could not create.
+
+---
+
+## ADR-214 — A stateless run confirms what the other endpoints found before it sends what destroys a resource { #adr-214 }
+
+**Status:** accepted · Supersedes in part [ADR-165](#adr-165) · `runtime/runners/rounds.py`, `runtime/runners/loop.py`, `runtime/runners/stateless.py`, `runtime/runners/shrink_resolution.py`, `runtime/runners/shrink_phase.py`, `runtime/progress/unannounced.py`, `runtime/ordering.py`
+
+### Context
+
+A stateless run explores its `DELETE` endpoints last ([ADR-165](#adr-165)), so the
+corpus fills before anything removes from it. But it confirmed every finding only
+after exploring every endpoint, the deletes included. A finding on `GET
+/articles/{slug}` or `PUT /articles/{slug}` is confirmed by re-sending its request
+at the resource it was found on; by then a `DELETE` had removed that resource, the
+re-send got a 404, and a real defect ended `flaky` or `unverified`.
+
+### Decision
+
+**Two rounds, when the run has both kinds of endpoint.** The endpoints that do not
+delete are explored, and their findings confirmed and shrunk, before the `DELETE`
+endpoints are explored; the `DELETE` endpoints' findings are confirmed last. A run
+with no `DELETE` endpoint, or with nothing else, runs as one round, as before.
+
+**The first confirmation is silent to the client.** It runs under a progress that
+never announces `confirming`: the ticks keep saying `generating` while `sent` rises
+with the re-sent requests. `confirming` is announced once, for the `DELETE`
+endpoints' signatures alone, and `signatures_total` counts only those. The order of
+the events a client sees is unchanged: `generating`, `confirming` once, no
+`endpoint_started` after it, and every `finding` together at the end.
+
+### Rejected
+
+- **Confirming every finding as soon as its endpoint is explored.** It spreads the
+  confirming stage across the whole run, interleaves `finding` events with
+  exploration and breaks the published order of the events.
+- **Re-creating the resource before a re-send.** The engine does not know which
+  producer made a given resource in a stateless run; a fresh one is another
+  resource, and the finding was about the first.
+- **Announcing two confirming stages.** Every client reads `confirming` as the last
+  stretch of a run; a second one would read as the run going backwards.
+
+### Consequences
+
+Findings on the endpoints a delete would have removed are confirmed against the
+resource they were found on. The `confirming` stage of a run with deletes is
+shorter than its actual confirmation, and `signatures_total` covers only the
+`DELETE` endpoints' signatures.

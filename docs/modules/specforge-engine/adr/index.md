@@ -237,3 +237,4 @@ missing here belongs to another module:
 | [ADR-210](findings.md#adr-210) | findings | A latency finding shows the payload slow most often, and its request is re-sent alone to say whether it is slow by itself |
 | [ADR-211](findings.md#adr-211) | findings | A finding stays on the keyword its request first broke, a rejection worded for another field is not this field's, and an accepted write is confirmed on fresh strings |
 | [ADR-212](runners.md#adr-212) | runners | A resource is provisioned with its producer's simplest request first, and a `role_only` endpoint is crossed against a resource a holder of the role created |
+| [ADR-214](runners.md#adr-214) | runners | A stateless run confirms what the other endpoints found before it sends what destroys a resource |

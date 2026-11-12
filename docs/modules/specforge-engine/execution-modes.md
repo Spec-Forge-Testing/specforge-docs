@@ -107,7 +107,11 @@ The mechanism — `guard_endpoint`, `SentEvidence`, `kept_cut` — is on
 ## Stateless (default)
 
 Fuzz each endpoint independently across generation phases; shrink each
-confirmed failure to a minimal reproducer by its signature.
+confirmed failure to a minimal reproducer by its signature. A run with `DELETE`
+endpoints and others does it in two rounds: the other endpoints are explored and
+their findings confirmed first, then the `DELETE` endpoints, so a delete never
+removes the resource a confirmation re-sends to. Only the second round announces
+`confirming` ([ADR-214](adr/runners.md#adr-214)).
 
 ```mermaid
 sequenceDiagram

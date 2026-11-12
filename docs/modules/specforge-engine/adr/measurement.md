@@ -417,10 +417,10 @@ limits ([Shrink limits](../shrink-limits.md)).
 
 A producer's contract is worth what it makes the run send: each input rule's
 breaking and keeping case, a value only an inferred keyword forbids, each seed
-case, each field's declared samples. Those used to come out of the strategy's
-budget. The semantic phase reserved a tenth of it and raised itself to one example
-per rule ([ADR-200](#adr-200)); a contract's risk score could lower the budget;
-its aggressiveness took attack examples from the other phases. So a run with a
+case, each field's declared samples. Under [ADR-200](#adr-200) all of it came
+out of the strategy's budget: the semantic phase reserved a tenth of it and raised
+itself to one example per rule, a contract's risk score could lower the budget,
+and its aggressiveness took attack examples from the other phases. So a run with a
 producer sent fewer of the strategy's own requests than the same run without
 one, and a comparison of the two measured the contract and the loss at once.
 And nothing said which of the contract's items were sent: an item lost to a cap,

@@ -912,6 +912,5 @@ stay in the cache, so asking again does not pay for them again.
 ### Consequences
 
 Two error codes a client handles by marking the parameter named. An `auth` run
-whose endpoints declare no access policy, which the engine used to complete with
-zero requests, is now refused as `access_uncrossable` like one whose policies
-cannot be crossed.
+whose endpoints declare no access policy is refused as `access_uncrossable`, like
+one whose policies cannot be crossed, rather than completing with zero requests.

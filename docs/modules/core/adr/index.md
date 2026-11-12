@@ -90,5 +90,5 @@ replays alone, are the engine's.
 | [ADR-194](core.md#adr-194) | core | A finding's replay earns `possibly_resolved` behind witnesses, and says why when it cannot |
 | [ADR-195](core.md#adr-195) | core | A comparison rules each defect within the endpoints the later run exercised |
 | [ADR-197](inference.md#adr-197) | inference | The cost cap holds an inference's worst case |
-| [ADR-201](inference.md#adr-201) | inference | A model's rule is stated only when its quote is found in what the model was shown |
+| [ADR-201](inference.md#adr-201) | inference | A model's rule is stated only when its quote is found in what the model was shown, and a keyword's quote is about that keyword |
 | [ADR-213](core.md#adr-213) | core | A run that lacks what its mode requires is refused before it is produced, and one that would verify nothing is refused with the endpoints and why |

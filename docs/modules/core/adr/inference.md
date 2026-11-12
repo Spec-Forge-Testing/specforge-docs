@@ -238,7 +238,7 @@ records what was spent.
 
 ---
 
-## ADR-201 — A model's rule is stated only when its quote is found in what the model was shown { #adr-201 }
+## ADR-201 — A model's rule is stated only when its quote is found in what the model was shown, and a keyword's quote is about that keyword { #adr-201 }
 
 **Status:** accepted · Extends [ADR-098](#adr-098) · `services/fuzz/grounding/`, `services/fuzz/adoption.py`, `services/fuzz/producers/inference.py`, `services/fuzz/producers/fixture.py`, `services/fuzz/projection/grounds.py`; kernel `specforge_contracts.grounds`; `contract_assembly/fusion/merger.py`; `semantic_inference` `prompts/templates/partials/grounds.j2`
 
@@ -281,6 +281,18 @@ quote it is `downgraded` `no_quote`; with a quote nowhere in what it was shown,
 `quote_not_found`. Either way the producer notes it (`producer_notes[].kind`
 `unverified_quote`) and the rule stays in the contract.
 
+**A keyword's quote must be about that keyword.** A quote found in the code can
+still be about something else: a model grounding `minLength: 8` on `title` in a
+line that checks `password`. For a schema keyword, the quote holds the rule only
+when it names the keyword's field (its words in a row, or an identifier spelling
+it, `snake_case` and `camelCase` split), sits in a place that names it (the function
+or the spec pointer it was found in), or carries the keyword's value: a number
+within `BOUND_TOLERANCE` (1) of a bound (`len(x) < 12` states `minLength: 12`),
+the pattern or one of its counts, an `enum` member, the format's name. Otherwise
+the rule is taken as assumed, `downgraded` `quote_unrelated`, and noted
+`unverified_quote`. A keyword of a body with no field name is never ruled out. A
+business rule, an access policy and a seed case's `expects` are checked for being
+found, not for relevance: their quotes rarely spell one field.
 **An assumed keyword never replaces a declared one.** Fusion keeps the keyword
 the specification declares on the same field, and notes the model's
 (`assumed_over_declared`). A keyword the specification already declares with the
@@ -299,6 +311,9 @@ model that gave none) gets no grounds, and its findings read as they always did.
 - **Dropping assumed rules.** They are the rules no other source gives. The
   prompt asks for them generously, and the run reports what they find apart
   ([ADR-202](../../specforge-engine/adr/findings.md#adr-202)).
+- **Checking every rule for relevance.** A business rule or an access check is
+  quoted from a guard that compares several fields or none by name; a relevance
+  test would downgrade the very rules a quote states best.
 - **A fuzzy match on the quote.** A near match finds a line that says something
   else; the folding covers what copying changes and nothing more.
 

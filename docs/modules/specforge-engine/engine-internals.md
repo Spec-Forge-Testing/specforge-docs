@@ -1004,7 +1004,8 @@ and the supervisor reacts to it:
   signature and trigger fields, which then stands for one more finding, and
   **suppresses** that defect in `SuppressedDefects`, so the next pass looks past
   it. A defect found again on another value widens its suppression once. The run
-  keeps going until two passes in a row change nothing, or `max_distinct_bugs`
+  keeps going, once it has sent its exploration floor, until four passes in a row
+  change nothing, or `max_distinct_bugs`
   (25) distinct defects or flaky signatures are found
   ([Run depth](stateful-depth.md#stateful-depth)).
 - `LinkBroken` raises `StatefulLinkError` carrying the partial exploration.

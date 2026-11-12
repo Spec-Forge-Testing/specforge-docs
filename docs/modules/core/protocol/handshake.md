@@ -4,7 +4,7 @@
 refused `HANDSHAKE_REQUIRED`.
 
 ```json
-{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.2.5"}}
+{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.2.6"}}
 ```
 
 The response carries the protocol version, the server's identity, what this
@@ -13,7 +13,7 @@ in, and the options a run can be asked for:
 
 ```json
 {"jsonrpc":"2.0","id":1,"result":{
-  "protocol_version":"0.2.5",
+  "protocol_version":"0.2.6",
   "server":{"name":"specforge-core","version":"…","frozen":false},
   "capabilities":{…},
   "catalog":{…},
@@ -52,15 +52,22 @@ lists it among the result's required fields.
 | `invariants` | `{value, label, category, severity, rule_source, description, summary}` | Every invariant the engine checks, in registry order, the order that breaks ties within one severity. `rule_source` is `intrinsic` (the invariant states its rule, which `description` carries) or `declared` (the contract states it; `description` is `null`). `summary` is one sentence for a person on what a finding of it means, never `null` |
 | `truncation_reasons` | `{value, label}` | Every [`truncation.reason`](vocabularies.md#truncation-reason) |
 | `target_down_verdicts` | `{value, label}` | Every [`target_down_verdict`](vocabularies.md#target-down-verdict) |
-| `finding_states` | `{value, label}` | Every state a finding is reported in: `confirmed`, `flaky`, `unverified`, `refuted` |
+| `finding_states` | `{value, label}` | Every [state](vocabularies.md#finding-state) a finding is reported in: `confirmed`, `llm_suspicion`, `flaky`, `unverified`, `refuted` |
 | `unprobed_reasons` | `{value, label}` | Every [`unprobed_reason`](vocabularies.md#unprobed-reason) |
 | `hold_reasons` | `{value, label}` | Every value of `held_back_by` |
 | `exclusion_dispositions` | `{value, label}` | The core's own: every [`producer_exclusions[].disposition`](vocabularies.md#producer-exclusion-disposition), plus `aborted`, a failed contract that stopped the run |
 | `signal_causes` | `{value, label}` | The core's own: every [`run.signal_causes`](vocabularies.md#signal-causes) value, in the order they render, each with a label short enough for a verdict line |
 | `attack_families` | `{value, label, summary}` | Every [attack family](vocabularies.md#attack-family) a request's `attack_family` or a strategy's `attack_families` names, in declaration order, with a one-sentence `summary` of the payloads it sends |
 | `oracle_needs` | `{value, label}` | Every [`oracle_need`](vocabularies.md#oracle-need), in declaration order: what a response must come with before an invariant can be judged on it |
+| `producer_note_kinds` | `{value, label}` | The core's own: every [`producer_notes[].kind`](vocabularies.md#producer-note-kind), in declaration order |
+| `nothing_verified_causes` | `{value, label}` | The core's own: every `data.cause` of [`NOTHING_VERIFIED`](errors.md#nothing-verified), in declaration order |
+| `contract_item_kinds` | `{value, label, summary}` | The core's own, mirroring the engine's: every [`contract_usage.items[].kind`](vocabularies.md#contract-item-kind), with a `summary` of the part of a contract it is |
+| `unexercised_reasons` | `{value, label, summary}` | The core's own, mirroring the engine's: every [`contract_usage.items[].unexercised.reason`](vocabularies.md#unexercised-reason), in their order of precedence, with a `summary` in plain words |
+| `unjudged_reasons` | `{value, label, summary}` | The core's own, mirroring the engine's: every [`contract_usage.items[].unjudged_because`](vocabularies.md#unjudged-reason), in their order of precedence, with a `summary` in plain words |
 
-Every list but `exclusion_dispositions` and `signal_causes` comes from the engine
+Every list but `exclusion_dispositions`, `signal_causes`, `producer_note_kinds`,
+`nothing_verified_causes`, `contract_item_kinds`, `unexercised_reasons` and
+`unjudged_reasons` comes from the engine
 ([ADR-148](../../specforge-engine/adr/findings.md#adr-148)). Without the engine
 the object is present with those lists empty, never missing.
 
@@ -79,8 +86,8 @@ keys, the effects matrix and how it is derived are on
 **The core serves a range within its own series.** A client is served when its
 `protocol_version` has the core's `major.minor` and a patch between a declared
 floor and the core's own. Each part compares as a number, never as text:
-`0.1.10` is newer than `0.1.9`. This core speaks `0.2.5` and serves `0.2.0`
-up to `0.2.5`: no `0.1.x` client is served. It always answers `hello` with its
+`0.1.10` is newer than `0.1.9`. This core speaks `0.2.6` and serves `0.2.0`
+up to `0.2.6`: no `0.1.x` client is served. It always answers `hello` with its
 own version, and a frontend ignores the keys it does not know.
 
 Anything else — another series, a patch outside the range, or a
@@ -127,9 +134,99 @@ neither. See [ADR-095](../adr/protocol.md#adr-095).
 ## Changelog
 
 The report document that `fuzz`, `replay` and `run_pipeline` answer with is
-`schema_version` 1.27. The protocol's own README holds the full entry for each
+`schema_version` 1.28. The protocol's own README holds the full entry for each
 version; the lines below are the summary.
 
+- **0.2.6** — A finding says where its rule comes from, and one that stands on a
+  rule the model only assumed is an LLM suspicion, apart from the defects. A
+  seed case is judged against the outcome it expects. What a producer's contract
+  gives is sent on top of the strategy's budget and accounted for item by item. A
+  `stateful` finding replays alone through its minimal sequence. A run that lacks
+  what its mode requires, or that would verify nothing, is refused.
+  **Additive on the wire, with semantic changes**: this core serves `0.2.0` up to
+  `0.2.6`. It ships with report `1.28`.
+    - *Changed:* `fuzz` and `run_pipeline` enforce the `requires` of the variant
+      their run takes: a run that lacks one is refused `REQUIREMENT_UNMET`
+      (`data.requirement`, `data.parameter`) before its tree is traced or its
+      contracts produced. A run that would verify no endpoint is refused
+      `NOTHING_VERIFIED` (`data.cause`, `data.endpoints`, and `data.parameter`
+      when one lifts it) ([errors](errors.md#execution),
+      [ADR-213](../adr/core.md#adr-213)).
+    - *Added:* LLM suspicions: a finding that reproduced against a rule only the
+      model assumed is kept apart from defects, in the report's `llm_suspicions`,
+      counted in `findings_llm_suspicions`, `llm_suspicion` in
+      `vocabulary.finding_states`, `kind` `llm_suspicion` in `get_run` and
+      `get_finding`, and `state` on the `finding` event. A suspicion never counts
+      in `findings_confirmed`, `findings_unique` nor the signal
+      ([LLM suspicions](run-detail.md#llm-suspicions),
+      [ADR-202](../../specforge-engine/adr/findings.md#adr-202)).
+    - *Added:* `grounds` on every defect, suspicion and unconfirmed finding:
+      `{basis, quote, downgraded, origin}`, what the rule a finding cites rests on
+      and where it is written; `rule_source` on `inspect_finding_source`
+      ([grounds](run-detail.md#grounds),
+      [ADR-201](../adr/inference.md#adr-201)).
+    - *Added:* a finding's `request` says where its payload came from: `origin`
+      (`drawn`, `witness` or `seeded`), `seed_case_id` and
+      `seed_case_description`.
+    - *Added:* invariants `expected_rejection` and `expected_acceptance`, and the
+      `oracle_need` `seed_case_expectation`
+      ([ADR-203](../../specforge-engine/adr/findings.md#adr-203)).
+    - *Added:* `extra` and `extra_run` in each phase of `budget_by_phase`, and
+      `adds_contract_extra` on every variant of `fuzz_options`: what a producer's
+      contract adds on top of `examples_per_endpoint`
+      ([budget per phase](run-detail.md#budget-by-phase),
+      [ADR-204](../../specforge-engine/adr/measurement.md#adr-204)).
+    - *Added:* `contract_usage` on each endpoint and `metrics.contract_items`:
+      every item a producer's contract gave and what the run did with it, with
+      `vocabulary.contract_item_kinds`, `unexercised_reasons` and
+      `unjudged_reasons` ([the contract's account](run-detail.md#contract-usage)).
+    - *Added:* `requests_shrink` per endpoint, `consumer_values` and
+      `metrics.stateful_chains`; `link_producer_missing`, `link_chain_cyclic`,
+      `link_producer_cut_off` and `link_value_other_identity` in
+      `unprobed_reason`, and `link_value_never_produced` now means the
+      endpoint's producers were sent before it and returned nothing it could use
+      ([unprobed reasons](vocabularies.md#unprobed-reason)).
+    - *Added:* `producer_notes` and `vocabulary.producer_note_kinds`, `run.producer`,
+      `recurring_findings`, and `details` on every warning and on a report's
+      `error` ([run detail](run-detail.md#producer-notes)).
+    - *Changed:* `replay_finding`, and so `verify_finding_fix`, replays a confirmed
+      `stateful` finding stored from this version on through its minimal sequence;
+      its answer adds `steps` and `failed_step`, and `inconclusive_reason` gains
+      `state_not_rebuilt` ([finding replay](finding-replay.md#stateful),
+      [ADR-207](../../specforge-engine/adr/runners.md#adr-207)).
+    - *Added:* `llm_suspicion_changes` and the caveat `contract_extra_differs` in
+      `compare_runs` ([comparison caveats](vocabularies.md#caveats)).
+    - *Added:* `holds_back` on every mode and preset, `clears` on every producer
+      row, `fuzz_options.holds_lifted_by` and `asks_for` on every preset run
+      ([fuzz options](fuzz-options.md#the-object)).
+    - *Added:* `observation.marker` values `partly_enforced_rule`,
+      `unenforced_inferred_rule`, `slow_only_under_load` and `echo_overwritten`;
+      `control.source` `not_tried`; `control.latency_samples_ms` on every control,
+      and a `control` on a `latency_sla` finding
+      ([ADR-210](../../specforge-engine/adr/findings.md#adr-210),
+      [ADR-211](../../specforge-engine/adr/findings.md#adr-211),
+      [ADR-208](../../specforge-engine/adr/runners.md#adr-208)).
+    - *Changed:* mass-assignment keys are injected into, and judged under, an
+      object that admits extra keys but declares properties of its own
+      ([ADR-209](../../specforge-engine/adr/compiler.md#adr-209)); a
+      `latency_sla` finding shows the payload slow most often.
+    - *Changed:* the `stateful` mode's summary says what the run sends: sequences
+      of about 10 calls until it has sent a floor of requests that grows with the
+      examples asked for and the endpoints, then until 4 passes in a row find
+      nothing new ([ADR-206](../../specforge-engine/adr/runners.md#adr-206)).
+      `performance`'s `ladder` no longer lists `rule_witness`: each step sends
+      the strategy's `valid` traffic alone.
+
+- **Report 1.28** — Additive; it ships with protocol `0.2.6`. Adds
+  `llm_suspicions`, `producer_notes`, `recurring_findings` and `run.producer`;
+  `grounds` and the request's `origin`, `seed_case_id` and
+  `seed_case_description` on every finding; `findings_llm_suspicions`,
+  `stateful_chains` and `contract_items` in `metrics`; `requests_shrink`,
+  `consumer_values`, `contract_usage` and `findings_llm_suspicions` on each
+  endpoint; `extra` and `extra_run` in each phase of `budget_by_phase`;
+  `latency_samples_ms` on a `control`; and `details` on the envelope's `error`.
+  `planned` is the strategy's share alone, and `examples_planned` sums `planned`
+  and `extra`.
 - **0.2.5** — A finding's category and severity read like the other terms, with a
   label and a summary; a capped run says which model has no price before it is
   sent; a capped `generate_contract` holds every call it sends within its cap; and

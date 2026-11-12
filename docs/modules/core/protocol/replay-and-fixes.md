@@ -31,11 +31,17 @@ the verdict is reached, and what each `inconclusive` reason asks of you, is on
 [Finding replay verdicts](finding-replay.md). An unknown finding is
 `FINDING_NOT_FOUND`.
 
-A finding that needed earlier requests to build its state, a `refuted` one, one
-whose analysis's trace was pruned, and one whose request is not in the trace are
-`REPLAY_NOT_REPRODUCIBLE`, with `data.reason` `stateful`, `refuted`,
-`trace_pruned` or `not_in_trace`. Every finding of a `stateful` analysis is refused
-as `stateful`, an unconfirmed one too. Each finding announces that
+A confirmed finding of a `stateful` run stored from protocol `0.2.6` on, whose
+every step reached the wire, is replayed through its minimal sequence: its steps
+in order, each bound to the values the steps before it returned this time, the
+finding's own request last, and no witnesses of its own
+([stateful findings](finding-replay.md#stateful)).
+
+Any other finding that needed earlier requests to build its state, a `refuted`
+one, one whose analysis's trace was pruned, and one whose request is not in the
+trace are `REPLAY_NOT_REPRODUCIBLE`, with `data.reason` `stateful`, `refuted`,
+`trace_pruned` or `not_in_trace`. A `stateful` finding stored before `0.2.6`, and
+an unconfirmed one, are refused as `stateful`. Each finding announces that
 answer ahead in [`replay_alone`](run-detail.md#replay-alone), by the same rule. The
 trace is looked up before the consent the recording needs is checked: a finding
 whose request is not there is `REPLAY_NOT_REPRODUCIBLE` even when the call also
@@ -60,9 +66,11 @@ replayed anyway.
 | `status` | `completed`, or `cancelled` while rebuilding: no request sent, `analysis_id` `null`, `verdict` `inconclusive`, `fidelity` `none`. |
 | `finding_id`, `analysis_id` | The finding, and the analysis whose trace held its request. |
 | `verdict` | [`present`](vocabularies.md#replay-verdicts) while the request still breaks the rule, `possibly_resolved` once it answers otherwise and nothing gives a reason to doubt it, `inconclusive` otherwise ([how it is reached](finding-replay.md#verdict)). |
-| `inconclusive_reason` | Why the replay could not tell: one of the six [reasons](vocabularies.md#inconclusive-reason); `null` unless `verdict` is `inconclusive`. |
+| `inconclusive_reason` | Why the replay could not tell: one of the seven [reasons](vocabularies.md#inconclusive-reason); `null` unless `verdict` is `inconclusive`. |
 | `judged` | What the verdict judged: `oracle_scope`, `requests_sent`, `controls_resent`. `null` only when cancelled. |
-| `witnesses` | The recorded reads sent before the finding's request, each with its recorded and observed status and whether it `diverged` ([what is sent](finding-replay.md#what-it-sends)). |
+| `witnesses` | The recorded reads sent before the finding's request, each with its recorded and observed status and whether it `diverged` ([what is sent](finding-replay.md#what-it-sends)). `[]` for a finding replayed through its sequence. |
+| `steps` | For a `stateful` finding replayed through its sequence, every step as it was sent again: `sequence`, `method`, `path`, `recorded_status`, `observed_status`, `rebound`, `diverged` ([stateful findings](finding-replay.md#stateful)). `[]` for a finding whose request is sent alone. |
+| `failed_step` | The `sequence` of the step that kept a sequence's replay from going on; `null` otherwise. |
 | `recorded_status`, `observed_status` | The status recorded and the one received. |
 | `fidelity`, `run_status`, `duration_ms` | How faithful the re-send was (`reduced` when a witness diverged), how it ended (the worse of the witnesses' run and the finding's), and how long it took. |
 | `acceptance` | For a finding recorded as a crash: `expected_statuses` (the 4xx the contract declares for the operation), `observed_status` and `met`. `met` is `false` for a `401` or `403` to a request recorded with credentials that nothing proves still pass ([credentials](finding-replay.md#credentials)). `null` for any other finding. |
@@ -121,6 +129,7 @@ analysis is left as it was.
 | `server_trace` | Whether the server's stack trace is known, captured by a replay or pasted. |
 | `notes` | What was last pasted about the finding with no stack frame in it. |
 | `covering_fixes` | Other findings' applied fixes that edit the handler's files, oldest first: `finding_id`, `fix_id`, `files`. |
+| `rule_source` | Where the code states the rule the finding cites: `file` (relative to the same `tree`), `function`, `start_line`, `end_line` (counted from 1), so a client opens the file at the rule in one call. `null` unless the rule's [`grounds.origin`](run-detail.md#grounds) is `code`; present even when the handler cannot be reached. |
 
 ## The code the model sees { #code-shown }
 

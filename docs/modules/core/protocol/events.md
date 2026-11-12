@@ -45,7 +45,7 @@ which one framed the event.
 | `endpoint_started` | fact | `endpoint` (ref), `index`, `total` | An endpoint begins |
 | `phase_started` | fact | `endpoint` (ref), `phase` | A phase changes within the endpoint |
 | `tick` | state | `elapsed_s` always; on `fuzz`, `sent`, `total` and `findings`, plus `passes` and `max_passes` (int) in a `stateful` run, and `stage` (`generating` or `confirming`) in a `stateless` or `performance` run, with `signatures_done` and `signatures_total` (int) while it is `confirming`; on `analyze_endpoints`, `resolved` and `failed` | Absolute counters, at most ten per second, plus one at each stage change |
-| `finding` | fact | `endpoint` (ref), `status`, `invariant`, `phase`, `category` and `severity` (see [`category`](vocabularies.md#category) and [`severity`](vocabularies.md#severity)), `summary` | A finding is confirmed |
+| `finding` | fact | `endpoint` (ref), `status`, `invariant`, `phase`, `category` and `severity` (see [`category`](vocabularies.md#category) and [`severity`](vocabularies.md#severity)), `summary`, `state` (`confirmed` or `llm_suspicion`) | A finding is confirmed, or stands as an LLM suspicion |
 | `infra_failure` | fact | `endpoint` (ref), `reason`, `streak`, `limit` | A timeout or transport failure |
 | `target_down` | fact | `base_url` (the URL the run's requests go to, server path included), `reason` | The run concluded the API is down: a liveness probe failed, or every circuit breaker opened; `reason` says which |
 | `truncated` | fact | `endpoint` (ref; absent when no endpoint caused the cut, reason [`flaky_generation`](vocabularies.md#truncation-reason)), `reason` | Cut short by budget |
@@ -63,10 +63,18 @@ carries ([findings](../../specforge-engine/findings.md)). All three are absent
 when the core runs without the engine, and from a core older than `0.1.19`.
 There is no `finding_id`: an id exists only once a finding is persisted.
 
+**`state` tells a defect from a suspicion.** It is `confirmed`, or
+`llm_suspicion` for a finding against a rule only the model assumed, which the
+report lists apart in `llm_suspicions` and never counts as a defect
+([LLM suspicions](run-detail.md#llm-suspicions)). A core older than `0.2.6`
+omits it, and announced no suspicion. A client that ignores the key shows a
+suspicion as a finding while the run's document keeps it out of `defects`.
+
 **A `stateful` run's `tick` counts passes, not examples.** It plans no example
 budget, so its `total` is `0`. `passes` is how many passes over the state machine
 it has finished, and `max_passes` the most it may run (100): a ceiling, not a
-target, since the run usually stops earlier, after two passes in a row without
+target, since the run usually stops earlier: once it has sent its exploration
+floor, after four passes in a row without
 progress. `findings` rises by one with each `finding` event. Every other mode
 omits both fields, and so does a core older than `0.2.3`, whose `stateful` ticks
 also leave `findings` at `0`.

@@ -40,14 +40,15 @@ or parameter meeting a need without the engine.
 
 | Key | Items | What it lists |
 | --- | --- | --- |
-| `modes` | `{name, label, summary, variants}` | Every `execution` mode, in declaration order. Each variant is `{name, label, summary, phases, honors_examples_per_endpoint, examples_cap, selected_by, requires, invariants, invariants_when}`: `phases` is `plan` when the runner takes every phase the strategy plans, else the phases it takes (`[]` for none); `examples_cap` is the runner's own ceiling when the run asks for no count (`null` for none) |
+| `modes` | `{name, label, summary, variants, holds_back}` | Every `execution` mode, in declaration order; `holds_back` is what the safety guard holds back in a run of it ([below](#holds-back)). Each variant is `{name, label, summary, phases, honors_examples_per_endpoint, adds_contract_extra, examples_cap, selected_by, requires, invariants, invariants_when}`: `phases` is `plan` when the runner takes every phase the strategy plans, else the phases it takes (`[]` for none); `adds_contract_extra` is `true` when the variant sends what a producer's contract adds on top of `examples_per_endpoint` ([below](#examples-per-endpoint)); `examples_cap` is the runner's own ceiling when the run asks for no count (`null` for none) |
 | `strategies` | `{name, label, summary, phase_split, default_examples_per_endpoint, optional_oracles, attack_families, llm_profile, supplies, omits_read_only, promotes_attack_hints}` | Every [`strategy`](vocabularies.md#strategy), in declaration order |
 | `producers` | strings | `none`, `fixture`, `inference` |
 | `effects` | `{mode, variant, strategy, producer, changes}` | One row per variant of every mode, every strategy but `default`, and every producer |
-| `presets` | `{name, label, summary, runs, requires}` | Named sequences of `{execution, strategy, load, variant}` runs |
+| `presets` | `{name, label, summary, runs, requires, holds_back}` | Named sequences of `{execution, strategy, load, variant, asks_for}` runs; `asks_for` lists the rows of `request_supplies` a run leaves for the client to set ([below](#asks-for)), and `holds_back` every hold any of its runs' modes applies |
 | `phases` | `{value, label, summary}` | Every generation phase a `phase_split` or a variant's `phases` can name |
 | `changes` | `{value, label}` | Every value an effect's [`changes`](vocabularies.md#changes) can take, in that order |
-| `producer_supplies` | `{producer, supplies, meets}` | One row per producer: the [oracle needs](vocabularies.md#oracle-need) the contracts it produces meet (`supplies`), and the values of a variant's [`requires`](#which-variant) they can meet (`meets`); `none` meets neither |
+| `producer_supplies` | `{producer, supplies, meets, clears}` | One row per producer: the [oracle needs](vocabularies.md#oracle-need) the contracts it produces meet (`supplies`), the values of a variant's [`requires`](#which-variant) they can meet (`meets`), and the holds they can clear by judging an endpoint (`clears`, [below](#holds-back)); `none` meets and clears nothing |
+| `holds_lifted_by` | string | The run parameter that lifts every hold of the safety guard: `allow_side_effects` |
 | `request_supplies` | `{need, parameter}` | One row per oracle need a run meets by a parameter it is given, its dotted path among the run's parameters |
 | `limits` | `{max_concurrency_default}` | The default of the core's `engine.max_concurrency` option (20): the concurrency a run that leaves `max_concurrency` unset gets, unless the project's config sets the option to another value. A `stress-ladder` step above the value in force when the run starts is refused then, never earlier |
 
@@ -57,14 +58,15 @@ An excerpt of what this core publishes:
 "fuzz_options": {
   "modes": [
     {"name": "performance", "label": "Performance", "summary": "Measures how fast …",
+     "holds_back": ["external_side_effects", "write_operation", "assumed_write"],
      "variants": [
       {"name": "ladder", "label": "Concurrency ladder", "summary": "Sends valid requests …",
-       "phases": ["valid"], "honors_examples_per_endpoint": false, "examples_cap": null,
+       "phases": ["valid"], "honors_examples_per_endpoint": false,
+       "adds_contract_extra": false, "examples_cap": null,
        "selected_by": {"parameter": "load.concurrency_steps", "when": "set"},
        "requires": [],
        "invariants": ["not_a_server_error", "sensitive_data_exposure", "…", "latency_degradation"],
-       "invariants_when": [{"need": "rule_witness", "invariants": ["input_validation"]},
-                           {"need": "latency_sla", "invariants": ["latency_sla"]}, "…"]}]}
+       "invariants_when": [{"need": "latency_sla", "invariants": ["latency_sla"]}, "…"]}]}
   ],
   "strategies": [
     {"name": "exposure", "label": "Exposure", "summary": "Tries privilege values …",
@@ -75,16 +77,20 @@ An excerpt of what this core publishes:
      "omits_read_only": false, "promotes_attack_hints": true}
   ],
   "producers": ["none", "fixture", "inference"],
-  "producer_supplies": [{"producer": "none", "supplies": [], "meets": []},
-    {"producer": "fixture", "supplies": ["semantic_properties", "rule_witness"],
-     "meets": ["access_policies"]}, "…"],
+  "producer_supplies": [{"producer": "none", "supplies": [], "meets": [], "clears": []},
+    {"producer": "fixture",
+     "supplies": ["semantic_properties", "rule_witness", "seed_case_expectation"],
+     "meets": ["access_policies"], "clears": ["assumed_write"]}, "…"],
+  "holds_lifted_by": "allow_side_effects",
   "request_supplies": [{"need": "latency_sla", "parameter": "load.latency_sla_ms"}],
   "presets": [
     {"name": "stress-ladder", "label": "Stress ladder",
      "summary": "Rising load: who slows down first?", "requires": [],
+     "holds_back": ["external_side_effects", "write_operation", "assumed_write"],
      "runs": [{"execution": "performance", "strategy": "default", "variant": "ladder",
                "load": {"latency_sla_ms": null, "concurrency_steps": [1, 4, 16],
-                        "degradation_tolerance": null}}]}
+                        "degradation_tolerance": null},
+               "asks_for": [{"need": "latency_sla", "parameter": "load.latency_sla_ms"}]}]}
   ],
   "limits": {"max_concurrency_default": 20}
 }
@@ -106,7 +112,7 @@ its variants' `requires`. The handshake's `vocabulary` labels the
 | Mode | Label | What its summary says |
 | --- | --- | --- |
 | `stateless` | Stateless | Each endpoint on its own: every request generated and judged alone |
-| `stateful` | Stateful | Calls chained the way a client does: up to N sequences of about 10 calls, N the examples asked for (100 when none is) |
+| `stateful` | Stateful | Calls chained the way a client does: sequences of about 10 calls until the run has sent at least 9 requests per endpoint for each example asked for (100 when none is), then until 4 passes in a row find nothing new |
 | `performance` | Performance | How fast clean responses come back under load, and whether they slow down as concurrency rises |
 | `resilience` | Resilience | The valid request plus 10 broken versions of it (cut bodies, lying lengths, deep nesting) and 5 repeats of it |
 | `auth` | Authorization | Each endpoint sent as the callers its access policy should refuse (other users, anonymous, bad credentials); endpoints with no policy or a public one are skipped |
@@ -124,19 +130,50 @@ only condition: the parameter is given. So `performance` runs `ladder` when the
 run sets `load.concurrency_steps`, and `flat` otherwise.
 
 `requires` lists what a run of the variant needs besides its parameters before it
-can verify anything. It is read off the engine's runners, and it is an open list a
-client shows rather than enforces:
+can verify anything. It is read off the engine's runners, and the core enforces
+it: a `fuzz` or `run_pipeline` whose variant requires what the run lacks is
+refused [`REQUIREMENT_UNMET`](errors.md#requirement-unmet) before anything is
+traced, produced or sent.
 
 | Value | What supplies it |
 | --- | --- |
-| `identities` | The project's identities file: the callers the run sends requests as. |
+| `identities` | At least one identity the target should accept, in the identities file (`identities_path`, else the project's): the callers the run sends requests as. |
 | `access_policies` | The endpoints' access policies, which only a producer's contracts declare: a producer meets it when its row of `producer_supplies` lists it in `meets`, as `fixture` and `inference` do. |
 
-Today only `auth` requires anything, and it requires both. An `auth` run with
-producer `none` sends nothing: it only crosses an endpoint whose access policy a
-contract declares. A client tells a requirement met from the data alone: the
-project has an identities file for `identities`, and the run's producer lists the
-value in `meets` for `access_policies`.
+Today only `auth` requires anything, and it requires both. A client tells a
+requirement met from the data alone: the project has an identities file for
+`identities`, and the run's producer lists the value in `meets` for
+`access_policies`. `requires` is an open list: a client shows a value it does not
+know, and the core still refuses the run that lacks it.
+
+## What the safety guard holds back { #holds-back }
+
+A mode's `holds_back` lists, in `vocabulary.hold_reasons` order, every reason the
+safety guard can keep an endpoint of a run of it from being sent:
+`external_side_effects` in every mode; `write_operation` and `assumed_write` in
+`performance` and `resilience`, which send an endpoint many times or broken;
+`unsafe_method_outside_run` in `stateful`, a transition to an endpoint outside the
+run. A preset's `holds_back` is every hold any of its runs' modes applies.
+`holds_lifted_by` names the parameter that lifts all of them, `allow_side_effects`.
+
+A producer does not lift a hold: it can only clear what its row of
+`producer_supplies` lists in `clears`, today `assumed_write`, the hold on an
+endpoint whose method is not safe and that nobody judged. A contract that says
+`write_operation: false` sends it; one that says it writes keeps it held as
+`write_operation`. A run whose every endpoint is held is refused
+[`NOTHING_VERIFIED`](errors.md#nothing-verified); one that still sends something
+ends `degraded` with `withheld_by_safety_guard`, its `degraded_signal` warning
+counting what was held.
+
+## What a preset run asks for { #asks-for }
+
+A preset run's `asks_for` lists each `{need, parameter}` row of
+`request_supplies` whose need opens a row of the taken variant's `invariants_when`
+and whose parameter the run's `load` leaves unset: the parameter the run needs
+before it can judge what that row adds. `load` and `stress-ladder` ask for
+`load.latency_sla_ms`, without which no response is judged slow; every other run
+asks for nothing. A client asks the user for it, or runs the preset without it and
+judges less.
 
 ## What a run can find { #what-a-run-can-find }
 
@@ -178,7 +215,8 @@ A need in `supplies` may open no row of any variant. `poisoned_field` is one: ev
 variant that judges the requests it stands for already reports, through a need the
 runner meets itself, what it lets an oracle find.
 
-`fixture` and `inference` meet `semantic_properties` and `rule_witness`;
+`fixture` and `inference` meet `semantic_properties`, `rule_witness` and
+`seed_case_expectation`;
 `load.latency_sla_ms` meets `latency_sla`. So `smoke` and `exposure` in
 `stateless` report `input_validation` only with a producer, a `stateful` run never
 reports an attack-phase invariant, and `reflected_payload` needs `security`.
@@ -252,9 +290,10 @@ run, so the client runs a preset's entries one after the other, each with the
 strategy's default examples per endpoint
 ([ADR-160](../adr/core.md#adr-160)).
 
-Each run is `{execution, strategy, load, variant}`. `load` is the `load` parameter
+Each run is `{execution, strategy, load, variant, asks_for}`. `load` is the `load` parameter
 to send with it (`null` for none), and `variant` the variant it selects (`null` for
-the mode's default). `requires` is what the variant each of its runs takes requires,
+the mode's default), and `asks_for` the parameters it leaves for the client to
+set ([asks_for](#asks-for)). `requires` is what the variant each of its runs takes requires,
 in the order of the table above. `variant` is
 worked out from the same variants `modes` publishes, by the rule of
 [Which variant a run gets](#which-variant): an engine whose `performance` mode
@@ -325,8 +364,24 @@ What a run resolves without the parameter:
 | `stateful` (cap 100) | 100 | 100 | 100 | 20 | 100 |
 | `performance` ladder, `auth`, `resilience` | `null` | `null` | `null` | `null` | `null` |
 
-The endpoint's risk score still weights its budget, so a single endpoint may plan
-more or fewer than the resolved count.
+
+**The count is the strategy's; a producer's contract adds on top.** The resolved
+count is what each endpoint's strategy phases draw, the same with or without a
+producer. In a variant whose `adds_contract_extra` is `true` (`stateless` and
+`performance`'s `flat`), a producer's contract sends what it gives on top: each
+input rule's breaking and keeping case, a witness per inferred keyword, each seed
+case and each field's declared samples, once per valid identity and capped per
+endpoint at half the count or 50, whichever is larger; plus its rule phase, a
+tenth of the count, and what its risk score and aggressiveness add. `deadline_ms`
+stretches by the same share. So an endpoint may plan more than the resolved count,
+never fewer; `budget_by_phase` reports the strategy's share and the contract's
+`extra` apart ([budget per phase](run-detail.md#budget-by-phase),
+[ADR-204](../../specforge-engine/adr/measurement.md#adr-204)).
+
+**In `stateful`, the count also sizes the exploration.** A stateful run keeps
+sending sequences until it has sent at least 9 exploration requests per live
+endpoint for each example asked for, then stops after 4 passes in a row find
+nothing new ([ADR-206](../../specforge-engine/adr/runners.md#adr-206)).
 
 The analysis records the resolved count as `examples_per_endpoint`, beside
 `strategy`; it is `null` when the runner honors no count and for an analysis

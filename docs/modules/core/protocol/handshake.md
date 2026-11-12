@@ -165,6 +165,23 @@ version; the lines below are the summary.
       and where it is written; `rule_source` on `inspect_finding_source`
       ([grounds](run-detail.md#grounds),
       [ADR-201](../adr/inference.md#adr-201)).
+    - *Added:* `grounds.downgraded` `quote_unrelated`: a keyword's quote that was
+      found but names neither the keyword's field (in the quote, or in the
+      function or spec pointer it was found in) nor its value (a bound within one,
+      a count of the pattern, a member, the format) is taken as assumed and noted
+      `unverified_quote`. A business rule, an access policy and a seed case are
+      never `quote_unrelated` ([ADR-201](../adr/inference.md#adr-201)).
+    - *Added:* `grounds_changed` in `compare_runs`' `caveats[].reason`: a finding
+      that is a defect in one run and an LLM suspicion in the other is neither
+      `possibly_resolved` nor `new` but `inconclusive`, once, in `changes`; no
+      other change is degraded ([comparison caveats](vocabularies.md#caveats)).
+    - *Changed:* a `stateless` run with `DELETE` endpoints confirms the other
+      endpoints' findings before it explores the `DELETE` ones, so a delete no
+      longer leaves a real defect `flaky` or `unverified`. Those signatures are
+      confirmed while `tick.stage` still says `generating`; `confirming` and
+      `signatures_total` cover the `DELETE` endpoints' signatures only
+      ([events](events.md#the-event-catalog),
+      [ADR-214](../../specforge-engine/adr/runners.md#adr-214)).
     - *Added:* a finding's `request` says where its payload came from: `origin`
       (`drawn`, `witness` or `seeded`), `seed_case_id` and
       `seed_case_description`.

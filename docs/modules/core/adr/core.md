@@ -887,12 +887,14 @@ the parameter that meets it: `identities_path` for `identities`, `producer` for
 `access_policies`. No inference is paid for.
 
 **A run that would verify no endpoint is refused.** With its contracts produced,
-the core refuses with `NOTHING_VERIFIED` when the engine can verify nothing:
+the core refuses with `NOTHING_VERIFIED` when the engine verifies nothing. `held_back`
+is decided before any request; `access_uncrossable` once the `auth` walk has
+crossed nothing, after any provisioning requests it sent:
 
 | `data.cause` | When | Lifted by |
 | --- | --- | --- |
 | `held_back` | The safety guard holds back every endpoint of the run; the engine refuses before sending | `allow_side_effects`, in `data.parameter` |
-| `access_uncrossable` | An `auth` run crossed no endpoint: none that is not public declares an access policy, or none it declares can be crossed | A producer whose contracts declare crossable policies |
+| `access_uncrossable` | An `auth` run crossed no endpoint: none that is not public declares an access policy, or none it declares can be crossed; decided after the walk, so provisioning requests may already have been sent | A producer whose contracts declare crossable policies |
 
 `data.endpoints` lists each endpoint with its reason: a `hold_reason` for
 `held_back`, an `unprobed_reason` for `access_uncrossable`. Inferred contracts

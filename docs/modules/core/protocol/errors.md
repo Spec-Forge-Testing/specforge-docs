@@ -202,7 +202,7 @@ cache, so asking again does not pay for them again
 
 | `data.cause` | When | Each endpoint's `reason` | `data.parameter` |
 | --- | --- | --- | --- |
-| `access_uncrossable` | An `auth` run crossed no endpoint: none that is not public declares an access policy, or none it declares can be crossed | Its [`unprobed_reason`](vocabularies.md#unprobed-reason) | absent: a producer whose contracts declare crossable policies lifts it |
+| `access_uncrossable` | An `auth` run crossed no endpoint: none that is not public declares an access policy, or none it declares can be crossed. Decided after the run's walk, so the provisioning requests it sent trying to create owner resources may already be on the wire and in the trace | Its [`unprobed_reason`](vocabularies.md#unprobed-reason) | absent: a producer whose contracts declare crossable policies lifts it |
 | `held_back` | The safety guard holds back every endpoint of the run; nothing is sent | Its `hold_reason` | `allow_side_effects` |
 
 `vocabulary.nothing_verified_causes` carries each cause with its label.

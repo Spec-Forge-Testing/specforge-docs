@@ -15,7 +15,10 @@ of two **grounds**:
   the line: `if len(password) < 12:`, a rejection message, a sentence of the
   description. Spec Forge does not take the model's word for it: it looks for the
   quote in exactly what the model was shown. Found, the rule stays stated and
-  keeps the file and lines where it is written. Not found, or not given, the rule
+  keeps the file and lines where it is written. For a schema keyword the quote
+  must also be about it: name the field, sit in a function or place that names it,
+  or carry the keyword's value (`12` for a minimum length of 12, within one). Not
+  found, not given, or about something else, the rule
   is taken as **assumed**.
 - **Assumed.** Nothing you wrote says it, but what the field means suggests it:
   a quantity ordered is at least one, a date of birth is not in the future, a
@@ -58,7 +61,7 @@ Every finding, defect or suspicion, carries what you need to trace it back.
 
 | Row | What it says |
 | --- | --- |
-| Rule rests on | `stated` or `assumed`; for a rule the model called stated that could not be backed, why: it quoted nothing, or its quote is nowhere in what the model was shown |
+| Rule rests on | `stated` or `assumed`; for a rule the model called stated that could not be backed, why: it quoted nothing, its quote is nowhere in what the model was shown, or its quote names neither the field nor the rule's value |
 | Quote | The text the model quoted |
 | Written at | Where the rule is written: `file:lines (function)` in your code, the place in the OpenAPI operation, or the place in your fixture file |
 | The model's assumption | For an assumed rule, what the model assumed |
@@ -80,7 +83,9 @@ seed case, by its description and id, or the value the contract seeds:
 
 **Seed cases.** A producer can offer whole requests worth sending, the
 combinations a handler treats differently, and say whether the server should
-reject or accept each one. A case expected to be rejected that gets a 2xx is an
+reject or accept each one: what the code means to do, so an input a check says
+must be stopped is expected rejected even when the code lets it through. A case
+expected to be rejected that gets a 2xx is an
 `expected_rejection` finding; a case expected to be accepted that gets 400 or 422
 is an `expected_acceptance` finding. A case is judged only when every one of its
 values was sent and it does not contradict its own field's contract; otherwise it
@@ -119,4 +124,6 @@ compared with one without it on equal terms.
   [ADR-202](../modules/specforge-engine/adr/findings.md#adr-202); how a quote is
   checked: [ADR-201](../modules/core/adr/inference.md#adr-201).
 - Comparing runs: `compare_runs` matches suspicions apart from defects, in
-  `llm_suspicion_changes`.
+  `llm_suspicion_changes`. A finding that is a defect in one run and a suspicion in
+  the other, because its quote was backed in one and not the other, is reported
+  once as `inconclusive` with the caveat `grounds_changed`: neither fixed nor new.

@@ -76,7 +76,7 @@ differs is the standing of its rule: nothing the model was shown states it.
 | `metrics`, `endpoints[]`, a run's row | `findings_llm_suspicions`, never in `findings_confirmed` nor `findings_unique` |
 | `get_run`, `get_finding` | A finding of `kind` and `state` `llm_suspicion`, with a crash's fields |
 | `finding` event | `state` `llm_suspicion` ([events](events.md#the-event-catalog)) |
-| `compare_runs` | `llm_suspicion_changes`, shaped like `changes`; `changes` and `totals` count defects only |
+| `compare_runs` | `llm_suspicion_changes`, shaped like `changes`; `changes` and `totals` count defects only. A finding that is a defect in one run and a suspicion in the other is `inconclusive`, once, in `changes`, with the caveat [`grounds_changed`](vocabularies.md#caveats) |
 
 A suspicion never changes the signal: a run whose only findings are suspicions is
 `clean`. A replay judges no suspicion, so against a replay every one that is not
@@ -95,7 +95,7 @@ an intrinsic invariant, or a contract inferred without grounds.
 | --- | --- |
 | `basis` | `stated` (the code, the operation or the author states the rule) or `assumed` (the model assumed it from what the field means) |
 | `quote` | The text the model quoted for it; `null` for a rule it called assumed |
-| `downgraded` | `no_quote` or `quote_not_found` when the model called the rule stated and the core could not back it, so it is taken as `assumed`; `null` otherwise |
+| `downgraded` | Why a rule the model called stated is taken as `assumed`: `no_quote` (it quoted nothing), `quote_not_found` (the quote is not in what the model was shown) or `quote_unrelated` (a keyword's quote names neither its field, in the quote or in the function or spec pointer it was found in, nor its value); `null` otherwise. A business rule, an access policy and a seed case are never `quote_unrelated` |
 | `origin` | Where the quote, or the rule, is written: `{kind: "code", file, function, start_line, end_line}` (lines counted from 1, `file` relative to the analysis' tree), `{kind: "spec", pointer}` (a JSON Pointer into the operation the model was shown), `{kind: "fixture", file, pointer}`, or `null` |
 
 `inspect_finding_source` answers `rule_source` (`{file, function, start_line,

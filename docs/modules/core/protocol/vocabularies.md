@@ -160,7 +160,7 @@ still ran. `vocabulary.producer_note_kinds` carries each with its label.
 | `path_parameter` | A seed case's value for a path parameter was left out: the path names a stored resource, never a seeded value. |
 | `empty_seed_case` | A seed case left with no value to send was left out. |
 | `assumed_over_declared` | A schema keyword the model assumed, rather than quoted, gave way to the one the spec declares on the same field; `subject` is the keyword and where it was. |
-| `unverified_quote` | A rule the model said the code or the spec states was taken as assumed: it came without a quote, or its quote is not in what the model was shown; `subject` is the rule ([grounds](run-detail.md#grounds)). |
+| `unverified_quote` | A rule the model said the code or the spec states was taken as assumed: it came without a quote, its quote is not in what the model was shown, or a keyword's quote is about something else (`grounds.downgraded` says which); `subject` is the rule ([grounds](run-detail.md#grounds)). |
 ## `endpoints[].unprobed_reason` { #unprobed-reason }
 
 Why the `auth` mode crossed nothing at a targeted endpoint, the `resilience`
@@ -558,6 +558,7 @@ empty, the `replay` caveat included: a comparison against a replay is never
 | `oracle_scope_differs` | `pair` | Different oracles judged the two runs. |
 | `strategy_differs` | `pair` | The analyses ran different [strategies](#strategy), so one may have judged with oracles or drawn values the other never did. |
 | `examples_differs` | `pair` | The analyses asked a different number of examples of each endpoint; silent when either recorded none. |
+| `grounds_changed` | `pair` | The same finding reads as a defect in one run and as an LLM suspicion in the other: the rule it cites rests on a quote verified in one run and not in the other; `detail` says how many findings. |
 | `contract_extra_differs` | `pair` | A producer's contract added a different number of examples (`budget_by_phase[].extra` summed) on an endpoint both runs exercised; `detail` says on how many of them. A defect a contract's value found may be missing from the other run without being fixed. |
 | `scope_differs` | `pair` | The runs exercised different endpoints; `detail` says how many of the first run's the second exercised and, when it covered more, how many the first did not. |
 | `replay` | `after` | The later run is a replay: it records verdicts per recorded request, not crashes. |
@@ -574,6 +575,15 @@ stored before protocol `0.2.2`, or one whose stored verdicts are incomplete) rea
 its report, and only it can raise a `replay_report_*` reason. With any of the five, every change but a
 `new` one is `inconclusive`: without the replay's verdicts, nothing can be ruled
 resolved or persisted.
+
+**A defect in one run, a suspicion in the other.** A defect one run lacks while
+that run has the same finding (method, path, invariant, status and identity)
+among its [LLM suspicions](run-detail.md#llm-suspicions) is neither
+`possibly_resolved` nor `new`: it is `inconclusive`, once, in `changes`, with
+`before_id` and `after_id` naming the finding in each run, one of them a
+suspicion, and the `grounds_changed` caveat. Its suspicion leaves
+`llm_suspicion_changes` unless both runs have it. `grounds_changed` degrades no
+other change.
 
 **Per endpoint.** A run exercised an endpoint when it reached the wire for it and
 did not leave it unprobed, an endpoint reached by a transition included, and so

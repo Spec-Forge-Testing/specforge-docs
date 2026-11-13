@@ -1008,6 +1008,6 @@ no such resource, the finding stays unreproduced.
 
 ### Consequences
 
-A defect on a write that consumes its resource is confirmed where it used to
-end unreproduced, at the cost of one more request per re-send. Its reproducer
+A defect on a write that consumes its resource is confirmed instead of ending
+unreproduced, at the cost of one more request per re-send. Its reproducer
 can name another resource's id than the request first observed.

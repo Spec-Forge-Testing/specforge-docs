@@ -182,8 +182,8 @@ how many contracts the cache served and how many the model inferred. On a
 plan: it traces every endpoint, keys it, looks it up, and prices the pending
 prompts in one batch through the LLM package's estimator, without calling the
 model. Each call is priced twice. The **expected** cost assumes one answer of the
-profile's measured length (`qa` 656 output tokens, `security` 928). The **worst
-case** assumes the same answer length, re-asked up to twice on each model, on
+profile's measured length (`qa` 1880 output tokens, `security` 2115). The **worst
+case** assumes the same answer length, re-asked once on each model, on
 every model of the chain in turn: it is what one inference may cost when every
 answer is unusable. It builds the same producer a run would, so it needs the same model chain
 and keys. Its result is listed in

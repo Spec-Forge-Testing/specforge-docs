@@ -236,7 +236,7 @@ example count does not change the estimate.
 | `untraced` | The endpoints whose code could not be traced (`method`, `path_url`, `reason`, a [sentence](errors.md#analysis-failure-reasons) naming the endpoint and the cause); they would run schema-only. |
 | `cached`, `pending` | How many contracts the cache would serve, and how many the model would infer. |
 | `input_tokens`, `output_tokens`, `cost_usd` | The totals at the expected answer length, one answer per call; `cost_usd` is `null` when unpriced. |
-| `worst_case_cost_usd` | The pending inferences' worst case at the expected answer length: every re-ask and every fallback model included. `null` when some model of the chain has no price. |
+| `worst_case_cost_usd` | The pending inferences' worst case at the expected answer length: one re-ask on each model and every fallback model included. `null` when some model of the chain has no price. |
 | `unpriced_models` | The models of the chain, primary or fallback, the pending inferences' worst case has no price on; `[]` when every model is priced. A capped run is refused naming one of them, so a client can say which before sending it. |
 | `max_cost_usd` | The `producer.max_cost_usd` echoed back, or `null`. |
 | `exceeds_cap` | Whether `worst_case_cost_usd` passes that cap; `null` without a cap or when the worst case is unpriced. |

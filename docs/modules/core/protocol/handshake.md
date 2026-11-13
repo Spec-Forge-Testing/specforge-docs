@@ -241,6 +241,12 @@ version; the lines below are the summary.
       object that admits extra keys but declares properties of its own
       ([ADR-209](../../specforge-engine/adr/compiler.md#adr-209)); a
       `latency_sla` finding shows the payload slow most often.
+    - *Changed:* `estimate_inference` expects a contract answer of 1880 output
+      tokens for `qa` and 2115 for `security`, so its `output_tokens`,
+      `cost_usd` and `run.inference_cost.estimated` are higher for the same
+      work; a model whose answer fails validation is asked again once, not
+      twice, so `worst_case_cost_usd` counts two answers per model, not three. Contracts cached by an earlier
+      version are not reused: the prompt changed, and it is part of the cache key.
     - *Changed:* the `stateful` mode's summary says what the run sends: sequences
       of about 10 calls until it has sent a floor of requests that grows with the
       examples asked for and the endpoints, then until 4 passes in a row find

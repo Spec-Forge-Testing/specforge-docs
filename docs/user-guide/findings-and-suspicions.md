@@ -117,7 +117,7 @@ An assumed item left unexercised is marked out.
 An `inference` producer asks a model once per endpoint whose contract is not in
 the cache, and the run's report records it in
 [`inference_cost`](reports.md#the-runs-inference). Before a run, `estimate_inference`
-prices it, with a worst case that counts every re-ask on every model of the
+prices it, with a worst case that counts one re-ask on every model of the
 chain; a run with a cap holds that worst case for each inference before it starts
 ([the estimate](../modules/core/protocol/operations.md#estimate-inference)).
 

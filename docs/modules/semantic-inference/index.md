@@ -81,7 +81,7 @@ built-in list without it.
 | Name | Where | What it is |
 | --- | --- | --- |
 | `SemanticInferenceEngine` | `ai.engine` | The entry point (below). |
-| `EXPECTED_CONTRACT_OUTPUT_TOKENS` | `ai.engine` | The output size an estimate assumes per contract, one value per profile (`qa` 656, `security` 928 tokens). |
+| `EXPECTED_CONTRACT_OUTPUT_TOKENS` | `ai.engine` | The output size an estimate assumes per contract, one value per profile (`qa` 1880, `security` 2115 tokens). |
 | `InferenceRequest`, `StateHints`, `ProducedBundle`, `ConsumedBundle` | `ai.models` | The input of one inference. |
 | `PromptFingerprint`, `RenderedPrompt` | `ai.models` | What shapes a prompt; a rendered prompt. |
 | `AgentProfile`, `ContractSection`, `resolve_agent_profile`, `sections_for` | `ai.agents` | The profile registry. |

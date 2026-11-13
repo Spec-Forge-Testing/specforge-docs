@@ -107,13 +107,21 @@ be accepted alike.
 A **sibling** is the same request with every movable value changed. Candidates come
 in order: free rotations, rotations of values the run accepted, the simplest free
 valid value, free values of at least 4 and 16 characters, then accepted values. It
-sends up to `SIBLING_TRIES` (4) and is judged by the first the target accepts.
+sends up to `SIBLING_TRIES` (4), stops at the first answer that is not a 400 or a
+422, and is judged by it.
+
+**A sibling that misses its resource.** A sibling answered 404 (`MISSING_RESOURCE_STATUS`)
+may have moved a reference to a resource the target does not hold, such as a
+category id. One more request then goes out: every movable value at the
+endpoint's simplest valid request's ([the minimal draw](shrink-limits.md#minimal-draw)),
+and the verdict reads its answer instead. When that request moves nothing, the
+404 stands.
 
 | What happens | Verdict |
 | --- | --- |
 | No sibling can be built | `unverified`, `source` `reproduction` |
 | Every sibling is rejected | `unverified`: the tries ran out, and nothing vouches either way |
-| An answer other than 400, 422 or a 2xx | `unverified` |
+| An answer other than 400, 422 or a 2xx (a 404 after the simplest request too) | `unverified` |
 | Accepted, and the finding shows a store refusal | `refuted` |
 | Accepted, the resend accepted, another identity accepts | `confirmed` |
 | Accepted, the resend accepted, another identity rejected alike | `refuted`, unless the [named values](#named-value) are rejected for their content, then `confirmed` |
@@ -221,6 +229,7 @@ with every field below since report `schema_version` 1.24.
 | --- | --- |
 | Which control judges an invariant | `CONTROL_CHECKS` in `control_checks.py` |
 | How many rotations or siblings are tried | `CONTROL_ROTATIONS`, `SIBLING_TRIES` in `runtime/fuzzers/stateless/constants.py` |
+| Which sibling answer sends the simplest request | `MISSING_RESOURCE_STATUS` in the same file; `simplest_sibling` in `sibling_payloads.py` |
 | Which formats never rotate | `_KEPT_FORMATS` in `rotated_strings.py` |
 | How much of a run is remembered | `ACCEPTED_ENTRIES_PER_ENDPOINT` in `runtime/http/constants.py` |
 | How far inside an edge the known answer moves | `KNOWN_ANSWER_EDGE_DISTANCES` in `runtime/fuzzers/stateless/constants.py` |

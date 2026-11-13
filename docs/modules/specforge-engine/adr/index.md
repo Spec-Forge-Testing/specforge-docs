@@ -68,7 +68,7 @@ missing here belongs to another module:
 | [compiler.md](compiler.md) | strategy_compiler | How a field becomes a strategy, which leaves of a body are poisoned, and how mutation and mass assignment reach them |
 | [engine.md](engine.md) | engine | Requests and their intent, oracles, findings, counters, runners, replay |
 | [measurement.md](measurement.md) | measurement | How the default numbers are measured and set, what an inferred contract adds, and how what a producer's contract gives is funded and accounted for |
-| [findings.md](findings.md) | findings | How a finding is classified, what it observed, when a value provably breaks its contract, how findings are told apart, refuted, left unverified and redacted, when one is an LLM suspicion, and how a seed case and a latency finding are judged |
+| [findings.md](findings.md) | findings | How a finding is classified, what it observed, when a value provably breaks its contract, how findings are told apart, refuted, left unverified and redacted, when one is an LLM suspicion, how a seed case and a latency finding are judged, and how an accepted write is re-sent to confirm it |
 | [strategies.md](strategies.md) | strategies | What a strategy decides, the oracles it opts into, the traits each runner declares, and how what a run can find is derived |
 | [runners.md](runners.md) | runners | How far each runner reaches: what a stateful pass draws, how a consumer gets its values, when the run stops and how it tells defects apart, how a sequence is re-sent and replayed, the later echo, the stateless run corpus, refuting a whole-request rejection, the resilience base request and its confirmation, provisioning a resource, links into reserved headers |
 
@@ -239,3 +239,4 @@ missing here belongs to another module:
 | [ADR-211](findings.md#adr-211) | findings | A finding stays on the keyword its request first broke, a rejection worded for another field is not this field's, and an accepted write is confirmed on fresh strings |
 | [ADR-212](runners.md#adr-212) | runners | A resource is provisioned with its producer's simplest request first, and a `role_only` endpoint is crossed against a resource a holder of the role created |
 | [ADR-214](runners.md#adr-214) | runners | A stateless run confirms what the other endpoints found before it sends what destroys a resource |
+| [ADR-216](findings.md#adr-216) | findings | An accepted write whose resource is gone is confirmed at another resource its caller created |

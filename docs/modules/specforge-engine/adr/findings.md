@@ -803,6 +803,12 @@ the stronger claim about the same rejection. Either absorption holds only when t
 absorbing finding stands at least as firm ([ADR-202](#adr-202)): a suspicion never
 hides a defect.
 
+**A rejection the case expected is no incomplete contract.** A request sent as
+the whole contract declares and rejected is a `contract_completeness` finding. A
+case expecting rejection is such a request, so its rejection is reported only
+when it breaks one business rule of the contract, citing that rule; otherwise it
+is the outcome the case foresaw, and no finding is reported.
+
 **A case expecting acceptance is judged only on a rejection of its own values.**
 A 400 or 422 that names only a field the case leaves free, or that refuses what the
 store already holds, is not the case's finding: it is judged as the rejection of a
@@ -927,9 +933,14 @@ other answer leaves it unverified.
 When confirming a finding the target accepted, a re-sent write refused as taken
 (a `409`, or a store refusing what it holds) goes once more, its free strings
 rotated to values the run never saw accepted, the first of `UNTAKEN_ROTATIONS`
-(64) candidate rotations that qualifies. The value under test, a seed case's
-values and the values from the run's corpus stay as sent. The one re-send serves
-the reproduction, the shrink and the report.
+(64) candidate rotations that qualifies. The value under test and the values from
+the run's corpus stay as sent. A seed case's values stay too, but for a string
+under the field the refusal names as taken (by `loc`, message key or in its
+words) when the case sets other fields as well: what such a case tests is the
+combination, and a unique value it fixed would otherwise leave a real finding
+unreproduced. A case that sets that field alone keeps it, since that value is
+what it tests; a refusal that names no field moves none of the case's values.
+The one re-send serves the reproduction, the shrink and the report.
 
 **A value breaking several inferred keywords rests on the firmest.** When the
 first keyword the validator reports for a field rests on an assumption, the finding
@@ -952,3 +963,51 @@ past a stated `maxLength` that also breaks an assumed `pattern` is a defect on t
 More `input_validation` findings are confirmed, marked `partly_enforced_rule`,
 where they were refuted. A field with two inferred keywords can carry one
 finding per keyword. Confirming a write can cost one more request.
+
+---
+
+## ADR-216 — An accepted write whose resource is gone is confirmed at another resource its caller created { #adr-216 }
+
+**Status:** accepted · Extends [ADR-211](#adr-211) · `runtime/fuzzers/stateless/rerouted_resend.py`, `runtime/fuzzers/stateless/fresh_resources.py`, `runtime/fuzzers/stateless/corpus.py`, `runtime/fuzzers/stateless/materialize.py`, `runtime/fuzzers/stateless/constants.py`
+
+### Context
+
+A finding is confirmed by re-sending its request. When that request was a write
+the target accepted, the first send may have used up the resource it addressed:
+an order transferred to someone else, a payment already made, a booking
+cancelled. The re-send then gets a `403`, `404`, `409` or `410` for that reason
+alone, and a real defect, such as an over-long note accepted on a transfer,
+ends unreproduced. Fresh strings ([ADR-211](#adr-211)) do not help: the path
+still names the spent resource.
+
+### Decision
+
+**The re-send goes once more at a fresh resource.** When a write whose own
+answer was a 2xx is re-sent and answered as if its resource were gone
+(`GONE_RESOURCE_STATUSES`), it is sent once more with the last path parameter a
+bundle fills set to another resource of that bundle. That answer is the one
+judged: a different answer leaves the finding unreproduced, and the request
+reported is the one that reproduced.
+
+**Only a resource the same caller created, unspent.** The corpus records the
+identity whose request created each value. A fresh resource is one the
+re-sending caller created in the run, that no finding pinned, that the endpoint
+never wrote to with a 2xx, and that no other re-send took; the newest first, at
+most `FRESH_RESOURCES_PER_ENDPOINT` (8) per endpoint. Nothing is created: with
+no such resource, the finding stays unreproduced.
+
+### Rejected
+
+- **Any resource of the bundle, whoever created it.** Another caller's resource
+  is refused for ownership, a `403` like the spent one, so the re-send would
+  read unreproduced for that reason instead.
+- **Re-aiming a read, or a finding whose own answer was a rejection.** Neither
+  changed the resource it addressed, so a refusal at it is the answer to judge.
+- **A resource a finding pinned, or one the endpoint already wrote to.** The
+  first is another finding's reproducer; the second may be spent the same way.
+
+### Consequences
+
+A defect on a write that consumes its resource is confirmed where it used to
+end unreproduced, at the cost of one more request per re-send. Its reproducer
+can name another resource's id than the request first observed.

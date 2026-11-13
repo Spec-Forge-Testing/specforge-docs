@@ -100,7 +100,8 @@ reject or accept each one: what the code means to do, so an input a check says
 must be stopped is expected rejected even when the code lets it through. A case
 expected to be rejected that gets a 2xx is an
 `expected_rejection` finding; a case expected to be accepted that gets 400 or 422
-is an `expected_acceptance` finding. A case is judged only when every one of its
+is an `expected_acceptance` finding; a case expected to be rejected that is
+rejected is the outcome it foresaw, not a valid request rejected. A case is judged only when every one of its
 values was sent and it does not contradict its own field's contract; otherwise it
 is sent without being judged, and the contract's account says why.
 

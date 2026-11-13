@@ -260,8 +260,20 @@ reproducer: `status_code`, `minimal_payload`, `sanitized_headers` and `response_
 | `control` | TEXT | yes | — | JSON object of the control request the finding was judged against: its status, latency and error; NULL unless a control was sent. |
 | `replay_request_recorded` | INTEGER | yes | — | Whether the trace its run recorded holds the request the finding was reported from, matched when the finding is written against the trace as a replay later reads it; NULL for a finding stored before it was kept. |
 | `replay_matcher_version` | INTEGER | yes | — | The version of the trace matcher that gave `replay_request_recorded`, at least `1`; NULL exactly when that answer is. A reader whose matcher has another version treats the answer as unknown. |
+| `request_origin` | TEXT | yes | — | How the request's payload was built: `drawn` by a strategy, a rule's `witness`, or `seeded` with a value the contract proposes. |
+| `seed_case_id` | TEXT | yes | — | The contract's seed case the request was sent for; NULL when it was sent for none. |
+| `seed_case_description` | TEXT | yes | — | What the contract says that seed case covers; NULL exactly when `seed_case_id` is. |
+| `rule_basis` | TEXT | yes | — | What the cited rule rests on: `stated` or `assumed`; NULL when no producer grounded it. |
+| `rule_grounds` | TEXT | yes | — | JSON object of the rest of the rule's grounds: its quote, why a rule the model called stated was taken as assumed, and where the quote is; NULL exactly when `rule_basis` is. |
+| `reproducer_steps` | TEXT | yes | — | JSON list of the steps of a stateful finding's minimal sequence: each one's position in the run's trace and how it binds to the steps before it; NULL on a stateless finding. |
+| `observed_payload` | TEXT | yes | — | JSON payload, keyed by zone, the first request of an unconfirmed finding's group sent, secrets already redacted by the engine; NULL on a reproduced finding, whose `minimal_payload` holds its reproducer. |
+| `observed_headers` | TEXT | yes | — | JSON request headers that request carried, secrets already redacted by the engine; NULL exactly when `observed_payload` is. |
 
-Constraints: `analysis_endpoint_id` is `ON DELETE SET NULL`. `phase` and `state` are free
+Constraints: `analysis_endpoint_id` is `ON DELETE SET NULL`. `request_origin` CHECK in its
+three values and `rule_basis` CHECK in its two. Three pairs are
+[paired](#paired-columns): `seed_case_id` with `seed_case_description`, `rule_basis` with
+`rule_grounds`, `observed_payload` with `observed_headers`. Every column from
+`request_origin` on is NULL in a row written before it existed. `phase` and `state` are free
 text: the engine owns those vocabularies, and storage does not CHECK them. Neither a finding's
 category nor its severity is stored: both are fixed per invariant by the engine's registry and
 derived when the finding is read
@@ -398,6 +410,7 @@ it first so the caller gets a typed error naming the values ([ADR-079](adr/repos
 | `run_endpoint_stats` | `held_back_by` and `held_back_via` are both set or both NULL. | `IncompleteHoldError` |
 | `analysis_endpoints` | `exclusion_reason` is set exactly when `disposition` is `excluded`. | `IncompleteExclusionError` |
 | `artifacts` | Exactly one of `analysis_id` and `run_id` is set. | `InvalidArtifactLevelError`, raised by `save_artifact` before any file is written |
+| `findings` | `seed_case_id` and `seed_case_description`, `rule_basis` and `rule_grounds`, `observed_payload` and `observed_headers`: each pair both set or both NULL. | pydantic's `ValidationError`, raised when the `FindingRecord` is built |
 
 ## Schema version { #schema-version }
 

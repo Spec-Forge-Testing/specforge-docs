@@ -8,7 +8,7 @@ a run needs to be audited, compared with another run and reproduced.
 flowchart LR
     Core["core persistence"] --> Tx["StorageEngine.transaction()"]
     Tx --> UoW["UnitOfWork"]
-    UoW --> Repos["11 repositories"]
+    UoW --> Repos["18 repositories"]
     Repos --> DB[("SQLite")]
     Core --> Ops["save_artifact / load_artifact"]
     Ops -->|"the row"| UoW
@@ -68,17 +68,17 @@ block exits and rolls back on any exception ([transactions](transactions.md)).
 
 ## Public API { #public-api }
 
-Import from the top-level `storage` package. It exports 75 names:
+Import from the top-level `storage` package. Its main exports:
 
 | Group | Names | Described in |
 | --- | --- | --- |
 | Engine (2) | `StorageEngine`, `UnitOfWork` | [Transactions](transactions.md) |
 | Artifact operations (7) | `save_artifact`, `load_artifact`, `compress_artifact`, `reclaim_artifacts`, `scan_orphans`, `collect_orphans`, `MIN_COMPRESSIBLE_BYTES` | [Artifacts](artifacts.md) |
-| Records and value objects (17) | `ProjectRecord`, `AnalysisRecord`, `AnalysisEndpointRecord`, `AnalysisEndpointContractRecord`, `ProducedContractRecord`, `RunRecord`, `RunFilter`, `RunMetricsRecord`, `RunEndpointStatsRecord`, `LatencyRecord`, `FindingRecord`, `RunProducerExclusionRecord`, `ArtifactRecord`, `InferredContractRecord`, `ReclaimOutcome`, `OrphanScan`, `CollectOutcome` | [Data model](data-model.md); the last three in [retention](artifacts.md#retention) |
-| Vocabularies (4) | `RUN_STATUSES`, `ORACLE_SCOPES`, `ENDPOINT_DISPOSITIONS`, `PRODUCER_EXCLUSION_DISPOSITIONS` | [Closed vocabularies](data-model.md#closed-vocabularies) |
-| Repositories (11) | `ProjectRepository`, `AnalysisRepository`, `AnalysisEndpointRepository`, `AnalysisEndpointContractRepository`, `RunRepository`, `RunMetricsRepository`, `RunEndpointStatsRepository`, `FindingsRepository`, `RunProducerExclusionsRepository`, `ArtifactRepository`, `InferredContractsRepository` | [Repositories](repositories.md#reference) |
+| Records and value objects (19) | `ProjectRecord`, `AnalysisRecord`, `AnalysisEndpointRecord`, `AnalysisEndpointContractRecord`, `ProducedContractRecord`, `RunRecord`, `RunFilter`, `RunMetricsRecord`, `RunEndpointStatsRecord`, `LatencyRecord`, `FindingRecord`, `RunProducerExclusionRecord`, `RunProducerNoteRecord`, `ReplayDefectVerdictRecord`, `ArtifactRecord`, `InferredContractRecord`, `ReclaimOutcome`, `OrphanScan`, `CollectOutcome` | [Data model](data-model.md); the last three in [retention](artifacts.md#retention) |
+| Vocabularies (8) | `RUN_STATUSES`, `ORACLE_SCOPES`, `ENDPOINT_DISPOSITIONS`, `PRODUCER_EXCLUSION_DISPOSITIONS`, `PRODUCER_NOTE_KINDS`, `REPLAY_VERDICTS`, `REQUEST_ORIGINS`, `RULE_BASES` | [Closed vocabularies](data-model.md#closed-vocabularies) |
+| Repositories (13) | `ProjectRepository`, `AnalysisRepository`, `AnalysisEndpointRepository`, `AnalysisEndpointContractRepository`, `RunRepository`, `RunMetricsRepository`, `RunEndpointStatsRepository`, `FindingsRepository`, `RunProducerExclusionsRepository`, `RunProducerNotesRepository`, `ReplayDefectVerdictsRepository`, `ArtifactRepository`, `InferredContractsRepository`; the five of a finding's follow-up records are on [Finding follow-up records](finding-records.md) | [Repositories](repositories.md#reference) |
 | Configuration (1) | `get_artifacts_root` | [Where the data lives](#where-the-data-lives) |
-| Exceptions (33) | `StorageError` and every subclass | [Errors](errors.md) |
+| Exceptions (35) | `StorageError` and every subclass | [Errors](errors.md) |
 
 `get_db_path` and `resolve_data_dir` are exported from `storage.config`, not
 from `storage`.

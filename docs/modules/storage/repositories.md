@@ -68,6 +68,8 @@ exceptions:
 | `run_endpoint_stats` | `held_back_by` and `held_back_via` are both set or both null | `IncompleteHoldError` |
 | `run_endpoint_stats` | `truncation_detail` is null when there is no truncation reason | `TruncationQualifierWithoutReasonError` |
 | `run_producer_exclusions` | `disposition` is in `PRODUCER_EXCLUSION_DISPOSITIONS` | `InvalidDispositionError` |
+| `run_producer_notes` | `kind` is in `PRODUCER_NOTE_KINDS` | `InvalidProducerNoteKindError` |
+| `findings` | `rule_basis`, when set, is in `RULE_BASES` | `InvalidRuleBasisError` |
 
 `RunRepository.create` checks in the order of the table: status, then oracle
 scope, then the reason and endpoint pair, then the qualifiers. A second run with
@@ -140,12 +142,15 @@ others.
 | `RunEndpointStatsRepository` | `run_endpoint_stats` | `create(record)` | `int` | `IncompleteHoldError`, `TruncationQualifierWithoutReasonError` |
 | | | `get_by_id(run_endpoint_stats_id)` | `RunEndpointStatsRecord` | `RunEndpointStatsNotFoundError` |
 | | | `list_by_run(run_id)` | `list[RunEndpointStatsRecord]` | — |
-| `FindingsRepository` | `findings` | `create(record)` | `int` | — |
+| `FindingsRepository` | `findings` | `create(record)` | `int` | `InvalidRuleBasisError` |
 | | | `get_by_id(finding_id)` | `FindingRecord` | `FindingNotFoundError` |
 | | | `list_by_run(run_id)` | `list[FindingRecord]`, every state | — |
 | | | `count_by_state(run_id)` | `dict[str, int]`; states with no findings are absent | — |
 | `RunProducerExclusionsRepository` | `producer_exclusions` | `create(record)` | `int` | `InvalidDispositionError` |
 | | | `list_by_run(run_id)` | `list[RunProducerExclusionRecord]` by id | — |
+| `RunProducerNotesRepository` | `producer_notes` | `create(record)` | `int` | `InvalidProducerNoteKindError` |
+| | | `list_by_run(run_id)` | `list[RunProducerNoteRecord]` in stored order | — |
+| | | `count_by_run(run_id)` | `int`, without reading the notes | — |
 | `ReplayDefectVerdictsRepository` | `replay_defect_verdicts` | `create(record)` | `int` | — |
 | | | `list_by_run(run_id)` | `list[ReplayDefectVerdictRecord]` in stored order | — |
 | | | `list_by_analysis(analysis_id)` | `dict[int, list[ReplayDefectVerdictRecord]]`: every replay's verdicts by run id, each in stored order | — |

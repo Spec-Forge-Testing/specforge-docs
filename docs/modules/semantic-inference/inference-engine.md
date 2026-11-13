@@ -43,7 +43,10 @@ generate_contract(request: InferenceRequest, *, agent: str)
    `EndpointContract` as the response model: the `system` block marked
    `cacheable`, then the `user` block. The engine allows one output re-ask on each
    model when an answer fails validation (`_MAX_OUTPUT_REASKS`), the same for the
-   discovery and response calls; transport retries and fallbacks are `llm`'s
+   discovery and response calls. A contract answer is capped at
+   `CONTRACT_OUTPUT_TOKEN_CEILINGS[profile]`, `CONTRACT_OUTPUT_HEADROOM` (8) times
+   the profile's expected output, so a runaway answer is cut off (`output_truncated`)
+   and the next model of the chain is asked; transport retries and fallbacks are `llm`'s
    policy, described in [LLM › Failures and the policy](../llm/reference.md#failures-and-the-policy).
 4. **Bind identity and sections.** The contract is copied with the request's
    `method` and `path_url`, whatever the model wrote there, and with every

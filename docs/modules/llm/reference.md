@@ -90,7 +90,7 @@ second looks in the process environment and in the env file.
 | Method | Returns | Arguments |
 | --- | --- | --- |
 | `complete_text` | the text and the `LLMUsageMetrics` of the request that answered | `messages`, `max_tokens`, `temperature` |
-| `complete_structured` | an instance of `response_model` and the `StructuredCompletionMetrics` of the whole call | `messages`, `response_model`, `max_retries` (instructor re-asks, default `2`), `mode` (overrides the provider's mode) |
+| `complete_structured` | an instance of `response_model` and the `StructuredCompletionMetrics` of the whole call | `messages`, `response_model`, `max_retries` (instructor re-asks, default `2`), `max_output_tokens` (the most each answer may take; the provider's own maximum when `None`), `mode` (overrides the provider's mode) |
 
 A `Message` is a dict with `role`, `content` and an optional `cacheable` flag.
 `temperature` is sent only to a model that LiteLLM's model map says accepts it;
@@ -121,7 +121,8 @@ first, so the real cause is classified.
 | `provider_unavailable` | 500, 502, 503, a connection error, or any other API error with a status of 500 or more | retry the same model, then fall back | — |
 | `model_not_found` | 404: the model does not exist | fall back | — |
 | `context_too_long` | the prompt exceeds the context window | fall back | — |
-| `invalid_output` | the answer still fails validation after instructor's re-asks, cannot be parsed, is incomplete, or is empty | fall back | — |
+| `invalid_output` | the answer still fails validation after instructor's re-asks, cannot be parsed, or is empty | fall back | — |
+| `output_truncated` | the answer was cut off at the call's `max_output_tokens` | fall back | — |
 | `authentication` | 401 or 403 | stop | `LLMAuthenticationError` |
 | `request_rejected` | 400, 422, or any other API error below 500 | stop | `LLMRequestRejectedError` |
 | `configuration` | a parameter the model does not support, or a mode instructor cannot build | stop | `LLMConfigurationError` |

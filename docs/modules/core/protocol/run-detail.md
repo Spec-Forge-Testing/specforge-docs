@@ -25,7 +25,8 @@ reads the run, and only `get_run` answers it.
 | `findings_raw` | Violations seen while exploring: a response that breaks two rules counts twice. In a stateful run, each confirmed report once, plus every occurrence of its refuted, unverified and flaky findings. |
 | `findings_confirmed` | Shrunk representatives that reproduced, a second cause included, before deduplication. Where a runner does not shrink (`resilience`, `auth`, and the latency findings and crashes of `performance`), each distinct defect observed. |
 | `findings_unique` | Confirmed reports after deduplication: as many as the report document's `defects`. |
-| `findings_llm_suspicions` | Reports that reproduced like a confirmed one against a rule only the model assumed: as many as the report document's `llm_suspicions`, never in `findings_confirmed` nor `findings_unique` ([below](#llm-suspicions)). Also on each entry of `endpoints` and on a run's row in `list_runs`. |
+| `findings_llm_suspicions` | Reports that reproduced like a confirmed one against a rule only the model assumed, after deduplication: as many as the report document's `llm_suspicions`, never in `findings_confirmed` nor `findings_unique` ([below](#llm-suspicions)). Also on each entry of `endpoints`, whose entries add up to it, and on a run's row in `list_runs`. |
+| `findings_llm_suspicions_covered` | The suspicions a confirmed defect of the run already covers: the entries of `llm_suspicions` whose [`covered_by`](#covered-suspicions) is not `null`. Counted when the report is built or `get_run` reads the run, never stored; always `0` in a replay. Not on a run's row in `list_runs`. |
 | `findings_collapsed` | Occurrences left unshrunk because a faithful representative of their signature stands for them. |
 | `findings_flaky` | Occurrences shrinking tried and could not reproduce a second time: not findings, and not distinct defects. |
 | `findings_unverified` | Occurrences never tried (the run ended first, or the search had no candidate) or whose control request could not judge them; in a stateful run, what the step controls left unjudged; in `auth`, every finding only a contract can judge. |
@@ -74,7 +75,7 @@ differs is the standing of its rule: nothing the model was shown states it.
 | Where | What it says |
 | --- | --- |
 | Report document | `llm_suspicions`, each entry shaped like one of `defects`; `defects` never holds one |
-| `metrics`, `endpoints[]`, a run's row | `findings_llm_suspicions`, never in `findings_confirmed` nor `findings_unique` |
+| `metrics`, `endpoints[]`, a run's row | `findings_llm_suspicions`, never in `findings_confirmed` nor `findings_unique`; `metrics.findings_llm_suspicions_covered`, how many a defect covers |
 | `get_run`, `get_finding` | A finding of `kind` and `state` `llm_suspicion`, with a crash's fields |
 | `finding` event | `state` `llm_suspicion` ([events](events.md#the-event-catalog)) |
 | `compare_runs` | `llm_suspicion_changes`, shaped like `changes`; `changes` and `totals` count defects only. A finding that is a defect in one run and a suspicion in the other is `inconclusive`, once, in `changes`, with the caveat [`grounds_changed`](vocabularies.md#caveats) |
@@ -84,6 +85,44 @@ A suspicion never changes the signal: a run whose only findings are suspicions i
 `new` is `inconclusive`. A client shows suspicions apart from defects, each with
 its rule's [grounds](#grounds), so a reader decides whether the API should hold
 that rule.
+
+### A suspicion a defect already covers { #covered-suspicions }
+
+A suspicion often restates a defect the run confirmed: the same request, or the
+same field broken under a rule the model assumed beside one the code states.
+Each suspicion says so in `covered_by`, in the report document's `llm_suspicions`
+and on a finding of `get_run` and `get_finding` of `kind` `llm_suspicion`:
+
+| Field | Holds |
+| --- | --- |
+| `invariant_violated`, `rule_id`, `status_code` | The covering defect's |
+| `finding_id` | The covering defect's id; only in `get_run` and `get_finding` |
+
+`covered_by` is `null` when no defect covers the suspicion. A confirmed defect of
+the same run on the same endpoint (method and path) covers it when:
+
+1. **It sent the same request**: its `minimal_payload` equals the suspicion's.
+2. **Otherwise, both are about the same field.** A finding is about the
+   `<zone>.<field>` (zone `path`, `query`, `header` or `body`) its `rule_id`
+   names, such as `query.q`; else the one its request poisoned
+   (`request.poisoned_zone` and `request.poisoned_field`); else the only field its
+   `minimal_payload` sets, when it sets exactly one and that one is not a path
+   parameter. Otherwise it is about no field, and only the same request covers
+   it: two findings sharing a resource's id are not the same problem, nor is a
+   field a request merely carries.
+
+A defect of category `contract_hygiene` never covers a suspicion: a gap in the
+specification says nothing of what the suspicion expects. Among several
+covering defects, the most severe covers it, and at the same severity the first
+in the order of `defects`.
+
+The cover is derived when the report is built or the run is read, so a run
+stored before protocol `0.2.6` has it too. It hides nothing: every suspicion
+stays in `llm_suspicions` and in `findings`, with its reproducer, and
+`findings_llm_suspicions` still counts them all. The HTML report folds the
+covered ones last in its **LLM suspicions** section, under "N more on a field a
+defect already covers", each card naming its defect in a **Covered by** row
+([ADR-215](../adr/core.md#adr-215)).
 
 ## Where a finding's rule comes from { #grounds }
 

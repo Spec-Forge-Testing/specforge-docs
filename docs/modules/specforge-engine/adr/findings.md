@@ -708,7 +708,8 @@ whose rule's `basis` is `assumed` settles as `LlmSuspicionFinding`, state
 rule the specification declares, a stated rule, or one no producer grounded.
 
 **A suspicion is reported apart and counted apart.** `findings_llm_suspicions`
-counts them, in the run and per endpoint; they never enter `findings_confirmed`,
+counts them after deduplication, like `findings_unique`, in the run and per
+endpoint; they never enter `findings_confirmed`,
 `findings_unique` or the run's signal, so a run whose only findings are
 suspicions is `clean`. The report document lists them in `llm_suspicions`,
 shaped like `defects`; a finding in `get_run` and `get_finding` has `kind`

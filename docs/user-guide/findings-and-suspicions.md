@@ -45,6 +45,19 @@ take. What is uncertain is the rule. Read it, and decide:
 - **The rule is wrong.** The model guessed: a balance may be overdrawn, a latitude
   may be negative. Dismiss it; the API is fine.
 
+**A suspicion a defect already covers.** One response, or one field, can break a
+rule your code states and a rule the model only assumed. The first is a defect,
+the second a suspicion about the same problem. Such a suspicion names the defect
+in `covered_by`, and the HTML report folds it last in the **LLM suspicions**
+section, under "N more on a field a defect already covers". Fix the defect first:
+the covered suspicion usually goes with it. A defect covers a suspicion of the
+same endpoint when both sent the same request, or when both are about the same
+field (the one the rule names, the one the request poisoned, or the only field
+the request sets outside the path); a gap in the specification
+(`contract_hygiene`) never covers one. Covered suspicions stay in the list and
+in `findings_llm_suspicions`; `findings_llm_suspicions_covered` says how many
+there are ([the rule in full](../modules/core/protocol/run-detail.md#covered-suspicions)).
+
 !!! note "Only rules that stand on their own"
     A suspicion comes only from a finding that breaks the very rule it cites: an
     accepted value an inferred keyword forbids, a rejected request an inferred

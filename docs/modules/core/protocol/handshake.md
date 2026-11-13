@@ -160,6 +160,15 @@ version; the lines below are the summary.
       in `findings_confirmed`, `findings_unique` nor the signal
       ([LLM suspicions](run-detail.md#llm-suspicions),
       [ADR-202](../../specforge-engine/adr/findings.md#adr-202)).
+      `findings_llm_suspicions` counts the suspicions after deduplication, as many
+      as `llm_suspicions` lists, and the entries of `endpoints` add up to it.
+    - *Added:* `covered_by` on every LLM suspicion, in the report and in `get_run`
+      and `get_finding`: the confirmed defect of the same run and endpoint that
+      already covers it, by the same request or the field both are about, `null`
+      when none does; `metrics.findings_llm_suspicions_covered` counts them.
+      Derived when read, so a run stored before has them too
+      ([covered suspicions](run-detail.md#covered-suspicions),
+      [ADR-215](../adr/core.md#adr-215)).
     - *Added:* `grounds` on every defect, suspicion and unconfirmed finding:
       `{basis, quote, downgraded, origin}`, what the rule a finding cites rests on
       and where it is written; `rule_source` on `inspect_finding_source`
@@ -242,7 +251,8 @@ version; the lines below are the summary.
 - **Report 1.28** — Additive; it ships with protocol `0.2.6`. Adds
   `llm_suspicions`, `producer_notes`, `recurring_findings` and `run.producer`;
   `grounds` and the request's `origin`, `seed_case_id` and
-  `seed_case_description` on every finding; `findings_llm_suspicions`,
+  `seed_case_description` on every finding; `covered_by` on every LLM
+  suspicion; `findings_llm_suspicions`, `findings_llm_suspicions_covered`,
   `stateful_chains` and `contract_items` in `metrics`; `requests_shrink`,
   `consumer_values`, `contract_usage` and `findings_llm_suspicions` on each
   endpoint; `extra` and `extra_run` in each phase of `budget_by_phase`;

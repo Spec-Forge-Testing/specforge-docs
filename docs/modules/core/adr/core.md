@@ -916,3 +916,61 @@ stay in the cache, so asking again does not pay for them again.
 Two error codes a client handles by marking the parameter named. An `auth` run
 whose endpoints declare no access policy is refused as `access_uncrossable`, like
 one whose policies cannot be crossed, rather than completing with zero requests.
+
+---
+
+## ADR-215 — An LLM suspicion names the confirmed defect that already covers it, by the same request or the same field, and stays listed { #adr-215 }
+
+**Status:** accepted · Builds on [ADR-202](../../specforge-engine/adr/findings.md#adr-202) · `services/report/suspicion_cover.py`, `services/report/builder/cover.py`, `services/report/builder/metrics.py`, `services/report/html.py`, `services/report/grounds_text.py`, `controllers/results/findings.py`, `controllers/results/browse.py`, `models/results/findings.py`
+
+### Context
+
+A run with a producer often reports the same problem twice: once as a defect,
+against a rule the code states, and once as an LLM suspicion, against a rule the
+model assumed for the same field or on the same request. A text past a stated
+`maxLength` that also breaks an assumed `pattern` is one such pair. Read side by
+side, the suspicions list repeats what the defects already say, and a reader
+spends the time meant for the open questions on settled ones.
+
+### Decision
+
+**Each suspicion names the defect that covers it.** `covered_by` holds the
+covering defect's `invariant_violated`, `rule_id` and `status_code`, plus its
+`finding_id` where findings have ids (`get_run`, `get_finding`), or `null`.
+`metrics.findings_llm_suspicions_covered` counts the suspicions covered.
+
+**Same endpoint, then the same request or the same field.** A confirmed defect
+of the same run, method and path covers a suspicion when its `minimal_payload`
+is the suspicion's, else when both are about the same field: the `<zone>.<field>`
+the `rule_id` names, else the poisoned field, else the only field the request
+sets outside the path. A finding about no field is covered only by the same
+request. Among several, the most severe, then the first in the order of
+`defects`.
+
+**A gap in the specification never covers.** A `contract_hygiene` defect says
+the specification is incomplete, nothing about what the suspicion's rule
+expects.
+
+**Derived when read, and nothing leaves the list.** The cover is computed when
+the report is built or `get_run` reads the run, never stored, so a run stored
+before has it too. Every suspicion stays in `llm_suspicions` and `findings` with
+its reproducer, and `findings_llm_suspicions` counts them all. The HTML report
+folds the covered ones last, each naming its defect.
+
+### Rejected
+
+- **Dropping a covered suspicion.** Its rule is still the model's and may still
+  be a separate problem; only a reader can tell, so it stays, shown second.
+- **Covering by any field the two requests share.** Two findings that address
+  the same resource by its id, or carry the same field without breaking it, are
+  not the same problem; only the field each one is about counts, never a path
+  parameter.
+- **Letting every category cover.** A `contract_hygiene` defect on the same
+  request, such as an undeclared status, would mark as settled a suspicion
+  whose rule nothing in that defect checked.
+
+### Consequences
+
+A client shows the open suspicions first and the covered ones apart, each linked
+to its defect by `finding_id`. The cover is a reading aid: a suspicion it
+misses stays open, and one it covers is still listed and counted.

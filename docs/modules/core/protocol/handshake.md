@@ -191,6 +191,16 @@ version; the lines below are the summary.
       `signatures_total` cover the `DELETE` endpoints' signatures only
       ([events](events.md#the-event-catalog),
       [ADR-214](../../specforge-engine/adr/runners.md#adr-214)).
+    - *Changed:* confirming a finding: a seed case expected to be rejected that
+      is rejected is no `contract_completeness` finding; a sibling control
+      answered 404 is followed by the endpoint's simplest request; an accepted
+      write re-sent and refused as taken rotates a seed case's value under the
+      field the refusal names; and one whose resource is gone is re-sent at
+      another resource its caller created, the request that reproduced being
+      the one reported. Fewer findings end `flaky` or `unverified`, and a
+      `minimal_payload` can carry another id than the one first observed
+      ([re-sending an accepted write](../../specforge-engine/run-depth.md#accepted-write-resend),
+      [ADR-216](../../specforge-engine/adr/findings.md#adr-216)).
     - *Added:* a finding's `request` says where its payload came from: `origin`
       (`drawn`, `witness` or `seeded`), `seed_case_id` and
       `seed_case_description`.

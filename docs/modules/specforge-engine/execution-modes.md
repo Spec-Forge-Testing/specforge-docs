@@ -770,8 +770,8 @@ runner does with the request depends on the policy:
 
 | Policy | What the runner sends |
 |---|---|
-| `authenticated` | one anonymous probe, with the config credential headers stripped so it is truly anonymous, plus one probe under **each** invalid identity's credential |
-| `owner_only` | provision the owner's resource under the **first** valid identity, capture the bundle value from the response, write it into the endpoint's consuming zone/field, then re-send under every **other** valid identity and once anonymously. Invalid identities cross as ordinary non-privileged callers |
+| `authenticated` | one anonymous probe, with the config credential headers stripped so it is truly anonymous, plus one probe under **each** invalid identity's credential; the anonymous probe is skipped when one of those identities already sends no credential at all |
+| `owner_only` | provision the owner's resource under the **first** valid identity, capture the bundle value from the response, write it into the endpoint's consuming zone/field, then re-send under every **other** identity and once anonymously, unless one of them already sends no credential at all. Invalid identities cross as ordinary non-privileged callers |
 | `role_only` | provision each resource the endpoint consumes that the run can produce under the **first** valid identity holding the `required_role`, and write it into the request (a resource nothing produces keeps the simplest value its contract gives); then send under every valid identity whose `role` is **not** the `required_role` (an identity with no role included) and once anonymously. Holders of the role are never sent; when every identity holds it, only the anonymous request goes out. Invalid identities cross as ordinary role-less callers |
 
 A crossing is a finding when the `access_control` oracle sees a success for a

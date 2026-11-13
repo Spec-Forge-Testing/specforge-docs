@@ -1122,13 +1122,16 @@ the events a client sees is unchanged: `generating`, `confirming` once, no
 ### Rejected
 
 - **Confirming every finding as soon as its endpoint is explored.** It spreads the
-  confirming stage across the whole run, interleaves `finding` events with
-  exploration and breaks the published order of the events.
-- **Re-creating the resource before a re-send.** The engine does not know which
-  producer made a given resource in a stateless run; a fresh one is another
-  resource, and the finding was about the first.
-- **Announcing two confirming stages.** Every client reads `confirming` as the last
-  stretch of a run; a second one would read as the run going backwards.
+  confirming stage across the whole run and interleaves `finding` events with
+  exploration, where the protocol publishes every `finding` together at the end
+  and no `endpoint_started` once confirming has begun.
+- **Re-aiming the re-send at another resource.** A finding on a resource a delete
+  removed is about that resource, and the engine knows no other one that is the
+  same. A re-send is re-aimed only when the finding's own accepted write used up
+  its resource ([ADR-216](findings.md#adr-216)); confirming before the deletes
+  keeps every other finding where it was found.
+- **Announcing two confirming stages.** The protocol publishes `confirming` once,
+  as the run's last stage; a second one would break that order for every client.
 
 ### Consequences
 

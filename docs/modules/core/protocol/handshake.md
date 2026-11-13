@@ -185,6 +185,11 @@ version; the lines below are the summary.
     - *Added:* a finding's `request` says where its payload came from: `origin`
       (`drawn`, `witness` or `seeded`), `seed_case_id` and
       `seed_case_description`.
+    - *Added:* `observed_payload` and `observed_headers` on every unconfirmed
+      finding, in the report and in `get_run` and `get_finding`: the payload, by
+      zone, and the headers the first request of its group sent, redacted as a
+      crash's reproducer is; both `null` for a finding stored before
+      ([the observed request](run-detail.md#observed-request)).
     - *Added:* invariants `expected_rejection` and `expected_acceptance`, and the
       `oracle_need` `seed_case_expectation`
       ([ADR-203](../../specforge-engine/adr/findings.md#adr-203)).
@@ -241,7 +246,8 @@ version; the lines below are the summary.
   `stateful_chains` and `contract_items` in `metrics`; `requests_shrink`,
   `consumer_values`, `contract_usage` and `findings_llm_suspicions` on each
   endpoint; `extra` and `extra_run` in each phase of `budget_by_phase`;
-  `latency_samples_ms` on a `control`; and `details` on the envelope's `error`.
+  `latency_samples_ms` on a `control`; `observed_payload` and `observed_headers`
+  on every unconfirmed finding; and `details` on the envelope's `error`.
   `planned` is the strategy's share alone, and `examples_planned` sums `planned`
   and `extra`.
 - **0.2.5** — A finding's category and severity read like the other terms, with a

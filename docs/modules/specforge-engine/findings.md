@@ -180,7 +180,10 @@ carries its `method`, `path`, `status`, its `payload` by zone and its
 `response_body`, both redacted.
 
 An unconfirmed finding carries the `observation`, `request` and `response` of the
-first member of its group (`FirstSeenEvidence`), redacted the same way.
+first member of its group (`FirstSeenEvidence`), redacted the same way, and what
+that member sent: its `payload`, by zone, and its `sanitized_headers`, redacted
+like a report's `minimal_payload` and `sanitized_headers` and never cut for size.
+The core shows them as `observed_payload` and `observed_headers`.
 
 ## Signature and cause { #signature }
 

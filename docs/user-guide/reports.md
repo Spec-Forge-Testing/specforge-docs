@@ -98,7 +98,7 @@ the schema table below.
 
     | Version | Compatibility | Changes |
     | --- | --- | --- |
-    | `1.28` | Additive over 1.27 | Adds `llm_suspicions`, `producer_notes`, `recurring_findings` and `run.producer`; `grounds` and the request's `origin`, `seed_case_id` and `seed_case_description` on every finding; `findings_llm_suspicions`, `stateful_chains` and `contract_items` in `metrics`; `requests_shrink`, `consumer_values`, `contract_usage` and `findings_llm_suspicions` on each endpoint; `extra` and `extra_run` in `budget_by_phase`; `latency_samples_ms` on a `control`; `details` on the envelope's `error`. `planned` is the strategy's share alone. |
+    | `1.28` | Additive over 1.27 | Adds `llm_suspicions`, `producer_notes`, `recurring_findings` and `run.producer`; `grounds` and the request's `origin`, `seed_case_id` and `seed_case_description` on every finding; `findings_llm_suspicions`, `stateful_chains` and `contract_items` in `metrics`; `requests_shrink`, `consumer_values`, `contract_usage` and `findings_llm_suspicions` on each endpoint; `extra` and `extra_run` in `budget_by_phase`; `latency_samples_ms` on a `control`; `observed_payload` and `observed_headers` on every unconfirmed finding; `details` on the envelope's `error`. `planned` is the strategy's share alone. |
     | `1.27` | Additive over 1.26 | Adds the signal cause `contracts_unproduced`. |
     | `1.26` | Additive over 1.25 | Adds `starved` to each phase of `endpoints[].budget_by_phase`, and `finding_id` to each entry of `replay.defect_verdicts`. |
     | `1.25` | **Not additive** over 1.24 | Removes `analysis.strategy_mode`; `run.truncation.endpoint_id` is `null` with reason `flaky_generation`; adds the signal causes `run_truncated` and `requests_unanswered` and the observation marker `inferred_rule_database_error`. |
@@ -255,9 +255,9 @@ finding gets that far: some are seen but never reproduce, some are collected
 right before the run is cut short and never checked, and some reproduce but a
 control request shows they are not defects. `unconfirmed_findings`
 carries those, so the document reports what a run saw as well as what it proved.
-Each entry has no reproducer - there is no minimal payload, no request headers,
-no response body to show - only the finding's signature, how often it was seen,
-and what its first occurrence observed:
+Each entry has no reproducer - nothing shrank it, so there is no minimal payload
+and no response body to show - only the finding's signature, how often it was
+seen, and what its first occurrence sent and observed:
 
 | Field | Description |
 | --- | --- |
@@ -269,6 +269,7 @@ and what its first occurrence observed:
 | `state` | `"flaky"`, `"unverified"` or `"refuted"` (see below). |
 | `represented_findings` | How many raw findings this entry stands for. |
 | `body_fingerprint` | The shape of the response body that grouped the finding; `""` when the response had no body. |
+| `observed_payload` / `observed_headers` | The payload, by zone, and the headers the first request of the finding's group sent, redacted as a defect's reproducer is and never cut for size; `null` for a finding stored before 1.28 (see [the observed request](../modules/core/protocol/run-detail.md#observed-request)). |
 | `category`, `severity`, `summary`, `observation`, `request`, `response`, `control` | As on a defect (see [What a finding says](#what-a-finding-says)). |
 
 The list is ordered by severity first, then by the invariant's place in the
@@ -295,7 +296,8 @@ The HTML report gains a matching **Unconfirmed findings** section, listing the
 same entries with a one-line explanation of each state: a flaky finding reads
 *"seen N time(s) but could not be reproduced"*, an unverified one *"never
 checked because the run stopped"*, a refuted one that a control request showed it
-is not a defect and that the control is worth checking. That table carries a **Rule** column, showing
+is not a defect and that the control is worth checking. Its **Request sent**
+column folds the observed payload and headers. That table carries a **Rule** column, showing
 the rule id only for a finding whose rule the contract declared (a business-rule
 or access-control finding) and a placeholder for every intrinsic invariant, whose
 rule id merely repeats the invariant.

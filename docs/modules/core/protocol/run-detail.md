@@ -4,7 +4,8 @@
 (paged with `limit`), `producer_exclusions` and, for a replay, what the replay
 concluded. Most of it is the report document's own shape. This page explains the
 facts a client has to read with care: what each finding counter counts, which
-findings are LLM suspicions and where each finding's rule comes from, how an
+findings are LLM suspicions and where each finding's rule comes from, what
+request an unconfirmed finding was observed on, how an
 endpoint's budget was spent per phase and what a producer's contract added, what
 a stored replay ruled, and whether a finding can be replayed alone. The closed values these fields take are on
 [Result vocabularies](vocabularies.md).
@@ -108,6 +109,28 @@ A finding's `request` also says where its payload came from: `origin` is `drawn`
 (a value the contract offers, sent as given), and `seed_case_id` and
 `seed_case_description` name the seed case it was sent for, both `null` when none.
 A finding stored before protocol `0.2.6` reads all three `null`.
+
+## The request an unconfirmed finding was observed on { #observed-request }
+
+A `flaky`, `unverified` or `refuted` finding has no reproducer: nothing shrank it,
+so it has no `minimal_payload` nor `sanitized_headers`. It shows instead the
+request it was observed on, in each entry of the report document's
+`unconfirmed_findings` and on a finding of `get_run` and `get_finding` of `kind`
+`unconfirmed`:
+
+| Field | Holds |
+| --- | --- |
+| `observed_payload` | What the first request of the finding's group sent, by zone (`path`, `query`, `header`, `body`), as a crash's `minimal_payload` is keyed |
+| `observed_headers` | The headers that request carried, as a crash's `sanitized_headers` |
+
+Both are redacted exactly as a crash's reproducer is: credential headers, the
+fields the analysis's contract declares sensitive and the built-in secret names
+read `***`, and a credential the request sent is scrubbed wherever either carries
+it. Neither is cut for size, and neither is minimal: it is the request as it was
+sent. Both are `null` together for a finding stored before protocol `0.2.6`. A
+crash and an LLM suspicion carry neither, since their reproducer says what they
+sent. The HTML report folds both into the **Request sent** cell of the
+unconfirmed findings table.
 
 ## Shrink requests and stateful values { #requests-shrink }
 

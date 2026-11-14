@@ -401,7 +401,8 @@ sum to the run's totals in every mode) plus a `LatencyStats`
 whose fields all default to zero, so `LatencyStats()` is a valid "no samples"
 value — an endpoint can carry a confirmed crash report with no surviving
 requests to time. It also carries `requests_refused`, its `requests` answered
-`401` or `403` (`ACCESS_DENIAL_STATUSES`), which the core reads to tell a run
+`401` or `403` (`ACCESS_DENIAL_STATUSES`) when the endpoint requires authentication
+(`ExecutionResult.refuses_credentials`; a public endpoint's denials never count), which the core reads to tell a run
 whose credentials opened nothing
 ([`credentials_refused`](../core/protocol/vocabularies.md#signal-causes)). It
 also carries `starved_identities`: the labels of declared

@@ -990,7 +990,9 @@ check of those endpoints: a reader takes a dead token for a healthy API.
 ### Decision
 
 **The engine counts refusals per endpoint.** Each endpoint's `requests_refused`
-counts its `requests` answered `401` or `403`. Storage keeps it in
+counts its `requests` answered `401` or `403`, only on an endpoint that requires
+authentication: a public endpoint's `401` or `403` (a login's wrong password) answers
+the request, not the caller. Storage keeps it in
 `run_endpoint_stats.requests_refused` (migration `0020`), nullable so a row
 stored before reads `null`.
 

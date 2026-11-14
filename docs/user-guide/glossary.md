@@ -44,7 +44,7 @@ name, that name follows in `code font`.
 | **Fidelity** | How closely a replay reproduced the original run, i.e. how much to trust its result. |
 | **Strategy** | What a run generates and which extra checks judge the answers: `default` (schema-only), `security` (widened toward adversarial values), `conformance` (schema-only, also flagging response fields the contract does not declare), `smoke` (a short run of valid requests) or `exposure` (read-only fields and mass assignment). |
 | **Examples per endpoint** | How many generated requests a run asks of each endpoint (`examples_per_endpoint`); without it, the strategy's own default, held under the mode's cap. |
-| **Preset** | A named sequence of runs the core publishes, each with a label and a one-line question it answers (`quick-check`, `contract-audit`, `security-scan`, `exposure-scan`, `load`, `full`, `stateful-flows`, `resilience-check`, `access-check`, `stress-ladder`); a client runs them one after the other. |
+| **Preset** | A named sequence of runs the core publishes, each with a label and a one-line question it answers (`standard`, `quick-check`, `contract-audit`, `security-scan`, `exposure-scan`, `load`, `full`, `stateful-flows`, `resilience-check`, `access-check`, `stress-ladder`); a client runs them one after the other. |
 | **Producer contract** | An extra per-endpoint contract you supply (`--contracts`) that enriches the run beyond the OpenAPI schema. |
 | **State link** | A data dependency between operations derived from the spec, letting a stateful sequence carry a value from one request into the next. |
 | **Handler** | The function in your source code that serves an endpoint. |

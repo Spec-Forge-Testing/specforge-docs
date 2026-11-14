@@ -301,6 +301,7 @@ registers no `ladder` variant gives `stress-ladder` a `variant` of `null`.
 
 | Preset | Label | Runs | Summary |
 | --- | --- | --- | --- |
+| `standard` | Standard check | `stateless` + `default` | Each endpoint alone, with every kind of input. |
 | `quick-check` | Quick check | `stateless` + `smoke` | Does every endpoint answer? |
 | `contract-audit` | Contract audit | `stateless` + `conformance` | Do responses match the contract? |
 | `security-scan` | Security scan | `stateless` + `security` | Attack and mutated inputs on every endpoint. |

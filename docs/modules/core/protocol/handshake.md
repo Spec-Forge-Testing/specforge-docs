@@ -201,6 +201,10 @@ version; the lines below are the summary.
       `minimal_payload` can carry another id than the one first observed
       ([re-sending an accepted write](../../specforge-engine/run-depth.md#accepted-write-resend),
       [ADR-216](../../specforge-engine/adr/findings.md#adr-216)).
+    - *Added:* the `standard` preset ("Standard check"), first in
+      `fuzz_options.presets`: one `stateless` run with the `default` strategy,
+      the same first run as `full` without the call sequences after it
+      ([presets](fuzz-options.md)).
     - *Added:* `credentials_refused` in `run.signal_causes` and
       `vocabulary.signal_causes`, and `requests_refused` on each entry of
       `endpoints`, in the report and in `get_run`: a run whose targeted endpoint

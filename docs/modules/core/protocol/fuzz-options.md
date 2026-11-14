@@ -44,7 +44,7 @@ or parameter meeting a need without the engine.
 | `strategies` | `{name, label, summary, phase_split, default_examples_per_endpoint, optional_oracles, attack_families, llm_profile, supplies, omits_read_only, promotes_attack_hints}` | Every [`strategy`](vocabularies.md#strategy), in declaration order |
 | `producers` | strings | `none`, `fixture`, `inference` |
 | `effects` | `{mode, variant, strategy, producer, changes}` | One row per variant of every mode, every strategy but `default`, and every producer |
-| `presets` | `{name, label, summary, runs, requires, holds_back}` | Named sequences of `{execution, strategy, load, variant, asks_for}` runs; `asks_for` lists the rows of `request_supplies` a run leaves for the client to set ([below](#asks-for)), and `holds_back` every hold any of its runs' modes applies |
+| `presets` | `{name, label, summary, runs, requires, holds_back, recommended}` | Named sequences of `{execution, strategy, load, variant, asks_for}` runs; `asks_for` lists the rows of `request_supplies` a run leaves for the client to set ([below](#asks-for)), `holds_back` every hold any of its runs' modes applies, and `recommended` whether it is the preset a client offers first ([below](#presets)) |
 | `phases` | `{value, label, summary}` | Every generation phase a `phase_split` or a variant's `phases` can name |
 | `changes` | `{value, label}` | Every value an effect's [`changes`](vocabularies.md#changes) can take, in that order |
 | `producer_supplies` | `{producer, supplies, meets, clears}` | One row per producer: the [oracle needs](vocabularies.md#oracle-need) the contracts it produces meet (`supplies`), the values of a variant's [`requires`](#which-variant) they can meet (`meets`), and the holds they can clear by judging an endpoint (`clears`, [below](#holds-back)); `none` meets and clears nothing |
@@ -294,6 +294,10 @@ core keeps with the run and never interprets
 `fuzz_options.presets` lists the builtins below. The presets a user saves are
 listed beside them by `list_presets`, in the same shape plus `origin` and when
 each was saved ([Saved presets](presets.md)).
+
+**One preset is recommended.** `recommended` is `true` for `standard` alone: the
+preset a client offers first to whoever has not picked one. It is `false` for
+every other builtin and for every saved preset.
 
 Each run is `{execution, strategy, load, variant, asks_for}`. `load` is the `load` parameter
 to send with it (`null` for none), and `variant` the variant it selects (`null` for

@@ -92,7 +92,8 @@ the operation was given and the field to mark, and `model`, the model with no
 price; its message names that model. `parameter` is `producer.max_cost_usd` on
 `fuzz`, `run_pipeline` and `estimate_inference`, and `max_cost_usd` on a
 `generate_contract` with `use_llm`, which is refused before its route discovery is
-sent ([its cap](operations.md#generate-contract-cap)). The estimate's
+sent ([its cap](operations.md#generate-contract-cap)), and on an
+`estimate_contract_generation` that prices it. The estimate's
 [`unpriced_models`](operations.md#estimate-inference) names the same models
 before the run is sent.
 
@@ -234,10 +235,11 @@ cache, so asking again does not pay for them again
 | `PRESET_NAME_TAKEN` | `save_preset` names a builtin, or a saved preset without `replace: true`. Rides `-32602`. `data`: `name`, `origin` (`builtin` or `user`, whichever has the name) |
 | `PRESET_READ_ONLY` | `delete_preset` names a builtin. Rides `-32602`. `data`: `name` |
 | `PRESET_NOT_FOUND` | `delete_preset` names no saved preset. `data`: `name` |
-| `PRESETS_STORE_FAILED` | The saved presets could not be read or written. `data`: `reason` |
+| `PRESETS_STORE_FAILED` | The store of saved presets could not be read at all, or written. One saved preset whose runs this core cannot read is listed with `runs: []` instead ([Saved presets](presets.md#unreadable)). `data`: `reason` |
 
 A core without storage refuses `save_preset` and `delete_preset` with
-`DEPENDENCY_UNAVAILABLE` and lists the builtins alone
+`DEPENDENCY_UNAVAILABLE` and lists the builtins alone; one without the fuzzing
+stack refuses `save_preset` the same way, as it refuses `fuzz`
 ([Saved presets](presets.md#errors)).
 
 ### Config and environment

@@ -1031,7 +1031,7 @@ request also degrades the run, and the cause names it so a reader can tell.
 
 ## ADR-218 — A user's presets are saved in their own store as runs checked like a fuzz request, and a run carries its preset as an uninterpreted tag { #adr-218 }
 
-**Status:** accepted · Builds on [ADR-160](#adr-160) · `facade/presets.py`, `controllers/presets/`, `services/presets/listing.py`, `services/persistence/presets.py`, `schemas/presets.py`, `schemas/run_preset.py`
+**Status:** accepted · Builds on [ADR-160](#adr-160) · `facade/presets.py`, `controllers/presets/`, `controllers/execution/shape.py`, `services/presets/listing.py`, `services/persistence/presets.py`, `schemas/presets.py`, `schemas/run_preset.py`
 
 ### Context
 
@@ -1057,9 +1057,19 @@ and the producer's kind and cap. The target, the endpoint selection, the
 identities and the producer's project paths and approval token are unknown
 fields: they belong to one project or one estimate.
 
-**Checked like a fuzz request.** Each run goes through the same checks `fuzz`
-applies before anything is loaded, so a preset that saves is a preset a client
-can send. A refusal names its path (`runs[1].producer.max_cost_usd`).
+**Checked like a fuzz request, by the same code.** One function holds every
+refusal of a run's settings that `fuzz` makes before it runs, the engine's own
+included: the load, a count on a runner that honors none, the concurrency, the
+timeout, the deadline, a ladder step above the run's concurrency, and the spend
+cap. `fuzz` and `save_preset` both call it, so a preset that saves is a preset a
+client can send, and the two refuse a setting with the same reason and the same
+parameter, `save_preset` under the run's path (`runs[1].load`). Saving needs the
+fuzzing stack for that reason.
+
+**One unreadable row hides nothing.** A saved run is read back with a missing field
+at its default. A row whose runs this core cannot read, such as one a newer core
+wrote, is listed with its name, label and save times and no runs, and can be
+deleted by name; a store that cannot be read at all is the only listing failure.
 
 **Builtins are read-only, and names are unique across both.** A saved preset
 cannot take a builtin's name, nor replace or delete one.
@@ -1082,12 +1092,20 @@ the options the run used after the project's and the strategy's defaults.
 - **Checking the tag against the store.** A run of a preset deleted since would
   be refused, and a stored run would lose its preset the day it is deleted; the
   `label` in the tag is what a client shows once the preset is gone.
+- **A separate, lighter check for saving.** A run could save and then be refused
+  by `fuzz`, or be refused under another reason, so a client could not trust a
+  saved preset to run.
+- **Failing the whole listing on one bad row.** One preset written by a newer core
+  would hide every other preset, and the user could not delete it from the client.
 
 ### Consequences
 
 A client offers saved presets with one call and runs them the way it runs a
 builtin, filling in the project's paths, the estimate's approval and the
-side-effects consent itself: a kept `allow_side_effects: true` is not consent.
+side-effects consent itself: a kept `allow_side_effects: true` is not consent,
+and neither is the one a stored `analysis.options` answers. Such a run lifts every
+hold, so the preset's `holds_back` leaves its holds out. `replace: true` overwrites
+for good, so a client confirms it like a destructive action.
 A history view can group a chain's runs by their tag and repeat any of them by
 sending `analysis.options` back. A run stored before the tag and the options were
 kept reads `preset` `null` and `null` where its analysis does not say.

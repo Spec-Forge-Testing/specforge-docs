@@ -25,7 +25,7 @@ sequenceDiagram
     end
 ```
 
-## The operations
+## The operations { #the-operations }
 
 None needs an open project: saved presets live in the user's own store (their
 data directory, or `SPECFORGE_DATA_DIR`), so every project sees them.
@@ -40,17 +40,23 @@ client that offers saved presets calls `list_presets`.
 
 A core without storage lists the builtins alone, and refuses `save_preset` and
 `delete_preset` with `DEPENDENCY_UNAVAILABLE` (`data.dependency` `storage`).
+`hello` says so beforehand in [`capabilities.storage`](handshake.md#capabilities),
+so a client can hide saving before it is refused. A core without the fuzzing stack
+refuses `save_preset` with `DEPENDENCY_UNAVAILABLE` too, as it refuses `fuzz`: it
+could not check the runs.
 
 ## A listed preset { #listed-preset }
 
-A listed preset is a `fuzz_options.presets` entry with three more keys.
+A listed preset is a `fuzz_options.presets` entry with three more keys:
+`origin`, `created_at` and `updated_at`.
 
 | Field | Meaning |
 | --- | --- |
 | `name`, `label`, `summary` | As in `fuzz_options.presets`. |
 | `origin` | `builtin` or `user`. |
 | `runs` | The preset's runs, in order ([below](#listed-run)). |
-| `requires`, `holds_back` | Derived for a saved preset exactly as for a builtin ([Fuzz options](fuzz-options.md#presets)). |
+| `requires`, `holds_back` | Derived for a saved preset exactly as for a builtin ([Fuzz options](fuzz-options.md#presets)), but for a run that keeps `allow_side_effects: true`: it lifts every hold (`fuzz_options.holds_lifted_by`), so `holds_back` leaves out what that run alone would hold. |
+| `recommended` | As in `fuzz_options.presets`: `true` for `standard` alone, always `false` for a saved preset. |
 | `created_at`, `updated_at` | When a saved preset was saved first and last, as UTC ISO 8601 text with an offset (`2026-11-14T21:03:11+00:00`); `null` for a builtin. |
 
 ### A listed run { #listed-run }
@@ -81,7 +87,7 @@ A builtin's kept parameters are all `null`, and its `allow_side_effects` is
             "asks_for":[],"examples_per_endpoint":null,"max_concurrency":null,
             "timeout_s":null,"deadline_ms":null,"allow_side_effects":false,
             "producer":null}],
-   "requires":[],"holds_back":["external_side_effects"]},
+   "requires":[],"holds_back":["external_side_effects"],"recommended":true},
   …
   {"name":"nightly-security","label":"Nightly security",
    "summary":"Security with the LLM, capped at two dollars.",
@@ -91,7 +97,7 @@ A builtin's kept parameters are all `null`, and its `allow_side_effects` is
             "asks_for":[],"examples_per_endpoint":200,"max_concurrency":null,
             "timeout_s":null,"deadline_ms":null,"allow_side_effects":false,
             "producer":{"kind":"inference","max_cost_usd":2.0}}],
-   "requires":[],"holds_back":["external_side_effects"]}
+   "requires":[],"holds_back":["external_side_effects"],"recommended":false}
 ]}
 ```
 
@@ -114,18 +120,35 @@ A run takes the fields of [a listed run](#listed-run) that a client sets:
 | Parameter | Rule |
 | --- | --- |
 | `name` | Lowercase letters and digits joined by single hyphens (`[a-z0-9]+(-[a-z0-9]+)*`), up to 48 characters. |
-| `label` | Up to 60 characters, not blank. |
+| `label` | One line of 1 to 60 characters, not blank. |
 | `summary` | One line of up to 200 characters. |
-| `runs` | One to five runs, each checked as `fuzz` would check it. |
+| `runs` | One to five runs, each refused for every setting `fuzz` refuses before it runs. |
 | `replace` | `true` overwrites a saved preset of the same name, which keeps its `created_at`. |
 
-**Each run is checked like a fuzz request.** A run `fuzz` would refuse, such as a
-`load` outside `performance`, an `examples_per_endpoint` below 1, or a
-`max_cost_usd` that is not above `0` or comes with a producer other than
-`inference`, is refused `INVALID_PARAMS` with `data.parameter` the path to what
-it refuses: the field when the rule names one (`runs[1].producer.max_cost_usd`),
-else the run (`runs[0]`). A `name`, `label`,
-`summary` or `runs` that breaks its rule is refused the same way, with
+One line means no line feed or carriage return anywhere, at the end included.
+
+**A run is refused for everything `fuzz` refuses before it runs.** Each run goes
+through the very checks `fuzz` applies before it runs, so
+a preset that saves is a preset a client can send. A refusal is `INVALID_PARAMS`
+with the reason `fuzz` gives and `data.parameter` the path to what it refuses: the
+field when the rule names one, else the run (`runs[0]`).
+
+| Refused | `data.parameter` |
+| --- | --- |
+| A `load` outside execution mode `performance`, or a ladder or latency limit the engine refuses | `runs[N].load` |
+| An `examples_per_endpoint` on a runner that honors no count (`resilience`, `auth`, the `performance` ladder), or below 1 | `runs[N].examples_per_endpoint` |
+| A `max_concurrency` below 1 | `runs[N].max_concurrency` |
+| A `timeout_s` the engine refuses | `runs[N].timeout_s` |
+| A `deadline_ms` below 1 | `runs[N].deadline_ms` |
+| A ladder step above the run's own `max_concurrency` | `runs[N].load.concurrency_steps` |
+| A `max_cost_usd` not above `0`, or with a producer other than `inference` | `runs[N].producer.max_cost_usd` |
+| A combination that contradicts itself | `runs[N]` |
+
+A run that leaves `max_concurrency` to the project is held to the project's when
+it is sent. `fuzz` refuses the same settings with the same reason and the same
+`data.parameter`, without the `runs[N].` prefix
+([settings refused before a run](operations.md#settings-refused)). A `name`,
+`label`, `summary` or `runs` that breaks its rule is refused the same way, with
 `data.parameter` that parameter.
 
 **A run keeps how it is run, never what it runs against.** These `fuzz`
@@ -143,6 +166,26 @@ message naming the run and the field (`runs[0]`, `target`):
 saved preset has is refused `PRESET_NAME_TAKEN` with `data.origin` `user`, unless
 `replace` is `true`.
 
+**`replace: true` overwrites for good.** The saved preset it replaces cannot be
+brought back, so a client confirms it as it confirms a destructive action.
+
+## A preset this core cannot read { #unreadable }
+
+A saved run is read back with a field it was stored without at that field's
+default. A saved preset whose runs this core cannot read at all (a field it does
+not keep, or a value it cannot take, such as one a newer core wrote) is still
+listed, after the builtins and by `name` like any other, with its `name`, `label`,
+`summary` and save times, and `runs`, `requires` and `holds_back` empty.
+
+- **`runs: []` marks it.** A preset this core can read holds one run at least, so
+  an empty `runs` is never a readable preset.
+- **A client shows it as unreadable and never chains it.** There is nothing to
+  send.
+- **It can be deleted.** `delete_preset` deletes it by name and answers it in the
+  same shape.
+- **It never hides the rest.** The other saved presets and the builtins are listed
+  as usual. `PRESETS_STORE_FAILED` is a store that could not be read at all.
+
 ## Deleting a preset { #delete-preset }
 
 ```json
@@ -158,12 +201,12 @@ has is `PRESET_NOT_FOUND`.
 
 | `error.code` | `data.code` | When | `data` |
 | ---: | --- | --- | --- |
-| -32602 | `INVALID_PARAMS` | A parameter breaks its rule, a run `fuzz` would refuse, a field a run never keeps | `parameter`, as a path, when a rule refuses it |
+| -32602 | `INVALID_PARAMS` | A parameter breaks its rule, a run `fuzz` would refuse, a field a run never keeps, a line break in a `label` or `summary` | `parameter`, as a path, when a rule refuses it |
 | -32602 | `PRESET_NAME_TAKEN` | `save_preset` with a builtin's name, or a saved preset's without `replace` | `name`, `origin` |
 | -32602 | `PRESET_READ_ONLY` | `delete_preset` of a builtin | `name` |
 | -32000 | `PRESET_NOT_FOUND` | `delete_preset` of a name no saved preset has | `name` |
-| -32000 | `PRESETS_STORE_FAILED` | The saved presets could not be read or written | `reason` |
-| -32000 | `DEPENDENCY_UNAVAILABLE` | `save_preset` or `delete_preset` on a core without storage | `dependency` |
+| -32000 | `PRESETS_STORE_FAILED` | The store could not be read at all, or written; never one preset it cannot read ([above](#unreadable)) | `reason` |
+| -32000 | `DEPENDENCY_UNAVAILABLE` | `save_preset` or `delete_preset` on a core without storage, or `save_preset` on one without the fuzzing stack | `dependency` |
 
 See [Errors](errors.md#presets) for how the two integers are chosen.
 
@@ -178,7 +221,9 @@ supplies from the project at hand.
   is estimated and approved as any run with an LLM
   ([The `producer` object](operations.md#producer)).
 - **A kept `allow_side_effects: true` is not consent.** The client shows it and
-  asks before it sends each `fuzz` with it.
+  asks before it sends each `fuzz` with it. Nor is a stored
+  `analysis.options.allow_side_effects: true` sent back to repeat a run
+  ([below](#run-options)).
 - **The target is the project's.** `base_url`, `identities_path` and the endpoint
   selection come from the run the user is setting up, never from the preset.
 
@@ -192,7 +237,7 @@ interprets it: it checks its shape, keeps it with the run and answers it back as
 | Field | Rule |
 | --- | --- |
 | `name` | A preset's name rule. It need not name a preset that exists, so a run of a deleted preset still counts. |
-| `label` | 1 to 60 characters, not blank: what a client shows once the preset is gone. |
+| `label` | One line of 1 to 60 characters, not blank: what a client shows once the preset is gone. |
 | `origin` | `builtin` or `user`. |
 | `run_index` | This run's place in the chain, at least `0` and below `run_count`. |
 | `run_count` | How many runs the chain holds, 1 to 5. |
@@ -218,8 +263,10 @@ document `fuzz`, `replay` and `run_pipeline` answer with, in `get_run`'s and
 **`preset`** is the `preset` the run was asked with, as it came, or `null` for a
 custom run and for a run stored before it was kept.
 
-**`options`** is what the run used, after the project's and the strategy's
-defaults:
+**`options`** is what the analysis's original run used, after the project's and
+the strategy's defaults. A replay of the analysis shows those of the run it
+replays, not the `base_url` or the `allow_side_effects` the replay itself was sent
+with.
 
 | Field | Meaning |
 | --- | --- |
@@ -239,9 +286,11 @@ defaults:
              "producer":{"kind":"inference","max_cost_usd":2.0}}}
 ```
 
-**Sending these options back repeats the run.** A client that sends `options`
-back, with the same `preset`, runs again with the same values even after the
-project's configuration changed.
+**Sending these options back repeats the original run.** A client that sends
+`options` back, with the same `preset`, runs again with the same values even after
+the project's configuration changed. A stored `allow_side_effects: true` is not
+consent, as a saved preset's is not: the client shows it and asks before it sends
+the run again.
 
 A run stored before these were kept reads `preset` `null`, and `options` with what
 its analysis knew: `null` in `deadline_ms`, `base_url_override` and

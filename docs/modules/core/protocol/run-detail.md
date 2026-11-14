@@ -4,7 +4,8 @@
 (paged with `limit`), `producer_exclusions` and, for a replay, what the replay
 concluded. Most of it is the report document's own shape. This page explains the
 facts a client has to read with care: what each finding counter counts, how many
-unconfirmed defects a run's row carries, which findings are LLM suspicions and where each finding's rule comes from, what
+unconfirmed defects a run's row carries, what a finding's summary and
+`represented_findings` say, which findings are LLM suspicions and where each finding's rule comes from, what
 request an unconfirmed finding was observed on, how an
 endpoint's budget was spent per phase and what a producer's contract added, what
 a stored replay ruled, and whether a finding can be replayed alone. The closed values these fields take are on
@@ -68,16 +69,36 @@ show. `metrics` is `null` for a run that recorded none, and then there is no
 ### Unconfirmed defects on a run's row { #findings-unconfirmed }
 
 `run.findings_unconfirmed`, on each row of `list_runs` and on `get_run`'s `run`,
-is the run's unconfirmed defects a client still has to look at:
-`unconfirmed_unique.flaky` plus `unconfirmed_unique.unverified`. Refuted defects
-are left out: their control showed the input was not the cause. A defect flaky in
-one phase and unverified in another counts in both, as in `unconfirmed_unique`.
+is the run's unconfirmed defects a client still has to look at: the defects
+`unconfirmed_unique.flaky` and `unconfirmed_unique.unverified` count, each once.
+Refuted defects are left out: their control showed the input was not the cause. A
+defect flaky in one phase and unverified in another counts **once** here, though
+it counts in both of those per-state counters, so `findings_unconfirmed` can be
+less than their sum.
 
 It is `null` exactly when `findings_confirmed` is, for a run that recorded no
 metrics. Both readers count it from the run's stored findings, so a history row
 and the run's detail always agree. A history view shows it beside
 `findings_unique`, so a run with no defect but with defects left unconfirmed does
-not read as empty.
+not read as empty. A run is clean only with `findings_confirmed` `0`,
+`findings_unconfirmed` `0` and a `signal` that is not `degraded`.
+
+## What a finding carries for a person { #finding-text }
+
+A finding's `summary` is one sentence for a person on what happened. It is in the
+`finding` event, in each entry of the report document's `defects`,
+`llm_suspicions` and `unconfirmed_findings`, and on every finding of `get_run` and
+`get_finding`. It is plain text that may hold **code spans between backticks**
+(`` `limit = -1` ``, `` `maxLength: 20` ``): a value, a field, a header or a schema
+keyword the finding names, clipped when long. A client may render those spans as
+code or show the text as it is; it carries no other markdown.
+
+`represented_findings`, on the same entries and findings, is how many raw findings
+one finding stands for, at least `1`: itself, the occurrences of its group that
+were not shrunk because it stands for them, and the duplicates of it the run
+folded into it. It weighs a finding and adds none: neither `findings_unique` nor
+`unconfirmed_unique` counts by it. The report document orders the findings of one
+invariant by it, most first.
 
 ## LLM suspicions { #llm-suspicions }
 

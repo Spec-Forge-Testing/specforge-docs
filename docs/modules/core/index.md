@@ -66,7 +66,7 @@ means a contract must also be loaded; `Precondition.ANALYSIS` means an
 
 ## The operation catalog
 
-`describe` publishes everything a frontend can ask for: **50 operations in
+`describe` publishes everything a frontend can ask for: **51 operations in
 nine families**, each with its parameters and types, whether it emits progress,
 whether it can be cancelled, and what it requires open first. The catalog is
 **derived from the façade's own signatures and docstrings**, so there is no

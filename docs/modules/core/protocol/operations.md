@@ -1,6 +1,6 @@
 # Operations
 
-`describe` publishes **50 operations in nine families**, derived from the
+`describe` publishes **51 operations in nine families**, derived from the
 core's own façade. Each operation declares what must be open before it is called
 (`requires`), whether it can be watched (`emits_progress`), whether it can be
 stopped (`cancellable`), and whether it destroys what cannot be undone
@@ -72,6 +72,7 @@ still uses the URL the file declares.
 | `list_endpoints` | contract | — |
 | `get_endpoint` | contract | — |
 | `generate_contract` | project | `started`, `contract_*`, `finished`; cancellable. Writes an OpenAPI from the source code and loads it; see [below](#generate-contract) |
+| `estimate_contract_generation` | project | none; read-only. Prices `generate_contract` with `use_llm` and answers the `approval_token` it takes; calls no model ([below](#estimate-contract-generation)) |
 
 ### Which endpoints need a login { #requires-auth }
 
@@ -98,8 +99,8 @@ K declare nothing"). The schema types both results (`list_endpoints_result`,
 | --- | --- | --- |
 | `repo_root` | The project root. | Where routes are looked for. Not a directory, or no route in it: `CONTRACT_GENERATION_FAILED` (`data.path`, `data.reason`). |
 | `use_llm` | `false` | See the table below. |
-| `approval_token` | — | Only with `use_llm`. Without a valid one nothing is spent and the call is refused `INFERENCE_APPROVAL_REQUIRED` with `data.estimate`. |
-| `max_cost_usd` | No cap. | Only with `use_llm`. Caps what this one call sends, every model call of it: see [the cap](#generate-contract-cap). The estimate's `exceeds_cap` judges the worst case of every call against it. |
+| `approval_token` | — | Only with `use_llm`. Without a valid one nothing is spent and the call is refused `INFERENCE_APPROVAL_REQUIRED` with `data.estimate`. A token from [`estimate_contract_generation`](#estimate-contract-generation) is accepted. |
+| `max_cost_usd` | No cap. | Only with `use_llm`, greater than `0`: a cap without `use_llm`, or of `0` or less, is refused `INVALID_PARAMS` before the route scan starts and before any event is sent. Caps what this one call sends, every model call of it: see [the cap](#generate-contract-cap). The estimate's `exceeds_cap` judges the worst case of every call against it. |
 | `destination` | `openapi.generated.yaml` | Where the document is written. |
 | `overwrite` | `false` | An existing `destination` is refused `INVALID_PARAMS` before anything is written; `true` replaces it. |
 | `adopt` | `false` | `true` also declares the file as `openapi_spec` in `specforge.toml`. |
@@ -144,6 +145,34 @@ A capped call whose model chain has a model with no price is refused up front wi
 kept, per project, for the next call with the token it was approved under, even
 when the call that paid for it was then refused: that call does not pay for it
 again.
+
+### `estimate_contract_generation` { #estimate-contract-generation }
+
+`estimate_contract_generation` prices `generate_contract` with `use_llm` before
+anything is paid for. It takes `repo_root` and `max_cost_usd` as
+`generate_contract` takes them, scans the routes the same way, and calls no model.
+
+It answers the estimate `generate_contract` asks approval for first, the one its
+`INFERENCE_APPROVAL_REQUIRED` carries as `data.estimate`, in the shape
+[`estimate_inference`](#estimate-inference) answers: route discovery at its
+ceiling, plus the refinement of the routes the scan finds.
+
+```json
+{"jsonrpc":"2.0","id":12,"method":"estimate_contract_generation",
+ "params":{"max_cost_usd":1.0}}
+```
+
+| What | Behaviour |
+| --- | --- |
+| `approval_token` | Accepted by `generate_contract` with `use_llm: true` and that `approval_token` while the repository is unchanged. |
+| The token and the cap | The token does not depend on `max_cost_usd`: one estimate approves a call with any cap. `exceeds_cap` judges the cap given here. |
+| The cap after approval | An approved call is still held to its own `max_cost_usd`, call by call ([the cap](#generate-contract-cap)): an approval never lifts the cap. |
+| Approval off | With `inference.require_approval` off, `approval_required` is `false` and the token is not needed; the estimate still prices the call. |
+| The second batch | The token approves the first batch only. When the routes discovery returns would cost more to refine, `generate_contract` still stops after discovering with `INFERENCE_APPROVAL_REQUIRED` and the refinement's own estimate. |
+| Refusals | The configuration and cap errors `generate_contract` gives: a `max_cost_usd` of `0` or less is `INVALID_PARAMS`, and a capped estimate on a model with no price is `INVALID_PARAMS` with `data.parameter` `max_cost_usd` and `data.model` ([errors](errors.md#producer-invalid-params)). |
+
+A client that prices and approves in one step calls it, shows the estimate, and
+sends `generate_contract` with the token, so the first call is never a refusal.
 
 ## `analysis`
 
@@ -203,6 +232,27 @@ the runner's cap; a count asked of a runner that honors none (the `performance`
 ladder, `auth`, `resilience`) is refused `INVALID_PARAMS`. What each choice
 changes in each mode, what a run can find, and the presets a client chains, are
 published in the handshake's [`fuzz_options`](fuzz-options.md).
+
+### Settings refused before a run { #settings-refused }
+
+`fuzz` and `run_pipeline` refuse every setting the engine would refuse before
+anything is produced: before any inference is paid for and before any request is
+sent. Each is `INVALID_PARAMS` with its reason and the
+`data.parameter` to mark.
+
+| Refused | `data.parameter` |
+| --- | --- |
+| A `load` outside execution mode `performance` | `load` |
+| A ladder or a latency limit the engine refuses | `load` |
+| An `examples_per_endpoint` on a runner that honors no count | `examples_per_endpoint` |
+| A `max_concurrency` below 1 | `max_concurrency` |
+| A `timeout_s` the engine refuses | `timeout_s` |
+| A `deadline_ms` below 1 | `deadline_ms` |
+| A ladder step above the run's own `max_concurrency` | `load.concurrency_steps` |
+
+A ladder step is held to the run's `max_concurrency` only when the run states one.
+`save_preset` refuses the same settings in each run it saves, under the run's path
+(`runs[1].load`; [Saved presets](presets.md#save-preset)).
 
 Every parameter of `fuzz`, the run parameters of `run_pipeline` and the parameters
 of `estimate_inference`, nested fields such as `load.concurrency_steps` and
@@ -361,11 +411,11 @@ one is on [Replay and fixes](replay-and-fixes.md#unconfirmed).
 | Operation | `requires` | Notes |
 | --- | --- | --- |
 | `list_presets` | none | The builtins in `fuzz_options.presets` order, then the presets the user saved, by `name` |
-| `save_preset` | none | Saves a preset of one to five runs, each checked as `fuzz` would check it |
+| `save_preset` | none | Saves a preset of one to five runs, each refused for every setting `fuzz` refuses before it runs. Overwriting with `replace: true` is confirmed like a destructive action |
 | `delete_preset` | none | Destructive. Deletes a saved preset; a builtin is read-only |
 
 Saved presets live in the user's own store, so every project sees them; a core
-without storage lists the builtins alone. The listed shape, the rules a saved run
+without storage, as `capabilities.storage` says, lists the builtins alone. The listed shape, the rules a saved run
 follows and how a client runs one are on [Saved presets](presets.md).
 
 ## `config`

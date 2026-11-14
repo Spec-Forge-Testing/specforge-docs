@@ -175,7 +175,7 @@ unconfirmed findings table.
 
 **`endpoints[].requests_refused`** counts the endpoint's `requests` answered `401`
 or `403`, in `get_run` and the report document's `endpoints`; it is never more
-than `requests`. When it is above `0` and equals the requests that got a
+than `requests`. Only an endpoint that requires authentication (its OpenAPI security, or an access policy that is not `public`) counts them: a public endpoint's `401` or `403`, such as a login answering a wrong password, answers what the request sent, not who sent it, and never counts. A replay, which knows no endpoint's security, counts every `401` and `403`; it has no signal. When it is above `0` and equals the requests that got a
 response (`requests` less its `availability`, `timeout` and `unsendable_request` ones in
 `by_category`), the run's `signal_causes` carry
 [`credentials_refused`](vocabularies.md#signal-causes): the credentials opened

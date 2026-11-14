@@ -218,7 +218,7 @@ without a table of its own ([vocabulary](handshake.md#vocabulary)).
 | --- | --- | --- |
 | `no_responses` | No request reached the target | No request reached the target: every attempt was an availability, timeout or unsendable-request failure. |
 | `requests_unanswered` | Some requests went unanswered | Some requests reached the target, but an endpoint left at least three of its requests, and at least 5 % of them, with a timeout or an availability failure, so what the run says of that endpoint rests on the rest. `metrics.by_category` and the endpoint's `by_category` count them. Never raised beside `no_responses`. |
-| `credentials_refused` | Some endpoints refused every request's credentials | One or more targeted endpoints got at least one response, and every response was a `401` or a `403`: the run's credentials opened nothing there, as when the target no longer accepts the identities' tokens, so the run verified nothing behind that endpoint's access check. The endpoint's [`requests_refused`](run-detail.md#requests-refused) counts them. An endpoint without a response does not raise it; an `auth` run, which crosses each endpoint with the identities its access policy should refuse, never raises it; nor does a run stored before `requests_refused` was kept. |
+| `credentials_refused` | Some endpoints refused every request's credentials | One or more targeted endpoints that require authentication got at least one response, and every response was a `401` or a `403`: the run's credentials opened nothing there, as when the target no longer accepts the identities' tokens, so the run verified nothing behind that endpoint's access check. The endpoint's [`requests_refused`](run-detail.md#requests-refused) counts them. An endpoint without a response does not raise it; an `auth` run, which crosses each endpoint with the identities its access policy should refuse, never raises it; nor does a run stored before `requests_refused` was kept. |
 | `endpoints_excluded` | Some endpoints were excluded | One or more declared endpoints were excluded from this run. |
 | `contracts_unproduced` | Some endpoints ran without rules | One or more endpoints of a run with a producer are in `producer_exclusions`, whatever their `disposition`: the producer left them without a contract, so they ran on their schema alone or were withheld. An endpoint the static analysis could not trace counts too. |
 | `withheld_by_safety_guard` | Held back by the safety guard | The safety guard held back one or more targeted endpoints, so they were never probed: a declared risk flag, or `assumed_write` (an unsafe method no producer judged a write for). |
@@ -267,7 +267,7 @@ in plain words.
 
 | Value | Meaning |
 | --- | --- |
-| `denied_to_every_identity` | It was sent, and every answer refused the credentials. |
+| `denied_to_every_identity` | It was sent, and every answer refused the credentials: a `401` or `403` of an endpoint that requires authentication. A public endpoint's `401` or `403` is an answer, and the item counts as exercised. |
 | `held_back` | The safety guard held its endpoint, or its transition's follow-up, back. |
 | `endpoint_unprobed` | The mode sent nothing at its endpoint; the endpoint's `unprobed_reason` says why. |
 | `cut_by_cap` | The cap on what a contract sends as given left it out. |

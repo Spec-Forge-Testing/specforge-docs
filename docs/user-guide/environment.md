@@ -36,7 +36,7 @@ setup.
 | `LLM_MAX_RETRIES` | `2` | How many times one model is retried before the next one is tried. |
 | `LLM_TIMEOUT_SECONDS` | `60` | Timeout of one attempt, in seconds. |
 | `LLM_RETRY_BACKOFF_BASE_SECONDS` | `0.5` | Base, in seconds, of the exponential wait between retries. |
-| `LLM_CALL_BUDGET_SECONDS` | `120` | Total seconds one call may spend across its retries and fallbacks. Must be at least `LLM_TIMEOUT_SECONDS`. |
+| `LLM_CALL_BUDGET_SECONDS` | `240` | Total seconds one call may spend across its retries and fallbacks. Must be at least `LLM_TIMEOUT_SECONDS`. |
 | `ANTHROPIC_API_KEY` | — | Credential for `anthropic/` models. |
 | `GEMINI_API_KEY` / `GOOGLE_API_KEY` | — | Credential for `gemini/` models; either one serves. |
 | `GOOGLE_API_KEY` | — | Credential for `vertex_ai/` models. |

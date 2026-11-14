@@ -29,7 +29,7 @@ variable:
 | `max_retries` | `LLM_MAX_RETRIES` | `2` | `≥ 0`. Retries of one model on a retryable failure. |
 | `timeout_seconds` | `LLM_TIMEOUT_SECONDS` | `60.0` | `> 0`. Timeout of one attempt. |
 | `retry_backoff_base_seconds` | `LLM_RETRY_BACKOFF_BASE_SECONDS` | `0.5` | `≥ 0`. Base of the backoff between retries. |
-| `call_budget_seconds` | `LLM_CALL_BUDGET_SECONDS` | `120.0` | `> 0` and at least `timeout_seconds`, so one full attempt always fits. |
+| `call_budget_seconds` | `LLM_CALL_BUDGET_SECONDS` | `240.0` (`timeout_seconds` × (`max_retries` + 2) at the defaults) | `> 0` and at least `timeout_seconds`, so one full attempt always fits. |
 
 `model_chain` is the primary model followed by the fallbacks, in try order; a
 chain of two or more models gives a failing call somewhere to go.

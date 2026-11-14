@@ -86,6 +86,14 @@ assembles the object, with `limits` read from the core's own `engine.max_concurr
 option, and `presets.py` holds the presets as data
 ([Fuzz options](protocol/fuzz-options.md)).
 
+The presets a user saves are the `presets` family. `controllers/presets/checks.py`
+checks each run to save through the same `check_options` `fuzz` applies, its
+refusals placed under the run's path; `services/persistence/presets.py` keeps them
+in the store's `user_presets` table; and `services/presets/listing.py` lists a
+builtin and a saved preset in one `ListedPreset` shape, deriving `variant`,
+`asks_for`, `requires` and `holds_back` for both with the builder the catalog uses
+([Saved presets](protocol/presets.md), [ADR-218](adr/core.md#adr-218)).
+
 What a client is told depends on the version it negotiated:
 `adapters/stdio/version_view.py` leaves out of `hello`'s and `describe`'s
 `presets` every preset whose runs set a field the client's version does not read,

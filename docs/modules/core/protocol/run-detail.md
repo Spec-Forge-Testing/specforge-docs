@@ -3,8 +3,8 @@
 `get_run` reads a stored run back: its `run`, `metrics`, `endpoints`, `findings`
 (paged with `limit`), `producer_exclusions` and, for a replay, what the replay
 concluded. Most of it is the report document's own shape. This page explains the
-facts a client has to read with care: what each finding counter counts, which
-findings are LLM suspicions and where each finding's rule comes from, what
+facts a client has to read with care: what each finding counter counts, how many
+unconfirmed defects a run's row carries, which findings are LLM suspicions and where each finding's rule comes from, what
 request an unconfirmed finding was observed on, how an
 endpoint's budget was spent per phase and what a producer's contract added, what
 a stored replay ruled, and whether a finding can be replayed alone. The closed values these fields take are on
@@ -64,6 +64,20 @@ A client that says "N unconfirmed defects" reads `unconfirmed_unique.total`. The
 three occurrence counters size the funnel; they are not a number of findings to
 show. `metrics` is `null` for a run that recorded none, and then there is no
 `unconfirmed_unique` either.
+
+### Unconfirmed defects on a run's row { #findings-unconfirmed }
+
+`run.findings_unconfirmed`, on each row of `list_runs` and on `get_run`'s `run`,
+is the run's unconfirmed defects a client still has to look at:
+`unconfirmed_unique.flaky` plus `unconfirmed_unique.unverified`. Refuted defects
+are left out: their control showed the input was not the cause. A defect flaky in
+one phase and unverified in another counts in both, as in `unconfirmed_unique`.
+
+It is `null` exactly when `findings_confirmed` is, for a run that recorded no
+metrics. Both readers count it from the run's stored findings, so a history row
+and the run's detail always agree. A history view shows it beside
+`findings_unique`, so a run with no defect but with defects left unconfirmed does
+not read as empty.
 
 ## LLM suspicions { #llm-suspicions }
 

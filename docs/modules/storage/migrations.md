@@ -34,6 +34,8 @@ file outside the naming.
 | 18 | `0018_endpoint_report_and_stateful_replay.sql` | `run_endpoint_stats.requests_shrink`, `contract_usage` and `consumer_values`; `run_metrics.stateful_chains`; `findings.reproducer_steps`. |
 | 19 | `0019_finding_observed_request.sql` | `findings.observed_payload` and `observed_headers`. |
 | 20 | `0020_endpoint_requests_refused.sql` | `run_endpoint_stats.requests_refused`. |
+| 21 | `0021_user_presets.sql` | The table `user_presets`. |
+| 22 | `0022_analysis_preset_and_options.sql` | `analyses.preset_json`, `deadline_ms`, `max_cost_usd` and `base_url_override`. |
 
 The tables and their columns, as the latest version leaves them, are on
 [Data model](data-model.md) and [Finding follow-up records](finding-records.md).

@@ -25,6 +25,7 @@ fields those are depends on the table:
 | `runs` | `id`, `executed_at` |
 | `run_metrics` | none: its key is the `run_id` you pass |
 | `inferred_contracts` | `id`, `created_at` |
+| `user_presets` | `id`, `created_at`, `updated_at` |
 | every other table | `id` |
 
 `PersistedRecordError` carries the record's type name as `record_type` and the
@@ -110,6 +111,16 @@ inference under the key, not of the first one. `find_by_key(cache_key)` returns 
 entry, or `None` when there is none. The table is described in the
 [data model](data-model.md#inferred_contracts).
 
+## Saved presets: replace keeps the first save { #user-presets }
+
+`UserPresetsRepository` reads and writes a preset by its `name`. `create(record)` inserts
+a new one and raises `DuplicateRowError` on a name already taken. `replace(record, *, now=None)`
+overwrites the `label`, `summary` and `runs_json` of the preset with the record's name and
+stamps `updated_at` with `now` (the current UTC time by default), keeping `id` and
+`created_at`; it returns the stored row, or `None` when no preset has that name. Whether a
+save may replace is the caller's rule: the core replaces only when the client asks for it.
+The table is described in the [data model](data-model.md#user_presets).
+
 ## Reference { #reference }
 
 Every `create()` can also raise the three errors of [the contract](#the-contract),
@@ -164,6 +175,11 @@ others.
 | | | `delete(artifact_id)` | `None`; the file on disk is the caller's to remove | `ArtifactNotFoundError` when no row matched |
 | `InferredContractsRepository` | `inferred_contracts` | `put(record)` | `int`, the new row's id | — |
 | | | `find_by_key(cache_key)` | `InferredContractRecord`, or `None` | — |
+| `UserPresetsRepository` | `user_presets` | `create(record)` | `int` | — |
+| | | `get(name)` | `UserPresetRecord`, or `None` | — |
+| | | `list_all()` | `tuple[UserPresetRecord, ...]` by name | — |
+| | | `replace(record, *, now=None)` | `UserPresetRecord` as stored, or `None` when no preset has the name | `PersistedRecordError`, `ConstraintViolationError` |
+| | | `delete(name)` | `bool`, `True` when there was one | — |
 
 `RunFilter` narrows `RunRepository.list_by_analysis`. Every field is optional,
 and the ones you set combine:

@@ -4,7 +4,7 @@
 refused `HANDSHAKE_REQUIRED`.
 
 ```json
-{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.2.6"}}
+{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.2.7"}}
 ```
 
 The response carries the protocol version, the server's identity, what this
@@ -13,7 +13,7 @@ in, and the options a run can be asked for:
 
 ```json
 {"jsonrpc":"2.0","id":1,"result":{
-  "protocol_version":"0.2.6",
+  "protocol_version":"0.2.7",
   "server":{"name":"specforge-core","version":"…","frozen":false},
   "capabilities":{…},
   "catalog":{…},
@@ -86,8 +86,8 @@ keys, the effects matrix and how it is derived are on
 **The core serves a range within its own series.** A client is served when its
 `protocol_version` has the core's `major.minor` and a patch between a declared
 floor and the core's own. Each part compares as a number, never as text:
-`0.1.10` is newer than `0.1.9`. This core speaks `0.2.6` and serves `0.2.0`
-up to `0.2.6`: no `0.1.x` client is served. It always answers `hello` with its
+`0.1.10` is newer than `0.1.9`. This core speaks `0.2.7` and serves `0.2.0`
+up to `0.2.7`: no `0.1.x` client is served. It always answers `hello` with its
 own version, and a frontend ignores the keys it does not know.
 
 Anything else — another series, a patch outside the range, or a
@@ -134,9 +134,44 @@ neither. See [ADR-095](../adr/protocol.md#adr-095).
 ## Changelog
 
 The report document that `fuzz`, `replay` and `run_pipeline` answer with is
-`schema_version` 1.28. The protocol's own README holds the full entry for each
+`schema_version` 1.29. The protocol's own README holds the full entry for each
 version; the lines below are the summary.
 
+- **0.2.7** — A user keeps presets of their own, listed beside the builtins; a run
+  says which preset it was one of and the options it used; a history row counts
+  the run's unconfirmed defects. **Additive on the wire**: this core serves
+  `0.2.0` up to `0.2.7`. It ships with report `1.29`.
+    - *Added:* the `presets` family, none of its operations needing a project
+      ([Saved presets](presets.md)). `list_presets` answers the builtins in
+      `fuzz_options.presets` order, then the saved presets by `name`, each with
+      `origin` (`builtin` or `user`), `created_at` and `updated_at` (`null` for a
+      builtin), and each run with the `fuzz` parameters a saved run keeps.
+      `save_preset` (`name`, `label`, `summary`, `runs`, `replace`) saves one to
+      five runs, each checked as `fuzz` would check it, and answers the preset as
+      saved. `delete_preset` (`name`, destructive) answers the preset as it was.
+      A core without storage lists the builtins alone. `fuzz_options.presets` is
+      unchanged.
+    - *Added:* the codes `PRESET_NAME_TAKEN` (rpc `-32602`; `data.name`,
+      `data.origin`), `PRESET_READ_ONLY` (rpc `-32602`; `data.name`),
+      `PRESET_NOT_FOUND` (`data.name`) and `PRESETS_STORE_FAILED`
+      (`data.reason`) ([errors](errors.md#presets)).
+    - *Added:* `preset` in `fuzz` and `run_pipeline`: `{name, label, origin,
+      run_index, run_count}`, which preset the run is one of, checked and kept,
+      never interpreted; a malformed one is `INVALID_PARAMS` with
+      `data.parameter` such as `preset.run_index`
+      ([the `preset` parameter](presets.md#preset-parameter)).
+    - *Added:* `analysis.preset` and `analysis.options` in the report document,
+      in `get_run`, `get_analysis` and each row of `list_analyses`: the preset
+      the run was one of, `null` for none, and the options it used
+      ([what a run keeps](presets.md#run-options)). A run stored before reads
+      `preset` `null` and `null` where its analysis does not say.
+    - *Added:* `run.findings_unconfirmed` in `list_runs` and `get_run`: the run's
+      flaky plus unverified defects, refuted ones left out, `null` exactly when
+      `findings_confirmed` is
+      ([Run detail](run-detail.md#findings-unconfirmed)).
+
+- **Report 1.29** — Additive; it ships with protocol `0.2.7`. Adds
+  `analysis.preset` and `analysis.options`.
 - **0.2.6** — A finding says where its rule comes from, and one that stands on a
   rule the model only assumed is an LLM suspicion, apart from the defects. A
   seed case is judged against the outcome it expects. What a producer's contract

@@ -582,9 +582,10 @@ preset cannot name a mode or a strategy the core does not accept. The catalog
 publishes them in `fuzz_options.presets`: `quick-check`, `contract-audit`,
 `security-scan`, `exposure-scan`, `load` and `full`.
 
-**The client chains them.** No operation takes a `preset`. A client runs a
+**The client chains them.** No operation runs a preset. A client runs a
 preset's entries in order, each as its own `fuzz` with the strategy's default
-examples per endpoint.
+examples per endpoint; the optional `preset` parameter only tags the run with the
+preset it belongs to ([ADR-218](#adr-218)).
 
 ### Rejected
 
@@ -1027,3 +1028,66 @@ A run against a target whose tokens expired reads `degraded` with
 `credentials_refused`, and the endpoint's `requests_refused` shows how many were
 refused. An endpoint that legitimately answers `403` to every generated
 request also degrades the run, and the cause names it so a reader can tell.
+
+## ADR-218 — A user's presets are saved in their own store as runs checked like a fuzz request, and a run carries its preset as an uninterpreted tag { #adr-218 }
+
+**Status:** accepted · Builds on [ADR-160](#adr-160) · `facade/presets.py`, `controllers/presets/`, `services/presets/listing.py`, `services/persistence/presets.py`, `schemas/presets.py`, `schemas/run_preset.py`
+
+### Context
+
+The builtins cover the common intents, but a team settles on its own: a security
+scan with the LLM capped at two dollars, then call sequences. Setting that up again by
+hand before every run is slow and error-prone, and two clients would each keep a
+copy of their own. A preset also outlives a project: the same sequence is run
+against every API the user tests. Once runs come from presets, a history view
+needs to say which preset a run belonged to, and to repeat a run with the values
+it actually used.
+
+### Decision
+
+**Saved presets live in the user's store.** `save_preset`, `list_presets` and
+`delete_preset` need no project: a preset is a row of `user_presets`, in the
+store every project of the user shares. `list_presets` answers builtins and saved
+presets in one shape, `origin` telling them apart, with `variant`, `asks_for`,
+`requires` and `holds_back` derived for both by the same code.
+
+**A run keeps how it is run, never what it runs against.** A saved run keeps the
+mode, the strategy, the load, the counts, the time limits, the safety-guard flag
+and the producer's kind and cap. The target, the endpoint selection, the
+identities and the producer's project paths and approval token are unknown
+fields: they belong to one project or one estimate.
+
+**Checked like a fuzz request.** Each run goes through the same checks `fuzz`
+applies before anything is loaded, so a preset that saves is a preset a client
+can send. A refusal names its path (`runs[1].producer.max_cost_usd`).
+
+**Builtins are read-only, and names are unique across both.** A saved preset
+cannot take a builtin's name, nor replace or delete one.
+
+**The run carries its preset as a tag.** `fuzz` and `run_pipeline` take an
+optional `preset` (`name`, `label`, `origin`, `run_index`, `run_count`) that the
+core checks for shape, keeps with the analysis and answers back as
+`analysis.preset`, without looking it up. Beside it, `analysis.options` answers
+the options the run used after the project's and the strategy's defaults.
+
+### Rejected
+
+- **Presets kept by each client.** Two clients would offer two lists, and a
+  preset saved in one would be missing from the other.
+- **Presets kept per project.** The same sequence would have to be saved again in
+  every project.
+- **The core running a saved preset.** One operation would start several runs,
+  with no single analysis, report or cancellation to answer with, as
+  [ADR-160](#adr-160) rejects for the builtins.
+- **Checking the tag against the store.** A run of a preset deleted since would
+  be refused, and a stored run would lose its preset the day it is deleted; the
+  `label` in the tag is what a client shows once the preset is gone.
+
+### Consequences
+
+A client offers saved presets with one call and runs them the way it runs a
+builtin, filling in the project's paths, the estimate's approval and the
+side-effects consent itself: a kept `allow_side_effects: true` is not consent.
+A history view can group a chain's runs by their tag and repeat any of them by
+sending `analysis.options` back. A run stored before the tag and the options were
+kept reads `preset` `null` and `null` where its analysis does not say.

@@ -316,7 +316,8 @@ carries the one it runs with, and an analysis carries it as `strategy` in
 
 An analysis also carries `examples_per_endpoint`: the count the run asked of each
 endpoint, `null` when its runner honors no count or for an analysis stored before
-it was recorded ([Examples per endpoint](fuzz-options.md#examples-per-endpoint)).
+it was recorded ([Examples per endpoint](fuzz-options.md#examples-per-endpoint)). Beside it, `preset` names the preset the run was one of and `options` the
+options it used ([what a run keeps](presets.md#run-options)).
 
 ## `fuzz_options.effects[].changes` { #changes }
 

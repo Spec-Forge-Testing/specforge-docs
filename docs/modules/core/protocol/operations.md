@@ -1,6 +1,6 @@
 # Operations
 
-`describe` publishes **47 operations in eight families**, derived from the
+`describe` publishes **50 operations in nine families**, derived from the
 core's own façade. Each operation declares what must be open before it is called
 (`requires`), whether it can be watched (`emits_progress`), whether it can be
 stopped (`cancellable`), and whether it destroys what cannot be undone
@@ -24,10 +24,10 @@ and verify the documented operation names, requirements and effects against
 | `contract` | A contract must also be loaded — which implies a project. |
 | `analysis` | An `analyze_endpoints` must have run in the same session — which implies a contract. Without it the call is refused `NO_STATIC_ANALYSIS`. |
 
-`destructive` is `true` on exactly five operations, `apply_fix_plan`,
-`apply_finding_fix`, `verify_finding_fix`, `revert_finding_fix` and
-`apply_prune_plan`, which delete or rewrite what cannot be undone: a fix the build
-refuses is taken out of the tree again. A frontend confirms those before sending, reading the flag instead
+`destructive` is `true` on exactly six operations, `apply_fix_plan`,
+`apply_finding_fix`, `verify_finding_fix`, `revert_finding_fix`,
+`apply_prune_plan` and `delete_preset`, which delete or rewrite what cannot be
+undone: a fix the build refuses is taken out of the tree again. A frontend confirms those before sending, reading the flag instead
 of keeping its own list.
 
 ## `session`
@@ -166,6 +166,12 @@ again.
 | `set_finding_trace` | project | none. Keeps a pasted stack trace, or notes, as the finding's evidence ([Replay and fixes](replay-and-fixes.md#set-finding-trace)) |
 | `run_pipeline` | none | composes the four stages; emits progress and is cancellable |
 
+`fuzz` and `run_pipeline` take an optional `preset`, `{name, label, origin,
+run_index, run_count}`: which preset the run is one of, as the client chains it.
+The core checks its shape, keeps it with the run and answers it back as
+`analysis.preset`, beside `analysis.options`, the options the run used
+([Saved presets](presets.md#preset-parameter)).
+
 `run_pipeline` frames each stage with `stage_started` / `stage_finished` over
 `contract` / `static_analysis` / `inference` / `execution`, and a stage ends
 `completed` / `failed` / `skipped` / `stopped`. The execution stage's status
@@ -297,7 +303,7 @@ removed; a follow-up path that already is one is kept as written.
 | `list_projects` | none | — |
 | `list_analyses` | none | — |
 | `get_analysis` | none | — |
-| `list_runs` | none | —. Each row carries `judged`, a replay's verdict counts ([Run detail](run-detail.md#replay)) |
+| `list_runs` | none | —. Each row carries `judged`, a replay's verdict counts ([Run detail](run-detail.md#replay)), and `findings_unconfirmed`, the run's flaky and unverified defects ([Run detail](run-detail.md#findings-unconfirmed)) |
 | `get_run` | none | `started`, `finished`. The run's counters, budget per phase and stored replay verdicts are on [Run detail](run-detail.md) |
 | `get_finding` | none | — |
 | `inspect_finding_source` | project | —. Whether the finding's handler code can be reached ([Replay and fixes](replay-and-fixes.md#inspect-finding-source)) |
@@ -349,6 +355,18 @@ defects once each ([The finding counters](run-detail.md#metrics)).
 `estimate_finding_explanation`, `explain_finding`, `estimate_finding_fix` and
 `propose_fix` take a finding in any state; what the model is told of an unconfirmed
 one is on [Replay and fixes](replay-and-fixes.md#unconfirmed).
+
+## `presets`
+
+| Operation | `requires` | Notes |
+| --- | --- | --- |
+| `list_presets` | none | The builtins in `fuzz_options.presets` order, then the presets the user saved, by `name` |
+| `save_preset` | none | Saves a preset of one to five runs, each checked as `fuzz` would check it |
+| `delete_preset` | none | Destructive. Deletes a saved preset; a builtin is read-only |
+
+Saved presets live in the user's own store, so every project sees them; a core
+without storage lists the builtins alone. The listed shape, the rules a saved run
+follows and how a client runs one are on [Saved presets](presets.md).
 
 ## `config`
 

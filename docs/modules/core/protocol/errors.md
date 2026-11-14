@@ -44,7 +44,7 @@ Nine codes ride the JSON-RPC integers directly:
 
 The −32000…−32099 range is the "server error" range the standard leaves
 implementation-defined. A domain error below rides `-32000` and adds its own
-`data.code`, except six that refuse the request's parameters as given and so
+`data.code`, except eight that refuse the request's parameters as given and so
 ride `-32602`, the integer of `INVALID_PARAMS`:
 
 | `data.code` | Why it is a parameter refusal |
@@ -55,6 +55,8 @@ ride `-32602`, the integer of `INVALID_PARAMS`:
 | `SIDE_EFFECTS_CONSENT_REQUIRED` | The call lacks `allow_side_effects` |
 | `PRUNE_PLAN_STALE` | The plan passed differs from what is stored |
 | `REQUIREMENT_UNMET` | The run lacks what its mode requires; `data.parameter` names what supplies it ([below](#requirement-unmet)) |
+| `PRESET_NAME_TAKEN` | The preset to save is named like a builtin, or like a saved preset it does not replace |
+| `PRESET_READ_ONLY` | The preset to delete is a builtin |
 
 A frontend branches on `data.code` either way; the integer only tells a generic
 JSON-RPC client which class of failure it is.
@@ -224,6 +226,19 @@ cache, so asking again does not pay for them again
 | `FIX_NOT_FOUND` | The finding has no proposed fix, or none with that id |
 | `FIX_EMPTY_OR_UNAPPLICABLE` | The fix has nothing to apply: none of its edits held when it was proposed |
 | `FIX_APPLY_FAILED` | Applying a fix failed for a reason other than a conflict, such as `git` failing after its check passed or a file that could not be backed up or written. The tree is left as it was |
+
+### Presets { #presets }
+
+| `data.code` | When |
+| --- | --- |
+| `PRESET_NAME_TAKEN` | `save_preset` names a builtin, or a saved preset without `replace: true`. Rides `-32602`. `data`: `name`, `origin` (`builtin` or `user`, whichever has the name) |
+| `PRESET_READ_ONLY` | `delete_preset` names a builtin. Rides `-32602`. `data`: `name` |
+| `PRESET_NOT_FOUND` | `delete_preset` names no saved preset. `data`: `name` |
+| `PRESETS_STORE_FAILED` | The saved presets could not be read or written. `data`: `reason` |
+
+A core without storage refuses `save_preset` and `delete_preset` with
+`DEPENDENCY_UNAVAILABLE` and lists the builtins alone
+([Saved presets](presets.md#errors)).
 
 ### Config and environment
 

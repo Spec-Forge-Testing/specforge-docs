@@ -66,13 +66,13 @@ means a contract must also be loaded; `Precondition.ANALYSIS` means an
 
 ## The operation catalog
 
-`describe` publishes everything a frontend can ask for: **47 operations in
-eight families**, each with its parameters and types, whether it emits progress,
+`describe` publishes everything a frontend can ask for: **50 operations in
+nine families**, each with its parameters and types, whether it emits progress,
 whether it can be cancelled, and what it requires open first. The catalog is
 **derived from the façade's own signatures and docstrings**, so there is no
 second list to fall out of sync — adding an operation is adding a façade
-function. The eight families are `analysis`, `catalog`, `config`, `contract`,
-`environment`, `execution`, `results` and `session`.
+function. The nine families are `analysis`, `catalog`, `config`, `contract`,
+`environment`, `execution`, `presets`, `results` and `session`.
 
 ## The busy guard
 
@@ -141,7 +141,7 @@ The package targets Python 3.11+. Installation and the test suite are in
 ```bash
 specforge                      # the interactive REPL (the team's testing surface)
 specforge --serve              # serve the protocol until EOF or `shutdown`
-specforge --protocol-version   # 0.2.6
+specforge --protocol-version   # 0.2.7
 ```
 
 ## Read more

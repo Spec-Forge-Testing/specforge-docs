@@ -285,10 +285,15 @@ holds both strategies at the same count.
 ## Presets
 
 A preset is a named sequence of runs, with a `label` and a one-line `summary` of
-what it finds out. The protocol has no `preset` parameter: one operation is one
-run, so the client runs a preset's entries one after the other, each with the
-strategy's default examples per endpoint
+what it finds out. One operation is one run, so the client runs a preset's
+entries one after the other, each with the strategy's default examples per
+endpoint, and tags each with the optional `preset` parameter of `fuzz`, which the
+core keeps with the run and never interprets
 ([ADR-160](../adr/core.md#adr-160)).
+
+`fuzz_options.presets` lists the builtins below. The presets a user saves are
+listed beside them by `list_presets`, in the same shape plus `origin` and when
+each was saved ([Saved presets](presets.md)).
 
 Each run is `{execution, strategy, load, variant, asks_for}`. `load` is the `load` parameter
 to send with it (`null` for none), and `variant` the variant it selects (`null` for

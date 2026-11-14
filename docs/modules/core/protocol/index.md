@@ -11,12 +11,13 @@ defines how a message travels, the pages beside it define what the messages say.
 | [Handshake and versioning](handshake.md) | `hello`, capabilities, the catalog, versioning and the changelog |
 | [Fuzz options](fuzz-options.md) | The modes, strategies, producers and presets a run can be asked for, their labels, the effects matrix, what a run can find, which variant a run gets, and examples per endpoint |
 | [Events and cancellation](events.md) | The 16 event kinds, the progress token, state vs fact, contract production, `$/cancelRequest` |
-| [Operations](operations.md) | The 41 operations by family, what each requires, emits and destroys |
+| [Operations](operations.md) | The operations by family, what each requires, emits and destroys |
+| [Saved presets](presets.md) | `list_presets`, `save_preset` and `delete_preset`, the `preset` a run is tagged with, and the preset and options its analysis keeps |
 | [Replay and fixes](replay-and-fixes.md) | `replay_finding`, `inspect_service`, a finding's trace and source, and applying, verifying and reverting a fix |
 | [Finding replay verdicts](finding-replay.md) | What a finding's replay sends, how its verdict is reached, the reasons it is inconclusive and the exchange it answers |
-| [Run detail](run-detail.md) | What `get_run` says beyond the report: the finding counters, the budget per phase, a stored replay's verdicts, and whether a finding can be replayed alone |
+| [Run detail](run-detail.md) | What `get_run` says beyond the report: the finding counters, a run's unconfirmed defects, the budget per phase, a stored replay's verdicts, and whether a finding can be replayed alone |
 | [Result vocabularies](vocabularies.md) | The closed vocabularies a result field may take: run status, comparability, oracle scope, truncation reason, target-down verdict, coverage, producer-exclusion disposition, unprobed reason, signal causes, load-step degradation, strategy, effect changes, category, severity, location scope, replay verdicts, inconclusive reasons, replay-alone reasons, caveats, operation and stage status |
-| [Errors](errors.md) | The two codes per error and the 42 error codes |
+| [Errors](errors.md) | The two codes per error and every error code |
 | [Fixtures](fixtures.md) | Recorded sessions: how they are captured and how a client uses them |
 
 ## What belongs in this section

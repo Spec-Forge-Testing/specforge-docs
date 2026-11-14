@@ -1,15 +1,16 @@
 # Data model
 
-Storage keeps its data in eighteen SQLite tables, built by its [migrations](migrations.md). This
-page covers the thirteen of the run hierarchy and the contract cache; the five a finding gathers
+Storage keeps its data in nineteen SQLite tables, built by its [migrations](migrations.md). This
+page covers the fourteen of the run hierarchy, the contract cache and the saved presets; the five a finding gathers
 after its run are on [Finding follow-up records](finding-records.md). Storage exposes each one
 as a frozen pydantic record. A record's fields are exactly its table's columns, in order: the
 repository derives its column list from the record, and a test compares that list with the
 columns SQLite reports. So each table below documents the schema and the record at once.
 
-Twelve tables form the project → analysis → run hierarchy drawn below. The thirteenth,
-[`inferred_contracts`](#inferred_contracts), stands outside it: the cache of the contracts
-the inference producer already paid for, keyed by what determines the prompt.
+Twelve tables form the project → analysis → run hierarchy drawn below. Two stand outside
+it: [`inferred_contracts`](#inferred_contracts), the cache of the contracts the inference
+producer already paid for, keyed by what determines the prompt, and
+[`user_presets`](#user_presets), the presets a user saved.
 
 ```mermaid
 erDiagram
@@ -33,13 +34,15 @@ erDiagram
 Deleting a parent row deletes its children (`ON DELETE CASCADE`), with one exception: deleting
 an analysis endpoint keeps its findings and sets their `analysis_endpoint_id` to NULL
 (`ON DELETE SET NULL`). The schema and every connection turn on `PRAGMA foreign_keys`. No
-foreign key reaches `inferred_contracts`, so no delete in the hierarchy touches it.
+foreign key reaches `inferred_contracts` or `user_presets`, so no delete in the hierarchy
+touches them.
 
 ## Conventions
 
 - **One record per table.** Frozen, rejects unknown fields, built from a row. The database assigns
-  `id`, `analyses.created_at`, `runs.executed_at` and `inferred_contracts.created_at`: a record
-  passed to `create()` or `put()` leaves them `None`.
+  `id`, `analyses.created_at`, `runs.executed_at`, `inferred_contracts.created_at`, and
+  `user_presets.created_at` and `updated_at`: a record passed to `create()` or `put()` leaves
+  them `None`.
 - **Structured data is JSON text.** A column holding a list or a map is `TEXT` with
   serialized JSON, and its record field says so. Storage never parses it.
 - **A missing fact is NULL.** `run_endpoint_stats` never stores an empty JSON list or object.
@@ -80,8 +83,13 @@ The replicable recipe a run executes: resolved contracts, strategy and execution
 | `producer` | TEXT | yes | — | JSON provenance of the contract producer; NULL when the analysis is schema-only. |
 | `repo_root` | TEXT | yes | — | The tree the analysis's run traced, relative to the project root (POSIX separators; absolute only on another drive); NULL when the run traced no code, and in a row written before schema version 2. |
 | `examples_per_endpoint` | INTEGER | yes | — | The examples the run asked of each endpoint; NULL when its runner honors no count, and in a row written before schema version 6. |
+| `preset_json` | TEXT | yes | — | JSON object of the preset the run was one of, as the client named it, validated by the core; NULL for a run of no preset, and in a row written before schema version 22. |
+| `deadline_ms` | INTEGER | yes | — | The time budget asked per endpoint, in milliseconds; NULL when none was asked, and in a row written before schema version 22. |
+| `max_cost_usd` | REAL | yes | — | The spend cap asked of the producer, in US dollars; NULL when none was asked, and in a row written before schema version 22. |
+| `base_url_override` | TEXT | yes | — | The target asked for this run alone, without its credentials; NULL when the run used the project's, and in a row written before schema version 22. |
 
-Constraints: none beyond the foreign key; `execution_mode` is not CHECKed.
+Constraints: `preset_json` is a JSON object, and `deadline_ms` and `max_cost_usd` are above
+`0`, when set (CHECK); `execution_mode` is not CHECKed.
 
 ### `analysis_endpoints` — `AnalysisEndpointRecord` { #analysis_endpoints }
 
@@ -402,6 +410,28 @@ under the same `cache_key` is deleted and a new row inserted, with a new `id` an
 `created_at` ([put replaces](repositories.md#put-replaces)). How the key is built and when an
 entry is reused is the caller's rule: the rows come from core's inference contract producer,
 which replaces an entry on a refresh, or when the current kernel cannot parse it.
+
+### `user_presets` — `UserPresetRecord` { #user_presets }
+
+The presets a user saved, one row per preset by its unique name. Like the contract cache, the
+table is global to the store, so every project of the user sees the same presets.
+
+| Column | Type | Null | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `id` | INTEGER | no | — | Primary key, assigned by the database. |
+| `name` | TEXT | no | — | The preset's unique name, 1 to 48 characters. |
+| `label` | TEXT | no | — | The name a user reads, 1 to 60 characters. |
+| `summary` | TEXT | no | `''` | What the preset is for, up to 200 characters; empty when untold. |
+| `runs_json` | TEXT | no | — | JSON array of the preset's runs, validated by the core. |
+| `created_at` | TEXT | no | `CURRENT_TIMESTAMP` | When the preset was first saved; set by the database. |
+| `updated_at` | TEXT | no | `CURRENT_TIMESTAMP` | When it was last saved; set by the database on insert, and by `replace()` on every overwrite. |
+
+Constraints: `UNIQUE (name)`; the length caps above, which match the core's, and `runs_json` a
+JSON array (CHECK). No foreign key in or out, and retention never touches it.
+`UserPresetsRepository.create()` raises `DuplicateRowError` on a name already taken;
+`replace()` overwrites `label`, `summary` and `runs_json` and keeps `created_at`
+([saved presets](repositories.md#user-presets)). What a preset means to a client is on
+[Saved presets](../core/protocol/presets.md).
 
 ## Value objects { #value-objects }
 

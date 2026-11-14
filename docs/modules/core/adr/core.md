@@ -5,8 +5,9 @@ core: how a run explains an endpoint it did not probe, how optional libraries
 are owned, how the busy guard is scoped, what a cancelled or a safety-breached
 run keeps, how a run's oracle scope bounds a comparison, how the engine options
 resolve, when the inference gateway loads, how a finding's summary is told, how
-a replay judges the defects it re-sends, and how a deleted resource is checked
-without a model.
+a replay judges the defects it re-sends, how a deleted resource is checked
+without a model, and when a run is refused for lacking a requirement or for
+verifying nothing.
 
 ---
 
@@ -858,3 +859,169 @@ A focused re-run tells resolved from untested. Scope is kept per method and path
 not per identity: a defect recorded under one identity, on an endpoint the later
 run exercised only under another, is ruled as usual and can read
 `possibly_resolved`.
+
+---
+
+## ADR-213 — A run that lacks what its mode requires is refused before it is produced, and one that would verify nothing is refused with the endpoints and why { #adr-213 }
+
+**Status:** accepted · Supersedes in part [ADR-102](../../specforge-engine/adr/engine.md#adr-102) · `controllers/execution/requirements.py`, `controllers/execution/translation.py`, `controllers/execution/producers.py`, `errors/execution.py`, `services/fuzz/exceptions.py`, `services/fuzz/runner.py`, `services/catalog/vocabulary.py`; engine `exceptions.py`, `runtime/facade.py`, `runtime/runners/auth/runner.py`
+
+### Context
+
+The catalog already said what each runner variant `requires`: `auth` needs
+identities the target accepts and a producer whose contracts declare access
+policies. A client showed it; the core did not enforce it. An `auth` run without
+a valid identity paid for its inferences and then failed with a free-text
+`EXECUTION_FAILED`; one with producer `none` ended `completed` without sending
+anything. A run whose every endpoint the safety guard held back also ended
+`completed`, its signal `degraded`, with nothing sent. Each read as a run that
+had tested the API, and none told the client which parameter would fix it.
+
+### Decision
+
+**A requirement is checked before anything is traced, produced or sent.** For the
+variant the run takes, each value of its `requires` is checked against the
+request; the first unmet one refuses the run with `REQUIREMENT_UNMET` (`-32602`,
+a parameter refusal), `data.requirement` naming it and `data.parameter` naming
+the parameter that meets it: `identities_path` for `identities`, `producer` for
+`access_policies`. No inference is paid for.
+
+**A run that would verify no endpoint is refused.** With its contracts produced,
+the core refuses with `NOTHING_VERIFIED` when the engine verifies nothing. `held_back`
+is decided before any request; `access_uncrossable` once the `auth` walk has
+crossed nothing, after any provisioning requests it sent:
+
+| `data.cause` | When | Lifted by |
+| --- | --- | --- |
+| `held_back` | The safety guard holds back every endpoint of the run; the engine refuses before sending | `allow_side_effects`, in `data.parameter` |
+| `access_uncrossable` | An `auth` run crossed no endpoint: none that is not public declares an access policy, or none it declares can be crossed; decided after the walk, so provisioning requests may already have been sent | A producer whose contracts declare crossable policies |
+
+`data.endpoints` lists each endpoint with its reason: a `hold_reason` for
+`held_back`, an `unprobed_reason` for `access_uncrossable`. Inferred contracts
+stay in the cache, so asking again does not pay for them again.
+
+### Rejected
+
+- **Keeping `requires` informative.** A client that ignores it gets a run that
+  costs money and says nothing; the core is the one authority that refuses.
+- **A `completed` run with an empty plan.** It is indistinguishable from a run
+  that tested everything and found nothing, which is the false green the core
+  never reports.
+- **Refusing every unmet run before production.** Whether anything can be
+  verified depends on what the contracts declare, so `NOTHING_VERIFIED` can only
+  be decided once they exist.
+
+### Consequences
+
+Two error codes a client handles by marking the parameter named. An `auth` run
+whose endpoints declare no access policy is refused as `access_uncrossable`, like
+one whose policies cannot be crossed, rather than completing with zero requests.
+
+---
+
+## ADR-215 — An LLM suspicion names the confirmed defect that already covers it, by the same request or the same field, and stays listed { #adr-215 }
+
+**Status:** accepted · Builds on [ADR-202](../../specforge-engine/adr/findings.md#adr-202) · `services/report/suspicion_cover.py`, `services/report/builder/cover.py`, `services/report/builder/metrics.py`, `services/report/html.py`, `services/report/grounds_text.py`, `controllers/results/findings.py`, `controllers/results/browse.py`, `models/results/findings.py`
+
+### Context
+
+A run with a producer often reports the same problem twice: once as a defect,
+against a rule the code states, and once as an LLM suspicion, against a rule the
+model assumed for the same field or on the same request. A text past a stated
+`maxLength` that also breaks an assumed `pattern` is one such pair. Read side by
+side, the suspicions list repeats what the defects already say, and a reader
+spends the time meant for the open questions on settled ones.
+
+### Decision
+
+**Each suspicion names the defect that covers it.** `covered_by` holds the
+covering defect's `invariant_violated`, `rule_id` and `status_code`, plus its
+`finding_id` where findings have ids (`get_run`, `get_finding`), or `null`.
+`metrics.findings_llm_suspicions_covered` counts the suspicions covered.
+
+**Same endpoint, then the same request or the same field.** A confirmed defect
+of the same run, method and path covers a suspicion when its `minimal_payload`
+is the suspicion's, else when both are about the same field: the `<zone>.<field>`
+the `rule_id` names, else the poisoned field, else the only field the request
+sets outside the path. A finding about no field is covered only by the same
+request. Among several, the most severe, then the first in the order of
+`defects`.
+
+**A gap in the specification never covers.** A `contract_hygiene` defect says
+the specification is incomplete, nothing about what the suspicion's rule
+expects.
+
+**Derived when read, and nothing leaves the list.** The cover is computed when
+the report is built or `get_run` reads the run, never stored, so a run stored
+before has it too. Every suspicion stays in `llm_suspicions` and `findings` with
+its reproducer, and `findings_llm_suspicions` counts them all. The HTML report
+folds the covered ones last, each naming its defect.
+
+### Rejected
+
+- **Dropping a covered suspicion.** Its rule is still the model's and may still
+  be a separate problem; only a reader can tell, so it stays, shown second.
+- **Covering by any field the two requests share.** Two findings that address
+  the same resource by its id, or carry the same field without breaking it, are
+  not the same problem; only the field each one is about counts, never a path
+  parameter.
+- **Letting every category cover.** A `contract_hygiene` defect on the same
+  request, such as an undeclared status, would mark as settled a suspicion
+  whose rule nothing in that defect checked.
+
+### Consequences
+
+A client shows the open suspicions first and the covered ones apart, each linked
+to its defect by `finding_id`. The cover is a reading aid: a suspicion it
+misses stays open, and one it covers is still listed and counted.
+
+## ADR-217 — A run whose credentials a targeted endpoint refused on every response is never clean { #adr-217 }
+
+**Status:** accepted · Builds on [ADR-190](#adr-190) · `services/history/rules.py`, `services/history/models.py`, `services/persistence/vocabulary.py`, `services/fuzz/signal.py`, `services/report/builder/metrics.py`
+
+### Context
+
+A run whose identities carry tokens the target no longer accepts gets a `401` on
+every request. Each one is a response, so neither `no_responses` nor
+`requests_unanswered` applies, and every request counts toward the endpoint being
+reached. The run read `clean` while it had verified nothing behind the access
+check of those endpoints: a reader takes a dead token for a healthy API.
+
+### Decision
+
+**The engine counts refusals per endpoint.** Each endpoint's `requests_refused`
+counts its `requests` answered `401` or `403`. Storage keeps it in
+`run_endpoint_stats.requests_refused` (migration `0020`), nullable so a row
+stored before reads `null`.
+
+**A targeted endpoint refused throughout degrades the run.** `assess_signal`
+adds `credentials_refused` when at least one targeted endpoint has
+`requests_refused` above `0` equal to its requests that got a response, those
+outside `availability`, `timeout` and `unsendable_request`. An endpoint that got
+no response is left to the causes that already say so.
+
+**Not in a mode that sends refused credentials.** `expects_refused_credentials`
+names the modes whose healthy run can see every response refuse: `auth`, which
+crosses each endpoint with the identities its access policy should refuse. Such
+a run never raises the cause.
+
+**Derived from the run's facts.** As the other causes, it is computed live and
+when a stored run is read, so the store keeps no column for the cause itself; a
+run stored before `requests_refused` was kept never raises it.
+
+### Rejected
+
+- **A share of refusals.** An endpoint that accepts a valid token and refuses
+  some crafted requests is healthy; only a refusal of every response says the
+  credentials opened nothing.
+- **Counting `401` alone.** A token accepted for authentication but without the
+  rights the endpoint asks for gets a `403` everywhere, and verifies as little.
+- **Raising it in `auth`.** That mode is built to be refused; its signal would
+  always read `degraded`.
+
+### Consequences
+
+A run against a target whose tokens expired reads `degraded` with
+`credentials_refused`, and the endpoint's `requests_refused` shows how many were
+refused. An endpoint that legitimately answers `403` to every generated
+request also degrades the run, and the cause names it so a reader can tell.

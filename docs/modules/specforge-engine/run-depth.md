@@ -44,7 +44,8 @@ control requests do not harvest. The `performance` runner keeps no corpus.
 | `created_by_run` | a declared production captured it from a `POST`, or from any `201` |
 | `read` | anything else, including every identifier leaf found by name |
 
-A value the run created never falls back to `read`.
+A value the run created never falls back to `read`, nor changes creator: each
+value also records the identity whose request returned it.
 
 **How a draw uses it.** `with_observed_values` wraps the `valid` phase's strategy
 for the path and query zones. Each field looks up the bundle it consumes first,
@@ -91,12 +92,47 @@ are sorted by their layer in the state-link graph, a producer before its
 consumers. The sort is stable over the risk order (`order_by_risk`), which still
 breaks ties. Endpoints that produce for one another in a cycle share a layer.
 
+A run with `DELETE` endpoints and others runs in **two rounds**: it explores the
+other endpoints and confirms and shrinks their findings, then explores the
+`DELETE` endpoints and confirms theirs. A delete therefore never removes the
+resource a finding's confirmation re-sends to. The first confirmation announces
+no `confirming` stage; the run's ticks keep saying `generating`
+([ADR-214](adr/runners.md#adr-214), [the confirming stage](progress-and-cancellation.md#the-confirming-stage)).
+
 ### A rejection that is a state conflict
 
 Once requests reuse real values, some 400 and 422 answers are conflicts with stored
 state, such as a username already taken. A `contract_completeness` finding that
 blames the whole request is judged by a control that sends only values the run has
 not seen accepted; [Control requests](control-requests.md) has the verdicts.
+
+### Re-sending an accepted write { #accepted-write-resend }
+
+Confirming a finding re-sends its request. When the finding's own answer was a
+2xx to a write, that first send may have changed what the re-send meets: it
+stored a unique value, or it transferred, paid or cancelled the resource it
+addressed. Two re-sends, tried in this order, keep such a finding from reading
+flaky for a cause the run itself created. Neither applies to a safe method, nor to a finding whose
+own answer was not a 2xx.
+
+| The re-send is answered | It goes once more | Constant |
+| --- | --- | --- |
+| As taken: a `409`, or a store refusing what it already holds | With its free body and query strings rotated, on the first of up to 64 rotations whose moved strings the run never saw accepted | `UNTAKEN_ROTATIONS` |
+| As if its resource were gone: `403`, `404`, `409` or `410` | At another resource of the bundle that fills the last path parameter: one the same caller created in the run, that no finding pinned, the endpoint never wrote to with a 2xx and no other re-send took, the newest first; at most 8 per endpoint | `GONE_RESOURCE_STATUSES`, `FRESH_RESOURCES_PER_ENDPOINT` |
+
+What stays as sent in a rotation: the value under test, the values taken from the
+corpus, and a seed case's values, except a string under the field the refusal
+names as taken when the case sets other fields too. A case that sets that field
+alone keeps it, since that value is what it tests; a refusal that names no field
+moves none of the case's values. The corpus records the identity whose request
+created each value, so a resource is only ever re-aimed at under its own creator,
+and nothing is created for it: with no such resource left, the finding stays
+unreproduced.
+
+The answer to the last send is the one judged, and the finding's reproducer is
+the request that reproduced: its `minimal_payload` can carry another resource's
+id than the one first observed
+([ADR-211](adr/findings.md#adr-211), [ADR-216](adr/findings.md#adr-216)).
 
 ## Stateful runs { #stateful }
 
@@ -225,6 +261,8 @@ unprobed.
 | How often a field draws from the corpus | `PATH_CORPUS_SHARE_PERCENT` in `runtime/fuzzers/stateless/constants.py`; `_CORPUS_SHARE_BY_ZONE` in `corpus_overlay.py` |
 | What counts as created by the run | `CREATING_METHODS`, `CREATED_STATUS` in `constants.py` |
 | Which corpus values a request may take | `_lookup` in `runtime/fuzzers/stateless/corpus_overlay.py`, over the readers of `CorpusSnapshot` (`values_for`, `destructive_values_for`, `unpinned_values_for`) |
+| How many rotations a re-send refused as taken looks through | `UNTAKEN_ROTATIONS` in `runtime/fuzzers/stateless/constants.py`; what holds still, `_under_test` in `untaken_resend.py` |
+| Which answers mean a re-sent write's resource is gone, and how many fresh ones an endpoint may take | `GONE_RESOURCE_STATUSES`, `FRESH_RESOURCES_PER_ENDPOINT` in `runtime/fuzzers/stateless/constants.py`; `FreshResources` in `fresh_resources.py` |
 | A credential naming convention | a row of `NAME_CONVENTIONS` in `strategy_compiler/constants.py` ([recipe](extension-guide.md#add-a-name-convention)) |
 | How many times a resilience attack is resent | `RESILIENCE_RESENDS` in `runtime/runners/resilience/constants.py` |
 | Which resend answers count as no answer | `UNANSWERED_STATUSES` in the same file |

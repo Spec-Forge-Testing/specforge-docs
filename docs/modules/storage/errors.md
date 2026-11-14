@@ -28,6 +28,8 @@ Every class carries the attributes listed below, plus a readable message as its 
 | `IncompleteExclusionError` | `StorageError` | `disposition`, `exclusion_reason` | `uow.analysis_endpoints.create()` when `exclusion_reason` does not match an `excluded` disposition. |
 | `IncompleteHoldError` | `StorageError` | `run_id`, `analysis_endpoint_id`, `held_back_by`, `held_back_via` | `uow.run_endpoint_stats.create()` with only one of the hold pair. |
 | `InvalidDispositionError` | `StorageError` | `disposition` | `uow.analysis_endpoints.create()` with a disposition outside `ENDPOINT_DISPOSITIONS`, and `uow.producer_exclusions.create()` with one outside `PRODUCER_EXCLUSION_DISPOSITIONS`. |
+| `InvalidProducerNoteKindError` | `StorageError` | `kind` | `uow.producer_notes.create()` with a kind outside `PRODUCER_NOTE_KINDS`. |
+| `InvalidRuleBasisError` | `StorageError` | `rule_basis` | `uow.findings.create()` with a `rule_basis` set outside `RULE_BASES`. |
 | **Database** | | | |
 | `DatabaseOperationError` | `StorageError` | `db_path`, `detail`, `error_name` | The database could not open, read, write or commit; also a default data directory that cannot be resolved. |
 | `DatabaseBusyError` | `DatabaseOperationError` | inherited | Another connection held the lock past the busy timeout (5 seconds). Retry the operation. |

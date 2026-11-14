@@ -17,6 +17,7 @@ one empty run that you build on the map.
 | Card | What it runs | Asks |
 | --- | --- | --- |
 | Custom | One run whose mode and strategy you choose on the map | — |
+| Standard check | `stateless` + `default` | Each endpoint alone, with every kind of input. |
 | Quick check | `stateless` + `smoke` | Does every endpoint answer? |
 | Contract audit | `stateless` + `conformance` | Do responses match the contract? |
 | Security scan | `stateless` + `security` | Attack and mutated inputs on every endpoint. |

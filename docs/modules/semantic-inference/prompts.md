@@ -91,6 +91,7 @@ Each partial under `templates/partials/` is one part of what the model is told.
 | `output_contract.j2` | system | The allowed top-level keys, then the schema vocabulary, one section partial per section of the profile, and the output rules. |
 | `schema_vocabulary.j2` | system | The only keys a schema fragment may use, which type each keyword belongs to (`examples` and `default` on any type), and that a range is never empty. |
 | `section_<name>.j2` | system | One per `ContractSection`: the section's fields, its closed values and the rules a contract is rejected for. |
+| `grounds.j2` | system | What each rule must rest on: a stated rule with its exact quote, or an assumed one ([below](#the-grounds)). |
 | `output_rules.j2` | system | The wire dialect (JSON Schema keywords in camelCase, everything else in snake_case), omit a section rather than send it empty, never emit a key not described, a single JSON object without fences or prose. |
 
 ### The security requirement
@@ -192,6 +193,47 @@ visible to it.
 treats any method but `GET`, `HEAD` or `OPTIONS` as a write and holds it out of the
 load modes.
 
+### The access policy
+
+`section_access.j2` teaches the `access` section. When the code's rejection names
+the owner while its check compares a role (`if user.role != "member"`, rejecting
+with "only the author of a post may edit it"), the message says who may call, and
+the model gives `owner_only`, not `role_only`.
+
+### The seed cases
+
+`section_seed_cases.j2` asks for the exact requests with the best chance of making
+the handler fail, at most `MAX_SEED_CASES` (20): each comparison's boundary and one
+value on each side, each branch and lookup key, the combinations a condition
+treats differently, values a conversion cannot take, and the input a guard lets
+through although it means to stop it. Each case has an `id`, a `description`, its
+`values` (a body field by its dotted path, never a path parameter, never a value
+only the database creates) and, optionally, `expects`:
+
+- `rejected` for what a check means to stop, `accepted` for a value a branch
+  serves; with `stated` grounds when the code shows it, `assumed` when only the
+  domain settles it, left out when neither does;
+- what the code **means** to do, not what it ends up doing: an input a check, a
+  rejection message or a log line says must be stopped is `rejected` even when the
+  code lets it through (it only logs, builds the error without raising it, or
+  checks something else). That gap is what the case finds;
+- a case that expects acceptance sets every value within its field's declared
+  constraints.
+
+How the engine sends and judges the cases is on
+[ADR-203](../specforge-engine/adr/findings.md#adr-203).
+
+### The grounds
+
+`grounds.j2` asks, for every rule the answer gives (a schema keyword, a business
+rule, the access policy, a seed case's `expects`), what it rests on:
+`{"basis": "stated", "quote": "..."}`, the exact line of the source context or the
+operation that states it, at most 200 characters, or `{"basis": "assumed"}` for a
+rule nothing shown states but the field's meaning imposes. The model is asked to
+give assumed rules generously, since they are reported apart as suspicions, and
+never to assume a rule the code shows is meant to pass. The core checks every quote
+against what the model was shown
+([ADR-201](../core/adr/inference.md#adr-201)).
 ## The prompt context
 
 `contract_prompt_context(request, profile)` builds the variables every contract

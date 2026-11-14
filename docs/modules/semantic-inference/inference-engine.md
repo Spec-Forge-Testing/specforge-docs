@@ -41,8 +41,12 @@ generate_contract(request: InferenceRequest, *, agent: str)
    a `user` block.
 3. **Complete.** Two messages go to `llm`'s `complete_structured` with
    `EndpointContract` as the response model: the `system` block marked
-   `cacheable`, then the `user` block. The engine allows two output re-asks when
-   an answer fails validation; transport retries and fallbacks are `llm`'s
+   `cacheable`, then the `user` block. The engine allows one output re-ask on each
+   model when an answer fails validation (`_MAX_OUTPUT_REASKS`), the same for the
+   discovery and response calls. A contract answer is capped at
+   `CONTRACT_OUTPUT_TOKEN_CEILINGS[profile]`, `CONTRACT_OUTPUT_HEADROOM` (8) times
+   the profile's expected output, so a runaway answer is cut off (`output_truncated`)
+   and the next model of the chain is asked; transport retries and fallbacks are `llm`'s
    policy, described in [LLM › Failures and the policy](../llm/reference.md#failures-and-the-policy).
 4. **Bind identity and sections.** The contract is copied with the request's
    `method` and `path_url`, whatever the model wrote there, and with every
@@ -70,12 +74,12 @@ without sending any. Both methods render through the same step, so the estimate
 covers exactly the `system` and `user` messages a run sends, under the same
 profile and the same template. The messages go to
 `llm.estimate_structured_calls` with `EndpointContract` as the response model
-and the settings' primary model, and with the attempts a call may make: up to
-two re-asks on each model, the primary and every fallback model of the chain.
+and the settings' primary model, and with the attempts a call may make: one
+re-ask on each model, the primary and every fallback model of the chain.
 
 | Assumption | Value |
 | --- | --- |
-| Output per call | `EXPECTED_CONTRACT_OUTPUT_TOKENS[profile]`: `qa` 656 tokens, `security` 928, the mean output of a contract inference over a measured sample of endpoints, rounded up to a multiple of 16 |
+| Output per call | `EXPECTED_CONTRACT_OUTPUT_TOKENS[profile]`: `qa` 1880 tokens, the mean output of a contract inference measured on live runs, and `security` 2115, scaled from the `qa` measure rather than measured on its own |
 | Prompt cache | modelled when `prompt_cache` is true: the shared `system` block is written once and read by every later call, if the provider caches and the block is long enough |
 | Expected cost | the primary model, one answer per call |
 | Worst case | every re-ask on every model of the chain, each at the expected output length and resending the rejected answers with their validation errors; `None` when some model of the chain is unpriced |

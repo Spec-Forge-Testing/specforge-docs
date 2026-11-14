@@ -136,6 +136,7 @@ flowchart TD
 | **Unverified** | Findings the run collected but never got to shrink (it was cut short first), or whose control request got no answer. |
 | **Flaky** | Findings that could not be reproduced on a second try. |
 | **Unique crashes** | Distinct bugs left after removing duplicates — the number that matters. |
+| **LLM suspicions** | Findings confirmed exactly like a crash, but against a rule only the model assumed: listed apart, never counted as crashes. |
 
 Some findings are also checked against a **control request**: the same request
 without the value suspected of causing them, or, for a rejection that names no
@@ -148,6 +149,14 @@ resending its attack instead, and is flaky unless it comes back every time.
 The bottom line of any run is its **unique crashes**: the count of genuinely distinct
 defects, after everything else has been de-duplicated away. A **crash** is a
 confirmed finding — one the run reproduced.
+
+With a contract producer, a finding can also break a rule nothing you wrote
+states: one the model assumed from what a field means. Such a finding is an **LLM
+suspicion**. It is reproduced and checked like a crash, but listed apart and never
+counted as one, and it never degrades the run's signal: the server did what the
+finding says, and only you can tell whether the API should hold that rule. Every
+finding says what its rule rests on and where it is written; see
+[Defects and LLM suspicions](findings-and-suspicions.md).
 
 Findings that never reach that bar are still reported, as **unconfirmed
 findings**: the flaky ones (seen but not reproduced), the unverified ones

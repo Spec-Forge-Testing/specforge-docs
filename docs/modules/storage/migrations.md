@@ -27,6 +27,13 @@ file outside the naming.
 | 11 | `0011_strategy_column_and_cut_without_endpoint.sql` | `analyses.strategy_mode` renamed `strategy`; `runs` rebuilt so a `flaky_generation` cut records no endpoint. |
 | 12 | `0012_replay_defect_verdicts.sql` | The table `replay_defect_verdicts`; `runs.replay_recorded_defects`. |
 | 13 | `0013_finding_replay_request_recorded.sql` | `findings.replay_request_recorded` and `replay_matcher_version`. |
+| 14 | `0014_producer_notes.sql` | The table `run_producer_notes`; `inferred_contracts.notes_json`. |
+| 15 | `0015_finding_request_origin.sql` | `findings.request_origin`, `seed_case_id` and `seed_case_description`. |
+| 16 | `0016_finding_rule_grounds.sql` | `findings.rule_basis` and `rule_grounds`; `findings_llm_suspicions` in `run_metrics` and `run_endpoint_stats`. |
+| 17 | `0017_producer_notes_on_grounds.sql` | `run_producer_notes` rebuilt so its `kind` CHECK admits `assumed_over_declared` and `unverified_quote`. |
+| 18 | `0018_endpoint_report_and_stateful_replay.sql` | `run_endpoint_stats.requests_shrink`, `contract_usage` and `consumer_values`; `run_metrics.stateful_chains`; `findings.reproducer_steps`. |
+| 19 | `0019_finding_observed_request.sql` | `findings.observed_payload` and `observed_headers`. |
+| 20 | `0020_endpoint_requests_refused.sql` | `run_endpoint_stats.requests_refused`. |
 
 The tables and their columns, as the latest version leaves them, are on
 [Data model](data-model.md) and [Finding follow-up records](finding-records.md).

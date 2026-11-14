@@ -41,13 +41,18 @@ registry, classifies what the report shows;
 [ADR-159](../../specforge-engine/adr/strategies.md#adr-159), the runner traits the
 effects matrix is derived from;
 [ADR-167](../../specforge-engine/adr/findings.md#adr-167), the refuted finding the
-report lists; and [ADR-199](../../specforge-engine/adr/strategies.md#adr-199), what
-a run can find, which `fuzz_options` publishes, are the engine's.
+report lists; [ADR-199](../../specforge-engine/adr/strategies.md#adr-199), what
+a run can find, which `fuzz_options` publishes;
+[ADR-202](../../specforge-engine/adr/findings.md#adr-202), the LLM suspicions the
+report lists apart; [ADR-204](../../specforge-engine/adr/measurement.md#adr-204),
+what a producer's contract adds and the account of its items; and
+[ADR-207](../../specforge-engine/adr/runners.md#adr-207), how a stateful finding
+replays alone, are the engine's.
 
 | File | Area | Covers |
 | --- | --- | --- |
-| [core.md](core.md) | the headless core | Unprobed reasons, dependency gateways, the busy guard, cancelled-run evidence, oracle scope, breached-run evidence, engine option precedence, when the inference gateway loads, the report's labels for the engine's outcomes, the run's URL, a finding's summary, replay verdicts per defect, presets, examples per endpoint, the deleted-resource transition, when a run is clean, a finding's replay behind witnesses, comparison scope |
-| [inference.md](inference.md) | contract production | Adopting a produced contract, the inference cache, approval and the spend cap, watching and cancelling production |
+| [core.md](core.md) | the headless core | Unprobed reasons, dependency gateways, the busy guard, cancelled-run evidence, oracle scope, breached-run evidence, engine option precedence, when the inference gateway loads, the report's labels for the engine's outcomes, the run's URL, a finding's summary, replay verdicts per defect, presets, examples per endpoint, the deleted-resource transition, when a run is clean, a finding's replay behind witnesses, comparison scope, refusing a run that lacks a requirement or would verify nothing, the defect that covers an LLM suspicion, a run whose credentials were refused |
+| [inference.md](inference.md) | contract production | Adopting a produced contract, the inference cache, approval and the spend cap, watching and cancelling production, grounding a rule in a quote |
 | [protocol.md](protocol.md) | the wire | How fixtures are captured, how versions are matched, one name and `null` for every reader, how `shutdown` ends a session, the strategy's one name, the `0.2` series |
 
 ## Full index
@@ -85,3 +90,7 @@ a run can find, which `fuzz_options` publishes, are the engine's.
 | [ADR-194](core.md#adr-194) | core | A finding's replay earns `possibly_resolved` behind witnesses, and says why when it cannot |
 | [ADR-195](core.md#adr-195) | core | A comparison rules each defect within the endpoints the later run exercised |
 | [ADR-197](inference.md#adr-197) | inference | The cost cap holds an inference's worst case |
+| [ADR-201](inference.md#adr-201) | inference | A model's rule is stated only when its quote is found in what the model was shown, and a keyword's quote is about that keyword |
+| [ADR-213](core.md#adr-213) | core | A run that lacks what its mode requires is refused before it is produced, and one that would verify nothing is refused with the endpoints and why |
+| [ADR-215](core.md#adr-215) | core | An LLM suspicion names the confirmed defect that already covers it, by the same request or the same field, and stays listed |
+| [ADR-217](core.md#adr-217) | core | A run whose credentials a targeted endpoint refused on every response is never clean |

@@ -1098,6 +1098,7 @@ vocabulary is closed:
 | --- | --- |
 | `no_responses` | No request reached the target at all — every attempt was an availability, timeout or unsendable-request failure. |
 | `requests_unanswered` | An endpoint left at least three of its requests, and at least 5 % of them, with a timeout or an availability failure, so its evidence rests on the rest. |
+| `credentials_refused` | A targeted endpoint got at least one response and every response was a `401` or `403`: the credentials opened nothing there, so nothing behind its access check was verified. Its `requests_refused` counts them. An `auth` run, which sends credentials meant to be refused, never raises it. |
 | `endpoints_excluded` | A declared endpoint was selected but the compiler rejected it. |
 | `contracts_unproduced` | The producer left one or more endpoints without a contract, so they ran on their schema alone. |
 | `withheld_by_safety_guard` | A targeted endpoint was held out of the run by the safety guard (a declared side effect, or a write nobody judged). |

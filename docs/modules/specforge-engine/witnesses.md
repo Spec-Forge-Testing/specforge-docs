@@ -69,7 +69,23 @@ goes on a draw that holds it, which later fields reuse.
 | --- | --- | --- |
 | Rejects it (400, 422) | `contract_completeness` with marker `inferred_rule` | [Plain request](control-requests.md#inferred-rule) |
 | Rejects it with a database error in the body | `contract_completeness` with marker `inferred_rule_database_error` | [Plain request](control-requests.md#inferred-rule) |
-| Accepts it | `input_validation` | [Plain request](control-requests.md#inferred-rule) |
+| Accepts it | `input_validation` | [Plain request](control-requests.md#inferred-rule), then up to 3 other values breaking the same rule (below) |
+
+**An accepted value is tried against the rest of its rule.** When the plain request
+accepts the value too, up to `ENFORCEMENT_WITNESSES` (3) other values that break
+part of the same inferred rule go in the same plain request:
+
+| They get | The `input_validation` finding |
+| --- | --- |
+| One rejected as invalid (400, 422) | `confirmed`, marked `partly_enforced_rule`: the server enforces the rule, but not on this value |
+| Every one accepted | marked `unenforced_inferred_rule`: `refuted` when the rule has no grounds; otherwise it stands as its [grounds](../core/protocol/run-detail.md#grounds) say, `confirmed` for a stated rule and an LLM suspicion for an assumed one |
+| Any other answer | `unverified` |
+
+A finding whose rule the model only assumed settles as an
+[LLM suspicion](adr/findings.md#adr-202), never a defect, whichever row it took.
+A rejection whose message spells, as a whole word, a declared field off the
+poisoned branch and none on it is that other field's, and does not confirm the
+rule ([ADR-211](adr/findings.md#adr-211)).
 
 The `inferred_rule` finding says the server enforces a rule only the produced
 contract declares, so the spec should declare it too. Its observation holds the
@@ -107,8 +123,9 @@ phases is two findings. They point at one gap in the spec, with separate evidenc
 
 ## Stateful runs { #stateful }
 
-A stateful step sends a witness in place of its valid draw in one step out of ten
-(`VALID_STEPS_PER_WITNESS_STEP`, 9 valid draws to 1), so the machine still builds
+A stateful step sends a witness, or a declared `enum` or `boolean` value, in place
+of its valid draw in one step out of ten
+(`VALID_STEPS_PER_AIMED_STEP`, 9 valid draws to 1), so the machine still builds
 the state its sequences need. The witnesses are the same ones a stateless pass
 finds, looked for once per endpoint and run on the endpoint's simplest valid
 draw:
@@ -128,7 +145,7 @@ draw:
 | The limits | `strategy_compiler/constants.py`, `runtime/fuzzers/stateless/constants.py` |
 | The value derived for a keyword | `_EXACT_DERIVATIONS`, `_SIZED_DERIVATIONS` in `witness_values.py` |
 | When a request counts as a witness | `witnesses_an_inferred_rule` in `runtime/oracles/inferred_rule.py` |
-| How often a stateful step sends one | `VALID_STEPS_PER_WITNESS_STEP` in `runtime/fuzzers/stateful/constants.py` |
+| How often a stateful step sends one | `VALID_STEPS_PER_AIMED_STEP` in `runtime/fuzzers/stateful/constants.py` |
 | Which body errors mark a database error | `_DATABASE_ERROR_MARKERS` in `runtime/oracles/security/disclosure_markers.py` |
 
 ### Adding a derivation for a keyword

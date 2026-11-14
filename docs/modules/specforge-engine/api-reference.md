@@ -83,11 +83,13 @@ Field names of this family are stable: they are persisted as columns.
 | `EngineRunResult` | `findings` + `status` + `stats` + `trace` + optional `fidelity` + `exchanges` (a replay that asked to capture them) |
 | `Finding` | the discriminated union of `ConfirmedFinding`, `FlakyFinding`, `UnverifiedFinding`, `RefutedFinding` on `state` |
 | `ConfirmedFinding` | a settled reproducer: carries its `report` |
+| `LlmSuspicionFinding` | a settled reproducer whose cited rule rests on what the model assumed: carries its `report`, counted in `findings_llm_suspicions`, never as a defect ([ADR-202](adr/findings.md#adr-202)) |
+| `RuleGrounds`, `GroundsDowngrade` | what a producer's rule rests on (`basis`, `quote`, `downgraded`, `origin`), carried from the contract to each `CrashReport` that cites the rule as `grounds` |
 | `FlakyFinding`, `UnverifiedFinding` | a settled group: its `signature` and how many raw `occurrences` it stands for |
 | `RefutedFinding` | a group a control request showed is not a defect: its `signature`, `occurrences`, `first_seen` and the `control` that refuted it |
 | `RunStats`, `EndpointStats`, `LatencyStats` | run, endpoint and latency counters — `EndpointStats.unprobed_reason` names why a targeted endpoint drew no requests |
 | `LoadStepStats` | one concurrency-ladder step on an endpoint's `load_profile`: its `concurrency`, measured `latency`, `degraded` verdict (`None` when unjudged) and, when the step was measured twice to confirm a degradation, the second window as `remeasured` |
-| `UnprobedReason` | why the auth mode crossed nothing, or resilience sent nothing, at a targeted endpoint: `declared_public` or `access_undeclared` (by design), `owner_producer_missing`, `owner_chain_cyclic`, `owner_resource_unprovisioned`, `required_role_unheld`, `owner_identity_missing` or `link_target_reserved` (a precondition the run could not meet) — each one in [Execution modes](execution-modes.md#auth) —, or why a `stateful` run that was not cut short never sent an endpoint: `link_value_never_produced` or `rule_never_drawn` |
+| `UnprobedReason` | why the auth mode crossed nothing, or resilience sent nothing, at a targeted endpoint: `declared_public` or `access_undeclared` (by design), `owner_producer_missing`, `owner_chain_cyclic`, `owner_resource_unprovisioned`, `required_role_unheld`, `owner_identity_missing` or `link_target_reserved` (a precondition the run could not meet), and why a `stateful` run never sent it: `rule_never_drawn` or one of the `link_*` reasons (`link_value_never_produced`, `link_producer_missing`, `link_chain_cyclic`, `link_producer_cut_off`, `link_value_other_identity`) — each one in [Execution modes](execution-modes.md#auth) —, or why a `stateful` run that was not cut short never sent an endpoint: `link_value_never_produced` or `rule_never_drawn` |
 | `CrashReport`, `InvariantViolation` | a confirmed finding's reproducer and the invariant it broke — its `response_body` has sensitive field values redacted to `***` by name |
 | `ViolatedRule` | the rule a `CrashReport` broke (`id` + `description`) — declared by the contract for a `semantic_property` / `access_control` finding, the accepted field (`<zone>.<path>`, such as `query.limit`, `body.user.email` or `body.$`) for an `input_validation` finding, or intrinsic to the invariant for every other one |
 | `keyed_identity(invariant, identity_label) -> str \| None` | the identity that tells two findings of `invariant` apart: the label for `access_control`, `None` for every other invariant ([ADR-106](adr/engine.md#adr-106)) |
@@ -178,7 +180,7 @@ See [Progress and cancellation](progress-and-cancellation.md) for how they behav
 |---|---|
 | `ExecutionMode` | `STATELESS` / `STATEFUL` / `REPLAY` / `PERFORMANCE` / `RESILIENCE` / `AUTH` |
 | `RunStatus` | a run's terminal outcome: `COMPLETED` / `TRUNCATED` / `ABORTED` / `CANCELLED` |
-| `FindingState` | a finding's settled state: `CONFIRMED` / `FLAKY` / `UNVERIFIED` / `REFUTED` |
+| `FindingState` | a finding's settled state: `CONFIRMED` / `LLM_SUSPICION` / `FLAKY` / `UNVERIFIED` / `REFUTED` |
 | `ErrorCategory` | the outcome category of one request |
 | `TruncationReason` | why a run, or one endpoint, was cut short (includes `TARGET_DOWN`, `INFRASTRUCTURE_ABORT`, `CANCELLED`, and `ENGINE_FAILURE` for an endpoint the engine itself failed on and isolated) |
 | `InvariantViolation` | the invariant a finding broke (includes `INPUT_VALIDATION`: a 2xx accepted the poisoned field outside its declared schema; and the security invariants `INFORMATION_DISCLOSURE`, `SENSITIVE_DATA_EXPOSURE`, `REFLECTED_PAYLOAD`, `MASS_ASSIGNMENT`, `INPUT_INDUCED_TIMEOUT`; and the opt-in `UNDECLARED_RESPONSE_FIELD`) |
@@ -221,7 +223,8 @@ kernel's from `specforge_contracts`.
 | `StrategyCompilationError` | a contract cannot become a strategy |
 | `EngineError` | an execution invariant was violated |
 | `AccessIdentityError` | the auth runner has no valid declared identity to run against; raised before the first request |
-| `AccessUncrossableError` | an auth run had access policies to cross and crossed none of them; `unprobed` maps each such endpoint to its `UnprobedReason`. Not raised for a run cut short. The runner and its modules (`chain.py`, `provisioning.py`, `producer_watch.py`, …) are mapped in [Execution modes](execution-modes.md#auth) |
+| `AccessUncrossableError` | an auth run crossed nothing while some endpoint was not public: its policy could not be crossed, or it declares none; `unprobed` maps each such endpoint to its `UnprobedReason`. Not raised for a run cut short. The core answers it `NOTHING_VERIFIED`. The runner and its modules are mapped in [Execution modes](execution-modes.md#auth) |
+| `AllEndpointsHeldError` | the safety guard held back every endpoint of the run, so nothing would be sent; `held` maps each endpoint to its `HoldReason`. Raised before any request; the core answers it `NOTHING_VERIFIED` |
 | `ConcurrencyLadderError` | a performance run's concurrency ladder cannot be honored — a step exceeds `max_concurrency`; raised before the first request |
 | `RegistrationError` | a runner or a strategy profile was registered without what the engine publishes about it: a blank label or summary, or a variant selected by a field its options do not have; or an oracle registered with an alternative of `needs` that waits on more than one need no runner meets; `term` names it |
 
@@ -271,10 +274,10 @@ tests exercise, documented for that reason
 | Name | One line |
 |---|---|
 | `compile(compiler_input) -> CompilationOutcome` | the whole compile; the facade re-exports it as `compile_strategies` |
-| `build_generation_plan(endpoint, profile) -> GenerationPlan` | the per-endpoint example budget: totals (the budget's `max_examples`, else the profile's `default_max_examples`), phase split (with any applicable phase extension's share reserved), combination limits |
+| `build_generation_plan(endpoint, profile) -> GenerationPlan` | the per-endpoint example budget: the strategy's budget (the budget's `max_examples`, else the profile's `default_max_examples`) and its phase split, what a producer's contract adds on top (`extra_per_phase`), the cap on its items sent as given (`fixed_cap`), combination limits |
 | `estimate_parameter_space(parameters) -> int` | the estimated combination count for a parameter map, capped at 10⁹ |
 | `effective_phases(endpoint, base_phases) -> tuple[Phase, ...]` (`effective_phases.py`) | the profile's phases plus every phase extension the endpoint activates |
-| `effective_split(endpoint, base_split) -> Mapping[Phase, float]` (`effective_phases.py`) | a phase split with each activated extension's share reserved; unchanged when none applies |
+| `extension_draws(endpoint, base) -> dict[Phase, int]` (`effective_phases.py`) | what each activated extension's phase draws on top of `base`: its share of it, rounded up |
 | `compile_zone(zone, params, ctx) -> CompiledRequestPart` | one zone's per-phase strategies plus its documentation schema (`zone.py`) |
 | `build_zone_schema(params, *, force_required) -> dict` | the zone's parameters as a JSON Schema object |
 | `ZoneCompileContext` | endpoint-wide knobs constant across an endpoint's zones: the `phases`, a `FieldKnobs`, and the body's media type; `wire_for(zone)` and `slot_for(phase, zone)` |
@@ -297,7 +300,7 @@ tests exercise, documented for that reason
 | `PoisonCandidate` | frozen `(value, attack_family, poisons)`: a value a field could be poisoned with, its family, if any, and whether it breaks the field's contract (`True` by default) or only varies it |
 | `CandidateSource` | the Protocol of a phase's `candidates`: `(contract, *, context) -> SearchStrategy[PoisonCandidate] \| None` |
 | `untagged(source)` | a value source adapted to a `CandidateSource` whose candidates carry no family |
-| `ZoneVariantSource` | the Protocol of a whole-zone branch: `(ZoneVariantRequest) -> SearchStrategy[ZoneDraw] \| None`; the request carries `params`, `valid`, `always_sent`, `context`, `focus_fields` and `admits_extra_keys` |
+| `ZoneVariantSource` | the Protocol of a whole-zone branch: `(ZoneVariantRequest) -> SearchStrategy[ZoneDraw] \| None`; the request carries `params`, `valid`, `always_sent`, `context`, `focus_fields`, `free_form` (the object holding the zone admits extra keys and declares no property of its own) and `inferred_fields` |
 | `RootVariantSource` | the Protocol of a branch beside a body drawn whole: `(RootVariantRequest) -> SearchStrategy[ZoneDraw] \| None`; the request carries the `root` contract, `context` and `focus_fields` |
 | `root_variants_for(phase, contract_types)` | the distinct root-variant sources the phase resolves for the types |
 | `candidates_for(phase, contract_type)` | the candidates of the phase resolved for a contract type, or `None` when it does not poison |
@@ -385,7 +388,8 @@ to ([Extension guide](extension-guide.md#add-a-phase-extension)).
 | `DECIDABLE_FORMATS` | the formats whose checker's rejection proves a violation |
 | `carried_value(drawn, contract, reading)` · `carried_violation(drawn, contract)` | a `DrawnField` as a server reads it under a `TextReading` (`STRICT`, `LENIENT`, `AS_SENT`), or `ABSENT`, or `UNREADABLE`; where it provably breaks its contract, read leniently |
 | `is_omitted_field(value, wire)` | whether a field is left out of the request: a query, header or form field drawn `None` |
-| `holder_admits_extra_keys(holder)` | whether an object admits undeclared keys, for the mass-assignment generator and oracle alike |
+| `holder_admits_extra_keys(holder)` | whether an object admits undeclared keys |
+| `holder_is_free_form(holder)` | whether an object admits undeclared keys and its spec declares no property of its own: the one object the mass-assignment generator and oracle leave alone |
 | `validate_value(value, contract) -> bool` | whether a value fits a strategy contract's type, length, `enum` and range; read by the oracles and by the attack shape filter (`schema_check.py`) |
 | `meets_declared_shape(value, contract) -> bool` | whether a value provably meets, at any depth, what `validate_value` leaves out: `pattern` (read as ECMA-262; an undecidable one is never met), `format` (with the 2020-12 checker; a format the checker cannot evaluate is never met; `password` and `binary` restrict nothing), `uniqueItems`, `minProperties`, `maxProperties`; read by the contract-completeness oracle (`schema_check.py`) |
 | `is_sensitive_field_name(name) -> bool` | whether a field name holds a credential or a secret, by one normalized form; read by the redaction and the sensitive-data oracle (`sensitive_names.py`) |

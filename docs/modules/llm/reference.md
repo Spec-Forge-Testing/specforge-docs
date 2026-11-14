@@ -27,9 +27,9 @@ variable:
 | `primary_model` | `LLM_MODEL` | — | Required. A LiteLLM model string, `<provider>/<model-id>`. |
 | `fallback_models` | `LLM_FALLBACK_MODELS` | none | Comma-separated, tried in order after the primary. |
 | `max_retries` | `LLM_MAX_RETRIES` | `2` | `≥ 0`. Retries of one model on a retryable failure. |
-| `timeout_seconds` | `LLM_TIMEOUT_SECONDS` | `30.0` | `> 0`. Timeout of one attempt. |
+| `timeout_seconds` | `LLM_TIMEOUT_SECONDS` | `60.0` | `> 0`. Timeout of one attempt. |
 | `retry_backoff_base_seconds` | `LLM_RETRY_BACKOFF_BASE_SECONDS` | `0.5` | `≥ 0`. Base of the backoff between retries. |
-| `call_budget_seconds` | `LLM_CALL_BUDGET_SECONDS` | `120.0` | `> 0` and at least `timeout_seconds`, so one full attempt always fits. |
+| `call_budget_seconds` | `LLM_CALL_BUDGET_SECONDS` | `240.0` (`timeout_seconds` × (`max_retries` + 2) at the defaults) | `> 0` and at least `timeout_seconds`, so one full attempt always fits. |
 
 `model_chain` is the primary model followed by the fallbacks, in try order; a
 chain of two or more models gives a failing call somewhere to go.
@@ -90,7 +90,7 @@ second looks in the process environment and in the env file.
 | Method | Returns | Arguments |
 | --- | --- | --- |
 | `complete_text` | the text and the `LLMUsageMetrics` of the request that answered | `messages`, `max_tokens`, `temperature` |
-| `complete_structured` | an instance of `response_model` and the `StructuredCompletionMetrics` of the whole call | `messages`, `response_model`, `max_retries` (instructor re-asks, default `2`), `mode` (overrides the provider's mode) |
+| `complete_structured` | an instance of `response_model` and the `StructuredCompletionMetrics` of the whole call | `messages`, `response_model`, `max_retries` (instructor re-asks, default `2`), `max_output_tokens` (the most each answer may take; the provider's own maximum when `None`), `mode` (overrides the provider's mode) |
 
 A `Message` is a dict with `role`, `content` and an optional `cacheable` flag.
 `temperature` is sent only to a model that LiteLLM's model map says accepts it;
@@ -121,7 +121,8 @@ first, so the real cause is classified.
 | `provider_unavailable` | 500, 502, 503, a connection error, or any other API error with a status of 500 or more | retry the same model, then fall back | — |
 | `model_not_found` | 404: the model does not exist | fall back | — |
 | `context_too_long` | the prompt exceeds the context window | fall back | — |
-| `invalid_output` | the answer still fails validation after instructor's re-asks, cannot be parsed, is incomplete, or is empty | fall back | — |
+| `invalid_output` | the answer still fails validation after instructor's re-asks, cannot be parsed, or is empty | fall back | — |
+| `output_truncated` | the answer was cut off at the call's `max_output_tokens` | fall back | — |
 | `authentication` | 401 or 403 | stop | `LLMAuthenticationError` |
 | `request_rejected` | 400, 422, or any other API error below 500 | stop | `LLMRequestRejectedError` |
 | `configuration` | a parameter the model does not support, or a mode instructor cannot build | stop | `LLMConfigurationError` |

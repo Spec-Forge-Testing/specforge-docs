@@ -44,7 +44,7 @@ Nine codes ride the JSON-RPC integers directly:
 
 The −32000…−32099 range is the "server error" range the standard leaves
 implementation-defined. A domain error below rides `-32000` and adds its own
-`data.code`, except five that refuse the request's parameters as given and so
+`data.code`, except six that refuse the request's parameters as given and so
 ride `-32602`, the integer of `INVALID_PARAMS`:
 
 | `data.code` | Why it is a parameter refusal |
@@ -54,6 +54,7 @@ ride `-32602`, the integer of `INVALID_PARAMS`:
 | `INFERENCE_APPROVAL_REQUIRED` | The `producer.approval_token` is missing or stale |
 | `SIDE_EFFECTS_CONSENT_REQUIRED` | The call lacks `allow_side_effects` |
 | `PRUNE_PLAN_STALE` | The plan passed differs from what is stored |
+| `REQUIREMENT_UNMET` | The run lacks what its mode requires; `data.parameter` names what supplies it ([below](#requirement-unmet)) |
 
 A frontend branches on `data.code` either way; the integer only tells a generic
 JSON-RPC client which class of failure it is.
@@ -165,10 +166,46 @@ when the analysis named none.
 | `NO_COMPILABLE_ENDPOINTS` | No endpoint could be compiled into a strategy |
 | `CONTRACT_PRODUCER_FAILED` | A contract producer could not honor an explicit request. A `producer.source_repo` that is not a directory is one, on `fuzz` and `estimate_inference` and in `run_pipeline`'s `inference` stage, before any inference: `data.source` names the path and `data.detail` is `not a directory`. A capped `generate_contract` whose route discovery its `max_cost_usd` cannot hold is another, before the discovery call the cap cannot hold is sent and with nothing written: `data.source` is `route discovery` and `data.detail` the reason ([its cap](operations.md#generate-contract-cap)) |
 | `INFERENCE_APPROVAL_REQUIRED` | A run has inferences to pay for while `inference.require_approval` is on, and its `producer.approval_token` is missing or stale; `data`: `reason` (`missing` or `stale`), `estimate` (as [`estimate_inference`](operations.md#estimate-inference) answers it). Refused before any inference; in `run_pipeline` it fails the `inference` stage with the same code and `data` |
+| `REQUIREMENT_UNMET` | The run's mode requires what the request lacks; refused before anything is traced, produced or sent ([details](#requirement-unmet)) |
+| `NOTHING_VERIFIED` | The run would verify no endpoint: an `auth` run that can cross nothing, or a run whose every endpoint the safety guard holds back ([details](#nothing-verified)) |
 | `EXECUTION_FAILED` | The run failed while executing |
 | `REBUILD_FAILED` | The API under test could not be built and started again before its replay, so the replay was not sent |
-| `REPLAY_NOT_REPRODUCIBLE` | The recorded trace cannot be replayed against the target; also a `replay_finding` or `verify_finding_fix` of a finding that cannot be sent alone: a stateful one, which needs its prior requests (its `reason` says to replay the analysis instead), a `refuted` one, which is not a defect, one whose trace was pruned, or one whose request is not in the trace. For those four, `data.reason` is the refusal (`stateful`, `refuted`, `trace_pruned` or `not_in_trace`), as each finding's [`replay_alone`](run-detail.md#replay-alone) announces it ahead; every other cause carries no `reason` |
+| `REPLAY_NOT_REPRODUCIBLE` | The recorded trace cannot be replayed against the target; also a `replay_finding` or `verify_finding_fix` of a finding that cannot be sent alone: a stateful one recorded without the steps of its minimal sequence, or unconfirmed (its `reason` says to replay the analysis instead), a `refuted` one, which is not a defect, one whose trace was pruned, or one whose request is not in the trace. For those four, `data.reason` is the refusal (`stateful`, `refuted`, `trace_pruned` or `not_in_trace`), as each finding's [`replay_alone`](run-detail.md#replay-alone) announces it ahead; every other cause carries no `reason` |
 | `SIDE_EFFECTS_CONSENT_REQUIRED` | A `replay`, `replay_finding` or `verify_finding_fix` of a recording that needs [consent](operations.md#replay-consent) did not pass `allow_side_effects`; refused before any request is sent. `data`: `analysis_id`, `parameter` (`allow_side_effects`), `reasons` (every case that applies, most severe first: `safety_breached`, then `recorded_with_side_effects`) and `reason` (the first of `reasons`) |
+
+#### `REQUIREMENT_UNMET` { #requirement-unmet }
+
+A `fuzz` or `run_pipeline` whose run takes a variant that
+[`requires`](fuzz-options.md#which-variant) what the request lacks is refused
+before its tree is traced, its contracts produced or anything sent, so no
+inference is paid for. `data.requirement` is the first value of `requires` the
+run does not meet, and `data.parameter` the parameter that meets it: a client
+marks that field.
+
+| `data.requirement` | `data.parameter` | What meets it |
+| --- | --- | --- |
+| `identities` | `identities_path` | An identities file declaring at least one identity the target should accept |
+| `access_policies` | `producer` | A producer whose contracts declare access policies, `fixture` or `inference` |
+
+```json
+"data":{"code":"REQUIREMENT_UNMET","requirement":"access_policies","parameter":"producer"}
+```
+
+#### `NOTHING_VERIFIED` { #nothing-verified }
+
+A run whose contracts are produced and whose engine would verify no endpoint is
+refused rather than reported `completed`. `data.cause` says why;
+`data.endpoints` lists each endpoint as `{endpoint_id, reason}`; `data.parameter`
+names the parameter that lifts it, when one does. Inferred contracts stay in the
+cache, so asking again does not pay for them again
+([ADR-213](../adr/core.md#adr-213)).
+
+| `data.cause` | When | Each endpoint's `reason` | `data.parameter` |
+| --- | --- | --- | --- |
+| `access_uncrossable` | An `auth` run crossed no endpoint: none that is not public declares an access policy, or none it declares can be crossed. Decided after the run's walk, so the provisioning requests it sent trying to create owner resources may already be on the wire and in the trace | Its [`unprobed_reason`](vocabularies.md#unprobed-reason) | absent: a producer whose contracts declare crossable policies lifts it |
+| `held_back` | The safety guard holds back every endpoint of the run; nothing is sent | Its `hold_reason` | `allow_side_effects` |
+
+`vocabulary.nothing_verified_causes` carries each cause with its label.
 
 ### Results and retention
 

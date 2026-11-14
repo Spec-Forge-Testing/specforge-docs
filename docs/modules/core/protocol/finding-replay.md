@@ -13,7 +13,8 @@ reasons, as a closed vocabulary, on
 
 Before the finding's request, the replay sends its **witnesses**: up to two
 recorded requests that show whether the server still answers as it did when the
-finding was recorded.
+finding was recorded. A `stateful` finding replayed through its sequence sends its
+steps instead ([below](#stateful)).
 
 ```mermaid
 sequenceDiagram
@@ -68,25 +69,74 @@ Then:
 
 - **`present` stands.** The defect reproduced. Whatever the witnesses answered, it
   reads "present in the environment and the build that answered".
-- **Anything else is checked against six reasons, in order.** The first that holds
-  makes the verdict `inconclusive` and is given as `inconclusive_reason`.
+- **Anything else is checked against seven reasons, in order.** The first that
+  holds makes the verdict `inconclusive` and is given as `inconclusive_reason`.
 - **When none holds, the engine's verdict stands.** That is the only way to read
   `possibly_resolved`.
 
 | Order | `inconclusive_reason` | Holds when | What to do |
 | --- | --- | --- | --- |
-| 1 | `no_answer` | The finding's request got no answer (down, timed out, connection dropped), or it was not sent because no witness answered. | Bring the API up (`service` and [`inspect_service`](replay-and-fixes.md#inspect-service) say what answers on the port) and replay again. |
-| 2 | `stale_target` | The server runs the code from before a fix applied over the finding's handler files: `stale_reason` or `stale_target` is set. | Replay with `rebuild: true`, or rebuild and restart the service yourself, then replay again. |
-| 3 | `credentials_refused` | The request was recorded with credentials, now gets a `401` or `403` where the recording got neither, and nothing proves those credentials still pass: no witness, or a witness diverged. | Regenerate the identities file or the configured headers, and replay again. |
-| 4 | `witness_diverged` | A witness no longer answers as recorded: the server's data, or the credentials, are not the ones the finding was recorded against. | Read `witnesses`. Restore the data the finding was recorded against (a rebuild that empties the database removes the recorded resources), or record a new run against the current data. |
-| 5 | `unwitnessed` | The engine ruled `possibly_resolved`, but the trace held no witness to vouch that the server still answers as recorded. | Record a run whose trace holds a successful `GET` or `HEAD` under the finding's identity, ideally on its resource, and replay that run's finding. |
-| 6 | `not_observable_without_contract` | The engine ruled `inconclusive`: the server answered otherwise, but the finding's invariant can only be judged against a contract the replay does not check. | Run the endpoint again with `fuzz`, which judges against the contract, and set the runs side by side with `compare_runs`. |
+| 1 | `state_not_rebuilt` | A step of a `stateful` finding's sequence needed a value no step sent before it returned, so the finding's request was not sent ([stateful findings](#stateful)). Checked before every other. | Rebuild the target, or restore the data its producers need, and replay again. `failed_step` names the last step sent. |
+| 2 | `no_answer` | The finding's request got no answer (down, timed out, connection dropped), or it was not sent because no witness answered. | Bring the API up (`service` and [`inspect_service`](replay-and-fixes.md#inspect-service) say what answers on the port) and replay again. |
+| 3 | `stale_target` | The server runs the code from before a fix applied over the finding's handler files: `stale_reason` or `stale_target` is set. | Replay with `rebuild: true`, or rebuild and restart the service yourself, then replay again. |
+| 4 | `credentials_refused` | The request was recorded with credentials, now gets a `401` or `403` where the recording got neither, and nothing proves those credentials still pass: no witness, or a witness diverged. | Regenerate the identities file or the configured headers, and replay again. |
+| 5 | `witness_diverged` | A witness no longer answers as recorded: the server's data, or the credentials, are not the ones the finding was recorded against. | Read `witnesses`. Restore the data the finding was recorded against (a rebuild that empties the database removes the recorded resources), or record a new run against the current data. |
+| 6 | `unwitnessed` | The engine ruled `possibly_resolved`, but the trace held no witness to vouch that the server still answers as recorded. | Record a run whose trace holds a successful `GET` or `HEAD` under the finding's identity, ideally on its resource, and replay that run's finding. |
+| 7 | `not_observable_without_contract` | The engine ruled `inconclusive`: the server answered otherwise, but the finding's invariant can only be judged against a contract the replay does not check. | Run the endpoint again with `fuzz`, which judges against the contract, and set the runs side by side with `compare_runs`. |
 
 A witness that diverged gives `witness_diverged` also where the engine ruled
 `inconclusive`: it is the more actionable reason. `inconclusive_reason` is `null`
 whenever the verdict is not `inconclusive`, and for a replay cancelled before its
 request was sent.
 
+## A stateful finding's sequence { #stateful }
+
+A `stateful` finding needs the state its sequence builds: its request alone means
+nothing on a server that never saw the steps before it. A confirmed one stored from
+protocol `0.2.6` on, whose every step reached the wire, keeps the steps of its
+minimal sequence, and its replay sends **those steps** instead of witnesses
+([ADR-207](../../specforge-engine/adr/runners.md#adr-207)).
+
+```mermaid
+sequenceDiagram
+    participant C as Core
+    participant A as API under test
+    C->>A: step 1, a producer (POST /articles)
+    A-->>C: 201, a fresh slug
+    C->>A: step 2, bound to that slug (PUT /articles/{slug})
+    alt a step cannot be bound
+        C-->>C: inconclusive, state_not_rebuilt; the finding's request is not sent
+    else every step bound
+        C->>A: the finding's request, last, bound the same way
+        C-->>C: the engine's verdict, then the reasons in order
+    end
+```
+
+- **Each step is rebound.** A step takes the values the steps before it returned
+  this time (the id a `POST` hands out now, not the one it handed out when
+  recorded). A producer the target now refuses for a value it already holds, a
+  taken e-mail, goes once more with its strings rotated, as the run's own
+  reduction does.
+- **The prior steps are its witnesses.** A prior step that answers in another
+  class of status than recorded (`2xx`, `4xx`, ...), or not at all, says
+  `diverged: true` and counts as a witness that diverged; prior steps that all
+  answer as recorded count as witnesses that did.
+- **A step that cannot be bound stops it.** The finding's request is not sent and
+  the replay is `inconclusive` with `state_not_rebuilt`; `fidelity` judges only the
+  steps sent.
+
+| Field | Holds |
+| --- | --- |
+| `steps` | Every step in order: `sequence` (its place in the analysis's recorded trace), `method`, `path` (the endpoint's template), `recorded_status`, `observed_status` (`null` when it got no answer, or was not sent), `rebound` (`false` for the step that could not be bound, and every step after it) and `diverged`. The finding's own request, last, and a step not sent always say `diverged: false`. `[]` for a finding whose request is sent alone, and for a cancelled replay. |
+| `failed_step` | The `sequence` of the step that kept the replay from going on: with `state_not_rebuilt`, the last step sent, whose answer did not hold the value the next one needed; with `witness_diverged`, the first step that diverged. `null` for any other verdict or reason. |
+| `requests_sent` | Every step sent, the finding's own included. |
+| `exchange` | The finding's own request's. |
+
+The replay judges no contract here either: a transition the contract expected to
+answer otherwise reads `not_observable_without_contract`. A `stateful` finding
+stored before `0.2.6`, and an unconfirmed one, are refused
+`REPLAY_NOT_REPRODUCIBLE` with `data.reason` `stateful`: replay its analysis
+instead.
 ## Why `possibly_resolved` is earned { #earned }
 
 A changed answer is not a fix. A server that is down, a build from before the fix,

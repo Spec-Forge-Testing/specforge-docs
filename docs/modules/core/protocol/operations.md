@@ -236,7 +236,7 @@ example count does not change the estimate.
 | `untraced` | The endpoints whose code could not be traced (`method`, `path_url`, `reason`, a [sentence](errors.md#analysis-failure-reasons) naming the endpoint and the cause); they would run schema-only. |
 | `cached`, `pending` | How many contracts the cache would serve, and how many the model would infer. |
 | `input_tokens`, `output_tokens`, `cost_usd` | The totals at the expected answer length, one answer per call; `cost_usd` is `null` when unpriced. |
-| `worst_case_cost_usd` | The pending inferences' worst case at the expected answer length: every re-ask and every fallback model included. `null` when some model of the chain has no price. |
+| `worst_case_cost_usd` | The pending inferences' worst case at the expected answer length: one re-ask on each model and every fallback model included. `null` when some model of the chain has no price. |
 | `unpriced_models` | The models of the chain, primary or fallback, the pending inferences' worst case has no price on; `[]` when every model is priced. A capped run is refused naming one of them, so a client can say which before sending it. |
 | `max_cost_usd` | The `producer.max_cost_usd` echoed back, or `null`. |
 | `exceeds_cap` | Whether `worst_case_cost_usd` passes that cap; `null` without a cap or when the worst case is unpriced. |
@@ -318,11 +318,14 @@ identity tells two defects apart (only for `access_control`), so it needs the
 execution engine installed; without it the call is refused
 `DEPENDENCY_UNAVAILABLE` with `data.dependency` `specforge_engine`. Against a
 replay it reads the replay's verdicts per recorded defect; see
-[comparison caveats](vocabularies.md#caveats).
+[comparison caveats](vocabularies.md#caveats). Its `changes` and `totals` count defects only;
+`llm_suspicion_changes`, shaped like `changes`, matches the runs' [LLM
+suspicions](run-detail.md#llm-suspicions) the same way, and against a replay,
+which judges no suspicion, every one that is not `new` is `inconclusive`.
 
 ### A finding in `get_run` and `get_finding` { #finding-fields }
 
-Each finding carries, beside its identity, reproducer and state, the same
+Each finding carries, beside its identity, reproducer and [state](vocabularies.md#finding-state) (`kind` `llm_suspicion` for an LLM suspicion), the same
 classification and evidence as a report's defect
 ([Findings](../../specforge-engine/findings.md)):
 
@@ -331,11 +334,12 @@ classification and evidence as a report's defect
 | `category`, `severity` | The invariant's [category](vocabularies.md#category) and [severity](vocabularies.md#severity); `null` without the engine. |
 | `summary` | What happened, in one sentence, told when the finding is read. |
 | `observation` | `expected`, `observed`, `location` (`{scope, path}`, see [scopes](vocabularies.md#location-scope)) and `marker`; `null` for a finding stored before `0.1.19`. |
-| `request` | `url`, `poisoned_zone`, `poisoned_field` (a nested body field by its dotted path, such as `user.email` or `items.0.price`), `attack_family`, `trigger_fields`. |
+| `request` | `url`, `poisoned_zone`, `poisoned_field` (a nested body field by its dotted path, such as `user.email` or `items.0.price`), `attack_family`, `trigger_fields`, and where its payload came from: `origin` (`drawn`, `witness` or `seeded`), `seed_case_id`, `seed_case_description` ([where a rule comes from](run-detail.md#grounds)). |
+| `grounds` | What the rule the finding cites rests on: `basis`, `quote`, `downgraded`, `origin`; `null` for a rule no producer grounded ([grounds](run-detail.md#grounds)). |
 | `response` | `content_type`, `headers` (redacted), `latency_ms`. |
 | `replay_alone` | `possible` and `reason`: whether `replay_finding` can send the finding's request alone, and the [reason](vocabularies.md#replay-alone-reason) it would refuse it with; `null` when that is not known ahead ([Run detail](run-detail.md#replay-alone)). |
 | `resolution` | What resolves the finding: `fix_id`, `fix_finding_id` (another finding's when its fix covers this one) and `replayed_at`. Set while its newest replay against a fix applied to its tree passed; `null` otherwise. |
-| `control` | `status_code`, `latency_ms`, `error`: what the control request got back, plus `source`, `attribution`, `peer`, `occupancy` and `known_answer` ([what they hold](../../specforge-engine/control-requests.md#evidence)). On a confirmed finding, the control it was judged against (for `resilience`, the clean base request sent after the attack was confirmed); on an unverified one, the control that got no answer; on a refuted one, the control that refuted it (for a whole-request rejection, the request that was accepted); `null` when none was sent. |
+| `control` | `status_code`, `latency_ms`, `error`: what the control request got back, plus `source`, `attribution`, `peer`, `occupancy`, `known_answer` and `latency_samples_ms` ([what they hold](../../specforge-engine/control-requests.md#evidence)). On a confirmed finding, the control it was judged against (for `resilience`, the clean base request sent after the attack was confirmed); on an unverified one, the control that got no answer; on a refuted one, the control that refuted it (for a whole-request rejection, the request that was accepted); `null` when none was sent. |
 
 `metrics.findings_refuted` counts, apart from `findings_flaky`, the occurrences a
 control request refuted; each refuted finding is also listed, with `state`

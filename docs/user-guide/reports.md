@@ -86,7 +86,7 @@ its metrics, endpoint stats and crashes stay queryable through `history` and
 ## The `report.json` schema
 
 `ReportDocument` is a frozen, `extra="forbid"` Pydantic model: a pure function
-of persisted run data, never a live object. Its `schema_version` is `1.27`.
+of persisted run data, never a live object. Its `schema_version` is `1.28`.
 The version changes when a reader must account for a new or changed field.
 
 The changelog is intentionally compact: **additive** versions preserve the
@@ -98,6 +98,7 @@ the schema table below.
 
     | Version | Compatibility | Changes |
     | --- | --- | --- |
+    | `1.28` | Additive over 1.27 | Adds `llm_suspicions`, `producer_notes`, `recurring_findings` and `run.producer`; `grounds` and the request's `origin`, `seed_case_id` and `seed_case_description` on every finding; `covered_by` on every LLM suspicion; `findings_llm_suspicions`, `findings_llm_suspicions_covered`, `stateful_chains` and `contract_items` in `metrics`; `requests_shrink`, `consumer_values`, `contract_usage`, `findings_llm_suspicions` and `requests_refused` on each endpoint; the signal cause `credentials_refused`; `extra` and `extra_run` in `budget_by_phase`; `latency_samples_ms` on a `control`; `observed_payload` and `observed_headers` on every unconfirmed finding; `details` on the envelope's `error`. `planned` is the strategy's share alone. |
     | `1.27` | Additive over 1.26 | Adds the signal cause `contracts_unproduced`. |
     | `1.26` | Additive over 1.25 | Adds `starved` to each phase of `endpoints[].budget_by_phase`, and `finding_id` to each entry of `replay.defect_verdicts`. |
     | `1.25` | **Not additive** over 1.24 | Removes `analysis.strategy_mode`; `run.truncation.endpoint_id` is `null` with reason `flaky_generation`; adds the signal causes `run_truncated` and `requests_unanswered` and the observation marker `inferred_rule_database_error`. |
@@ -137,18 +138,21 @@ below for the exact meaning of nested values.
     | `tool` | Which tool produced the document (`name`), and the engine version that ran the analyzed API. |
     | `project` | The analyzed project's name. |
     | `analysis` | The recipe the run executed: id, label, `strategy`, execution mode (`stateless`, `stateful`, `performance`, `resilience`, `auth`), `examples_per_endpoint`, and the repo hash it was generated against. |
-    | `run` | The run's own identity and outcome: id, ordinal, origin (original/replay), `executed_at`, duration, [`status`](../modules/core/protocol/vocabularies.md#run-status), [`oracle_scope`](../modules/core/protocol/vocabularies.md#oracle-scope) - which oracles judged its responses - `fidelity`, its [comparability mark](../modules/core/protocol/vocabularies.md#comparability), `signal`/`signal_causes` (see below), and - when the run was cut short - `truncation` (`reason`, `endpoint_id` - `null` only with reason `flaky_generation`, which no endpoint caused - `detail` and `target_down_verdict`), otherwise `null`. It always carries `production_duration_ms`, `contract_cache` and `inference_cost`, which are `null` without a contract producer (see [The run's inference](#the-runs-inference)). |
+    | `run` | The run's own identity and outcome: id, ordinal, origin (original/replay), `executed_at`, duration, [`status`](../modules/core/protocol/vocabularies.md#run-status), [`oracle_scope`](../modules/core/protocol/vocabularies.md#oracle-scope) - which oracles judged its responses - `fidelity`, its [comparability mark](../modules/core/protocol/vocabularies.md#comparability), `signal`/`signal_causes` (see below), and - when the run was cut short - `truncation` (`reason`, `endpoint_id` - `null` only with reason `flaky_generation`, which no endpoint caused - `detail` and `target_down_verdict`), otherwise `null`. It carries `producer` (`none`, `fixture` or `inference`; `null` for a replay), and always `production_duration_ms`, `contract_cache` and `inference_cost`, which are `null` without a contract producer (see [The run's inference](#the-runs-inference)). |
     | `metrics` | The finding funnel and request counters, `null` when a run recorded none. `findings_flaky`, `findings_unverified` and `findings_refuted` count occurrences, not distinct defects ([what each counter counts](../modules/core/protocol/run-detail.md#metrics)); `findings_refuted` counts, apart from `findings_flaky`, the occurrences whose control request showed the same signal, so the input was not the cause. `total_requests` counts the requests the run built to explore the API; `requests_shrink` counts, apart, the requests shrinking put on the wire to reduce failures to their minimal form, in stateless and stateful runs alike, so the two never overlap. A liveness probe, the request a stateless run re-sends after a streak of server errors to check the target is still up, counts in neither. |
-    | `endpoints` | One entry per endpoint touched: requests, `examples_planned`, raw findings, confirmed findings (`findings_confirmed`), its latency distribution, `starved_identities` - the labels of any declared identities a phase's budget at the endpoint could not fund, the union of the phases' `starved`, so an identity listed here may still have been sent requests in other phases; empty unless the run split budget by identity and ran short of it - and `undecided_rules` - the ids of any declared rules the oracle evaluated here and could never decide (a rule left undetermined on every response, e.g. a numeric rule on a header declared `integer`), empty unless the run's mode accounts for them (`stateless`, `performance`) and some rule stayed undecidable - and `held_back_by` - why the safety guard kept this endpoint out of the run (`external_side_effects`, `write_operation`, or `unsafe_method_outside_run` for a follow-up outside the run), `null` when it was probed - and `held_back_via` - the id of the endpoint whose risk flag held this one back (its own id when its own flag did; for a follow-up held outside the run, the endpoint that declared the transition), `null` exactly when `held_back_by` is. A held endpoint's entry carries zero requests unless the run breached the guard - and `load_profile` - the per-step latency a performance run's concurrency ladder measured here (`concurrency`, the step's `latency` distribution, whether that step `degraded` - `null` when the step or its baseline was measured on no samples - and `remeasured`, the confirmation window's distribution or `null`), empty unless the run used a ladder - and `unprobed_reason` - why an `auth` or `resilience` run sent nothing there, or a `stateful` run never reached it (see [Unprobed endpoints](#unprobed-endpoints)), `null` when the endpoint was probed or held back for another reason. The HTML report shows this reason, or the safety guard's hold, in a **Not probed** column; a hold names the other endpoint (`via ...`) only when another endpoint's flag decided it. It also carries `truncation` - why this endpoint's own pass was cut short (`{reason, detail}`, see [the reasons](../modules/core/protocol/vocabularies.md#truncation-reason)), `null` when it ran to completion - `by_category` - the requests per outcome category - `held_back_transitions` - each follow-up endpoint the safety guard kept from being sent after this one, mapped to why - and four phase maps: `by_phase` (requests per phase), `findings_by_phase` (raw findings per phase; a load step's degradation counts under `valid`), `by_attack_family` (requests per attack family) and `budget_by_phase` (each phase's `planned` examples, the `carried_in` examples an earlier phase of the same identity left unspent, and the identities it `starved`, left with zero examples in that phase; see [Budget per phase](../modules/core/protocol/run-detail.md#budget-by-phase)), each `{}` when the run counted nothing for it; a mode that does not plan by phase leaves `budget_by_phase` `{}`. |
+    | `endpoints` | One entry per endpoint touched: requests, `examples_planned`, raw findings, confirmed findings (`findings_confirmed`), its latency distribution, `starved_identities` - the labels of any declared identities a phase's budget at the endpoint could not fund, the union of the phases' `starved`, so an identity listed here may still have been sent requests in other phases; empty unless the run split budget by identity and ran short of it - and `undecided_rules` - the ids of any declared rules the oracle evaluated here and could never decide (a rule left undetermined on every response, e.g. a numeric rule on a header declared `integer`), empty unless the run's mode accounts for them (`stateless`, `performance`) and some rule stayed undecidable - and `held_back_by` - why the safety guard kept this endpoint out of the run (`external_side_effects`, `write_operation`, or `unsafe_method_outside_run` for a follow-up outside the run), `null` when it was probed - and `held_back_via` - the id of the endpoint whose risk flag held this one back (its own id when its own flag did; for a follow-up held outside the run, the endpoint that declared the transition), `null` exactly when `held_back_by` is. A held endpoint's entry carries zero requests unless the run breached the guard - and `load_profile` - the per-step latency a performance run's concurrency ladder measured here (`concurrency`, the step's `latency` distribution, whether that step `degraded` - `null` when the step or its baseline was measured on no samples - and `remeasured`, the confirmation window's distribution or `null`), empty unless the run used a ladder - and `unprobed_reason` - why an `auth` or `resilience` run sent nothing there, or a `stateful` run never reached it (see [Unprobed endpoints](#unprobed-endpoints)), `null` when the endpoint was probed or held back for another reason. The HTML report shows this reason, or the safety guard's hold, in a **Not probed** column; a hold names the other endpoint (`via ...`) only when another endpoint's flag decided it. It also carries `truncation` - why this endpoint's own pass was cut short (`{reason, detail}`, see [the reasons](../modules/core/protocol/vocabularies.md#truncation-reason)), `null` when it ran to completion - `by_category` - the requests per outcome category - `held_back_transitions` - each follow-up endpoint the safety guard kept from being sent after this one, mapped to why - and four phase maps: `by_phase` (requests per phase), `findings_by_phase` (raw findings per phase; a load step's degradation counts under `valid`), `by_attack_family` (requests per attack family) and `budget_by_phase` (each phase's `planned` examples, the `carried_in` examples an earlier phase of the same identity left unspent, and the identities it `starved`, left with zero examples in that phase; see [Budget per phase](../modules/core/protocol/run-detail.md#budget-by-phase)), each `{}` when the run counted nothing for it; a mode that does not plan by phase leaves `budget_by_phase` `{}`. Each phase of `budget_by_phase` also says what a producer's contract added on top of the strategy's `planned` share (`extra`) and how much of it ran (`extra_run`). The entry also carries `findings_llm_suspicions`, `requests_shrink` (the requests confirming a finding sent here, apart from `requests`), `requests_refused` (its `requests` answered `401` or `403`, `null` for a run stored before it was kept; see [Requests refused their credentials](../modules/core/protocol/run-detail.md#requests-refused)), `consumer_values` (in a `stateful` run, where its consumed values came from) and `contract_usage` (every item a producer's contract gave it and what the run did with each; see [the contract's account](../modules/core/protocol/run-detail.md#contract-usage)). |
     | `coverage` | The [endpoint dispositions](../modules/core/protocol/vocabularies.md#coverage) behind the run - `declared`/`targeted`/`excluded`/`filtered`/`reached_by_transition`/`exercised` counts plus `excluded_endpoints` (method, path, reason; a withheld endpoint's reason starts `withheld:`) and `reached_by_transition_endpoints` (`method`, `path`), the endpoints the spec never declared that a stateful transition reached, never counted in `declared` - `null` for a replay, which never compiles. |
     | `producer_exclusions` | One entry (`method`, `path`, `reason`, `disposition`) per endpoint whose contract the inference producer could not deliver or the run could not use - see [`fuzz`'s contract producer](cli-reference.md). The [`disposition`](../modules/core/protocol/vocabularies.md#producer-exclusion-disposition) says what became of it: `schema_only`, fuzzed from its schema alone, or `withheld`, never fuzzed as a target because its contract declared a risk flag and could not be used. Empty when no producer ran, when the fixture producer ran (it aborts rather than drop), or when nothing was dropped. |
+    | `llm_suspicions` | One entry per finding that reproduced against a rule only the model assumed, shaped like `defects` plus `covered_by`, the confirmed defect that already covers it (`null` when none does); never counted as a defect, never in the signal. See [Defects and LLM suspicions](findings-and-suspicions.md) and [a suspicion a defect already covers](../modules/core/protocol/run-detail.md#covered-suspicions). |
+    | `producer_notes` | What the run's producer lost or retried on each endpoint (`method`, `path`, `kind`, `subject`, `detail`, `from_cache`); `[]` when it lost nothing or there was no producer ([kinds](../modules/core/protocol/vocabularies.md#producer-note-kind)). |
+    | `recurring_findings` | `undeclared_response_field` findings that show the same symptom on two endpoints or more, grouped; derived, no count changes ([recurring findings](../modules/core/protocol/run-detail.md#recurring-findings)). |
     | `defects` | One entry per crash, ordered by [`severity`](../modules/core/protocol/vocabularies.md#severity), then by the invariant's place in the engine's registry (the same order the live crash tables render): identity, reproducer, its classification, summary and evidence (see [What a finding says](#what-a-finding-says)), and what the run observed - the same shape `inspect --crash <id>` and `compare` project a crash through. Every crash carries `rule_id` and `rule_description`: the business rule the contract declared for a business-rule or access-control finding, the accepted field (`<zone>.<field>`) for an input-validation finding, the rejected field the response names (`<zone>.<field>`, or `request`) for a contract-completeness finding, or the rule the invariant enforces on its own for every other one. The HTML report labels a declared rule by its kind: **Business rule**, **Declared schema** for an input-validation finding, or **Incomplete contract** for a contract-completeness one. |
     | `unconfirmed_findings` | One entry per finding the run saw but never confirmed as a crash - see below. Empty for a replay. |
     | `replay` | What only a replay knows - `fidelity`, `divergences`, `verdicts` (one per recorded request that violated an invariant), `defect_verdicts` (one per defect the recorded run confirmed: `finding_id`, the confirmed finding it rules on, `method`, `path`, `status_code`, `invariant_violated`, `rule_id`, `identity_label`, `verdict`) and `judged` (`oracle_scope`, `recorded_defects` and how many are `present`, `possibly_resolved` or `inconclusive`) - `null` for an original run. See [replay verdicts](../modules/core/protocol/vocabularies.md#replay-verdicts). |
 
 ### What a finding says
 
-Every entry of `defects` and `unconfirmed_findings` carries the same seven fields,
+Every entry of `defects`, `llm_suspicions` and `unconfirmed_findings` carries the same eight fields,
 those of the first finding of its group for an unconfirmed one. How each is
 filled per invariant is in [Findings: taxonomy and
 evidence](../modules/specforge-engine/findings.md).
@@ -159,9 +163,10 @@ evidence](../modules/specforge-engine/findings.md).
 | `severity` | How serious it is ([values](../modules/core/protocol/vocabularies.md#severity)); `null` without the engine. |
 | `summary` | What happened, in one sentence, built from the observation when the report is built. |
 | `observation` | `expected`, `observed`, `location` (`{scope, path}`, see [scopes](../modules/core/protocol/vocabularies.md#location-scope)) and `marker`. |
-| `request` | `url` (no userinfo, query or fragment), `poisoned_zone`, `poisoned_field`, `attack_family` and `trigger_fields`. |
+| `request` | `url` (no userinfo, query or fragment), `poisoned_zone`, `poisoned_field`, `attack_family`, `trigger_fields`, and where the payload came from: `origin` (`drawn`, `witness` or `seeded`), `seed_case_id` and `seed_case_description`. |
+| `grounds` | What the rule the finding cites rests on: `basis` (`stated` or `assumed`), `quote`, `downgraded` and `origin` (the file and lines, or the place in the specification); `null` for a rule no producer grounded. See [where a finding comes from](findings-and-suspicions.md#where-a-finding-comes-from). |
 | `response` | `content_type`, `headers` (redacted) and `latency_ms`. |
-| `control` | `status_code`, `latency_ms` and `error` of the control request the finding was judged against; on an unconfirmed finding, the control that got no answer; `null` when none was sent. `source` says where the answer comes from (`sent`, `reproduction`, `earlier`); `attribution`, `peer`, `occupancy` and `known_answer` hold the further requests sent, and are absent or `null` when not sent (see [Control requests](../modules/specforge-engine/control-requests.md#evidence)). |
+| `control` | `status_code`, `latency_ms` and `error` of the control request the finding was judged against; on an unconfirmed finding, the control that got no answer; `null` when none was sent. `source` says where the answer comes from (`sent`, `reproduction`, `earlier`, `not_tried`); `attribution`, `peer`, `occupancy` and `known_answer` hold the further requests sent, and are absent or `null` when not sent; `latency_samples_ms` holds each latency of a `latency_sla` finding's request sent alone after the load (see [Control requests](../modules/specforge-engine/control-requests.md#evidence)). |
 
 A finding stored before 1.21 reads back `observation`, `request`, `response` and
 `control` as `null`; its `category`, `severity` and `summary` are derived when it
@@ -201,10 +206,14 @@ sent a targeted endpoint:
 | `required_role_unheld` | No declared identity holds the required role. |
 | `owner_identity_missing` | `resilience` only: no valid identity is declared to own the resource, so the owner-only endpoint was not attacked. |
 | `link_target_reserved` | A state link of the endpoint, or of every producer of the owner's resource, writes a bound value into a credential or `Content-Type` header, so nothing was sent. |
-| `link_value_never_produced` | `stateful` only: every time the exploration drew the endpoint, a value it consumes had not been produced yet, because its producer never answered with a status that produces it. The producer's requests are in the trace. |
+| `link_value_never_produced` | `stateful` only: the exploration drew the endpoint and sent its producers before it, but they never returned a value it could use. The producers' requests are in the trace. |
 | `rule_never_drawn` | `stateful` only: the exploration never drew the endpoint, or could never draw arguments for it. |
+| `link_producer_missing` | `stateful` only: nothing in the run produces a value the endpoint consumes, or one its producers depend on; a producer held back by the safety guard counts as missing. |
+| `link_chain_cyclic` | `stateful` only: the producers of a value the endpoint consumes depend on it themselves. |
+| `link_producer_cut_off` | `stateful` only: the endpoint's producer was cut off, by its breaker or the run stopping, before it returned a value. |
+| `link_value_other_identity` | `stateful` only: the endpoint is a read whose producers returned nothing it could use, and only sequences of another identity had produced such a value; a sequence never takes another identity's values. |
 
-The two `stateful` reasons leave the run's signal `degraded` with the cause
+The `stateful` reasons leave the run's signal `degraded` with the cause
 `stateful_endpoints_unsent`.
 
 ### Endpoints that degrade under load
@@ -236,14 +245,21 @@ with why.
 
 ### Unconfirmed findings
 
-A **crash** (an entry in `defects`) is a finding the run reproduced. Not every
+A **crash** (an entry in `defects`) is a finding the run reproduced against a rule
+the specification declares, your code states, or the invariant itself enforces. A
+finding reproduced just as well against a rule only the model assumed is an **LLM
+suspicion**, listed in `llm_suspicions` and in the HTML report's **LLM
+suspicions** section, never among the defects; see
+[Defects and LLM suspicions](findings-and-suspicions.md). The suspicions a
+confirmed defect already covers come last there, folded, each naming that defect.
+Not every
 finding gets that far: some are seen but never reproduce, some are collected
 right before the run is cut short and never checked, and some reproduce but a
 control request shows they are not defects. `unconfirmed_findings`
 carries those, so the document reports what a run saw as well as what it proved.
-Each entry has no reproducer - there is no minimal payload, no request headers,
-no response body to show - only the finding's signature, how often it was seen,
-and what its first occurrence observed:
+Each entry has no reproducer - nothing shrank it, so there is no minimal payload
+and no response body to show - only the finding's signature, how often it was
+seen, and what its first occurrence sent and observed:
 
 | Field | Description |
 | --- | --- |
@@ -255,6 +271,7 @@ and what its first occurrence observed:
 | `state` | `"flaky"`, `"unverified"` or `"refuted"` (see below). |
 | `represented_findings` | How many raw findings this entry stands for. |
 | `body_fingerprint` | The shape of the response body that grouped the finding; `""` when the response had no body. |
+| `observed_payload` / `observed_headers` | The payload, by zone, and the headers the first request of the finding's group sent, redacted as a defect's reproducer is and never cut for size; `null` for a finding stored before 1.28 (see [the observed request](../modules/core/protocol/run-detail.md#observed-request)). |
 | `category`, `severity`, `summary`, `observation`, `request`, `response`, `control` | As on a defect (see [What a finding says](#what-a-finding-says)). |
 
 The list is ordered by severity first, then by the invariant's place in the
@@ -281,7 +298,8 @@ The HTML report gains a matching **Unconfirmed findings** section, listing the
 same entries with a one-line explanation of each state: a flaky finding reads
 *"seen N time(s) but could not be reproduced"*, an unverified one *"never
 checked because the run stopped"*, a refuted one that a control request showed it
-is not a defect and that the control is worth checking. That table carries a **Rule** column, showing
+is not a defect and that the control is worth checking. Its **Request sent**
+column folds the observed payload and headers. That table carries a **Rule** column, showing
 the rule id only for a finding whose rule the contract declared (a business-rule
 or access-control finding) and a placeholder for every intrinsic invariant, whose
 rule id merely repeats the invariant.
@@ -297,11 +315,11 @@ compilation-time fact a replay never produces, so trustworthiness there is
 read from `fidelity` instead); `run.signal_causes` lists why when degraded, in
 render order - `no_responses`, `requests_unanswered` (an endpoint left at least
 three of its requests, and at least 5 % of them, with a timeout or an availability
-failure), `endpoints_excluded`, `contracts_unproduced` (the producer left one or
+failure), `credentials_refused` (a targeted endpoint got responses and every one was a `401` or `403`; never in an `auth` run), `endpoints_excluded`, `contracts_unproduced` (the producer left one or
 more endpoints without a contract), `withheld_by_safety_guard`,
 `access_policy_undeclared`, `access_preconditions_unmet` (an `auth` or
 `resilience` run left a targeted endpoint with an access policy unprobed for one
-of the `owner_*`, `owner_identity_missing`, `required_role_unheld` or `link_target_reserved` reasons above), `stateful_endpoints_unsent` (a `stateful` run never sent a targeted endpoint, for `link_value_never_produced` or `rule_never_drawn`), `run_cancelled`,
+of the `owner_*`, `owner_identity_missing`, `required_role_unheld` or `link_target_reserved` reasons above), `stateful_endpoints_unsent` (a `stateful` run never sent a targeted endpoint, for `rule_never_drawn` or one of the `link_*` reasons), `run_cancelled`,
 `run_truncated` (the run's `status` is `truncated`, even when every targeted
 endpoint received requests), `endpoints_unreached` and/or `load_unjudged` (a load profile judged no step). See
 [Coverage and the run's signal](cli-reference.md#coverage-and-the-runs-signal) for
@@ -374,6 +392,9 @@ groups and typed error data, lives in
       credentials required by the recorded trace.
     - **`replay_target_mismatch`** — `replay --base-url` points to a different
       host than the one recorded in the trace.
+    - **`fuzz_nothing_verified`** — the run would verify no endpoint: an `auth`
+      run that can cross nothing, or every endpoint held back by the safety
+      guard ([`NOTHING_VERIFIED`](../modules/core/protocol/errors.md#nothing-verified)).
     - **`replay_invalid_base_url`** — `replay --base-url` is not an `http` or
       `https` URL with a host and valid port.
 

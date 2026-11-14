@@ -2,14 +2,14 @@
 
 Part of the [Core decision records](index.md). Decisions about how the core
 produces a run's contracts with a model: when a produced contract is used, how
-inferences are cached, how spend is approved and capped, and how production is
-watched and stopped. The mechanism is described in [Inference](../inference.md).
+inferences are cached, how spend is approved and capped, how production is
+watched and stopped, and what each rule a model gives rests on. The mechanism is described in [Inference](../inference.md).
 
 ---
 
 ## ADR-098 — A produced contract is adopted only if it names, fuses and projects for its endpoint { #adr-098 }
 
-**Status:** accepted · `services/fuzz/adoption.py`, `services/fuzz/production_loop.py`, `services/fuzz/models.py`
+**Status:** accepted · Extended by [ADR-201](#adr-201) · `services/fuzz/adoption.py`, `services/fuzz/production_loop.py`, `services/fuzz/models.py`
 
 ### Context
 
@@ -235,3 +235,93 @@ the run may cost if the model has to be asked again. The worst case is not a
 strict ceiling: it assumes the expected answer length, so an answer longer than
 that, or a transport retry, can still spend past it; `run.inference_cost.actual`
 records what was spent.
+
+---
+
+## ADR-201 — A model's rule is stated only when its quote is found in what the model was shown, and a keyword's quote is about that keyword { #adr-201 }
+
+**Status:** accepted · Extends [ADR-098](#adr-098) · `services/fuzz/grounding/`, `services/fuzz/adoption.py`, `services/fuzz/producers/inference.py`, `services/fuzz/producers/fixture.py`, `services/fuzz/projection/grounds.py`; kernel `specforge_contracts.grounds`; `contract_assembly/fusion/merger.py`; `semantic_inference` `prompts/templates/partials/grounds.j2`
+
+### Context
+
+A model reading a handler gives two kinds of rule. Some the code or the
+operation states: a guard `if len(password) < 12`, a rejection message, a
+sentence of the description. Others nothing states: the model assumes them from
+what the field means, a quantity ordered is at least one, a date of birth is not
+in the future. Both are worth sending, since an API that does not enforce a rule
+its owner wants is a bug only the model can point at. But a finding against the
+second kind says only that the server does not do what the model guessed, and a
+reader has to know which kind of rule a finding stands on before treating it as
+a defect.
+
+The model's own word cannot settle that. A model asked to say whether a rule is
+stated says so for rules it made up, and quotes text that is not there.
+
+### Decision
+
+**Each rule carries its grounds.** A schema keyword (`minimum`, `maximum`,
+`minLength`, `maxLength`, `minItems`, `maxItems`, `pattern`, `format`, `enum`,
+`required`), a business rule, the access policy and a seed case's `expects` each
+carry `grounds`: `{basis: "stated", quote}` or `{basis: "assumed"}`. The kernel's
+`Grounds` rejects a quote on an assumed rule; a quote is at most 200 characters.
+
+**The core checks the quote, not the model.** `ModelGrounding` looks for the
+quote in what the model was shown, in order: the code blocks of the prompt
+context (the handler first, then its dependencies, types and file), then every
+key and string of the operation. The comparison folds what a model copies
+differently (Unicode compatibility forms, typographic quotes and dashes, runs of
+blanks, case, a wrapping quote or backtick) and needs at least 8 non-blank
+characters, so a quote points at one place. A quote found keeps the rule
+`stated` and records where it is: `{kind: "code", file, function, start_line,
+end_line}`, the lines counted from 1 in the analysis' tree, or `{kind: "spec",
+pointer}`, a JSON Pointer into the operation.
+
+**A rule the model calls stated and cannot back is taken as assumed.** Without a
+quote it is `downgraded` `no_quote`; with a quote nowhere in what it was shown,
+`quote_not_found`. Either way the producer notes it (`producer_notes[].kind`
+`unverified_quote`) and the rule stays in the contract.
+
+**A keyword's quote must be about that keyword.** A quote found in the code can
+still be about something else: a model grounding `minLength: 8` on `title` in a
+line that checks `password`. For a schema keyword, the quote holds the rule only
+when it names the keyword's field (its words in a row, or an identifier spelling
+it, `snake_case` and `camelCase` split), sits in a place that names it (the function
+or the spec pointer it was found in), or carries the keyword's value: a number
+within `BOUND_TOLERANCE` (1) of a bound (`len(x) < 12` states `minLength: 12`),
+the pattern or one of its counts, an `enum` member, the format's name. Otherwise
+the rule is taken as assumed, `downgraded` `quote_unrelated`, and noted
+`unverified_quote`. A keyword of a body with no field name is never ruled out. A
+business rule, an access policy and a seed case's `expects` are checked for being
+found, not for relevance: their quotes rarely spell one field.
+**An assumed keyword never replaces a declared one.** Fusion keeps the keyword
+the specification declares on the same field, and notes the model's
+(`assumed_over_declared`). A keyword the specification already declares with the
+same value needs no grounds.
+
+**An author's contract is taken at its word.** `DeclaredGrounding` grounds a
+`fixture` contract: a rule without grounds is `stated`, and its origin is
+`{kind: "fixture", file, pointer}`, where the file writes it. A contract that
+grounds nothing at all (an inferred contract cached before grounds existed, or a
+model that gave none) gets no grounds, and its findings read as they always did.
+
+### Rejected
+
+- **Trusting the model's `basis`.** It is the claim under test; a quote that is
+  not in the code is the most common way a model overstates a rule.
+- **Dropping assumed rules.** They are the rules no other source gives. The
+  prompt asks for them generously, and the run reports what they find apart
+  ([ADR-202](../../specforge-engine/adr/findings.md#adr-202)).
+- **Checking every rule for relevance.** A business rule or an access check is
+  quoted from a guard that compares several fields or none by name; a relevance
+  test would downgrade the very rules a quote states best.
+- **A fuzzy match on the quote.** A near match finds a line that says something
+  else; the folding covers what copying changes and nothing more.
+
+### Consequences
+
+A finding's `grounds` says what its rule rests on and where to read it, and
+`inspect_finding_source` answers `rule_source`, the file and lines, so a client
+opens the code at the rule in one call. A rule taken as assumed is visible
+twice: in `grounds.downgraded` on every finding citing it, and in the run's
+`producer_notes`. The prompt grows by its grounds section, so every cached
+inferred contract is inferred once more on its endpoint's next run.

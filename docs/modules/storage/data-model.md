@@ -1,13 +1,13 @@
 # Data model
 
-Storage keeps its data in seventeen SQLite tables, built by its [migrations](migrations.md). This
-page covers the twelve of the run hierarchy and the contract cache; the five a finding gathers
+Storage keeps its data in eighteen SQLite tables, built by its [migrations](migrations.md). This
+page covers the thirteen of the run hierarchy and the contract cache; the five a finding gathers
 after its run are on [Finding follow-up records](finding-records.md). Storage exposes each one
 as a frozen pydantic record. A record's fields are exactly its table's columns, in order: the
 repository derives its column list from the record, and a test compares that list with the
 columns SQLite reports. So each table below documents the schema and the record at once.
 
-Eleven tables form the project → analysis → run hierarchy drawn below. The twelfth,
+Twelve tables form the project → analysis → run hierarchy drawn below. The thirteenth,
 [`inferred_contracts`](#inferred_contracts), stands outside it: the cache of the contracts
 the inference producer already paid for, keyed by what determines the prompt.
 
@@ -23,6 +23,7 @@ erDiagram
     runs ||--o{ findings : "records"
     analysis_endpoints |o--o{ findings : "located at"
     runs ||--o{ run_producer_exclusions : "drops"
+    runs ||--o{ run_producer_notes : "notes"
     runs ||--o{ replay_defect_verdicts : "rules on"
     findings ||--o{ replay_defect_verdicts : "ruled by"
     analyses |o--o{ artifacts : "recipe files"
@@ -43,7 +44,7 @@ foreign key reaches `inferred_contracts`, so no delete in the hierarchy touches 
   serialized JSON, and its record field says so. Storage never parses it.
 - **A missing fact is NULL.** `run_endpoint_stats` never stores an empty JSON list or object.
 - **No secondary indexes.** Only those SQLite creates for primary keys and UNIQUE constraints.
-- **Booleans are integers.** `is_original`, `critical`, `compressed`, `replay_request_recorded`: `0`/`1`, a `bool` in the record.
+- **Booleans are integers.** `is_original`, `critical`, `compressed`, `replay_request_recorded`, `from_cache`: `0`/`1`, a `bool` in the record.
 
 ## Tables
 
@@ -179,8 +180,11 @@ over `analysis_endpoints` and `run_endpoint_stats`.
 | `requests_shrink` | INTEGER | no | `0` | Requests sent while shrinking (in a stateful run, also while minimizing the sequence); not part of `total_requests`. |
 | `by_phase` | TEXT | yes | — | JSON breakdown of requests per phase. |
 | `by_category` | TEXT | yes | — | JSON breakdown of requests per error category. |
+| `findings_llm_suspicions` | INTEGER | no | `0` | Findings reproduced against a rule only the model assumed; not defects, so never in `findings_confirmed` nor `findings_unique`. |
+| `stateful_chains` | INTEGER | yes | — | Producer chains that put at least one request on the wire; NULL outside a stateful run. |
 
-Constraints: none beyond the foreign key. A count the run's mode does not produce stays at
+Constraints: `findings_llm_suspicions` and `stateful_chains` not negative (CHECK); nothing else beyond the foreign key.
+A row written before a column existed reads `findings_llm_suspicions` `0` and `stateful_chains` NULL. A count the run's mode does not produce stays at
 its default: `findings_collapsed` is counted by the shrink phase of stateless and `performance` runs, and a mode that
 never shrinks records `requests_shrink` only for what it re-sends to confirm a finding.
 
@@ -218,9 +222,15 @@ field, a [`LatencyRecord`](#value-objects), sampling only requests that reached 
 | `by_phase` | TEXT | yes | — | JSON object: phase → requests at this endpoint drawn for it; NULL when none were counted. |
 | `findings_by_phase` | TEXT | yes | — | JSON object: phase → raw findings at this endpoint raised by its traffic; NULL when none were counted. |
 | `by_attack_family` | TEXT | yes | — | JSON object: attack family → requests at this endpoint that carried it; NULL when none did. |
-| `budget_by_phase` | TEXT | yes | — | JSON object: phase → `{planned, carried_in, starved}`, the examples planned for it, those an earlier phase of the same identity left it, and the identities it left with none; `starved` is absent in a row written before it was kept, and reads back `[]`. NULL when the endpoint had no pass to plan. |
+| `budget_by_phase` | TEXT | yes | — | JSON object: phase → `{planned, carried_in, starved, extra, extra_run}`, the examples planned for it, those an earlier phase of the same identity left it, the identities it left with none, and those a producer's contract added on top and ran; `extra` and `extra_run` are absent in a row written before they were kept; `starved` is absent in a row written before it was kept, and reads back `[]`. NULL when the endpoint had no pass to plan. |
 
-Constraints: `UNIQUE (run_id, analysis_endpoint_id)`; `truncation_detail` only with a
+| `findings_llm_suspicions` | INTEGER | no | `0` | This endpoint's share of the run's `findings_llm_suspicions`. |
+| `requests_shrink` | INTEGER | no | `0` | Requests shrinking or confirming a finding sent to this endpoint, apart from `requests`; the rows of a run add up to its `requests_shrink`. |
+| `requests_refused` | INTEGER | yes | — | This endpoint's `requests` answered `401` or `403`, refusing their credentials; NULL on a row stored before version 20. |
+| `contract_usage` | TEXT | yes | — | JSON object of what the endpoint's contract gave and what the run did with each item; NULL when the contract gave none. |
+| `consumer_values` | TEXT | yes | — | JSON object of where a stateful consumer found its values and why some went unsent; NULL outside a stateful run. |
+
+Constraints: `UNIQUE (run_id, analysis_endpoint_id)`; `findings_llm_suspicions` and `requests_shrink` not negative (CHECK); `requests_refused` NULL or between `0` and `requests` (CHECK); `truncation_detail` only with a
 `truncation_reason`; `held_back_by` and `held_back_via` [paired](#paired-columns). A cancellation before the endpoint started is the run's cut, not its own.
 
 ### `findings` — `FindingRecord` { #findings }
@@ -260,8 +270,20 @@ reproducer: `status_code`, `minimal_payload`, `sanitized_headers` and `response_
 | `control` | TEXT | yes | — | JSON object of the control request the finding was judged against: its status, latency and error; NULL unless a control was sent. |
 | `replay_request_recorded` | INTEGER | yes | — | Whether the trace its run recorded holds the request the finding was reported from, matched when the finding is written against the trace as a replay later reads it; NULL for a finding stored before it was kept. |
 | `replay_matcher_version` | INTEGER | yes | — | The version of the trace matcher that gave `replay_request_recorded`, at least `1`; NULL exactly when that answer is. A reader whose matcher has another version treats the answer as unknown. |
+| `request_origin` | TEXT | yes | — | How the request's payload was built: `drawn` by a strategy, a rule's `witness`, or `seeded` with a value the contract proposes. |
+| `seed_case_id` | TEXT | yes | — | The contract's seed case the request was sent for; NULL when it was sent for none. |
+| `seed_case_description` | TEXT | yes | — | What the contract says that seed case covers; NULL exactly when `seed_case_id` is. |
+| `rule_basis` | TEXT | yes | — | What the cited rule rests on: `stated` or `assumed`; NULL when no producer grounded it. |
+| `rule_grounds` | TEXT | yes | — | JSON object of the rest of the rule's grounds: its quote, why a rule the model called stated was taken as assumed, and where the quote is; NULL exactly when `rule_basis` is. |
+| `reproducer_steps` | TEXT | yes | — | JSON list of the steps of a stateful finding's minimal sequence: each one's position in the run's trace and how it binds to the steps before it; NULL on a stateless finding. |
+| `observed_payload` | TEXT | yes | — | JSON payload, keyed by zone, the first request of an unconfirmed finding's group sent, secrets already redacted by the engine; NULL on a reproduced finding, whose `minimal_payload` holds its reproducer. |
+| `observed_headers` | TEXT | yes | — | JSON request headers that request carried, secrets already redacted by the engine; NULL exactly when `observed_payload` is. |
 
-Constraints: `analysis_endpoint_id` is `ON DELETE SET NULL`. `phase` and `state` are free
+Constraints: `analysis_endpoint_id` is `ON DELETE SET NULL`. `request_origin` CHECK in its
+three values and `rule_basis` CHECK in its two. Three pairs are
+[paired](#paired-columns): `seed_case_id` with `seed_case_description`, `rule_basis` with
+`rule_grounds`, `observed_payload` with `observed_headers`. Every column from
+`request_origin` on is NULL in a row written before it existed. `phase` and `state` are free
 text: the engine owns those vocabularies, and storage does not CHECK them. Neither a finding's
 category nor its severity is stored: both are fixed per invariant by the engine's registry and
 derived when the finding is read
@@ -286,6 +308,29 @@ catalog.
 | `disposition` | TEXT | no | — | What the run did with the endpoint: `schema_only` or `withheld`. |
 
 Constraints: `disposition` CHECK in its [two values](#closed-vocabularies).
+
+### `run_producer_notes` — `RunProducerNoteRecord` { #run_producer_notes }
+
+What the run's producer lost or retried on the way to one endpoint's contract: a
+re-ask, a rule or seed case dropped from the model's answer, a pruned rule,
+transition or seed case value, a keyword the fusion dropped. One row per note,
+written with the run in the same transaction. The core reads them back as the
+run's [`producer_notes`](../core/protocol/run-detail.md#producer-notes).
+
+| Column | Type | Null | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `id` | INTEGER | no | — | Primary key, assigned by the database; the order the notes were stored in. |
+| `run_id` | INTEGER | no | — | The run (`runs.id`). |
+| `method` | TEXT | no | — | HTTP method, e.g. `GET`. |
+| `path` | TEXT | no | — | URL path, e.g. `/api/v1/users`. |
+| `kind` | TEXT | no | — | What happened, one of the [thirteen kinds](#closed-vocabularies). |
+| `subject` | TEXT | no | — | What was lost: a model's answer, a rule, a field, a keyword. |
+| `detail` | TEXT | no | — | Why it was lost. |
+| `from_cache` | INTEGER | no | `0` | `1` when the note came with a contract served from the cache. |
+
+Constraints: `run_id` is `ON DELETE CASCADE`; `kind` CHECK in its
+[thirteen values](#closed-vocabularies); `from_cache` CHECK in `0`/`1`. An index on
+`run_id` serves a run's lookup.
 
 ### `replay_defect_verdicts` — `ReplayDefectVerdictRecord` { #replay_defect_verdicts }
 
@@ -348,6 +393,7 @@ to the store: the same handler in two projects shares its entry.
 | `output_tokens` | INTEGER | no | — | Completion tokens the inference produced. |
 | `cost_usd` | REAL | yes | — | Cost of the inference, in US dollars; NULL when the model is unpriced. |
 | `created_at` | DATETIME | yes | `CURRENT_TIMESTAMP` | When the inference behind this row ran; set by the database. |
+| `notes_json` | TEXT | yes | — | JSON list of the notes the inference left with its contract, served again with it, so a run the cache answers still lists them in `run_producer_notes` with `from_cache` set; NULL for an entry stored before they were kept, whose notes are unknown. |
 
 Constraints: `UNIQUE (cache_key)`; token counts and `cost_usd` not negative (CHECK). No
 foreign key in or out: deleting a project, an analysis or a run never touches the table, and
@@ -370,7 +416,7 @@ The retention outcomes (`ReclaimOutcome`, `OrphanScan`, `CollectOutcome`) are de
 
 ## Closed vocabularies { #closed-vocabularies }
 
-Four columns accept only a closed set of values. Each set is exported from `storage` as a
+Six columns accept only a closed set of values. Each set is exported from `storage` as a
 tuple and enforced twice: by a CHECK in the schema, and by the repository's `create()`, which
 raises a typed error before the INSERT ([ADR-080](adr/repositories.md#adr-080)).
 
@@ -380,10 +426,17 @@ raises a typed error before the INSERT ([ADR-080](adr/repositories.md#adr-080)).
 | `runs.oracle_scope` | `ORACLE_SCOPES` | `contract`, `contract_free` | `InvalidOracleScopeError` |
 | `analysis_endpoints.disposition` | `ENDPOINT_DISPOSITIONS` | `targeted`, `excluded`, `filtered`, `reached_by_transition` | `InvalidDispositionError` |
 | `run_producer_exclusions.disposition` | `PRODUCER_EXCLUSION_DISPOSITIONS` | `schema_only`, `withheld` | `InvalidDispositionError` |
+| `run_producer_notes.kind` | `PRODUCER_NOTE_KINDS` | `reasked`, `invalid_rule`, `unknown_field`, `unbound_bundle`, `unfollowable`, `undeclared_echo`, `incoherent_keyword`, `superseded_by_enum`, `invalid_seed_case`, `path_parameter`, `empty_seed_case`, `assumed_over_declared`, `unverified_quote` | `InvalidProducerNoteKindError` |
+| `findings.rule_basis` (when set) | `RULE_BASES` | `stated`, `assumed` | `InvalidRuleBasisError` |
+
+`findings.request_origin` takes the three values of `REQUEST_ORIGINS` (`drawn`, `witness`,
+`seeded`), enforced by the schema's CHECK alone, as `replay_defect_verdicts.verdict` is.
 
 What each value means to a reader: [run status](../core/protocol/vocabularies.md#run-status),
 [oracle scope](../core/protocol/vocabularies.md#oracle-scope), [coverage](../core/protocol/vocabularies.md#coverage),
-[producer exclusion disposition](../core/protocol/vocabularies.md#producer-exclusion-disposition).
+[producer exclusion disposition](../core/protocol/vocabularies.md#producer-exclusion-disposition),
+[producer note kind](../core/protocol/vocabularies.md#producer-note-kind),
+[grounds](../core/protocol/run-detail.md#grounds).
 
 ## Paired columns { #paired-columns }
 
@@ -398,6 +451,7 @@ it first so the caller gets a typed error naming the values ([ADR-079](adr/repos
 | `run_endpoint_stats` | `held_back_by` and `held_back_via` are both set or both NULL. | `IncompleteHoldError` |
 | `analysis_endpoints` | `exclusion_reason` is set exactly when `disposition` is `excluded`. | `IncompleteExclusionError` |
 | `artifacts` | Exactly one of `analysis_id` and `run_id` is set. | `InvalidArtifactLevelError`, raised by `save_artifact` before any file is written |
+| `findings` | `seed_case_id` and `seed_case_description`, `rule_basis` and `rule_grounds`, `observed_payload` and `observed_headers`: each pair both set or both NULL. | pydantic's `ValidationError`, raised when the `FindingRecord` is built |
 
 ## Schema version { #schema-version }
 

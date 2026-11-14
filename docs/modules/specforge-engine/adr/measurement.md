@@ -76,7 +76,7 @@ decision.
 
 ## ADR-141 — The default budget stays at 200, `security` spends a quarter on attacks, and `deadline_ms` is a ceiling { #adr-141 }
 
-**Status:** accepted · Supersedes in part [ADR-051](compiler.md#adr-051), [ADR-129](compiler.md#adr-129) · `profiles/builtin.py`, `models/phase.py`, `models/contracts/endpoint_controls.py`, `budget/aggressiveness.py`
+**Status:** accepted · Superseded in part by [ADR-204](#adr-204) · Supersedes in part [ADR-051](compiler.md#adr-051), [ADR-129](compiler.md#adr-129) · `profiles/builtin.py`, `models/phase.py`, `models/contracts/endpoint_controls.py`, `budget/aggressiveness.py`
 
 ### Context
 
@@ -329,7 +329,7 @@ by an order of magnitude.
 
 ## ADR-200 — The semantic phase gets one example per input rule { #adr-200 }
 
-**Status:** accepted · Refines [ADR-054](engine.md#adr-054), extends [ADR-055](engine.md#adr-055) · `budget/floors.py`, `shared/phase_extensions.py`, `shared/semantic_properties.py`, `phase_extension_builtins.py`, `strategy_compiler/effective_phases.py`, `strategy_compiler/planning.py`
+**Status:** accepted · Superseded in part by [ADR-204](#adr-204) · Refines [ADR-054](engine.md#adr-054), extends [ADR-055](engine.md#adr-055) · `budget/floors.py`, `shared/phase_extensions.py`, `shared/semantic_properties.py`, `phase_extension_builtins.py`, `strategy_compiler/effective_phases.py`, `strategy_compiler/planning.py`
 
 ### Context
 
@@ -406,3 +406,75 @@ A run that spends at least one semantic example per endpoint shrinks more
 per run on the lab, and a 5-example run from 12 s to 25 s. That cost belongs to the
 shrink of these findings, not to the floor, and is bounded by the shrink's own
 limits ([Shrink limits](../shrink-limits.md)).
+
+---
+
+## ADR-204 — What a producer's contract gives is sent on top of the strategy's budget, once per identity, and accounted for item by item { #adr-204 }
+
+**Status:** accepted · Supersedes in part [ADR-129](compiler.md#adr-129), [ADR-141](#adr-141), [ADR-200](#adr-200) · `constants.py`, `models/strategy_profile.py`, `models/runtime/fixed_layer.py`, `models/runtime/plan.py`, `models/runtime/contract_usage.py`, `profiles/builtin.py`, `budget/allocation.py`, `budget/risk.py`, `budget/aggressiveness.py`, `strategy_compiler/planning.py`, `strategy_compiler/effective_phases.py`, `shared/phase_extensions.py`, `phase_extension_builtins.py`, `runtime/fuzzers/semantic/fixed_cases.py`, `runtime/fuzzers/stateless/example_counts.py`, `runtime/fuzzers/stateless/fixed_layer.py`, `runtime/fuzzers/stateless/state.py`, `runtime/contract_usage/`
+
+### Context
+
+A producer's contract is worth what it makes the run send: each input rule's
+breaking and keeping case, a value only an inferred keyword forbids, each seed
+case, each field's declared samples. Under [ADR-200](#adr-200) all of it came
+out of the strategy's budget: the semantic phase reserved a tenth of it and raised
+itself to one example per rule, a contract's risk score could lower the budget,
+and its aggressiveness took attack examples from the other phases. So a run with a
+producer sent fewer of the strategy's own requests than the same run without
+one, and a comparison of the two measured the contract and the loss at once.
+And nothing said which of the contract's items were sent: an item lost to a cap,
+a deadline or a field the endpoint does not declare looked like an item tested.
+
+### Decision
+
+**The strategy's budget is the strategy's.** `examples_per_endpoint` is what
+each endpoint's strategy phases draw, the same with or without a producer. A
+contract only adds:
+
+| What it adds | How much |
+| --- | --- |
+| Its items, sent as given before any draw: each input rule's simplest breaking and keeping case, a witness per inferred keyword, each seed case, each field's `default` and `examples` | Once per valid identity, at most `max(CONTRACT_FIXED_SHARE × budget, CONTRACT_FIXED_FLOOR)` per endpoint (0.5 and 50; 100 at the default 200), in that order. `smoke` sends at most 20, under the first identity only |
+| The semantic phase's draws | `SEMANTIC_SHARE` (0.10) of the budget, on top |
+| A risk score above 50 | Up to a quarter of the budget at 100, split as the budget is; a lower score adds nothing |
+| An attack aggressiveness | What raises the attack phase to 0.05 of the budget per point, capped; nothing when the strategy already sends that many |
+
+**The deadline stretches with it.** An endpoint's `deadline_ms` is multiplied by
+its planned total over the strategy's planned share, never below 1.
+
+**It is reported apart.** Each phase of `budget_by_phase` carries `planned` (the
+strategy's share), `extra` (what the contract added) and `extra_run` (what of it
+ran). The modes that send it are those whose variant says `adds_contract_extra`:
+`stateless` and `performance`'s `flat`.
+
+**Every item is accounted for.** Each endpoint's `contract_usage` lists every
+item the contract gave, by `kind`: a rule case, a response rule, an inferred
+keyword, a seed case, a field seed, a transition, the access policy. An item is
+exercised when one of its requests got an answer that did not refuse the
+credentials, or, for a response rule, a response decided it; otherwise it carries
+an `unexercised` reason from a closed list in order of precedence (held back, cut
+by the cap, no case of its shape, a field the endpoint does not declare, its
+deadline, the run stopping, a mode that does not send it as given, ...). What the
+producer lost before the run is counted from its notes. `given` is always the
+lost, the exercised and the unexercised summed.
+
+### Rejected
+
+- **Funding the contract from the strategy's budget.** It is the confound this
+  record removes: a run with a producer would test less of what the strategy
+  plans.
+- **Sending each item as a weighted draw.** A draw may never be taken in a short
+  run; an item sent once is certain and costs one request.
+- **No cap.** A contract with hundreds of rules and cases would multiply a run's
+  length on its own; the cap scales with what the caller asked for and keeps a
+  floor for small budgets.
+- **Counting only what was sent.** An item never sent is the one a reader needs
+  to see, with why.
+
+### Consequences
+
+A run with a producer sends more requests than `examples_per_endpoint` times
+its phases, and takes longer; a client estimating it reads `extra`. Comparing
+runs whose contracts added different counts is flagged (`contract_extra_differs`),
+since a defect a contract's value found may be absent from the other run without
+being fixed. No item of the account enters `requests`, the coverage or the signal.

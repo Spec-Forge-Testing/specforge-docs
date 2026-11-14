@@ -122,7 +122,8 @@ The `default` and `security` splits, and the default budget of 200 examples, are
 measured: a grid of budgets and candidate splits on two targets, judged by a
 decision rule written before the first run ([ADR-140](adr/measurement.md#adr-140),
 [ADR-141](adr/measurement.md#adr-141)). The `security` attack share applies when
-the endpoint declares no aggressiveness; with one, `derive_attack_split` sets it.
+the endpoint declares no aggressiveness; with one, `attack_extra` adds attack
+examples on top of the strategy's share ([ADR-204](adr/measurement.md#adr-204)).
 What each strategy is for, its other fields and the opt-in oracles are on
 [Strategies and runner traits](strategies.md).
 
@@ -263,33 +264,25 @@ An endpoint that declares none is compiled exactly as before: no `semantic`
 phase, no change to its split, its output byte-for-byte what it was.
 
 A phase extension is a `PhaseExtension` value object — an activation predicate, a
-budget share, a payload refiner and an example floor declared together — held in a
+budget share, a payload refiner and the examples it sends as given — held in a
 registry at the package root and populated once from a composition root
 ([Extension guide](extension-guide.md#add-a-phase-extension)). The built-in one
 maps `Phase.SEMANTIC` to a predicate that looks for an `input_constraint` among the
 endpoint's semantic properties, with `SEMANTIC_SHARE` (0.10) as its share and
-`input_constraint_count` as its floor: one example per input rule.
+`fixed_semantic_cases` as its fixed examples: for each rule a constructor can
+build, the simplest payload breaking it and the simplest keeping it.
 
-Three pure functions in `strategy_compiler/effective_phases.py` read that registry,
+Two pure functions in `strategy_compiler/effective_phases.py` read that registry,
 and the compiler wires them so an endpoint is never funded for a phase it does not
 compile, or the reverse:
 
 - `effective_phases(endpoint, base_phases)` appends every applicable extension's
   phase to the profile's phases, so the applicable endpoint compiles a `semantic`
   strategy per zone.
-- `effective_split(endpoint, base_split)` reserves each applicable extension's
-  share out of the resolved split. It builds on `reserve_share`
-  (`budget/reservation.py`): the base split is normalized, rescaled by
-  `(1 - share)`, and the phase added at exactly its share. Reservation runs over
-  whatever split was resolved first — the profile's static split, a custom
-  `phase_split` (even one summing below 1, or one without a `valid` row), or the
-  aggressiveness-derived `security` split — so the semantic phase is weighted at
-  10% of the endpoint's budget and the other phases keep their proportions among
-  the remaining 90%.
-- `effective_floors(endpoint)` maps each applicable extension's phase to its floor
-  at that endpoint. The planner passes it to `allocate_with_floors`, which first
-  splits the budget by weight, then raises a phase whose weight falls short of its
-  floor ([The semantic floor](#the-semantic-floor)).
+- `extension_draws(endpoint, base)` gives each applicable extension's phase its
+  share of the strategy's budget, rounded up, **on top of it**: the strategy's
+  phases keep every example of their split, and the plan carries the semantic
+  draws in `extra_per_phase` ([ADR-204](adr/measurement.md#adr-204)).
 
 The predicate itself, `has_input_constraint(endpoint)`, lives in the neutral leaf
 `specforge_engine/shared/semantic_properties.py`, imported by the composition root that
@@ -297,34 +290,27 @@ registers the extension, so the compiler (which decides the phase exists) and th
 engine (which decides how it draws) cannot disagree on which properties constrain
 an input.
 
-### The semantic floor
+### Every rule's fixed cases { #the-semantic-floor }
 
-A share alone rounds to zero on a small budget: at 5 examples, 10% is half an
-example, and the largest-remainder split gives the semantic phase none, so a short
-run never tests the endpoint's rules. The floor guarantees an endpoint that declares
-`k` input constraints at least `k` semantic examples
-([ADR-200](adr/measurement.md#adr-200)).
+A share alone could round to nothing on a small budget, and a drawn example may
+never meet a rule's edge. So every rule a constructor can build gets two **fixed
+cases**, sent once before any draw: the simplest payload that breaks it and the
+simplest that keeps it, each breaking no other rule. They are items of the
+producer's contract, `rule_case` with `detail` `breaking` or `keeping`, sent within
+the endpoint's cap on what a contract sends as given, and accounted for in its
+`contract_usage`: a rule whose shape no constructor builds goes unexercised with
+`no_constructor`, one whose case the search does not find with `case_not_found`.
+Constructors cover a comparison of fields or of a field with a literal, a length,
+a set of literals, a combination of comparisons, and a sum, count or average.
 
-| Budget against `k` | What the endpoint gets |
-|---|---|
-| the share already reaches `k` | exactly the split by weight; the floor changes nothing |
-| the share falls short of `k` | `k` semantic examples; the other phases split the rest by their weights |
-| the budget is below `k` | the other phases keep one example; the semantic phase takes the rest |
-
-When more than one phase has a floor, the floors are funded deficit first: a phase
-the weights already lift above its floor never keeps examples another phase's floor
-needs. The phases keep the order of the split, and the result always sums to the
-budget.
-
-The floor holds wherever the stateless planner allocates: the stateless mode, the
-flat `performance` pass, and the shrink of their findings. The latency
-ladder plans `valid` only, and the stateful mode does not plan by phase, so neither
-carries a semantic floor.
+The fixed cases and the semantic draws are sent wherever the stateless planner
+plans: the stateless mode, the flat `performance` pass, and the shrink of their
+findings. The latency ladder plans `valid` only and sends nothing a contract adds,
+and the stateful mode does not plan by phase.
 
 The semantic budget is shared across the run's identities like any phase's
-([ADR-142](adr/engine.md#adr-142)). A floor smaller than the number of identities
-funds the first ones and lists the others as `starved` in the phase's
-`budget_by_phase` entry.
+([ADR-142](adr/engine.md#adr-142)); the fixed cases are sent once per valid
+identity.
 
 ## Dispatch is a table, not a cascade
 
@@ -583,7 +569,8 @@ key is chosen inside the one branch, so the probe is one variant of the body's
 `one_of`, never one per key. The same branch also picks where the key goes: the
 top of the body or one of its objects, the elements of arrays included, and a body
 sent as an array gets it through `mass_assignment_root_variant`. An object that
-admits extra keys gets none ([ADR-181](adr/compiler.md#adr-181),
+admits extra keys and declares no property of its own gets none
+([ADR-209](adr/compiler.md#adr-209),
 [Field addressing](field-addressing.md#mass-assignment-inside-each-object)). A
 focus list that addresses no field of the body keeps it away.
 
@@ -681,20 +668,27 @@ object, built in one place, never mutated afterwards
 ([ADR-030](adr/compiler.md#adr-030)):
 
 - `max_examples` is the budget's when the budget sets it, otherwise the profile's
-  `default_max_examples`, then scaled by the endpoint's risk score through
-  `weight_by_risk`. The core always sets it to the run's resolved
+  `default_max_examples`. The core always sets it to the run's resolved
   [examples per endpoint](../core/protocol/fuzz-options.md#examples-per-endpoint).
+  It is the strategy's budget, the same with or without a producer.
 - `phase_split` is the budget's own split when it declares one, otherwise the
-  profile's — with the `attack` share set by the endpoint's declared aggressiveness
-  through `derive_attack_split` when the strategy has an attack phase and the
-  contract declares one. A budget that declares a phase outside the strategy's
-  split is a `PolicyError` raised by
-  `validate_endpoint_spec` at the policy boundary; the planner takes a declared
-  split as already validated.
+  profile's. A budget that declares a phase outside the strategy's split is a
+  `PolicyError` raised by `validate_endpoint_spec` at the policy boundary; the
+  planner takes a declared split as already validated.
 - `estimated_combinations` is `estimate_parameter_space` over every zone's
   parameters, capped at `COMBINATION_SPACE_CAP` (10⁹).
 - `allowed_combinations` clamps the estimate into `1..max_combinations_per_case`.
-- `examples_per_phase` is `allocate_with_floors(max_examples, phase_split, effective_floors(endpoint))`: the split by weight, with each applicable phase extension raised to its floor.
+- `examples_per_phase` is `allocate_examples(max_examples, phase_split)`: the
+  strategy's share of each phase.
+- `extra_per_phase` is what the contract adds on top, never taken from
+  `examples_per_phase` ([ADR-204](adr/measurement.md#adr-204)): each applicable
+  phase extension's share (`extension_draws`), what a risk score above neutral
+  adds (`risk_extra`, split as the budget is), and what a declared aggressiveness
+  adds to `attack` (`attack_extra`, nothing under a custom split).
+- `fixed_cap` caps the contract's items sent as given at the endpoint: the larger
+  of the profile's `fixed_layer.share` of `max_examples` and its `floor` (0.5 and
+  50 by default; `smoke` sends at most 20), and `fixed_reach` says whether every
+  valid identity sends them or the first only.
 
 `estimate_parameter_space` multiplies a per-parameter choice count. The count
 is the enum length when the field is an enum, otherwise a table by type:
@@ -717,10 +711,9 @@ planning calls it, and nothing else computes a share.
 | Function | What it does |
 |---|---|
 | `allocate_examples(max_examples, split)` | splits a budget across phases by largest remainder, ties broken by phase name; the result always sums to the budget |
-| `allocate_with_floors(max_examples, split, floors)` | `allocate_examples`, then every phase in `floors` raised to its floor out of the others by weight, deficit first; when the budget cannot meet the floors, the unfloored phases keep one example. A floor that names a phase outside `split`, or a negative floor, raises `ValueError` |
-| `reserve_share(split, phase, share)` | normalizes `split`, rescales it by `(1 - share)` and adds `phase` at exactly `share` |
-| `derive_attack_split(base_split, aggressiveness)` | sets the `attack` share to 0.05 per aggressiveness point, capped at `MAX_AGGRESSIVENESS` points (0.5), in place of the base split's own, and rescales the other phases to fit, keeping their proportions |
-| `weight_by_risk(max_examples, risk_score)` | scales the budget by `EndpointRisk.risk_score`: ×0.75 at 0, neutral at 50, ×1.25 at 100, never below 1; `None` leaves it unchanged |
+| `share_of(budget, share)` | the examples a share of a budget comes to, rounded up, float noise never adding a whole example |
+| `attack_extra(base, base_attack, aggressiveness)` | what raises the attack phase to 0.05 of the budget per aggressiveness point, capped at `MAX_AGGRESSIVENESS` points (0.5); nothing when the strategy already sends that many |
+| `risk_extra(base, risk_score)` | what a risk score above neutral (50) adds to the budget, up to a quarter of it at 100; a lower score, or `None`, adds nothing |
 | `share_budget(total, identities)` | splits a budget evenly across the declared identities into `BudgetShare`s (the remainder goes to the first ones); with no identities, one anonymous share takes it all; an identity the budget cannot reach gets no share |
 
 ## Exact arithmetic

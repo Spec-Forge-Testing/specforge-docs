@@ -1,0 +1,153 @@
+# Defects and LLM suspicions
+
+A run with a contract producer judges your API against rules the specification
+does not write down: rules a model read in your code, or that it assumed from what
+a field means. This page explains how to tell a **defect** from an **LLM
+suspicion**, and how to read where any finding came from: the rule, the line of
+code that states it, and the request that broke it.
+
+## Two kinds of rule, two kinds of finding
+
+When an `inference` producer reads a handler, it gives every rule it proposes one
+of two **grounds**:
+
+- **Stated.** Your code, or the OpenAPI operation, says it, and the model quotes
+  the line: `if len(password) < 12:`, a rejection message, a sentence of the
+  description. Spec Forge does not take the model's word for it: it looks for the
+  quote in exactly what the model was shown. Found, the rule stays stated and
+  keeps the file and lines where it is written. For a schema keyword the quote
+  must also be about it: name the field, sit in a function or place that names it,
+  or carry the keyword's value (`12` for a minimum length of 12, within one). Not
+  found, not given, or about something else, the rule
+  is taken as **assumed**.
+- **Assumed.** Nothing you wrote says it, but what the field means suggests it:
+  a quantity ordered is at least one, a date of birth is not in the future, a
+  rating stays within its scale. The model is asked to give these generously,
+  since a rule nobody wrote is exactly the kind no other check covers.
+
+A finding is then reported by the standing of the rule it breaks:
+
+| | **Defect** | **LLM suspicion** |
+| --- | --- | --- |
+| The rule it breaks | Declared by the specification, stated in your code, written in a fixture, or intrinsic (a 5xx, a leak, an access breach) | Only assumed by the model |
+| How it was checked | Reproduced, minimized and judged by a control request | Exactly the same |
+| Where the report lists it | **Defects** (`defects`) | **LLM suspicions** (`llm_suspicions`) |
+| Counts toward | `findings_confirmed`, `findings_unique` | `findings_llm_suspicions` only |
+| Changes the run's signal | Can | Never: a run whose only findings are suspicions is `clean` |
+| What it asks of you | Fix the API | Decide whether the API should hold that rule |
+
+A suspicion is not a weaker defect. The server really did what the finding says:
+it accepted a negative quantity, or rejected a request the model expected it to
+take. What is uncertain is the rule. Read it, and decide:
+
+- **The rule is right.** The API should enforce it: treat the suspicion as a bug,
+  and write the rule into the specification or the code so the next run states it.
+- **The rule is wrong.** The model guessed: a balance may be overdrawn, a latitude
+  may be negative. Dismiss it; the API is fine.
+
+**A suspicion a defect already covers.** One response, or one field, can break a
+rule your code states and a rule the model only assumed. The first is a defect,
+the second a suspicion about the same problem. Such a suspicion names the defect
+in `covered_by`, and the HTML report folds it last in the **LLM suspicions**
+section, under "N more on a field a defect already covers". Fix the defect first:
+the covered suspicion usually goes with it. A defect covers a suspicion of the
+same endpoint when both sent the same request, or when both are about the same
+field (the one the rule names, the one the request poisoned, or the only field
+the request sets outside the path); a gap in the specification
+(`contract_hygiene`) never covers one. Covered suspicions stay in the list and
+in `findings_llm_suspicions`; `findings_llm_suspicions_covered` says how many
+there are ([the rule in full](../modules/core/protocol/run-detail.md#covered-suspicions)).
+
+!!! note "Only rules that stand on their own"
+    A suspicion comes only from a finding that breaks the very rule it cites: an
+    accepted value an inferred keyword forbids, a rejected request an inferred
+    keyword allows, a business rule, a seed case's expected outcome, or an access
+    policy. A server error, a leaked stack trace or a response off its schema is a
+    defect whatever the model assumed.
+
+## Where a finding comes from { #where-a-finding-comes-from }
+
+Every finding, defect or suspicion, carries what you need to trace it back.
+
+**The rule and its grounds.** The HTML report's finding card shows the rule
+(`rule_id` and its description) and, for a rule a producer gave:
+
+| Row | What it says |
+| --- | --- |
+| Rule rests on | `stated` or `assumed`; for a rule the model called stated that could not be backed, why: it quoted nothing, its quote is nowhere in what the model was shown, or its quote names neither the field nor the rule's value |
+| Quote | The text the model quoted |
+| Written at | Where the rule is written: `file:lines (function)` in your code, the place in the OpenAPI operation, or the place in your fixture file |
+| The model's assumption | For an assumed rule, what the model assumed |
+
+In `report.json` and `get_finding` the same facts are the finding's
+[`grounds`](../modules/core/protocol/run-detail.md#grounds). A client opens the
+code at the rule with `inspect_finding_source`, whose `rule_source` gives the file
+and the lines, counted from 1, relative to the tree the run traced.
+
+**The request that broke it.** The finding's `request.origin` says where its
+payload came from; for a seeded request, the card's **Found by** row names the
+seed case, by its description and id, or the value the contract seeds:
+
+| `origin` | The request was |
+| --- | --- |
+| `drawn` | Generated by the strategy, as any fuzzed request |
+| `witness` | Built to break one inferred rule and nothing else, to see whether the server enforces it |
+| `seeded` | A value or a whole case the contract offers, sent as given; `seed_case_id` and `seed_case_description` name the seed case |
+
+**Seed cases.** A producer can offer whole requests worth sending, the
+combinations a handler treats differently, and say whether the server should
+reject or accept each one: what the code means to do, so an input a check says
+must be stopped is expected rejected even when the code lets it through. A case
+expected to be rejected that gets a 2xx is an
+`expected_rejection` finding; a case expected to be accepted that gets 400 or 422
+is an `expected_acceptance` finding; a case expected to be rejected that is
+rejected is the outcome it foresaw, not a valid request rejected. A case is judged only when every one of its
+values was sent and it does not contradict its own field's contract; otherwise it
+is sent without being judged, and the contract's account says why.
+
+A case's values are read by field name, a body field by its dotted path; a name
+with its request zone in front (`body.title`) is read as that field when the
+zone declares it. A value for a path parameter is left out with a
+`path_parameter` note: the path names a stored resource, and the fuzzer already
+sends that parameter's edge ids (zero, negatives, each integer width and one past
+it) on its own. A case that set only path parameters is dropped with that note
+alone, since it loses nothing; a case left with no value for any other reason is
+dropped with an `empty_seed_case` note
+([producer note kinds](../modules/core/protocol/vocabularies.md#producer-note-kind)).
+
+**What the producer lost.** A rule the producer could not use is not silently
+dropped. The report's **Contracts** section lists, per endpoint, what the producer
+lost or retried (`producer_notes`), and every item the contract gave with how it
+was sent or why it was not (`contract_usage`): a rule whose case could not be
+built, a field the endpoint does not declare, the cap on what a contract sends.
+An assumed item left unexercised is marked out.
+
+## What a producer costs
+
+An `inference` producer asks a model once per endpoint whose contract is not in
+the cache, and the run's report records it in
+[`inference_cost`](reports.md#the-runs-inference). Before a run, `estimate_inference`
+prices it, with a worst case that counts one re-ask on every model of the
+chain; a run with a cap holds that worst case for each inference before it starts
+([the estimate](../modules/core/protocol/operations.md#estimate-inference)).
+
+What the contract adds also costs requests and time. The strategy's
+`examples_per_endpoint` stays the strategy's; on top of it, in `stateless` and
+`performance` runs, the contract sends each rule's breaking and keeping case, a
+witness per inferred keyword and each seed case, once per identity and capped per
+endpoint, plus a tenth of the budget to its business rules. The endpoint's deadline
+stretches by the same share. The report keeps the two apart, as "180 + 20 the
+contract added" in the HTML report's **Planned** column, so a run with a model is
+compared with one without it on equal terms.
+
+## Where to go next
+
+- The report's fields: [Run Report](reports.md) and, field by field,
+  [Run detail](../modules/core/protocol/run-detail.md).
+- Why a suspicion is kept apart:
+  [ADR-202](../modules/specforge-engine/adr/findings.md#adr-202); how a quote is
+  checked: [ADR-201](../modules/core/adr/inference.md#adr-201).
+- Comparing runs: `compare_runs` matches suspicions apart from defects, in
+  `llm_suspicion_changes`. A finding that is a defect in one run and a suspicion in
+  the other, because its quote was backed in one and not the other, is reported
+  once as `inconclusive` with the caveat `grounds_changed`: neither fixed nor new.

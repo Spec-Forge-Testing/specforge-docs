@@ -989,8 +989,9 @@ trigger's answer brings the transition into force, so a re-send reproduces only
 after a trigger that did ([Run depth](stateful-depth.md#transition-probes)). Each `ExecutedStep` records the `BundleBinding`s it
 `consumed` and `produced`, so the sequence says which step fed which.
 
-A **supervisor** runs passes until two in a row change nothing, then, when
-targeted endpoints were never reached, one further pass on them and their
+A **supervisor** runs passes until four in a row change nothing, once the run has
+sent its exploration floor, then, while
+targeted endpoints were never reached and each such pass finds something, further passes on them and their
 producers ([Run depth](stateful-depth.md#reach-pass)). Each
 pass ends in a closed union, isolated in one small function around the single
 `try`/`except` ([ADR-038](adr/engine.md#adr-038)). `run_pass` returns a
@@ -1003,7 +1004,8 @@ and the supervisor reacts to it:
   signature and trigger fields, which then stands for one more finding, and
   **suppresses** that defect in `SuppressedDefects`, so the next pass looks past
   it. A defect found again on another value widens its suppression once. The run
-  keeps going until two passes in a row change nothing, or `max_distinct_bugs`
+  keeps going, once it has sent its exploration floor, until four passes in a row
+  change nothing, or `max_distinct_bugs`
   (25) distinct defects or flaky signatures are found
   ([Run depth](stateful-depth.md#stateful-depth)).
 - `LinkBroken` raises `StatefulLinkError` carrying the partial exploration.
@@ -1073,23 +1075,30 @@ outcome passes through.
 4. Otherwise each step outside the slice is dropped in turn, keeping every drop
    that still reproduces, in passes until one drops nothing.
 
-Every attempt goes through `WireResender`, which re-sends each step's recorded
-`RequestBlueprint` verbatim — no regeneration, no bundle re-capture — through the
-same send gate, collector and progress tick as a rule step. A send the gate
-blocks stops the search. A re-send reproduces when its last response has the
-original status code and `recheck` reports the same invariant under the same rule
-id; for a transition probe, the fresh trigger must also pass its `trigger_gate`. The reproducer is rebuilt from the fresh results of the re-send that
-reproduced, so the report shows the responses the minimal sequence actually got;
-a deletion that breaks reproduction is undone. An attempt that would overrun the
-budget is not made, and the search ends with the best verified reproducer. A
-`Reported` that no attempt reproduces keeps its original sequence, which
-Hypothesis's own final replay already verified.
+Every attempt goes through `RebindingResender`, which rebuilds each step from its
+recorded recipe (`recipe.py`) through the same send gate, collector and progress
+tick as a rule step. A step takes the values the re-sent producers returned this
+time, not the recorded ones; a re-sent producer the target rejects without
+returning a value goes once more with its strings rotated
+(`REBIND_PRODUCER_RETRIES`, 1). A send the gate blocks stops the search. A re-send
+reproduces when its last response has the original status code and `recheck`,
+run on the fresh sequence, reports the same invariant under the same rule id; for
+a transition probe, the fresh trigger must also pass its `trigger_gate`, and the
+echo it expects is what the fresh trigger sent. The reproducer is rebuilt from the
+fresh results of the re-send that reproduced, so the report shows the responses
+the minimal sequence actually got; a deletion that breaks reproduction is undone.
+An attempt that would overrun the budget is not made, and the search ends with
+the best verified reproducer. A `Reported` that no attempt reproduces keeps its
+original sequence, which Hypothesis's own final replay already verified
+([ADR-207](adr/runners.md#adr-207)).
 
-The slice is what makes verbatim re-sending safe to delete against. A re-sent
-request carries the original ids, and the resources the original run created still
-exist on the target, so an unconstrained deletion would drop the step that created
-a resource, or the `DELETE` that triggers a transition probe, and still
-"reproduce". Keeping the slice rules that out by construction.
+The slice keeps what a re-send needs. Besides the steps that produced a value a
+kept step consumes, `resource_slice` keeps every earlier step that consumed one
+of those values (an update, a payment, a first delete), so a finding that depends
+on the resource's state still reproduces once the sequence builds fresh
+resources. A confirmed finding records each step of its minimal sequence
+(`ReproducerStep`: where the trace holds it and how it binds), which the core
+stores so `replay_finding` can replay it alone.
 
 All of these re-sends are shrink traffic: they are counted in `requests_shrink`
 and recorded in the stateful trace, never in the explored results.

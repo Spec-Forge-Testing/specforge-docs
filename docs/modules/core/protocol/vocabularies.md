@@ -135,6 +135,32 @@ coverage says where the endpoint ended up, `producer_exclusions` what failed in
 the producer. The persistence layer stores these two values under a CHECK
 constraint.
 
+## `producer_notes[].kind` { #producer-note-kind }
+
+What a run's producer lost or had to retry on the way to an endpoint's contract,
+one note per loss. In `get_run` and the report document's `producer_notes`, beside
+`method`, `path`, `subject` (what was lost: the model whose answer was refused, a
+rule's id, a transition, an echo, a seed case or one of its values, a keyword and
+where it was), `detail` (why) and `from_cache` (`true` when the note was taken
+when the contract was inferred, and the contract was served from the cache this
+run). An endpoint can have notes and no exclusion: a contract that lost a rule
+still ran. `vocabulary.producer_note_kinds` carries each with its label.
+
+| Value | Meaning |
+| --- | --- |
+| `reasked` | The model's answer failed validation and the model was asked again; `subject` is the model that gave it, `detail` where the answer broke, never what it said. |
+| `invalid_rule` | A business rule of the answer could not be read and was left out; `subject` is its id, `<unnamed>` without one. |
+| `unknown_field` | A business rule, or a seed case's value, names a field the endpoint does not declare and was left out. A seed case's field named with its request zone in front (`body.title`) is read as that field when the zone declares it. |
+| `unbound_bundle` | A transition cites a state-link value nothing in the run binds and was left out. |
+| `unfollowable` | A transition the engine cannot follow from the endpoint was left out. |
+| `undeclared_echo` | A transition echoes a field the request body does not declare; the echo was left out. |
+| `incoherent_keyword` | A schema keyword the field's type does not take was left out of the fused contract. |
+| `superseded_by_enum` | A schema keyword an `enum` on the same field already settles was left out of the fused contract. |
+| `invalid_seed_case` | A seed case of the answer could not be read, or came past the cap on cases, and was left out; `subject` is its id. |
+| `path_parameter` | A seed case's value for a path parameter was left out: the path names a stored resource, and the fuzzer sends its edge ids (zero, negatives, each integer width and one past it) on its own. A case that set only path parameters is dropped without an `empty_seed_case` note: it loses nothing. |
+| `empty_seed_case` | A seed case left with no value to send was left out, unless every value it set was a path parameter. |
+| `assumed_over_declared` | A schema keyword the model assumed, rather than quoted, gave way to the one the spec declares on the same field; `subject` is the keyword and where it was. |
+| `unverified_quote` | A rule the model said the code or the spec states was taken as assumed: it came without a quote, its quote is not in what the model was shown, or a keyword's quote is about something else (`grounds.downgraded` says which); `subject` is the rule ([grounds](run-detail.md#grounds)). |
 ## `endpoints[].unprobed_reason` { #unprobed-reason }
 
 Why the `auth` mode crossed nothing at a targeted endpoint, the `resilience`
@@ -143,9 +169,9 @@ for an access precondition the run could not meet, or because the exploration
 never reached it. `resilience` reports `required_role_unheld`,
 `owner_identity_missing`, `link_target_reserved` and the three `owner_*` reasons;
 `auth` reports every access value but `owner_identity_missing`; `stateful` reports
-`link_value_never_produced` and `rule_never_drawn`, and none when the run was cut
-short (`run.truncation` explains it then). In `get_run` and the report document's
-`endpoints`; `null` when the endpoint was probed.
+`rule_never_drawn` and the `link_*` reasons, the one most of its draws met, and
+none when the run was cut short (`run.truncation` explains it then). In `get_run`
+and the report document's `endpoints`; `null` when the endpoint was probed.
 
 | Value | Meaning |
 | --- | --- |
@@ -156,22 +182,29 @@ short (`run.truncation` explains it then). In `get_run` and the report document'
 | `owner_resource_unprovisioned` | Every attempt to create the owner's resource failed, or its producer has no payload; the attempts are in the trace. |
 | `required_role_unheld` | No declared identity holds the required role. |
 | `owner_identity_missing` | No valid identity is declared to own the resource, so `resilience` sends the `owner_only` endpoint nothing. |
-| `link_target_reserved` | A state link of the endpoint, or of every producer of the owner's resource, writes a bound value into a header the credentials or the transport own, so nothing is sent; an `auth` run whose only endpoint to cross is left unprobed this way fails with `EXECUTION_FAILED`. |
-| `link_value_never_produced` | Every time the `stateful` exploration drew the endpoint, a value it consumes had not been produced yet: its producer never answered with a status that produces it. The producer's requests are in the trace. |
+| `link_target_reserved` | A state link of the endpoint, or of every producer of the owner's resource, writes a bound value into a header the credentials or the transport own, so nothing is sent: `auth` crosses nothing there, and `stateful` cannot send the producer chain of an endpoint consuming it. |
+| `link_value_never_produced` | The `stateful` exploration drew the endpoint and, with no value in its sequence, sent its producers before it, but they never returned a value it could use. The producers' requests are in the trace. |
 | `rule_never_drawn` | The `stateful` exploration never drew the endpoint, or could never draw arguments for it. |
+| `link_producer_missing` | Nothing in the `stateful` run produces a value the endpoint consumes, or one its producers depend on; a producer the safety guard held back, or whose breaker had opened, counts as missing. |
+| `link_chain_cyclic` | The producers of a value the endpoint consumes depend on it themselves, in every candidate, so `stateful` has no chain to send before it. |
+| `link_producer_cut_off` | The `stateful` run cut the endpoint's producer off, by its breaker or by stopping, before it returned a value. |
+| `link_value_other_identity` | The `stateful` exploration drew the endpoint, a read, and its producers returned nothing it could use, while sequences of another identity had produced such a value in earlier passes; a sequence takes only what its own identity produced. |
 
 The six from `owner_producer_missing` to `link_target_reserved` are access
 preconditions the run could not meet; each one makes the run's signal `degraded`
-with [`access_preconditions_unmet`](#signal-causes). The two `stateful` reasons make
+with [`access_preconditions_unmet`](#signal-causes). The `stateful` reasons make
 it `degraded` with [`stateful_endpoints_unsent`](#signal-causes). An endpoint that
-received any request never carries either of them.
+received any request never carries either of them. Each `stateful` endpoint that
+consumes values also says where its draws found them, in `consumer_values`
+([run detail](run-detail.md#consumer-values)).
 
-For `link_value_never_produced`, look at the requests of the endpoint that produces
-the value (the one whose links name it as producer): it never answered with a status
-that captures the value. For `rule_never_drawn`, give the exploration more room, a larger
-`max_examples` or `step_count` ([stateful options](../../specforge-engine/execution-modes.md#options-per-mode)),
-and check the endpoint's parameters: a rule whose arguments can never be drawn is
-never sent however long the exploration runs.
+| Reason | Where to look |
+| --- | --- |
+| `link_value_never_produced` | The requests of the endpoint's producers in the trace: they answered without the value, with a status that does not capture it or a body that leaves it out. |
+| `link_producer_missing`, `link_chain_cyclic` | The state links of the contract: no endpoint of the run produces the value, or the producers consume each other. A producer held back by the safety guard needs `allow_side_effects`. |
+| `link_producer_cut_off` | The producer's own row: its breaker opened, or the run stopped first. |
+| `link_value_other_identity` | The identities: the value was only ever produced under another one. |
+| `rule_never_drawn` | Give the exploration more room, a larger `max_examples` or `step_count` ([stateful options](../../specforge-engine/execution-modes.md#options-per-mode)), and check the endpoint's parameters: a rule whose arguments can never be drawn is never sent however long the exploration runs. |
 
 ## `run.signal_causes` { #signal-causes }
 
@@ -185,12 +218,13 @@ without a table of its own ([vocabulary](handshake.md#vocabulary)).
 | --- | --- | --- |
 | `no_responses` | No request reached the target | No request reached the target: every attempt was an availability, timeout or unsendable-request failure. |
 | `requests_unanswered` | Some requests went unanswered | Some requests reached the target, but an endpoint left at least three of its requests, and at least 5 % of them, with a timeout or an availability failure, so what the run says of that endpoint rests on the rest. `metrics.by_category` and the endpoint's `by_category` count them. Never raised beside `no_responses`. |
+| `credentials_refused` | Some endpoints refused every request's credentials | One or more targeted endpoints got at least one response, and every response was a `401` or a `403`: the run's credentials opened nothing there, as when the target no longer accepts the identities' tokens, so the run verified nothing behind that endpoint's access check. The endpoint's [`requests_refused`](run-detail.md#requests-refused) counts them. An endpoint without a response does not raise it; an `auth` run, which crosses each endpoint with the identities its access policy should refuse, never raises it; nor does a run stored before `requests_refused` was kept. |
 | `endpoints_excluded` | Some endpoints were excluded | One or more declared endpoints were excluded from this run. |
 | `contracts_unproduced` | Some endpoints ran without rules | One or more endpoints of a run with a producer are in `producer_exclusions`, whatever their `disposition`: the producer left them without a contract, so they ran on their schema alone or were withheld. An endpoint the static analysis could not trace counts too. |
 | `withheld_by_safety_guard` | Held back by the safety guard | The safety guard held back one or more targeted endpoints, so they were never probed: a declared risk flag, or `assumed_write` (an unsafe method no producer judged a write for). |
 | `access_policy_undeclared` | Some endpoints declare no access policy | One or more targeted endpoints declare no access policy, so the `auth` run verified nothing there. |
 | `access_preconditions_unmet` | Some access checks could not be set up | One or more targeted endpoints had an access policy the run could not cross: no producer, no role holder, no owner, no resource it could create, or a state link into a reserved header; each one's [`unprobed_reason`](#unprobed-reason) says which. |
-| `stateful_endpoints_unsent` | Some endpoints were never sent in a flow | One or more targeted endpoints were never sent by a `stateful` run: the value they consume was never produced, or the exploration never drew them or their arguments; each one's [`unprobed_reason`](#unprobed-reason) says which. Those endpoints do not count toward `endpoints_unreached`. |
+| `stateful_endpoints_unsent` | Some endpoints were never sent in a flow | One or more targeted endpoints were never sent by a `stateful` run: no producer returned a value they consume, none exists, it was cut off, only another identity holds one, or the exploration never drew them or their arguments; each one's [`unprobed_reason`](#unprobed-reason) says which. Those endpoints do not count toward `endpoints_unreached`. |
 | `run_cancelled` | Cancelled before every endpoint was reached | The run was cancelled before it reached every targeted endpoint. |
 | `run_truncated` | The run was cut short | The run's `run.status` is `truncated`: it was cut short before its plan was exhausted, even when every targeted endpoint received requests. `run.truncation` says why. It can stand beside `endpoints_unreached`. |
 | `endpoints_unreached` | Some endpoints were never reached | One or more targeted endpoints never received a request. |
@@ -207,6 +241,62 @@ keeps no column for them.
 than healthy. A ladder with no step judged makes the run's signal `degraded` with
 [`load_unjudged`](#signal-causes).
 
+## `contract_usage.items[].kind` { #contract-item-kind }
+
+Which part of a producer's contract an item of an endpoint's
+[`contract_usage`](run-detail.md#contract-usage) is.
+`vocabulary.contract_item_kinds` carries each with its label and summary.
+
+| Value | Meaning |
+| --- | --- |
+| `rule_case` | One side of an input rule: its simplest breaking case (`detail` `breaking`) or its simplest keeping one (`keeping`). |
+| `response_rule` | A rule every response of the endpoint is judged by. |
+| `inferred_keyword` | A schema keyword the contract infers for a field, sent as a value only it forbids. |
+| `seed_case` | A whole request the contract gives, to send as given. |
+| `field_seed` | One value a field's `default` or `examples` give. |
+| `transition` | A follow-up whose answer a change of state promises. |
+| `access` | The endpoint's access policy, crossed with every declared identity. |
+
+## `contract_usage.items[].unexercised.reason` { #unexercised-reason }
+
+Why the run left an item unexercised, listed in order of precedence: an item
+takes the first that applies. `detail` says what the reason leaves open (the
+identities refused, the hold, the cap, the side, the field, why no witness was
+found). `vocabulary.unexercised_reasons` carries each with its label and a summary
+in plain words.
+
+| Value | Meaning |
+| --- | --- |
+| `denied_to_every_identity` | It was sent, and every answer refused the credentials. |
+| `held_back` | The safety guard held its endpoint, or its transition's follow-up, back. |
+| `endpoint_unprobed` | The mode sent nothing at its endpoint; the endpoint's `unprobed_reason` says why. |
+| `cut_by_cap` | The cap on what a contract sends as given left it out. |
+| `no_constructor` | No case can be built for a rule of its shape. |
+| `case_not_found` | The search found no case giving its rule the verdict its side wants. |
+| `witness_not_found` | No value only its inferred keyword forbids was found. |
+| `field_undeclared` | It names a field the endpoint declares nowhere. |
+| `wrong_type` | Its value is not of its field's declared type. |
+| `no_place_for_field` | No valid draw of its zone holds a place for its field. |
+| `sent_as_another_item` | Its request was the very one another item, or the simplest request, already sent. |
+| `never_judged` | No response decided its promise. |
+| `never_triggered` | No answer of its endpoint brought its transition into force. |
+| `mode_does_not_send_as_given` | The mode does not send its kind of item as given. |
+| `deadline_exceeded` | Its endpoint's deadline ran out before it was sent. |
+| `run_stopped` | The run, or its endpoint, was cut before it was sent. |
+| `phase_unsendable` | Its phase drew no candidate, so the pass sending it was skipped. |
+
+## `contract_usage.items[].unjudged_because` { #unjudged-reason }
+
+Why a seed case that expects an outcome was sent without being judged against it,
+listed in order of precedence. The item still counts as exercised when it was
+answered, and its `judged_against_expects` is `false`.
+`vocabulary.unjudged_reasons` carries each with its label and a summary in plain
+words.
+
+| Value | Meaning |
+| --- | --- |
+| `value_left_out` | One of its values could not be sent: declared nowhere, of another type than its field's, or with no place to land. |
+| `forbidden_acceptance` | It expects acceptance of a value its field's contract forbids. |
 ## `strategy` { #strategy }
 
 Which family of values a run generates, and which extra checks judge the
@@ -260,6 +350,7 @@ in a variant's `invariants_when`.
 | `poisoned_field` | Poisoned field | The strategy plans a phase that poisons one field per request, within its declared schema or outside it. No variant has a row for it: what it lets an oracle find, each variant that meets it reports anyway. |
 | `out_of_schema_field` | Field sent outside its schema | The strategy plans a phase that can send a declared field outside its schema: `boundary` (a length one past a bound), `invalid` or `mutation`, or `attack` allowing a family a field is attacked with by its type alone (`injection`, `xss`, `path_traversal`, `input_validation`, `information_disclosure`, `business_logic` or `resource_abuse`). |
 | `rule_witness` | Witness of an inferred rule | A producer infers a rule the spec does not declare, so the run's valid requests include one whose field breaks only that rule. |
+| `seed_case_expectation` | Seed case with an expected outcome | A producer offers a seed case that says whether the server should reject or accept it, so the run's valid requests include that case, judged when every one of its values was sent. |
 | `attack_phase` | Attack payloads | The strategy plans the `attack` phase. |
 | `reflecting_attack` | Attack payloads a page can reflect | The strategy plans the `attack` phase and allows a family a page can reflect: `xss`, `injection` or `sql_injection`. |
 | `chaos_expectation` | Chaos expectation | The runner knows what the chaos attack behind the response tolerates. |
@@ -293,6 +384,20 @@ its label and a one-sentence summary of the payloads it sends, in this order.
 `injection` and `sql_injection` draw from one pool of payloads, and their
 summaries say so alike.
 
+## Finding states { #finding-state }
+
+The state a finding is reported in: `state` on each finding of `get_run` and
+`get_finding`, and on the [`finding` event](events.md#the-event-catalog), which
+announces only the first two. `vocabulary.finding_states` lists each with its
+label, in this order.
+
+| Value | Label | Meaning |
+| --- | --- | --- |
+| `confirmed` | Confirmed | It reproduced and its control vouched for it: a defect, in the report's `defects`. |
+| `llm_suspicion` | LLM suspicion | It reproduced like a confirmed one, but against a rule only the model assumed (its `grounds.basis` is `assumed`): in `llm_suspicions`, never counted as a defect nor in the signal ([LLM suspicions](run-detail.md#llm-suspicions)). |
+| `flaky` | Flaky | Shrinking could not reproduce it a second time. |
+| `unverified` | Unverified | It was never retried, or its control could not judge it. |
+| `refuted` | Refuted | Its control request showed the same signal, so the input was not the cause. |
 ## `category` { #category }
 
 The kind of defect a finding reports. In each entry of the report document's
@@ -409,6 +514,7 @@ the one given; what to do for each is on
 
 | Value | Meaning |
 | --- | --- |
+| `state_not_rebuilt` | A step of a `stateful` finding's sequence needed a value no step sent before it returned (a producer that answered without it, rotated or not), so the finding's request was not sent: the server's state may no longer let it be built; rebuild the target and replay again. `failed_step` names the last step sent. |
 | `no_answer` | The server did not answer the finding's request (down, timed out, connection dropped), or no witness answered and the request was not sent. |
 | `stale_target` | The server answered with the code from before a fix applied over the finding's handler files (`stale_reason` or `stale_target` set). |
 | `credentials_refused` | The request, recorded with credentials, now gets a `401` or `403`, and no witness proved the credentials still pass. |
@@ -429,7 +535,7 @@ the one `replay_finding` refuses the finding with, `REPLAY_NOT_REPRODUCIBLE`, wh
 
 | Value | Meaning |
 | --- | --- |
-| `stateful` | The finding, or the analysis it was recorded in, needed prior requests to build its state: replay its analysis instead. Every finding of a `stateful` analysis reads it, an unconfirmed one too. |
+| `stateful` | The finding, or the analysis it was recorded in, needed prior requests to build its state, and it was recorded without the steps of its minimal sequence: replay its analysis instead. Every finding of a `stateful` analysis reads it, an unconfirmed one too, except a confirmed finding stored from protocol `0.2.6` on whose every step reached the wire, which [replays through its sequence](finding-replay.md#stateful). |
 | `refuted` | Its control request showed it is not a defect, so it has no request to replay alone. |
 | `trace_pruned` | Retention pruned its analysis's recorded trace. |
 | `not_in_trace` | Its analysis's recorded trace does not hold the request it was reported from. |
@@ -453,6 +559,8 @@ empty, the `replay` caveat included: a comparison against a replay is never
 | `oracle_scope_differs` | `pair` | Different oracles judged the two runs. |
 | `strategy_differs` | `pair` | The analyses ran different [strategies](#strategy), so one may have judged with oracles or drawn values the other never did. |
 | `examples_differs` | `pair` | The analyses asked a different number of examples of each endpoint; silent when either recorded none. |
+| `grounds_changed` | `pair` | The same finding reads as a defect in one run and as an LLM suspicion in the other: the rule it cites rests on a quote verified in one run and not in the other; `detail` says how many findings. |
+| `contract_extra_differs` | `pair` | A producer's contract added a different number of examples (`budget_by_phase[].extra` summed) on an endpoint both runs exercised; `detail` says on how many of them. A defect a contract's value found may be missing from the other run without being fixed. |
 | `scope_differs` | `pair` | The runs exercised different endpoints; `detail` says how many of the first run's the second exercised and, when it covered more, how many the first did not. |
 | `replay` | `after` | The later run is a replay: it records verdicts per recorded request, not crashes. |
 | `replay_report_not_indexed` | `after` | The replay's report was never recorded. |
@@ -468,6 +576,15 @@ stored before protocol `0.2.2`, or one whose stored verdicts are incomplete) rea
 its report, and only it can raise a `replay_report_*` reason. With any of the five, every change but a
 `new` one is `inconclusive`: without the replay's verdicts, nothing can be ruled
 resolved or persisted.
+
+**A defect in one run, a suspicion in the other.** A defect one run lacks while
+that run has the same finding (method, path, invariant, status and identity)
+among its [LLM suspicions](run-detail.md#llm-suspicions) is neither
+`possibly_resolved` nor `new`: it is `inconclusive`, once, in `changes`, with
+`before_id` and `after_id` naming the finding in each run, one of them a
+suspicion, and the `grounds_changed` caveat. Its suspicion leaves
+`llm_suspicion_changes` unless both runs have it. `grounds_changed` degrades no
+other change.
 
 **Per endpoint.** A run exercised an endpoint when it reached the wire for it and
 did not leave it unprobed, an endpoint reached by a transition included, and so

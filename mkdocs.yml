@@ -137,6 +137,7 @@ nav:
       - Fixing findings: user-guide/cli/fixing-findings.md
       - CLI operation reference: user-guide/specforge-cli-reference.md
       - Run Report: user-guide/reports.md
+      - Defects and LLM suspicions: user-guide/findings-and-suspicions.md
       - Desktop app:
           - Overview: user-guide/desktop/index.md
           - New run: user-guide/desktop/new-run.md

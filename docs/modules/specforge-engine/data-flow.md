@@ -388,6 +388,7 @@ producer:
 | `findings_raw` | violations observed during exploration, before shrinking: a response that breaks two rules counts twice |
 | `findings_confirmed` | shrink attempts that reproduced and became a crash report; for a finding a mode does not shrink (a `resilience` finding, an `auth` access breach or crash, a `performance` latency finding or crash), each defect observed |
 | `findings_unique` | distinct defects after collapsing reports with the same minimal reproducer (and, for `access_control`, the same identity); equal to the count of `ConfirmedFinding`s, never above `findings_confirmed` |
+| `findings_llm_suspicions` | reproduced exactly as a confirmed one, against a rule the producer's model assumed, counted after the same collapsing as `findings_unique`: equal to the count of `LlmSuspicionFinding`s, and per endpoint adding up to it; never in `findings_confirmed` nor `findings_unique` ([ADR-202](adr/findings.md#adr-202)) |
 | `findings_flaky` | attempted during shrinking and did not reproduce; in `resilience`, a server error its resent attacks did not get back on every resend |
 | `findings_refuted` | reproduced, and its control request showed it is not a defect: the input was not the cause, or the rejection was a state conflict ([ADR-151](adr/findings.md#adr-151), [ADR-167](adr/findings.md#adr-167)) |
 | `findings_collapsed` | not shrunk because a faithful representative of their signature stands for them |
@@ -399,7 +400,11 @@ producer:
 sum to the run's totals in every mode) plus a `LatencyStats`
 whose fields all default to zero, so `LatencyStats()` is a valid "no samples"
 value — an endpoint can carry a confirmed crash report with no surviving
-requests to time. It also carries `starved_identities`: the labels of declared
+requests to time. It also carries `requests_refused`, its `requests` answered
+`401` or `403` (`ACCESS_DENIAL_STATUSES`), which the core reads to tell a run
+whose credentials opened nothing
+([`credentials_refused`](../core/protocol/vocabularies.md#signal-causes)). It
+also carries `starved_identities`: the labels of declared
 identities whose share of a phase's budget at the endpoint rounded to zero, the
 union of every `budget_by_phase` entry's `starved`. Such an identity got no examples
 in at least one phase, and may still have been sent requests, and found defects, in

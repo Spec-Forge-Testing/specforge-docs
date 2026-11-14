@@ -281,7 +281,8 @@ an undeclared key, for instance. Register a `ZoneVariantSource` per zone in
 `zone_variants`. It receives one `ZoneVariantRequest`: the zone's parameters
 (`params`), their valid strategies (`valid`), the parameters always sent
 (`always_sent`), the valid `context`, the phase's `focus_fields`, and whether the
-object holding the zone admits extra keys (`admits_extra_keys`). It returns a
+object holding the zone is free-form (`free_form`: it admits extra keys and
+declares no property of its own). It returns a
 strategy of `ZoneDraw`s that names its own poisoned field, or `None` when it does
 not apply. The zone compiler adds it beside the per-field variants; a focus list
 that addresses no field of the zone keeps it away.
@@ -328,9 +329,9 @@ phase extension decides:
 |---|---|
 | `phase` | the `Phase` this extension adds |
 | `applies` | a predicate over the `EndpointSpec` — the endpoints that activate the phase |
-| `share` | the fraction of the endpoint's budget the phase reserves (strictly between 0 and 1) |
+| `share` | the fraction of the strategy's budget the phase draws **on top of** it (strictly between 0 and 1) |
 | `refiner` | a `(strategy, endpoint) -> strategy` callable that rewrites the assembled per-field draw before it goes on the wire |
-| `floor` | optional, a `PhaseFloor`: an `(endpoint) -> int` callable giving the fewest examples the phase gets at that endpoint, whatever its share rounds to. It defaults to no floor (`0`) |
+| `fixed_examples` | optional, a `FixedExamples`: a `(unrefined strategy, endpoint, notes) -> payloads` callable giving the payloads the phase sends as given before any draw, as items of the producer's contract; it notes on `notes` why an item it cannot build goes unsent. It defaults to none |
 
 Because a phase extension spans two layers — the compiler decides *which endpoints*
 draw the phase and *how much* budget it gets, and the engine *refines* its
@@ -338,14 +339,9 @@ payloads — it is wired from a composition root, `phase_extension_builtins.py`,
 which the package `__init__` calls once. The built-in registration mirrors this:
 
 ```python
-from specforge_engine.runtime.fuzzers.semantic import build_semantic_payloads
 from specforge_engine.models.phase import Phase
-from specforge_engine.shared import (
-    PhaseExtension,
-    has_input_constraint,
-    input_constraint_count,
-    register_phase_extension,
-)
+from specforge_engine.runtime.fuzzers.semantic import build_semantic_payloads, fixed_semantic_cases
+from specforge_engine.shared import PhaseExtension, has_input_constraint, register_phase_extension
 from specforge_engine.strategy_compiler.constants import SEMANTIC_SHARE
 
 
@@ -356,12 +352,12 @@ def register_builtin_phase_extensions() -> None:
             applies=has_input_constraint,
             share=SEMANTIC_SHARE,
             refiner=build_semantic_payloads,
-            floor=input_constraint_count,
+            fixed_examples=fixed_semantic_cases,
         )
     )
 ```
 
-The compiler's `effective_phases`, `effective_split` and `effective_floors`
+The compiler's `effective_phases` and `extension_draws`
 (`strategy_compiler/effective_phases.py`) read the registry so the endpoints that
 compile the phase are exactly the ones that fund it; the engine's `refine_for_phase`
 (`runtime/fuzzers/phases.py`) reads it too, applying the extension's `refiner` to a
@@ -373,14 +369,16 @@ builder. The refiner receives the `CompiledExecutionEndpoint`, so it can read th
 endpoint's declared schemas and semantic properties.
 
 A `PhaseExtension` validates itself at construction: a non-callable `applies`,
-`refiner` or `floor` raises `TypeError`, and a `share` outside `(0, 1)` raises
-`ValueError`, so a half-declared extension fails loudly the moment it is built
-rather than silently skewing a budget. A floor is read per endpoint when the
-planner allocates (`effective_floors`, then `allocate_with_floors`): a floor
-callable that returns a negative count raises `ValueError` there, naming the phase.
-Give a floor only when the phase must be tested on every applicable endpoint even
-on a small budget; it takes its examples from the other phases by weight
-([The semantic floor](strategy-compiler.md#the-semantic-floor)).
+`refiner` or `fixed_examples` raises `TypeError`, and a `share` outside `(0, 1)`
+raises `ValueError`, so a half-declared extension fails loudly the moment it is
+built rather than silently skewing a budget. Its draws never come out of the
+strategy's phases: they are the plan's `extra_per_phase`. Its fixed examples are
+sent once per identity before any draw, within the endpoint's cap on what a
+contract sends as given, and each one counts as an item of the endpoint's
+`contract_usage`. Give fixed examples when the phase must be tested on every
+applicable endpoint even on a small budget
+([Every rule's fixed cases](strategy-compiler.md#the-semantic-floor),
+[ADR-204](adr/measurement.md#adr-204)).
 
 Register the phase's per-field builders first
 ([Add a phase](#add-a-phase)) — the extension decides *which endpoints* draw the

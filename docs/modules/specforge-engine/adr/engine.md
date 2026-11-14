@@ -990,7 +990,7 @@ socket is opened. No new flag or mode appears — the mode is still
 
 ## ADR-053 — Role-restricted access is a fourth kernel policy, crossed against the roles the user's identities declare { #adr-053 }
 
-**Status:** accepted · Superseded in part by [ADR-102](#adr-102) · Extends [ADR-050](#adr-050) · `specforge_contracts/access.py`, `models/runtime/execution.py`, `models/runtime/access.py`, `runtime/runners/auth/`, `runtime/oracles/access_control.py`, `exceptions.py`
+**Status:** accepted · Superseded in part by [ADR-102](#adr-102), [ADR-212](runners.md#adr-212) · Extends [ADR-050](#adr-050) · `specforge_contracts/access.py`, `models/runtime/execution.py`, `models/runtime/access.py`, `runtime/runners/auth/`, `runtime/oracles/access_control.py`, `exceptions.py`
 
 ### Context
 
@@ -2181,7 +2181,7 @@ disposition.
 
 ## ADR-089 — The stateful shrink is budgeted, skips Hypothesis's explain phase, and the engine minimizes the sequence by replaying recorded requests { #adr-089 }
 
-**Status:** accepted · `constants.py`, `runtime/harness/settings.py`, `runtime/fuzzers/stateful/minimizer.py`, `runtime/fuzzers/stateful/resend.py`, `runtime/fuzzers/stateful/collector.py`, `runtime/fuzzers/stateful/outcome.py`, `runtime/fuzzers/stateful/violation.py`, `runtime/fuzzers/stateful/supervisor.py`
+**Status:** accepted · Superseded in part by [ADR-207](runners.md#adr-207) · `constants.py`, `runtime/harness/settings.py`, `runtime/fuzzers/stateful/minimizer.py`, `runtime/fuzzers/stateful/resend.py`, `runtime/fuzzers/stateful/collector.py`, `runtime/fuzzers/stateful/outcome.py`, `runtime/fuzzers/stateful/violation.py`, `runtime/fuzzers/stateful/supervisor.py`
 
 ### Context
 
@@ -2275,7 +2275,7 @@ the target as the run left it, the same definition replay mode uses.
 
 ## ADR-102 — The auth run degrades per endpoint, and fails only when it crossed nothing { #adr-102 }
 
-**Status:** accepted · Supersedes in part [ADR-050](#adr-050), [ADR-053](#adr-053), [ADR-058](#adr-058) · `exceptions.py`, `models/runtime/stats.py`, `runtime/runners/auth/runner.py`, `runtime/runners/auth/crossing.py`, `runtime/runners/auth/planners.py`, `runtime/runners/auth/chain.py`, `runtime/runners/auth/provisioning.py`, `runtime/runners/auth/producer_watch.py`, `runtime/runners/auth/constants.py`
+**Status:** accepted · Superseded in part by [ADR-212](runners.md#adr-212), [ADR-213](../../core/adr/core.md#adr-213) · Supersedes in part [ADR-050](#adr-050), [ADR-053](#adr-053), [ADR-058](#adr-058) · `exceptions.py`, `models/runtime/stats.py`, `runtime/runners/auth/runner.py`, `runtime/runners/auth/crossing.py`, `runtime/runners/auth/planners.py`, `runtime/runners/auth/chain.py`, `runtime/runners/auth/provisioning.py`, `runtime/runners/auth/producer_watch.py`, `runtime/runners/auth/constants.py`
 
 ### Context
 

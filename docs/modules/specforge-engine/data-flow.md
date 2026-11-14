@@ -400,7 +400,11 @@ producer:
 sum to the run's totals in every mode) plus a `LatencyStats`
 whose fields all default to zero, so `LatencyStats()` is a valid "no samples"
 value — an endpoint can carry a confirmed crash report with no surviving
-requests to time. It also carries `starved_identities`: the labels of declared
+requests to time. It also carries `requests_refused`, its `requests` answered
+`401` or `403` (`ACCESS_DENIAL_STATUSES`), which the core reads to tell a run
+whose credentials opened nothing
+([`credentials_refused`](../core/protocol/vocabularies.md#signal-causes)). It
+also carries `starved_identities`: the labels of declared
 identities whose share of a phase's budget at the endpoint rounded to zero, the
 union of every `budget_by_phase` entry's `starved`. Such an identity got no examples
 in at least one phase, and may still have been sent requests, and found defects, in

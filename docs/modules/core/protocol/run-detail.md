@@ -171,6 +171,19 @@ crash and an LLM suspicion carry neither, since their reproducer says what they
 sent. The HTML report folds both into the **Request sent** cell of the
 unconfirmed findings table.
 
+## Requests refused their credentials { #requests-refused }
+
+**`endpoints[].requests_refused`** counts the endpoint's `requests` answered `401`
+or `403`, in `get_run` and the report document's `endpoints`; it is never more
+than `requests`. When it is above `0` and equals the requests that got a
+response (`requests` less its `availability`, `timeout` and `unsendable_request` ones in
+`by_category`), the run's `signal_causes` carry
+[`credentials_refused`](vocabularies.md#signal-causes): the credentials opened
+nothing at that targeted endpoint, so the run verified nothing behind its
+access check. An `auth` run counts its refusals too but never raises the cause,
+since it sends identities the access policy should refuse. `null` for a run
+stored before it was kept, which never raises the cause.
+
 ## Shrink requests and stateful values { #requests-shrink }
 
 **`endpoints[].requests_shrink`** counts the requests shrinking or confirming a

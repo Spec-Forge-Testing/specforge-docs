@@ -974,3 +974,54 @@ folds the covered ones last, each naming its defect.
 A client shows the open suspicions first and the covered ones apart, each linked
 to its defect by `finding_id`. The cover is a reading aid: a suspicion it
 misses stays open, and one it covers is still listed and counted.
+
+## ADR-217 — A run whose credentials a targeted endpoint refused on every response is never clean { #adr-217 }
+
+**Status:** accepted · Builds on [ADR-190](#adr-190) · `services/history/rules.py`, `services/history/models.py`, `services/persistence/vocabulary.py`, `services/fuzz/signal.py`, `services/report/builder/metrics.py`
+
+### Context
+
+A run whose identities carry tokens the target no longer accepts gets a `401` on
+every request. Each one is a response, so neither `no_responses` nor
+`requests_unanswered` applies, and every request counts toward the endpoint being
+reached. The run read `clean` while it had verified nothing behind the access
+check of those endpoints: a reader takes a dead token for a healthy API.
+
+### Decision
+
+**The engine counts refusals per endpoint.** Each endpoint's `requests_refused`
+counts its `requests` answered `401` or `403`. Storage keeps it in
+`run_endpoint_stats.requests_refused` (migration `0020`), nullable so a row
+stored before reads `null`.
+
+**A targeted endpoint refused throughout degrades the run.** `assess_signal`
+adds `credentials_refused` when at least one targeted endpoint has
+`requests_refused` above `0` equal to its requests that got a response, those
+outside `availability`, `timeout` and `unsendable_request`. An endpoint that got
+no response is left to the causes that already say so.
+
+**Not in a mode that sends refused credentials.** `expects_refused_credentials`
+names the modes whose healthy run can see every response refuse: `auth`, which
+crosses each endpoint with the identities its access policy should refuse. Such
+a run never raises the cause.
+
+**Derived from the run's facts.** As the other causes, it is computed live and
+when a stored run is read, so the store keeps no column for the cause itself; a
+run stored before `requests_refused` was kept never raises it.
+
+### Rejected
+
+- **A share of refusals.** An endpoint that accepts a valid token and refuses
+  some crafted requests is healthy; only a refusal of every response says the
+  credentials opened nothing.
+- **Counting `401` alone.** A token accepted for authentication but without the
+  rights the endpoint asks for gets a `403` everywhere, and verifies as little.
+- **Raising it in `auth`.** That mode is built to be refused; its signal would
+  always read `degraded`.
+
+### Consequences
+
+A run against a target whose tokens expired reads `degraded` with
+`credentials_refused`, and the endpoint's `requests_refused` shows how many were
+refused. An endpoint that legitimately answers `403` to every generated
+request also degrades the run, and the cause names it so a reader can tell.

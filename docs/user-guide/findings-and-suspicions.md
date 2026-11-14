@@ -105,6 +105,16 @@ rejected is the outcome it foresaw, not a valid request rejected. A case is judg
 values was sent and it does not contradict its own field's contract; otherwise it
 is sent without being judged, and the contract's account says why.
 
+A case's values are read by field name, a body field by its dotted path; a name
+with its request zone in front (`body.title`) is read as that field when the
+zone declares it. A value for a path parameter is left out with a
+`path_parameter` note: the path names a stored resource, and the fuzzer already
+sends that parameter's edge ids (zero, negatives, each integer width and one past
+it) on its own. A case that set only path parameters is dropped with that note
+alone, since it loses nothing; a case left with no value for any other reason is
+dropped with an `empty_seed_case` note
+([producer note kinds](../modules/core/protocol/vocabularies.md#producer-note-kind)).
+
 **What the producer lost.** A rule the producer could not use is not silently
 dropped. The report's **Contracts** section lists, per endpoint, what the producer
 lost or retried (`producer_notes`), and every item the contract gave with how it

@@ -201,6 +201,16 @@ version; the lines below are the summary.
       `minimal_payload` can carry another id than the one first observed
       ([re-sending an accepted write](../../specforge-engine/run-depth.md#accepted-write-resend),
       [ADR-216](../../specforge-engine/adr/findings.md#adr-216)).
+    - *Added:* `credentials_refused` in `run.signal_causes` and
+      `vocabulary.signal_causes`, and `requests_refused` on each entry of
+      `endpoints`, in the report and in `get_run`: a run whose targeted endpoint
+      answered every response with `401` or `403`, as when the target no longer
+      accepts the identities' tokens, reads `degraded` instead of `clean`. An
+      `auth` run never raises it; a run stored before reads `requests_refused`
+      `null` and never raises it
+      ([signal causes](vocabularies.md#signal-causes),
+      [refused requests](run-detail.md#requests-refused),
+      [ADR-217](../adr/core.md#adr-217)).
     - *Added:* a finding's `request` says where its payload came from: `origin`
       (`drawn`, `witness` or `seeded`), `seed_case_id` and
       `seed_case_description`.
@@ -270,8 +280,9 @@ version; the lines below are the summary.
   `seed_case_description` on every finding; `covered_by` on every LLM
   suspicion; `findings_llm_suspicions`, `findings_llm_suspicions_covered`,
   `stateful_chains` and `contract_items` in `metrics`; `requests_shrink`,
-  `consumer_values`, `contract_usage` and `findings_llm_suspicions` on each
-  endpoint; `extra` and `extra_run` in each phase of `budget_by_phase`;
+  `consumer_values`, `contract_usage`, `findings_llm_suspicions` and
+  `requests_refused` on each endpoint; the signal cause `credentials_refused`;
+  `extra` and `extra_run` in each phase of `budget_by_phase`;
   `latency_samples_ms` on a `control`; `observed_payload` and `observed_headers`
   on every unconfirmed finding; and `details` on the envelope's `error`.
   `planned` is the strategy's share alone, and `examples_planned` sums `planned`

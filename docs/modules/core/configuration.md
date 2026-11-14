@@ -26,7 +26,7 @@ is kept under.
 | `llm.primary_model` | string | none (required) | — | The model an inference asks first. |
 | `llm.fallback_models` | string list | `[]` | — | Models tried, in order, when the primary one fails. |
 | `llm.max_retries` | integer | `2` | — | How many times one model is retried before the next one is tried. |
-| `llm.timeout_seconds` | number | `30.0` | — | How long one completion may take. |
+| `llm.timeout_seconds` | number | `60.0` | — | How long one completion may take. |
 | `llm.call_budget_seconds` | number | `120.0` | — | How long one LLM call may take across its retries and fallbacks. |
 | `llm.retry_backoff_base_seconds` | number | `0.5` | — | The base, in seconds, of the exponential wait between LLM retries. |
 | `inference.require_approval` | boolean | `true` | — | Refuse an inference run with calls to pay for until it carries an approved estimate's token. |

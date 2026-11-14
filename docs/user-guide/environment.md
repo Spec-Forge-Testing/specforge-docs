@@ -34,7 +34,7 @@ setup.
 | `LLM_MODEL` | — | The model to use, in LiteLLM's `provider/model` form, e.g. `gemini/gemini-2.5-flash`. Required. |
 | `LLM_FALLBACK_MODELS` | none | Comma-separated models tried in order if the primary fails. |
 | `LLM_MAX_RETRIES` | `2` | How many times one model is retried before the next one is tried. |
-| `LLM_TIMEOUT_SECONDS` | `30` | Timeout of one attempt, in seconds. |
+| `LLM_TIMEOUT_SECONDS` | `60` | Timeout of one attempt, in seconds. |
 | `LLM_RETRY_BACKOFF_BASE_SECONDS` | `0.5` | Base, in seconds, of the exponential wait between retries. |
 | `LLM_CALL_BUDGET_SECONDS` | `120` | Total seconds one call may spend across its retries and fallbacks. Must be at least `LLM_TIMEOUT_SECONDS`. |
 | `ANTHROPIC_API_KEY` | — | Credential for `anthropic/` models. |

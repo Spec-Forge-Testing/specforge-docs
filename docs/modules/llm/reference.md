@@ -27,7 +27,7 @@ variable:
 | `primary_model` | `LLM_MODEL` | — | Required. A LiteLLM model string, `<provider>/<model-id>`. |
 | `fallback_models` | `LLM_FALLBACK_MODELS` | none | Comma-separated, tried in order after the primary. |
 | `max_retries` | `LLM_MAX_RETRIES` | `2` | `≥ 0`. Retries of one model on a retryable failure. |
-| `timeout_seconds` | `LLM_TIMEOUT_SECONDS` | `30.0` | `> 0`. Timeout of one attempt. |
+| `timeout_seconds` | `LLM_TIMEOUT_SECONDS` | `60.0` | `> 0`. Timeout of one attempt. |
 | `retry_backoff_base_seconds` | `LLM_RETRY_BACKOFF_BASE_SECONDS` | `0.5` | `≥ 0`. Base of the backoff between retries. |
 | `call_budget_seconds` | `LLM_CALL_BUDGET_SECONDS` | `120.0` | `> 0` and at least `timeout_seconds`, so one full attempt always fits. |
 

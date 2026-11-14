@@ -54,7 +54,7 @@ copying the examples verbatim.
 | --- | --- | --- |
 | `LLM_FALLBACK_MODELS` | — | Comma-separated models the router tries, in order, when the primary fails. |
 | `LLM_MAX_RETRIES` | `2` | Retries against one model before moving to the next. |
-| `LLM_TIMEOUT_SECONDS` | `30` | Timeout of one attempt. |
+| `LLM_TIMEOUT_SECONDS` | `60` | Timeout of one attempt. |
 | `LLM_RETRY_BACKOFF_BASE_SECONDS` | `0.5` | Base, in seconds, of the exponential wait between retries. |
 | `LLM_CALL_BUDGET_SECONDS` | `120` | Total seconds one call may spend across its retries and fallbacks; at least `LLM_TIMEOUT_SECONDS`. |
 | `LLM_ENV_FILE` | — | The env file to read instead of `lib/llm/.env.local`; set it in the shell. |

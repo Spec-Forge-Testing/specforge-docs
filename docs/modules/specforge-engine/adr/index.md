@@ -55,8 +55,10 @@ missing here belongs to another module:
   [ADR-190](../../core/adr/core.md#adr-190), when a run is clean;
   [ADR-201](../../core/adr/inference.md#adr-201), how a model's rule is grounded in
   a quote; [ADR-213](../../core/adr/core.md#adr-213), when a run is refused
-  for verifying nothing; and [ADR-215](../../core/adr/core.md#adr-215), the
-  defect that covers an LLM suspicion, are the core's.
+  for verifying nothing; [ADR-215](../../core/adr/core.md#adr-215), the
+  defect that covers an LLM suspicion; and
+  [ADR-217](../../core/adr/core.md#adr-217), when refused credentials degrade a
+  run, are the core's.
 - [ADR-136](../../semantic-inference/adr/prompts.md#adr-136), the plausible values
   the prompt asks for, is Semantic Inference's.
 

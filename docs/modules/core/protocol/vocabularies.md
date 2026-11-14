@@ -150,15 +150,15 @@ still ran. `vocabulary.producer_note_kinds` carries each with its label.
 | --- | --- |
 | `reasked` | The model's answer failed validation and the model was asked again; `subject` is the model that gave it, `detail` where the answer broke, never what it said. |
 | `invalid_rule` | A business rule of the answer could not be read and was left out; `subject` is its id, `<unnamed>` without one. |
-| `unknown_field` | A business rule names a field the endpoint does not declare and was left out. |
+| `unknown_field` | A business rule, or a seed case's value, names a field the endpoint does not declare and was left out. A seed case's field named with its request zone in front (`body.title`) is read as that field when the zone declares it. |
 | `unbound_bundle` | A transition cites a state-link value nothing in the run binds and was left out. |
 | `unfollowable` | A transition the engine cannot follow from the endpoint was left out. |
 | `undeclared_echo` | A transition echoes a field the request body does not declare; the echo was left out. |
 | `incoherent_keyword` | A schema keyword the field's type does not take was left out of the fused contract. |
 | `superseded_by_enum` | A schema keyword an `enum` on the same field already settles was left out of the fused contract. |
 | `invalid_seed_case` | A seed case of the answer could not be read, or came past the cap on cases, and was left out; `subject` is its id. |
-| `path_parameter` | A seed case's value for a path parameter was left out: the path names a stored resource, never a seeded value. |
-| `empty_seed_case` | A seed case left with no value to send was left out. |
+| `path_parameter` | A seed case's value for a path parameter was left out: the path names a stored resource, and the fuzzer sends its edge ids (zero, negatives, each integer width and one past it) on its own. A case that set only path parameters is dropped without an `empty_seed_case` note: it loses nothing. |
+| `empty_seed_case` | A seed case left with no value to send was left out, unless every value it set was a path parameter. |
 | `assumed_over_declared` | A schema keyword the model assumed, rather than quoted, gave way to the one the spec declares on the same field; `subject` is the keyword and where it was. |
 | `unverified_quote` | A rule the model said the code or the spec states was taken as assumed: it came without a quote, its quote is not in what the model was shown, or a keyword's quote is about something else (`grounds.downgraded` says which); `subject` is the rule ([grounds](run-detail.md#grounds)). |
 ## `endpoints[].unprobed_reason` { #unprobed-reason }
@@ -218,6 +218,7 @@ without a table of its own ([vocabulary](handshake.md#vocabulary)).
 | --- | --- | --- |
 | `no_responses` | No request reached the target | No request reached the target: every attempt was an availability, timeout or unsendable-request failure. |
 | `requests_unanswered` | Some requests went unanswered | Some requests reached the target, but an endpoint left at least three of its requests, and at least 5 % of them, with a timeout or an availability failure, so what the run says of that endpoint rests on the rest. `metrics.by_category` and the endpoint's `by_category` count them. Never raised beside `no_responses`. |
+| `credentials_refused` | Some endpoints refused every request's credentials | One or more targeted endpoints got at least one response, and every response was a `401` or a `403`: the run's credentials opened nothing there, as when the target no longer accepts the identities' tokens, so the run verified nothing behind that endpoint's access check. The endpoint's [`requests_refused`](run-detail.md#requests-refused) counts them. An endpoint without a response does not raise it; an `auth` run, which crosses each endpoint with the identities its access policy should refuse, never raises it; nor does a run stored before `requests_refused` was kept. |
 | `endpoints_excluded` | Some endpoints were excluded | One or more declared endpoints were excluded from this run. |
 | `contracts_unproduced` | Some endpoints ran without rules | One or more endpoints of a run with a producer are in `producer_exclusions`, whatever their `disposition`: the producer left them without a contract, so they ran on their schema alone or were withheld. An endpoint the static analysis could not trace counts too. |
 | `withheld_by_safety_guard` | Held back by the safety guard | The safety guard held back one or more targeted endpoints, so they were never probed: a declared risk flag, or `assumed_write` (an unsafe method no producer judged a write for). |

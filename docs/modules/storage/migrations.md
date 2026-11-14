@@ -33,6 +33,7 @@ file outside the naming.
 | 17 | `0017_producer_notes_on_grounds.sql` | `run_producer_notes` rebuilt so its `kind` CHECK admits `assumed_over_declared` and `unverified_quote`. |
 | 18 | `0018_endpoint_report_and_stateful_replay.sql` | `run_endpoint_stats.requests_shrink`, `contract_usage` and `consumer_values`; `run_metrics.stateful_chains`; `findings.reproducer_steps`. |
 | 19 | `0019_finding_observed_request.sql` | `findings.observed_payload` and `observed_headers`. |
+| 20 | `0020_endpoint_requests_refused.sql` | `run_endpoint_stats.requests_refused`. |
 
 The tables and their columns, as the latest version leaves them, are on
 [Data model](data-model.md) and [Finding follow-up records](finding-records.md).

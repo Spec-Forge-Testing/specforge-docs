@@ -226,10 +226,11 @@ field, a [`LatencyRecord`](#value-objects), sampling only requests that reached 
 
 | `findings_llm_suspicions` | INTEGER | no | `0` | This endpoint's share of the run's `findings_llm_suspicions`. |
 | `requests_shrink` | INTEGER | no | `0` | Requests shrinking or confirming a finding sent to this endpoint, apart from `requests`; the rows of a run add up to its `requests_shrink`. |
+| `requests_refused` | INTEGER | yes | — | This endpoint's `requests` answered `401` or `403`, refusing their credentials; NULL on a row stored before version 20. |
 | `contract_usage` | TEXT | yes | — | JSON object of what the endpoint's contract gave and what the run did with each item; NULL when the contract gave none. |
 | `consumer_values` | TEXT | yes | — | JSON object of where a stateful consumer found its values and why some went unsent; NULL outside a stateful run. |
 
-Constraints: `UNIQUE (run_id, analysis_endpoint_id)`; `findings_llm_suspicions` and `requests_shrink` not negative (CHECK); `truncation_detail` only with a
+Constraints: `UNIQUE (run_id, analysis_endpoint_id)`; `findings_llm_suspicions` and `requests_shrink` not negative (CHECK); `requests_refused` NULL or between `0` and `requests` (CHECK); `truncation_detail` only with a
 `truncation_reason`; `held_back_by` and `held_back_via` [paired](#paired-columns). A cancellation before the endpoint started is the run's cut, not its own.
 
 ### `findings` — `FindingRecord` { #findings }

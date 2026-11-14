@@ -33,7 +33,7 @@ reads the run, and only `get_run` answers it.
 | `findings_refuted` | Occurrences whose minimal request reproduced while its control request showed the same signal, so the input was not the cause; `0` where no control is sent. |
 | `requests_shrink` | Requests sent while shrinking, and while `resilience` confirms its server errors; each entry of `endpoints` carries its share, and the entries add up to it ([below](#requests-shrink)). |
 | `stateful_chains` | Producer chains a `stateful` consumer sent inside its step that put at least one request on the wire, the shrink's not counted; `null` outside a `stateful` run. |
-| `contract_items` | Every endpoint's [`contract_usage.summary`](#contract-usage) summed, in the same shape; `null` when no producer's contract gave the run anything. |
+| `contract_items` | Every endpoint's [`contract_usage.summary`](#contract-usage) summed, in the same shape; `null` when no endpoint's contract (the spec's, plus a producer's when there is one) gave the run anything. |
 | `unconfirmed_unique` | The run's unconfirmed defects, each counted once: `total`, `flaky`, `unverified` and `refuted`. |
 
 ```json
@@ -255,11 +255,13 @@ phases: "bob got no examples in `mutation`", never "bob was left out of
 producer that gave the run its contracts: `none`, `fixture` or `inference`. `null`
 for a replay, which runs no producer.
 
-**`endpoints[].contract_usage`** is the account of what a producer's contract gave
-the endpoint, item by item, and what the run did with each
-([ADR-204](../../specforge-engine/adr/measurement.md#adr-204)). `null` when the
-contract gave it nothing, in a run without a producer, and for a run stored before
-it was kept. None of it enters `requests`, the coverage or the signal.
+**`endpoints[].contract_usage`** is the account of what the endpoint's contract gave
+it, item by item, and what the run did with each
+([ADR-204](../../specforge-engine/adr/measurement.md#adr-204)). The contract is the
+spec's own (its `default` and `examples` values as field seeds, its `links` as
+transitions) plus, when the run has one, a producer's: a run without a producer still
+accounts for what the spec gave, with `grounds` `null` on every item. `null` when
+nothing gave the endpoint an item, and for a run stored before it was kept. None of it enters `requests`, the coverage or the signal.
 
 | Field | Holds |
 | --- | --- |

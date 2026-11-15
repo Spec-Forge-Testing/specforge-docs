@@ -14,9 +14,9 @@ deletes it. How the core keeps them is described in
 ## Where they show
 
 On the first step of the [new-run screen](new-run.md#step-1-choose-a-test), **Your presets**
-follows the built-in tests. Each card is marked **Yours** and has the same size and layout as a
-built-in one, with a still icon instead of a mode's drawing, a top band coloured by its runs' modes,
-its name, its summary and its runs; Simple leaves out the mode chips, as it does for every card.
+follows the built-in tests. Each card is marked **Yours** and laid out like a built-in one, without
+the drawing: a top band coloured by its runs' modes, its name, its summary and its runs; Simple
+leaves out the mode chips, as it does for every card.
 Choosing one is choosing a test: its runs start one after the other, as a
 [chain](new-run.md#chains-of-runs), and each run records the preset it came from.
 

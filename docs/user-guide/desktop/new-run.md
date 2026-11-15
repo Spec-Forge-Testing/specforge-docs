@@ -1,9 +1,16 @@
 # New run
 
-The **Fuzz** screen plans a run in three steps: **Choose a test**, **Check what runs**, and
-**Rules and start**. Nothing is sent to your API until you press Start on step 3. The **Guide**
-button in the header opens a side panel that explains the map, the modes, the strategies, the
-rules, the checks and chains.
+The **Fuzz** screen plans a run as a short sequence of steps. Nothing is sent to your API until
+you press the start button on the last one. The steps depend on the [mode](modes.md):
+
+| Mode | Steps |
+| --- | --- |
+| Simple | **Choose a test**, **Review and start** |
+| Developer | **Choose a test**, **Review**, **Check what runs and start** |
+
+The review is one screen in both modes; Developer adds a few rows to it and goes on to the map,
+where it starts. The **Guide** button in the header opens a side panel that explains the map, the
+modes, the strategies, the rules, the checks and chains.
 
 Every mode, strategy, preset and check the screen offers is read from the core's
 [fuzz options](../../modules/core/protocol/fuzz-options.md). A term the app has no description
@@ -11,12 +18,12 @@ for is still shown, by its id, in a neutral colour.
 
 ## Step 1: choose a test
 
-A test is a preset or Custom. A preset is a ready-made sequence of one or more runs; Custom starts
-one empty run that you build on the map.
+**What do you want to test?** offers the built-in tests as cards, then
+[your presets](saved-presets.md) when the core keeps them. A test is a preset: a ready-made
+sequence of one or more runs.
 
 | Card | What it runs | Asks |
 | --- | --- | --- |
-| Custom | One run whose mode and strategy you choose on the map | — |
 | Standard check | `stateless` + `default` | Each endpoint alone, with every kind of input. |
 | Quick check | `stateless` + `smoke` | Does every endpoint answer? |
 | Contract audit | `stateless` + `conformance` | Do responses match the contract? |
@@ -29,17 +36,81 @@ one empty run that you build on the map.
 | Access check | `auth` + `default` | Can a caller reach what its access policy refuses? |
 | Stress ladder | `performance` (concurrency ladder, steps 1, 4, 16) + `default` | Rising load: who slows down first? |
 
-Every card but Custom is one of the core's [presets](../../modules/core/protocol/fuzz-options.md#presets),
-in the order the core lists them, with the core's title and question. A card marked **Needs
-users** needs a [users file](#users-and-side-effects); a card marked **Needs rules** has nothing
-to test with the spec alone. If the core runs without the engine package there is no test to choose, and
-the screen links to Doctor.
+Each built-in card is one of the core's [presets](../../modules/core/protocol/fuzz-options.md#presets),
+in the order the core lists them, with the core's title, question and drawing. A card marked
+**Needs users** needs a [users file](#users-and-side-effects); a card marked **Needs rules** has
+nothing to test with the spec alone. If the core runs without the engine package there is no test
+to choose, and the screen links to Doctor.
 
-Editing any run of a preset turns the plan into Custom, and the header says which preset it
-started from (`Custom, from security-scan`). Putting it back the way the preset had it turns it
-back into the preset.
+What each mode shows on this step:
 
-## Step 2: check what runs
+| | Simple | Developer |
+| --- | --- | --- |
+| Custom card | No | Yes: one empty run you build on the map |
+| Each run's mode under a card | No | Yes |
+| **Recommended** mark | On the preset the core recommends | No |
+| A Custom plan already built | One **Custom setup** card, with **Choose** and **Edit in Developer mode** | Kept on the map |
+
+The **Recommended** mark follows the core: it goes on the preset the core flags as recommended.
+A core older than `0.2.7` flags none; the app then marks **Standard check** when the core lists it.
+
+Editing any run of a preset on the map turns the plan into Custom, and the header says which
+preset it started from (`Custom, from security-scan`). Putting it back the way the preset had it
+turns it back into the preset.
+
+## Step 2: review { #step-2-review }
+
+The review is called **Review and start** in Simple, where it starts the run, and **Review** in
+Developer, where **Next: check what runs** leads to the map. It holds what every run of the plan
+shares.
+
+| Row | Simple | Developer |
+| --- | --- | --- |
+| Where the rules come from | Yes | Yes, with the rules folder when the source is your own rules |
+| Test users | Yes | Yes |
+| Side effects | Yes | Yes |
+| Repeatable run | No | Yes, when the core offers it |
+| Cost, with the LLM | The estimate beside your cap | The same, and the model in use |
+
+### Where the rules come from
+
+Rules say what the API must do beyond the shape the spec declares: business rules, and who may
+call what. One source applies to every run of the plan.
+
+| Source | What it reads | Cost |
+| --- | --- | --- |
+| Spec only | The OpenAPI spec alone. Business-rule checks never fire and `auth` has nothing to test | Free |
+| LLM reads your code | Business rules and access policies the model deduces from your code | Paid; you approve the estimate at Start |
+| Rules you wrote | One JSON file per endpoint in a folder of the project, in the format the LLM produces | Free and repeatable |
+
+Simple offers **Rules you wrote** only when the project already has a rules folder, or the plan
+already uses it; Developer always offers it, with the **Folder** field and **What goes in it?**.
+LLM rules, their cost estimate and the cap are covered in
+[LLM rules and side effects](llm-rules-and-side-effects.md#llm-rules).
+
+The first run of a plan traces each endpoint to its handler in your code before fuzzing
+(`run_pipeline`); the runs after it are plain `fuzz` calls.
+
+### Users and side effects { #users-and-side-effects }
+
+**Test users** takes a users file (`identities.toml`, relative to the project root): named users
+with the headers they log in with. Every endpoint that needs a login is called as them, in any
+mode, and `auth` needs at least one. Without users, the row says how many endpoints need a login
+and that they answer 401. Credentials never leave your machine. Users say who calls; who may do
+what is part of the rules.
+
+**Allow side effects** is one switch for every run of the plan. What it lets through is described
+in [Side effects](llm-rules-and-side-effects.md#side-effects). A [saved preset](saved-presets.md#side-effects-saved-in-a-preset)
+that allows side effects asks again here, run by run.
+
+### Repeatable run
+
+In Developer, when the core offers it, **Repeatable run** has one switch: **Send the same
+requests every time**. Every run of this plan then sends the same requests while the code stays
+unchanged; the API's answers can still differ. It holds for this plan only, and a saved preset
+does not keep it. A core that does not offer it shows no row.
+
+## Step 3: check what runs (Developer)
 
 Each run is drawn as one map, read left to right:
 
@@ -62,6 +133,9 @@ The strategy picker compares each strategy with Default in the chosen mode. A st
 exactly what Default would send in that mode reads **Same as Default here**, and the map offers
 to switch back to Default or to try the strategy in a mode where it does change something.
 
+A Custom plan can be kept as a test of your own with **Save as preset**: see
+[Your presets](saved-presets.md#saving-a-setup-as-a-preset).
+
 ### The settings of a run
 
 The chips under each map open that run's settings. Which ones appear depends on the mode:
@@ -76,17 +150,13 @@ The chips under each map open that run's settings. Which ones appear depends on 
 
 `resilience`, `auth` and the concurrency ladder send a fixed set of requests, so no count can be
 set on them. Load steps must be at least two whole numbers, each higher than the one before, and
-the last no higher than the project's max concurrency (20 unless the project or the Developer
-section sets another).
+the last no higher than the project's max concurrency (20 unless the project sets another).
 
 ### Chains of runs
 
 **Then run…** under the last map adds a run that starts when the previous one ends. A chain holds
 up to **five runs**. Runs can be moved earlier or later and removed; each run is saved as its own
-run, with its own run detail.
-
-Each run is its own call to the core. When static code analysis is on, the first run also traces
-the code before fuzzing (`run_pipeline`); the runs after it are plain `fuzz` calls.
+run, with its own run detail. A preset of several runs is a chain too, in both modes.
 
 A run is **cut short** when it did not go through its whole plan: it ended `truncated`,
 `aborted` or `safety_breached` (see [run status](../../modules/core/protocol/vocabularies.md#run-status)).
@@ -126,69 +196,29 @@ When the chain ends, one summary lists each run with its outcome and saved run n
 runs that never started. Its colour is the worst any run earned: a clean last run never paints
 the chain green when an earlier run was cut, skipped, ran past the cost cap or did not run.
 
-## Step 3: rules and start
+## Starting
 
-### Where the rules come from
-
-Rules say what the API must do beyond the shape the spec declares: business rules, and who may
-call what. One source applies to every run of the plan.
-
-| Source | What it reads | Cost |
-| --- | --- | --- |
-| Spec only | The OpenAPI spec alone. Business-rule checks never fire and `auth` has nothing to test | Free |
-| LLM reads your code | Business rules and access policies the model deduces from your code | Paid; you approve the estimate at Start |
-| Rules you wrote | One JSON file per endpoint in a folder of the project, in the format the LLM produces | Free and repeatable |
-
-LLM rules, their cost estimate and the cap are covered in
-[LLM rules and side effects](llm-rules-and-side-effects.md#llm-rules).
-
-**Code analysis first, free** says that the first run traces each endpoint to its handler before
-fuzzing, with any rule source, and how many endpoints it traced.
-
-### Users and side effects
-
-**Who calls your API** takes a users file (`identities.toml`, relative to the project root):
-named users with the headers they log in with. Every endpoint that needs a login is called as
-them, in any mode, and `auth` needs at least one. Credentials never leave your machine. Users say
-who calls; who may do what is part of the rules.
-
-**Allow side effects** is one switch for every run of the plan. What it lets through is described
-in [Side effects](llm-rules-and-side-effects.md#side-effects).
-
-### The Developer section
-
-**Developer**, in the header while you are on step 3, opens the settings shared by every run and the exact
-request each run will send.
-
-| Field | Blank means |
-| --- | --- |
-| Static code analysis before the first run | On; off sends plain `fuzz` |
-| Base URL | The project target |
-| Timeout (s) | `engine.timeout_s`, per request |
-| Max concurrency | `engine.max_concurrency`, requests in flight at once |
-| Deadline (ms) | No time budget per endpoint |
-
-Blank fields use the project's `specforge.toml`.
-
-### Starting
-
-The footer shows one chip per run, the rule source and the cost. Whatever keeps the plan from
-starting is said there, naming the run it is about (`Run 2: choose a mode on the map.`), with a
-one-click way out when there is one: choose LLM rules or your rules, choose a users file, or open
-Settings to add an LLM key.
+The footer holds the start button on the last step: **Review and start** in Simple, the map in
+Developer. Whatever keeps the plan from starting is said there, naming the run it is about
+(`Run 2: choose a mode on the map.`), with a one-click way out when there is one: use the LLM or
+your rules, choose a users file, or open Settings to add an LLM key.
 
 The start button says what pressing it does:
 
 | Label | When |
 | --- | --- |
 | Start run / Start N runs | Nothing to approve or review |
-| Approve USD X and start | LLM rules with a priced estimate: pressing it approves exactly that amount |
+| Approve USD X and start / Approve ~USD X and start | LLM rules with a priced estimate: pressing it approves that estimate ([Approval](llm-rules-and-side-effects.md#approval)) |
+| Approve up to USD X (your cap) and start | LLM rules whose worst case passes your cap |
 | Review and start | Side effects are allowed, or the model has no price: a review opens first |
+| Start without side effects | A saved preset allows side effects and no run's box was checked |
 | Estimating cost… | The estimate for the plan as it stands has not arrived yet |
 
 The review, **Before the run starts** (or **Before the chain starts**), lists what you are
-agreeing to: side effects in every run, the LLM cost, and for a chain the order and what a cut
-does. Nothing is sent until you confirm.
+agreeing to: side effects in every run or in the runs you checked, the LLM cost, and for a chain
+the order and what a cut does. Nothing is sent until you confirm.
 
-**Run again** on the Workspace opens this screen on step 2 with the last run's mode and strategy,
-as Custom, or with the whole plan you last started when it began with that run.
+**Run again** opens this screen set up like an earlier run. From the Workspace it uses the last
+run's mode and strategy, as Custom, or the whole plan you last started when it began with that
+run. From a run's detail it sets up that run again ([Run again](run-detail.md#run-again)). The
+screen opens on the last step: the map in Developer, **Review and start** in Simple.

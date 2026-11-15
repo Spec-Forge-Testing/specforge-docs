@@ -140,7 +140,9 @@ nav:
       - Defects and LLM suspicions: user-guide/findings-and-suspicions.md
       - Desktop app:
           - Overview: user-guide/desktop/index.md
+          - Simple and Developer mode: user-guide/desktop/modes.md
           - New run: user-guide/desktop/new-run.md
+          - Your presets: user-guide/desktop/saved-presets.md
           - LLM rules and side effects: user-guide/desktop/llm-rules-and-side-effects.md
           - Run detail: user-guide/desktop/run-detail.md
   - Configuration:

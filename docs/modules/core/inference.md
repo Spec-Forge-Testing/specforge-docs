@@ -210,7 +210,10 @@ computes its own plan and compares:
 | Pending, a token for another set of inferences | `INFERENCE_APPROVAL_REQUIRED`, `data.reason` `stale` |
 
 The refusal carries `data.estimate`, the estimate as `estimate_inference` would
-return it, so a client can show the price and approve in one step. A token goes
+return it, so a client can show the price and approve in one step.
+`generate_contract` with `use_llm` is approved the same way, and
+`estimate_contract_generation` answers its first estimate and token before the
+call is sent ([Operations](protocol/operations.md#estimate-contract-generation)). A token goes
 stale whenever the set of pending inferences changes: an edit to the traced
 code, the spec, the model or the prompt, another selection, or a cache entry
 gained or lost since the estimate. In
@@ -238,7 +241,8 @@ cost.
   later one is refused under the cap.
 - `generate_contract` holds its own `max_cost_usd` the same way, over its route
   discovery and response calls as well as its contract inferences
-  ([its cap](protocol/operations.md#generate-contract-cap)).
+  ([its cap](protocol/operations.md#generate-contract-cap)). Its cap is greater
+  than `0` and only with `use_llm`; an approval never lifts it.
 - The cap falls on the same endpoints as a one-at-a-time run unless an inference
   in flight pays more than its worst case (an answer longer than the measured
   length); then up to `inference.max_workers − 1` more inferences may run past it.

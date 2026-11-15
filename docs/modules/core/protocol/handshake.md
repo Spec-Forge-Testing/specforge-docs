@@ -4,7 +4,7 @@
 refused `HANDSHAKE_REQUIRED`.
 
 ```json
-{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.2.6"}}
+{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.2.7"}}
 ```
 
 The response carries the protocol version, the server's identity, what this
@@ -13,7 +13,7 @@ in, and the options a run can be asked for:
 
 ```json
 {"jsonrpc":"2.0","id":1,"result":{
-  "protocol_version":"0.2.6",
+  "protocol_version":"0.2.7",
   "server":{"name":"specforge-core","version":"…","frozen":false},
   "capabilities":{…},
   "catalog":{…},
@@ -30,6 +30,7 @@ in, and the options a run can be asked for:
 | `event_kinds` | list of strings | The `kind`s **this build actually emits** — where `infra_failure` and `target_down` show up or not, depending on the engine |
 | `cancellation` | bool | The core honors `$/cancelRequest` |
 | `max_in_flight` | int or null | Concurrent operations allowed: the size of the core's worker pool, `8`. A ninth request waits in the queue until a worker frees, and a `$/cancelRequest` reaches it there. `null` would mean no ceiling |
+| `storage` | bool | The core keeps what it is given. `false` for a core with no store: it keeps no run (`fuzz` and `run_pipeline` still answer their report, with a warning), lists the builtin presets alone and refuses `save_preset` and `delete_preset` ([Saved presets](presets.md#the-operations)), so a client can hide saving before it is refused |
 | `payload` | object | `inline_max_bytes`, `file_handoff` (bool), `pagination` (bool) |
 
 The whole handshake is **derived, not declared**: `event_kinds` is exactly what
@@ -56,7 +57,7 @@ lists it among the result's required fields.
 | `unprobed_reasons` | `{value, label}` | Every [`unprobed_reason`](vocabularies.md#unprobed-reason) |
 | `hold_reasons` | `{value, label}` | Every value of `held_back_by` |
 | `exclusion_dispositions` | `{value, label}` | The core's own: every [`producer_exclusions[].disposition`](vocabularies.md#producer-exclusion-disposition), plus `aborted`, a failed contract that stopped the run |
-| `signal_causes` | `{value, label}` | The core's own: every [`run.signal_causes`](vocabularies.md#signal-causes) value, in the order they render, each with a label short enough for a verdict line |
+| `signal_causes` | `{value, label, remedy}` | The core's own: every [`run.signal_causes`](vocabularies.md#signal-causes) value, in the order they render, each with a label short enough for a verdict line and a `remedy`, one sentence on the next thing to do about it |
 | `attack_families` | `{value, label, summary}` | Every [attack family](vocabularies.md#attack-family) a request's `attack_family` or a strategy's `attack_families` names, in declaration order, with a one-sentence `summary` of the payloads it sends |
 | `oracle_needs` | `{value, label}` | Every [`oracle_need`](vocabularies.md#oracle-need), in declaration order: what a response must come with before an invariant can be judged on it |
 | `producer_note_kinds` | `{value, label}` | The core's own: every [`producer_notes[].kind`](vocabularies.md#producer-note-kind), in declaration order |
@@ -64,10 +65,11 @@ lists it among the result's required fields.
 | `contract_item_kinds` | `{value, label, summary}` | The core's own, mirroring the engine's: every [`contract_usage.items[].kind`](vocabularies.md#contract-item-kind), with a `summary` of the part of a contract it is |
 | `unexercised_reasons` | `{value, label, summary}` | The core's own, mirroring the engine's: every [`contract_usage.items[].unexercised.reason`](vocabularies.md#unexercised-reason), in their order of precedence, with a `summary` in plain words |
 | `unjudged_reasons` | `{value, label, summary}` | The core's own, mirroring the engine's: every [`contract_usage.items[].unjudged_because`](vocabularies.md#unjudged-reason), in their order of precedence, with a `summary` in plain words |
+| `unexercised_details` | `{reason, value, label, summary}` | The core's own, mirroring the engine's: every closed-vocabulary [`unexercised.detail`](vocabularies.md#unexercised-detail) with no list of its own, those of `witness_not_found` and `never_judged`. Looked up by the pair (`reason`, `value`): the same token can mean different things under two reasons. A pair a client does not know reads as the raw token |
 
 Every list but `exclusion_dispositions`, `signal_causes`, `producer_note_kinds`,
-`nothing_verified_causes`, `contract_item_kinds`, `unexercised_reasons` and
-`unjudged_reasons` comes from the engine
+`nothing_verified_causes`, `contract_item_kinds`, `unexercised_reasons`,
+`unjudged_reasons` and `unexercised_details` comes from the engine
 ([ADR-148](../../specforge-engine/adr/findings.md#adr-148)). Without the engine
 the object is present with those lists empty, never missing.
 
@@ -86,8 +88,8 @@ keys, the effects matrix and how it is derived are on
 **The core serves a range within its own series.** A client is served when its
 `protocol_version` has the core's `major.minor` and a patch between a declared
 floor and the core's own. Each part compares as a number, never as text:
-`0.1.10` is newer than `0.1.9`. This core speaks `0.2.6` and serves `0.2.0`
-up to `0.2.6`: no `0.1.x` client is served. It always answers `hello` with its
+`0.1.10` is newer than `0.1.9`. This core speaks `0.2.7` and serves `0.2.0`
+up to `0.2.7`: no `0.1.x` client is served. It always answers `hello` with its
 own version, and a frontend ignores the keys it does not know.
 
 Anything else — another series, a patch outside the range, or a
@@ -134,9 +136,99 @@ neither. See [ADR-095](../adr/protocol.md#adr-095).
 ## Changelog
 
 The report document that `fuzz`, `replay` and `run_pipeline` answer with is
-`schema_version` 1.28. The protocol's own README holds the full entry for each
+`schema_version` 1.29. The protocol's own README holds the full entry for each
 version; the lines below are the summary.
 
+- **0.2.7** — A user keeps presets of their own, listed beside the builtins; a run
+  says which preset it was one of and the options it used; a history row counts
+  the run's unconfirmed defects; and a client can price `generate_contract` with
+  `use_llm` before paying for it. **Additive on the wire**: this core serves
+  `0.2.0` up to `0.2.7`. It ships with report `1.29`.
+    - *Added:* the `presets` family, none of its operations needing a project
+      ([Saved presets](presets.md)). `list_presets` answers the builtins in
+      `fuzz_options.presets` order, then the saved presets by `name`, each with
+      `origin` (`builtin` or `user`), `created_at` and `updated_at` (`null` for a
+      builtin), and each run with the `fuzz` parameters a saved run keeps.
+      `save_preset` (`name`, `label`, `summary`, `runs`, `replace`) saves one to
+      five runs, each refused for every setting `fuzz` refuses before it runs,
+      with the same reason, and answers the preset as saved. `delete_preset`
+      (`name`, destructive) answers the preset as it was. A core without storage
+      lists the builtins alone, and one without the fuzzing stack refuses
+      `save_preset` with `DEPENDENCY_UNAVAILABLE`. `fuzz_options.presets` is
+      unchanged.
+    - *Added:* a saved run stored without a field reads back at its default; a
+      saved preset whose runs this core cannot read is listed and deleted by name
+      with `runs`, `requires` and `holds_back` empty, never hiding the rest
+      ([an unreadable preset](presets.md#unreadable)). `PRESETS_STORE_FAILED` is
+      left for a store that cannot be read at all. A saved preset's `holds_back`
+      leaves out the holds of a run that keeps `allow_side_effects: true`, which
+      lifts them. `save_preset` with `replace: true` overwrites for good: a client
+      confirms it like a destructive action.
+    - *Added:* the codes `PRESET_NAME_TAKEN` (rpc `-32602`; `data.name`,
+      `data.origin`), `PRESET_READ_ONLY` (rpc `-32602`; `data.name`),
+      `PRESET_NOT_FOUND` (`data.name`) and `PRESETS_STORE_FAILED`
+      (`data.reason`) ([errors](errors.md#presets)).
+    - *Added:* `preset` in `fuzz` and `run_pipeline`: `{name, label, origin,
+      run_index, run_count}`, which preset the run is one of, checked and kept,
+      never interpreted; a malformed one is `INVALID_PARAMS` with
+      `data.parameter` such as `preset.run_index`
+      ([the `preset` parameter](presets.md#preset-parameter)). A preset's `label`
+      and `summary`, and `preset.label`, are one line: a line feed or a carriage
+      return anywhere, at the end included, is `INVALID_PARAMS`.
+    - *Added:* `analysis.preset` and `analysis.options` in the report document,
+      in `get_run`, `get_analysis` and each row of `list_analyses`: the preset
+      the run was one of, `null` for none, and the options it used
+      ([what a run keeps](presets.md#run-options)). A run stored before reads
+      `preset` `null` and `null` where its analysis does not say.
+    - *Added:* `remedy` in each entry of `vocabulary.signal_causes`, one sentence
+      on the next thing to do about the cause
+      ([signal causes](vocabularies.md#signal-causes)).
+    - *Added:* `vocabulary.unexercised_details`, `{reason, value, label,
+      summary}`: each closed-vocabulary `unexercised.detail` with no list of its
+      own, those of `witness_not_found` and `never_judged`, keyed by the pair
+      (`reason`, `value`). The details of the other reasons are values of the
+      lists named in [what a detail is read from](vocabularies.md#unexercised-detail).
+    - *Added:* `recommended` (bool) on every preset of `fuzz_options.presets` and
+      of `list_presets`: `true` for `standard` alone
+      ([Fuzz options](fuzz-options.md#presets)).
+    - *Added:* `capabilities.storage` (bool): `false` for a core with no store,
+      which keeps no run, lists the builtin presets alone and refuses
+      `save_preset` and `delete_preset` ([capabilities](#capabilities)).
+    - *Added:* `run.findings_unconfirmed` in `list_runs` and `get_run`: the run's
+      flaky plus unverified defects, refuted ones left out, a defect in both
+      states counted once, `null` exactly when `findings_confirmed` is
+      ([Run detail](run-detail.md#findings-unconfirmed)).
+    - *Added:* `estimate_contract_generation` (family `contract`, `requires`
+      project, read-only): the estimate `generate_contract` with `use_llm` asks
+      approval for first, with the `approval_token` it accepts, calling no model
+      ([Operations](operations.md#estimate-contract-generation)).
+    - *Added:* `data.parameter` `load` on the `INVALID_PARAMS` that refuses a
+      `load` outside execution mode `performance`, and `runs[N].load` when
+      `save_preset` refuses it.
+    - *Changed:* `fuzz` and `run_pipeline` refuse every setting the engine
+      refuses before anything is produced, each `INVALID_PARAMS` with its reason
+      as before and now its `data.parameter`: `examples_per_endpoint` on a runner
+      that honors no count, `max_concurrency` and `deadline_ms` below 1, `load`
+      for a ladder or a latency limit the engine refuses, and
+      `load.concurrency_steps` for a ladder step above the run's own
+      `max_concurrency`, which used to fail mid-run with `EXECUTION_FAILED`, after
+      its contracts were produced ([settings refused before a run](operations.md#settings-refused)).
+    - *Changed:* `generate_contract` without `use_llm` refuses any
+      `max_cost_usd` with `INVALID_PARAMS`, as `fuzz` refuses a cap on a producer
+      that never pays. `generate_contract` and `estimate_contract_generation`
+      refuse a `max_cost_usd` of `0` or less with `INVALID_PARAMS`;
+      `generate_contract` used to ask approval for it and then refuse it with
+      `CONTRACT_PRODUCER_FAILED`. Both refuse a cap before the route scan starts
+      and before any event is sent.
+    - *Documented:* `analysis.options` is the analysis's original run's options:
+      a replay shows those, not its own `base_url` or `allow_side_effects`, and a
+      stored `options.allow_side_effects: true` is not consent. A finding's
+      `summary` may hold code spans between backticks and no other markdown, and
+      `represented_findings` counts the raw findings one finding stands for
+      ([What a finding carries](run-detail.md#finding-text)).
+
+- **Report 1.29** — Additive; it ships with protocol `0.2.7`. Adds
+  `analysis.preset` and `analysis.options`.
 - **0.2.6** — A finding says where its rule comes from, and one that stands on a
   rule the model only assumed is an LLM suspicion, apart from the defects. A
   seed case is judged against the outcome it expects. What a producer's contract

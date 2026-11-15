@@ -211,8 +211,9 @@ consumes values also says where its draws found them, in `consumer_values`
 Why a run's `signal` is `degraded`, in the order they render. In `get_run` and
 the report document's `run`, beside `signal` (`clean` or `degraded`); `[]` when
 the signal is not `degraded`. `vocabulary.signal_causes` lists each value with its
-label, in this order, short enough for a verdict line, so a client labels a cause
-without a table of its own ([vocabulary](handshake.md#vocabulary)).
+label, in this order, short enough for a verdict line, and its `remedy`, one
+sentence on the next thing to do about it, so a client labels a cause and says what
+to do without a table of its own ([vocabulary](handshake.md#vocabulary)).
 
 | Value | Label | Meaning |
 | --- | --- | --- |
@@ -229,6 +230,24 @@ without a table of its own ([vocabulary](handshake.md#vocabulary)).
 | `run_truncated` | The run was cut short | The run's `run.status` is `truncated`: it was cut short before its plan was exhausted, even when every targeted endpoint received requests. `run.truncation` says why. It can stand beside `endpoints_unreached`. |
 | `endpoints_unreached` | Some endpoints were never reached | One or more targeted endpoints never received a request. |
 | `load_unjudged` | Some load profiles judged no step | One or more endpoints' load profiles judged no step: every `degraded` is `null`, because the baseline or every step was measured on no samples. |
+
+Each cause's `remedy`, as `vocabulary.signal_causes` carries it:
+
+| Value | Remedy |
+| --- | --- |
+| `no_responses` | Check that the target is up and that the run's base URL points at it, then run again. |
+| `requests_unanswered` | Raise the request timeout or lower the concurrency, then run again. |
+| `credentials_refused` | Give the run identities whose credentials the target accepts, then run again. |
+| `endpoints_excluded` | Read why each endpoint was excluded, fix what that names in the spec, then run again. |
+| `contracts_unproduced` | Read why the producer left each endpoint without rules, fix what that names, then run again. |
+| `withheld_by_safety_guard` | Allow side effects, against a target that may be written to, to send what was held back. |
+| `access_policy_undeclared` | Declare who may call those endpoints, then run the auth mode again. |
+| `access_preconditions_unmet` | Read each endpoint's unprobed reason and give the run what it names, such as an identity holding the role. |
+| `stateful_endpoints_unsent` | Read each endpoint's unprobed reason and give the stateful run what it names, such as more examples per endpoint. |
+| `run_cancelled` | Run again and let it finish to cover every targeted endpoint. |
+| `run_truncated` | Read why the run was cut short, raise its deadline or fix what that names, then run again. |
+| `endpoints_unreached` | Run again with a longer deadline, or target fewer endpoints, so each one is reached. |
+| `load_unjudged` | Check that the target answers under load, then run the load profiles again. |
 
 The signal and its causes are derived from the run's facts, both for the report
 a run answers with and when a stored run is read, so the persistence layer
@@ -285,6 +304,33 @@ in plain words.
 | `run_stopped` | The run, or its endpoint, was cut before it was sent. |
 | `phase_unsendable` | Its phase drew no candidate, so the pass sending it was skipped. |
 
+### What a detail is read from { #unexercised-detail }
+
+Where `unexercised.detail` is a closed value, a client reads its label from the
+list that holds it. Any other `detail` is text for a person, or `null`.
+
+| `reason` | `detail` is a value of |
+| --- | --- |
+| `witness_not_found`, `never_judged` | `vocabulary.unexercised_details`, looked up by the pair (`reason`, `value`) |
+| `held_back` | `vocabulary.hold_reasons` |
+| `run_stopped` | `vocabulary.truncation_reasons` |
+| `endpoint_unprobed` | `vocabulary.unprobed_reasons` |
+| `mode_does_not_send_as_given` | a `fuzz_options.modes[].name` |
+| `phase_unsendable` | a `fuzz_options.phases[].value` |
+
+`vocabulary.unexercised_details` lists `{reason, value, label, summary}`. The pair
+is the key because the same token can mean different things under two reasons; a
+pair a client does not know reads as the raw token.
+
+| `reason` | `value` | Label | Summary |
+| --- | --- | --- | --- |
+| `witness_not_found` | `search_budget_spent` | The search ran out of time | The pass's time for searching a witness was spent before one was found. |
+| `witness_not_found` | `spec_shapes_the_text` | The spec's format or pattern shapes the text | No text past the keyword's length bound keeps to the format or pattern the spec gives the field. |
+| `witness_not_found` | `no_backdrop` | No valid request has a place for the field | No valid request to the endpoint holds a place to set the field's witness in. |
+| `witness_not_found` | `no_value` | No value the spec takes breaks it alone | Every value that breaks the keyword also breaks another part of the spec. |
+| `never_judged` | `undecided` | Judged, never decided | Responses were judged against the rule, and none of them decided it. |
+| `never_judged` | `no_response` | No response judged it | No response the run got was judged against the rule. |
+
 ## `contract_usage.items[].unjudged_because` { #unjudged-reason }
 
 Why a seed case that expects an outcome was sent without being judged against it,
@@ -316,7 +362,8 @@ carries the one it runs with, and an analysis carries it as `strategy` in
 
 An analysis also carries `examples_per_endpoint`: the count the run asked of each
 endpoint, `null` when its runner honors no count or for an analysis stored before
-it was recorded ([Examples per endpoint](fuzz-options.md#examples-per-endpoint)).
+it was recorded ([Examples per endpoint](fuzz-options.md#examples-per-endpoint)). Beside it, `preset` names the preset the run was one of and `options` the
+options it used ([what a run keeps](presets.md#run-options)).
 
 ## `fuzz_options.effects[].changes` { #changes }
 

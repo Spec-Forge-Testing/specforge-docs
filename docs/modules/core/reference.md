@@ -86,6 +86,18 @@ assembles the object, with `limits` read from the core's own `engine.max_concurr
 option, and `presets.py` holds the presets as data
 ([Fuzz options](protocol/fuzz-options.md)).
 
+The presets a user saves are the `presets` family. `controllers/execution/shape.py`
+holds `check_run_shape`, every refusal of a run's settings `fuzz` makes before it
+runs, each naming its parameter; `fuzz` calls it before it runs, and
+`controllers/presets/checks.py` calls it on each run to save, its refusals placed
+under the run's path. `services/persistence/presets.py` keeps the presets in the
+store's `user_presets` table and reads a row whose runs this core cannot decode
+back with no runs, so one bad row never hides the rest. `services/presets/listing.py`
+lists a builtin and a saved preset in one `ListedPreset` shape, deriving `variant`,
+`asks_for`, `requires` and `holds_back` for both with the builder the catalog uses;
+a run that keeps `allow_side_effects` adds no hold
+([Saved presets](protocol/presets.md), [ADR-218](adr/core.md#adr-218)).
+
 What a client is told depends on the version it negotiated:
 `adapters/stdio/version_view.py` leaves out of `hello`'s and `describe`'s
 `presets` every preset whose runs set a field the client's version does not read,

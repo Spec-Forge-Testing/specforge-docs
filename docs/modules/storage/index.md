@@ -30,8 +30,9 @@ per-endpoint stats belong to a run. Every table is described in the
 
 Outside that hierarchy, storage keeps the
 [inferred contracts](data-model.md#inferred_contracts): the cache of the contracts
-the inference producer already paid for, keyed by what determines the prompt. No
-delete in the hierarchy touches it.
+the inference producer already paid for, keyed by what determines the prompt, and the
+[saved presets](data-model.md#user_presets) a user keeps beside the builtins. No
+delete in the hierarchy touches either.
 
 ## Quick start
 
@@ -74,9 +75,9 @@ Import from the top-level `storage` package. Its main exports:
 | --- | --- | --- |
 | Engine (2) | `StorageEngine`, `UnitOfWork` | [Transactions](transactions.md) |
 | Artifact operations (7) | `save_artifact`, `load_artifact`, `compress_artifact`, `reclaim_artifacts`, `scan_orphans`, `collect_orphans`, `MIN_COMPRESSIBLE_BYTES` | [Artifacts](artifacts.md) |
-| Records and value objects (19) | `ProjectRecord`, `AnalysisRecord`, `AnalysisEndpointRecord`, `AnalysisEndpointContractRecord`, `ProducedContractRecord`, `RunRecord`, `RunFilter`, `RunMetricsRecord`, `RunEndpointStatsRecord`, `LatencyRecord`, `FindingRecord`, `RunProducerExclusionRecord`, `RunProducerNoteRecord`, `ReplayDefectVerdictRecord`, `ArtifactRecord`, `InferredContractRecord`, `ReclaimOutcome`, `OrphanScan`, `CollectOutcome` | [Data model](data-model.md); the last three in [retention](artifacts.md#retention) |
+| Records and value objects (20) | `ProjectRecord`, `AnalysisRecord`, `AnalysisEndpointRecord`, `AnalysisEndpointContractRecord`, `ProducedContractRecord`, `RunRecord`, `RunFilter`, `RunMetricsRecord`, `RunEndpointStatsRecord`, `LatencyRecord`, `FindingRecord`, `RunProducerExclusionRecord`, `RunProducerNoteRecord`, `ReplayDefectVerdictRecord`, `ArtifactRecord`, `InferredContractRecord`, `UserPresetRecord`, `ReclaimOutcome`, `OrphanScan`, `CollectOutcome` | [Data model](data-model.md); the last three in [retention](artifacts.md#retention) |
 | Vocabularies (8) | `RUN_STATUSES`, `ORACLE_SCOPES`, `ENDPOINT_DISPOSITIONS`, `PRODUCER_EXCLUSION_DISPOSITIONS`, `PRODUCER_NOTE_KINDS`, `REPLAY_VERDICTS`, `REQUEST_ORIGINS`, `RULE_BASES` | [Closed vocabularies](data-model.md#closed-vocabularies) |
-| Repositories (13) | `ProjectRepository`, `AnalysisRepository`, `AnalysisEndpointRepository`, `AnalysisEndpointContractRepository`, `RunRepository`, `RunMetricsRepository`, `RunEndpointStatsRepository`, `FindingsRepository`, `RunProducerExclusionsRepository`, `RunProducerNotesRepository`, `ReplayDefectVerdictsRepository`, `ArtifactRepository`, `InferredContractsRepository`; the five of a finding's follow-up records are on [Finding follow-up records](finding-records.md) | [Repositories](repositories.md#reference) |
+| Repositories (14) | `ProjectRepository`, `AnalysisRepository`, `AnalysisEndpointRepository`, `AnalysisEndpointContractRepository`, `RunRepository`, `RunMetricsRepository`, `RunEndpointStatsRepository`, `FindingsRepository`, `RunProducerExclusionsRepository`, `RunProducerNotesRepository`, `ReplayDefectVerdictsRepository`, `ArtifactRepository`, `InferredContractsRepository`, `UserPresetsRepository`; the five of a finding's follow-up records are on [Finding follow-up records](finding-records.md) | [Repositories](repositories.md#reference) |
 | Configuration (1) | `get_artifacts_root` | [Where the data lives](#where-the-data-lives) |
 | Exceptions (35) | `StorageError` and every subclass | [Errors](errors.md) |
 

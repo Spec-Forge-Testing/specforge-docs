@@ -167,6 +167,7 @@ nav:
               - Fuzz options: modules/core/protocol/fuzz-options.md
               - Events and cancellation: modules/core/protocol/events.md
               - Operations: modules/core/protocol/operations.md
+              - Saved presets: modules/core/protocol/presets.md
               - Replay and fixes: modules/core/protocol/replay-and-fixes.md
               - Finding replay verdicts: modules/core/protocol/finding-replay.md
               - Run detail: modules/core/protocol/run-detail.md

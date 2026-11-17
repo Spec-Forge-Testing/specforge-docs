@@ -226,9 +226,31 @@ version; the lines below are the summary.
       `summary` may hold code spans between backticks and no other markdown, and
       `represented_findings` counts the raw findings one finding stands for
       ([What a finding carries](run-detail.md#finding-text)).
+    - *Changed:* a contract a model wrote that grounds none of its rules no longer
+      reads as if each were stated: every rule of it is `assumed`, `downgraded`
+      `no_quote`, and a finding that rests on one is an LLM suspicion
+      ([ADR-219](../adr/inference.md#adr-219)).
+    - *Added:* `grounds.downgraded` `contradicted_by_seed`: an `input_constraint`
+      that a seed case of the same model contract expecting acceptance decidedly
+      breaks, and that case, are both `assumed`; and `contradicted_by_bounds`: a
+      seed case expecting rejection whose every value keeps its field's declared
+      bounds, and no other input rule rejects, is `assumed`
+      ([ADR-219](../adr/inference.md#adr-219)).
+    - *Fixed:* a model's transition whose follow-up the specification declares no
+      endpoint for is dropped with a `producer_notes[]` entry of kind
+      `unfollowable`, instead of probing a route the model made up.
+    - *Fixed:* a drawn header never carries a configured identity's own
+      credential, name and value alike; any other value, a state link's included,
+      still travels ([ADR-220](../../specforge-engine/adr/findings.md#adr-220)).
+    - *Fixed:* a regular expression a producer wrote, in a business rule's
+      `matches` or a `pattern` it inferred, decides a text only where its ECMA-262
+      and its Python reading agree (`\W` or `\d` on a non-ASCII text, `.` on a
+      carriage return are undecided); a declared `pattern` keeps its ECMA reading
+      ([ADR-220](../../specforge-engine/adr/findings.md#adr-220)).
 
 - **Report 1.29** — Additive; it ships with protocol `0.2.7`. Adds
-  `analysis.preset` and `analysis.options`.
+  `analysis.preset` and `analysis.options`, and the `grounds.downgraded` values
+  `contradicted_by_seed` and `contradicted_by_bounds`.
 - **0.2.6** — A finding says where its rule comes from, and one that stands on a
   rule the model only assumed is an LLM suspicion, apart from the defects. A
   seed case is judged against the outcome it expects. What a producer's contract

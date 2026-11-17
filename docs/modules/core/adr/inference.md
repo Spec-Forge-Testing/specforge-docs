@@ -300,9 +300,10 @@ same value needs no grounds.
 
 **An author's contract is taken at its word.** `DeclaredGrounding` grounds a
 `fixture` contract: a rule without grounds is `stated`, and its origin is
-`{kind: "fixture", file, pointer}`, where the file writes it. A contract that
-grounds nothing at all (an inferred contract cached before grounds existed, or a
-model that gave none) gets no grounds, and its findings read as they always did.
+`{kind: "fixture", file, pointer}`, where the file writes it. A rule a model left
+without grounds is `assumed`, `downgraded` `no_quote`, even in a contract that
+grounds nothing at all: a model cannot skip the check by quoting nothing
+([ADR-219](#adr-219)).
 
 ### Rejected
 
@@ -325,3 +326,76 @@ opens the code at the rule in one call. A rule taken as assumed is visible
 twice: in `grounds.downgraded` on every finding citing it, and in the run's
 `producer_notes`. The prompt grows by its grounds section, so every cached
 inferred contract is inferred once more on its endpoint's next run.
+
+## ADR-219 — A model's rule its own contract contradicts rests on an assumption { #adr-219 }
+
+**Status:** accepted · Extends [ADR-201](#adr-201) · `services/fuzz/grounding/coherence.py`, `services/fuzz/grounding/policy.py`, `services/fuzz/adoption.py`, `services/fuzz/pruning.py`; engine `input_rule_verdict`, `keeps_declared_bounds`; `semantic_inference` `prompts/templates/partials/section_semantic_properties.j2`, `section_seed_cases.j2`
+
+### Context
+
+A quote found in the code proves a rule comes from the code, not that the model
+wrote it right. A small model writes the case that breaks a rule instead of the
+rule (`limit < 1 or limit > 100` for "the limit is between 1 and 100"), loses a
+rule's condition, or miscounts a value ("over 200 characters" with 185). Every
+valid request then seems to break the rule, the server accepts it, and the run
+confirms a defect on a healthy endpoint. Measured on a bank of planted bugs, one
+small model wrote 65 of its 346 input rules against a seed case of its own; a
+larger one, none of 67.
+
+The same contract usually holds the evidence: the model gives seed cases with
+what each should get, and the cases and the rules have to agree.
+
+### Decision
+
+**A contract that grounds nothing is not trusted.** Every rule of a model's
+contract enters the grounds table; one without grounds is `assumed`
+(`no_quote`), as it already was beside a grounded one.
+
+**A rule an accepted case breaks, and the case, are assumed.** After pruning,
+adopting a model's contract judges each `input_constraint` against each of its
+seed cases that expects acceptance, with the engine's own evaluator. A rule the
+case decidedly breaks, and that case, are both taken as assumed, `downgraded`
+`contradicted_by_seed`: the contract cannot tell which of the two is wrong.
+
+**A rejected case its own bounds let through is assumed.** A seed case that
+expects rejection, whose every value keeps the bounds its field declares
+(`minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `minLength`,
+`maxLength`, `enum`, its type included) and that no other coherent input rule
+rejects, is taken as assumed, `downgraded` `contradicted_by_bounds`.
+
+**Only a decided verdict counts.** A field the case leaves out leaves a rule
+undecided; a field with no bound, or a `pattern` alone, leaves a case unjudged.
+A case is downgraded only when every value it sets is bounded: one unbounded
+value may carry a rule the vocabulary cannot say.
+
+**The prompt asks for what holds.** The expression is the rule, true for every
+accepted request or successful response, never its breach; a response rule
+reads the response body alone, so one whose condition only the request carries
+is left out; a seed case never tries a value of another type, and counts the
+characters of a value of an exact length whatever it expects.
+
+**A transition to a route the specification lacks is dropped.** A model may name
+a follow-up path without its router's prefix. One the specification declares no
+endpoint for is pruned with a `producer_notes[]` entry of kind `unfollowable`,
+instead of being probed as an endpoint reached by transition.
+
+### Rejected
+
+- **Dropping the contradicted rule.** Half the time the case is the wrong one,
+  and the rule still finds the bug; as an assumption it stays visible as a
+  suspicion.
+- **Negating a rule that looks inverted.** It guesses what the model meant.
+- **Judging a rejected case no rule explains.** A rejected case often carries a
+  rule only it states (a region the code refuses), and the larger model lost a
+  real bug to it.
+- **Matching a response rule's wording against its expression.** A description
+  names a field to say it does not matter ("regardless of coupon"), and the
+  larger model lost a real bug to it.
+
+### Consequences
+
+A run with a weak model reports fewer defects that are not there, and lists
+them, with their rules, as LLM suspicions. A fixture is never judged against its
+own cases: an author's contract keeps its word. The prompt change re-infers every
+cached contract once.
+

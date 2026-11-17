@@ -242,3 +242,4 @@ missing here belongs to another module:
 | [ADR-212](runners.md#adr-212) | runners | A resource is provisioned with its producer's simplest request first, and a `role_only` endpoint is crossed against a resource a holder of the role created |
 | [ADR-214](runners.md#adr-214) | runners | A stateless run confirms what the other endpoints found before it sends what destroys a resource |
 | [ADR-216](findings.md#adr-216) | findings | An accepted write whose resource is gone is confirmed at another resource its caller created |
+| [ADR-220](findings.md#adr-220) | findings | A producer's pattern is decided only where ECMA and Python agree, and a drawn header never carries an identity's credential |

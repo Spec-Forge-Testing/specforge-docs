@@ -234,7 +234,8 @@ version; the lines below are the summary.
       that a seed case of the same model contract expecting acceptance decidedly
       breaks, and that case, are both `assumed`; and `contradicted_by_bounds`: a
       seed case expecting rejection whose every value keeps its field's declared
-      bounds, and no other input rule rejects, is `assumed`
+      bounds, and provably its type, `pattern` and `format`, and no other input
+      rule rejects, is `assumed`
       ([ADR-219](../adr/inference.md#adr-219)).
     - *Fixed:* a model's transition whose follow-up the specification declares no
       endpoint for is dropped with a `producer_notes[]` entry of kind

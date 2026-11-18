@@ -359,12 +359,14 @@ case decidedly breaks, and that case, are both taken as assumed, `downgraded`
 
 **A rejected case its own bounds let through is assumed.** A seed case that
 expects rejection, whose every value keeps the bounds its field declares
-(`minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `minLength`,
-`maxLength`, `enum`, its type included) and that no other coherent input rule
-rejects, is taken as assumed, `downgraded` `contradicted_by_bounds`.
+(`minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`,
+`minLength`, `maxLength`, `enum`), provably its type, `pattern` and `format` too,
+and that no other coherent input rule rejects, is taken as assumed, `downgraded`
+`contradicted_by_bounds`.
 
 **Only a decided verdict counts.** A field the case leaves out leaves a rule
-undecided; a field with no bound, or a `pattern` alone, leaves a case unjudged.
+undecided; a field with no bound leaves a case unjudged, and a value that breaks,
+or cannot be shown to keep, its `pattern` or `format` explains the rejection.
 A case is downgraded only when every value it sets is bounded: one unbounded
 value may carry a rule the vocabulary cannot say.
 

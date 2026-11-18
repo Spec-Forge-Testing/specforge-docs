@@ -243,3 +243,4 @@ missing here belongs to another module:
 | [ADR-214](runners.md#adr-214) | runners | A stateless run confirms what the other endpoints found before it sends what destroys a resource |
 | [ADR-216](findings.md#adr-216) | findings | An accepted write whose resource is gone is confirmed at another resource its caller created |
 | [ADR-220](findings.md#adr-220) | findings | A producer's pattern is decided only where ECMA and Python agree, and a drawn header never carries an identity's credential |
+| [ADR-221](findings.md#adr-221) | findings | A pattern backtracking cannot judge cheaply is decided by a simulated automaton |

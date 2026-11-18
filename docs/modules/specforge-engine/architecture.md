@@ -42,6 +42,7 @@ src/specforge_engine/
 │   ├── field_path.py      # value_at, with_value_at: a value at a FieldPath
 │   ├── violation.py       # first_provable_violation, DECIDABLE_FORMATS: what provably breaks a contract
 │   ├── ecma_pattern.py    # ecma_match: a pattern read as ECMA-262, or undecidable
+│   ├── ecma_automaton.py  # automaton_finds: a pattern decided in linear time where backtracking is costly
 │   ├── shape_check.py     # meets_declared_shape: pattern, format and collection keywords, by policy
 │   ├── extra_keys.py      # holder_is_free_form: one rule for the mass-assignment generator and oracle
 │   ├── wire/              # how a value travels: spelling · texts · carried (read as declared)

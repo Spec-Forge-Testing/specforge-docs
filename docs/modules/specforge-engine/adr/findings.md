@@ -1056,3 +1056,51 @@ A weak model's regex no longer turns a dialect difference into a defect. The
 spec's patterns, and the bugs a trailing newline hides under `$`, are judged as
 before.
 
+## ADR-221 — A pattern backtracking cannot judge cheaply is decided by a simulated automaton { #adr-221 }
+
+**Status:** accepted · Extends [ADR-176](#adr-176) and [ADR-220](#adr-220) · `shared/ecma_automaton.py` (`automaton_finds`, `Dialect`), `shared/ecma_pattern.py`
+
+### Context
+
+The work budget of [ADR-176](#adr-176) keeps a verdict cheap and the same on
+every machine, but it left undecidable every pattern with a nested repetition,
+and those are common. A typical email pattern,
+`^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$`, could not judge even
+`a@b.co`, so a value that broke it was never a finding, and a seed case that
+kept it could not be shown to keep it.
+
+### Decision
+
+**Backtracking where it is provably cheap, an automaton elsewhere.** A pattern
+the engine can read, but whose star height or work would make backtracking
+costly, is decided by simulating its nondeterministic automaton over the text:
+one step per character, whatever the pattern nests. The automaton reads it in
+ECMA's dialect, and in Python's for the second reading of a producer's pattern
+([ADR-220](#adr-220)): Unicode classes, and a `$` that also holds before a
+final line feed.
+
+**Still bounded, still deterministic.** The simulation reads a text of up to
+`MAX_AUTOMATON_TEXT_LENGTH` (10 000) characters and builds up to
+`MAX_AUTOMATON_STATES` (20 000) states, a bounded repetition spelled out once per
+count. Past either bound, or with a lookahead, a lookbehind, `\b` or `\B`, which
+an automaton without memory of the text around it cannot read, the pattern stays
+undecidable for that text.
+
+### Rejected
+
+- **Backtracking under a timeout.** A verdict would depend on how fast the
+  machine is, so the same text could be a finding on one run and undecidable on
+  its replay.
+- **A regex dependency with a linear engine.** Its dialect is neither ECMA's nor
+  Python's, so the guards of [ADR-176](#adr-176) would have to be rewritten
+  against a third one.
+- **Raising the work budget.** A nested repetition explodes on texts the budget
+  would still let through.
+
+### Consequences
+
+Patterns with nested repetition, email and domain shapes among them, now decide
+both ways: a value that breaks one can be a finding, and a value that keeps one
+can show a case or a conformance. What backtracking already decided is decided
+as before.
+

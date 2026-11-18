@@ -235,11 +235,20 @@ version; the lines below are the summary.
       breaks, and that case, are both `assumed`; and `contradicted_by_bounds`: a
       seed case expecting rejection whose every value keeps its field's declared
       bounds, and provably its type, `pattern` and `format`, and no other input
-      rule rejects, is `assumed`
+      rule rejects, is `assumed`; a field with no bound keeps its value only when
+      the value keeps the field's type and a coherent accepted case of the same
+      contract sends that very value
+      ([ADR-219](../adr/inference.md#adr-219)).
+    - *Added:* `producer_notes[].kind` `contradicted_by_spec`: a model's
+      transition expecting a success status the specification does not declare
+      for its follow-up, while it declares another one there, is dropped instead
+      of reporting the declared status as a broken transition; a follow-up
+      declaring `2XX` or `default` never contradicts one
       ([ADR-219](../adr/inference.md#adr-219)).
     - *Fixed:* a model's transition whose follow-up the specification declares no
-      endpoint for is dropped with a `producer_notes[]` entry of kind
-      `unfollowable`, instead of probing a route the model made up.
+      operation for, an undeclared path or a method the path does not declare, is
+      dropped with a `producer_notes[]` entry of kind `unfollowable`, instead of
+      probing a route the model made up.
     - *Fixed:* a drawn header never carries a configured identity's own
       credential, name and value alike; any other value, a state link's included,
       still travels ([ADR-220](../../specforge-engine/adr/findings.md#adr-220)).

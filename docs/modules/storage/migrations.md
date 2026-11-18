@@ -36,6 +36,7 @@ file outside the naming.
 | 20 | `0020_endpoint_requests_refused.sql` | `run_endpoint_stats.requests_refused`. |
 | 21 | `0021_user_presets.sql` | The table `user_presets`. |
 | 22 | `0022_analysis_preset_and_options.sql` | `analyses.preset_json`, `deadline_ms`, `max_cost_usd` and `base_url_override`. |
+| 23 | `0023_producer_note_contradicted_by_spec.sql` | `run_producer_notes` rebuilt so its `kind` CHECK admits `contradicted_by_spec`. |
 
 The tables and their columns, as the latest version leaves them, are on
 [Data model](data-model.md) and [Finding follow-up records](finding-records.md).

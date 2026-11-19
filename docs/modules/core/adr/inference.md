@@ -366,13 +366,15 @@ and that no other coherent input rule rejects, is taken as assumed, `downgraded`
 
 **Only a decided verdict counts.** A field the case leaves out leaves a rule
 undecided; a value that breaks, or cannot be shown to keep, its `pattern` or
-`format` explains the rejection. A field with no bound leaves a case unjudged
-unless its value keeps the field's type and a coherent accepted case of the same
-contract, one no input rule contradicts, sends that very value (the same JSON,
-so `0` is not `false`): what the model itself expects to be accepted cannot be
-the reason for a rejection. A case is downgraded only when every value it sets
-is kept so: one unbounded value no accepted case sends may carry a rule the
-vocabulary cannot say.
+`format` explains the rejection. Fields with no bound leave a case unjudged
+unless each value keeps its field's type and one coherent accepted case of the
+same contract, one no input rule contradicts, sends all of those values as they
+are (the same JSON, so `0` is not `false`): what the model itself expects to be
+accepted cannot be the reason for a rejection. Values vouched for one by one
+across several accepted cases do not count, and neither does an accepted case
+that is the rejected one repeated whole: a repeat is rejected by state, as a duplicate
+creation is. A case is downgraded only when every value it sets is kept so: one
+unbounded value no such case sends may carry a rule the vocabulary cannot say.
 
 **The prompt asks for what holds.** The expression is the rule, true for every
 accepted request or successful response, never its breach; a response rule
@@ -386,7 +388,9 @@ not serve, such as a `PATCH` on a path that declares `GET` and `PUT`, whose 405
 would read as a broken transition. One whose follow-up the specification
 declares no operation for, its method and path together, is pruned with a
 `producer_notes[]` entry of kind `unfollowable`, instead of being probed as an
-endpoint reached by transition.
+endpoint reached by transition. A `HEAD` follow-up counts as declared wherever
+the specification declares `GET`, since a server answers one where it serves
+the other.
 
 **A transition the specification contradicts is dropped.** One that expects a
 success status the specification does not declare for its follow-up, while it

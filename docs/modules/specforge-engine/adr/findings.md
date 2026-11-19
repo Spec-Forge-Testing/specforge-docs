@@ -1058,7 +1058,7 @@ before.
 
 ## ADR-221 — A pattern backtracking cannot judge cheaply is decided by a simulated automaton { #adr-221 }
 
-**Status:** accepted · Extends [ADR-176](#adr-176) and [ADR-220](#adr-220) · `shared/ecma_automaton.py` (`automaton_finds`, `Dialect`), `shared/ecma_pattern.py`
+**Status:** accepted · Extends [ADR-176](#adr-176) and [ADR-220](#adr-220) · `shared/ecma_automaton.py` (`automaton_finds`, `Dialect`), `shared/ecma_pattern.py`, `shared/ecma_tokens.py`
 
 ### Context
 
@@ -1082,9 +1082,17 @@ final line feed.
 **Still bounded, still deterministic.** The simulation reads a text of up to
 `MAX_AUTOMATON_TEXT_LENGTH` (10 000) characters and builds up to
 `MAX_AUTOMATON_STATES` (20 000) states, a bounded repetition spelled out once per
-count. Past either bound, or with a lookahead, a lookbehind, `\b` or `\B`, which
-an automaton without memory of the text around it cannot read, the pattern stays
-undecidable for that text.
+count. Before building anything it estimates the states, a repetition of an
+empty body included, and refuses a decision whose work, those states times the
+text's length plus one, passes `MAX_AUTOMATON_WORK` (100 000) steps. Groups may
+nest up to `MAX_AUTOMATON_DEPTH` (64) deep. Past any bound, or with a lookahead,
+a lookbehind, `\b` or `\B`, which an automaton without memory of the text around
+it cannot read, or with a legacy octal escape (`\0` before a digit), which it
+would read as a NUL and a digit, the pattern stays undecidable for that text.
+
+**One tokenizer for both.** The backtracking reading and the automaton split a
+pattern with the same tokenizer (`shared/ecma_tokens.py`), so they never
+disagree on what a token is.
 
 ### Rejected
 

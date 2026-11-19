@@ -47,12 +47,17 @@ Only one candidate at a time, same port 8000 as `real-world/` and `emb/`.
 | C# | [Jellyfin](https://github.com/jellyfin/jellyfin) | GPL-3.0 | Native Swashbuckle `/api-docs/openapi.json` — captured live (first request takes ~9s, generated on demand) |
 | Ruby | [Mastodon](https://github.com/mastodon/mastodon) | AGPL-3.0 | **Not served at runtime** (`/openapi.json`, `/openapi.yaml`, `/api-docs` all 404, verified live) — captured from a community spec sourced from the official docs; no official OpenAPI exists |
 | PHP | [InvoiceNinja](https://github.com/invoiceninja/invoiceninja) *(replaces BookStack — its `/api/docs.json` turned out to be a proprietary JSON, not OpenAPI under any angle)* | Elastic License 2.0 (source-available; permits internal/research use) | **Not served at runtime** (checked the full route list, no match) — a real build artifact (`openapi/api-docs.yaml`, generated from the app's own `@OA` annotations), pulled from the running container |
-| Rust | [Meilisearch](https://github.com/meilisearch/meilisearch) | MIT | **Not served at runtime** — published as a GitHub release asset, committed static |
+| Rust | [Qdrant](https://github.com/qdrant/qdrant) *(replaces Meilisearch, whose `AGENTS.md` asks that no agent work on the repo, while Spec Forge reads the code with an LLM)* | Apache-2.0 | **Not served at runtime**: the spec is committed in the repository (`openapi.json`) |
 | Kotlin | [Komga](https://github.com/gotson/komga) | MIT | Native Springdoc `/v3/api-docs` — captured live |
 | Swift | — | — | **Closed without a candidate.** Three real Vapor apps were evaluated (Feather CMS, Penny, SteamPress); none is a standalone REST server with genuine OpenAPI generation, and none has a maintained official Docker image. **10/11 languages is the corpus' final result.** |
 
 Candidate research, license justification and discarded alternatives for
 each language live in the corpus repository's notes, next to the manifest.
+
+The benchmark measures 9 of these APIs. For PHP it uses
+[Snipe-IT](https://github.com/grokability/snipe-it) instead of InvoiceNinja,
+and it leaves Directus out: its API is generic over dynamic collections, so
+there is no per-endpoint handler to read.
 
 ## Rules of the stack
 
@@ -96,9 +101,9 @@ see the warning on [Integration suite → Status](suite.md#status). Go/Gotify in
 particular failed on its version rather than its schema shape, and that reason no
 longer exists: Swagger 2.0 is translated on ingestion.
 
-Booting a candidate's **API** — as opposed to reading its **spec** — is still
-not wired into the suite: that needs a Python class like
-`real-world/corpus.py`, which `polyglot/` doesn't have yet any more than
-`emb/` does (see [Test Corpora → Only the fuzzing stage needs a live
-API](index.md#only-the-fuzzing-stage-needs-a-live-api)). Nothing needs it
-until the fuzzing-stage folder exists.
+Each candidate's **API** boots with `./up.sh <language>`, and the benchmark
+in `tests-repos/benchmark` drives all 9 measured APIs through it. What is
+still not wired is booting them from the integration **suite**: that needs a
+Python class like `real-world/corpus.py`, which `polyglot/` doesn't have yet
+any more than `emb/` does (see [Test Corpora → Only the fuzzing stage needs a
+live API](index.md#only-the-fuzzing-stage-needs-a-live-api)).

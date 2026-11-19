@@ -4,7 +4,7 @@
 refused `HANDSHAKE_REQUIRED`.
 
 ```json
-{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.2.7"}}
+{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.2.9"}}
 ```
 
 The response carries the protocol version, the server's identity, what this
@@ -13,7 +13,7 @@ in, and the options a run can be asked for:
 
 ```json
 {"jsonrpc":"2.0","id":1,"result":{
-  "protocol_version":"0.2.7",
+  "protocol_version":"0.2.9",
   "server":{"name":"specforge-core","version":"…","frozen":false},
   "capabilities":{…},
   "catalog":{…},
@@ -88,8 +88,8 @@ keys, the effects matrix and how it is derived are on
 **The core serves a range within its own series.** A client is served when its
 `protocol_version` has the core's `major.minor` and a patch between a declared
 floor and the core's own. Each part compares as a number, never as text:
-`0.1.10` is newer than `0.1.9`. This core speaks `0.2.7` and serves `0.2.0`
-up to `0.2.7`: no `0.1.x` client is served. It always answers `hello` with its
+`0.1.10` is newer than `0.1.9`. This core speaks `0.2.9` and serves `0.2.0`
+up to `0.2.9`: no `0.1.x` client is served. It always answers `hello` with its
 own version, and a frontend ignores the keys it does not know.
 
 Anything else — another series, a patch outside the range, or a
@@ -136,9 +136,56 @@ neither. See [ADR-095](../adr/protocol.md#adr-095).
 ## Changelog
 
 The report document that `fuzz`, `replay` and `run_pipeline` answer with is
-`schema_version` 1.29. The protocol's own README holds the full entry for each
+`schema_version` 1.30. The protocol's own README holds the full entry for each
 version; the lines below are the summary.
 
+- **0.2.9** — A model's contract is read for what it can back: a rule it does
+  not ground, or that its own seed cases contradict, is an LLM suspicion, and a
+  transition the specification does not allow is left out. **Additive on the
+  wire**: this core serves `0.2.0` up to `0.2.9`. It ships with report `1.30`.
+    - *Changed:* a contract a model wrote that grounds none of its rules no longer
+      reads as if each were stated: every rule of it is `assumed`, `downgraded`
+      `no_quote`, and a finding that rests on one is an LLM suspicion
+      ([ADR-219](../adr/inference.md#adr-219)).
+    - *Added:* `grounds.downgraded` `contradicted_by_seed`: an `input_constraint`
+      that a seed case of the same model contract expecting acceptance decidedly
+      breaks, and that case, are both `assumed`; and `contradicted_by_bounds`: a
+      seed case expecting rejection whose every value keeps its field's declared
+      bounds, and provably its type, `pattern` and `format`, and no other input
+      rule rejects, is `assumed`; the fields with no bound keep their values only
+      when each keeps its field's type and one coherent accepted case of the same
+      contract sends all of them as they are, without being the rejected case
+      repeated whole
+      ([ADR-219](../adr/inference.md#adr-219)).
+    - *Fixed:* a `pattern`, or a business rule's `matches`, with a nested
+      repetition, such as a usual email pattern, is judged on texts of up to
+      10 000 characters within a bounded amount of work, instead of never; a
+      lookaround, `\b` or `\B` beside such a repetition, an octal escape such as
+      `\01`, or a pattern too large or too deeply nested still leaves it unjudged
+      ([ADR-221](../../specforge-engine/adr/findings.md#adr-221)).
+    - *Added:* `producer_notes[].kind` `contradicted_by_spec`: a model's
+      transition expecting a success status the specification does not declare
+      for its follow-up, while it declares another one there, is dropped instead
+      of reporting the declared status as a broken transition; a follow-up
+      declaring `2XX` or `default` never contradicts one
+      ([ADR-219](../adr/inference.md#adr-219)).
+    - *Fixed:* a model's transition whose follow-up the specification declares no
+      operation for, an undeclared path or a method the path does not declare, is
+      dropped with a `producer_notes[]` entry of kind `unfollowable`, instead of
+      probing a route the model made up; a `HEAD` follow-up counts as declared
+      wherever the specification declares `GET`.
+    - *Fixed:* a drawn header never carries a configured identity's own
+      credential, name and value alike; any other value, a state link's included,
+      still travels ([ADR-220](../../specforge-engine/adr/findings.md#adr-220)).
+    - *Fixed:* a regular expression a producer wrote, in a business rule's
+      `matches` or a `pattern` it inferred, decides a text only where its ECMA-262
+      and its Python reading agree (`\W` or `\d` on a non-ASCII text, `.` on a
+      carriage return are undecided); a declared `pattern` keeps its ECMA reading
+      ([ADR-220](../../specforge-engine/adr/findings.md#adr-220)).
+
+- **Report 1.30** — Additive; it ships with protocol `0.2.9`. Adds the
+  `grounds.downgraded` values `contradicted_by_seed` and `contradicted_by_bounds`,
+  and the `producer_notes[].kind` `contradicted_by_spec`.
 - **0.2.7** — A user keeps presets of their own, listed beside the builtins; a run
   says which preset it was one of and the options it used; a history row counts
   the run's unconfirmed defects; and a client can price `generate_contract` with
@@ -226,43 +273,9 @@ version; the lines below are the summary.
       `summary` may hold code spans between backticks and no other markdown, and
       `represented_findings` counts the raw findings one finding stands for
       ([What a finding carries](run-detail.md#finding-text)).
-    - *Changed:* a contract a model wrote that grounds none of its rules no longer
-      reads as if each were stated: every rule of it is `assumed`, `downgraded`
-      `no_quote`, and a finding that rests on one is an LLM suspicion
-      ([ADR-219](../adr/inference.md#adr-219)).
-    - *Added:* `grounds.downgraded` `contradicted_by_seed`: an `input_constraint`
-      that a seed case of the same model contract expecting acceptance decidedly
-      breaks, and that case, are both `assumed`; and `contradicted_by_bounds`: a
-      seed case expecting rejection whose every value keeps its field's declared
-      bounds, and provably its type, `pattern` and `format`, and no other input
-      rule rejects, is `assumed`; the fields with no bound keep their values only
-      when each keeps its field's type and one coherent accepted case of the same
-      contract sends all of them as they are, without being the rejected case
-      repeated whole
-      ([ADR-219](../adr/inference.md#adr-219)).
-    - *Added:* `producer_notes[].kind` `contradicted_by_spec`: a model's
-      transition expecting a success status the specification does not declare
-      for its follow-up, while it declares another one there, is dropped instead
-      of reporting the declared status as a broken transition; a follow-up
-      declaring `2XX` or `default` never contradicts one
-      ([ADR-219](../adr/inference.md#adr-219)).
-    - *Fixed:* a model's transition whose follow-up the specification declares no
-      operation for, an undeclared path or a method the path does not declare, is
-      dropped with a `producer_notes[]` entry of kind `unfollowable`, instead of
-      probing a route the model made up; a `HEAD` follow-up counts as declared
-      wherever the specification declares `GET`.
-    - *Fixed:* a drawn header never carries a configured identity's own
-      credential, name and value alike; any other value, a state link's included,
-      still travels ([ADR-220](../../specforge-engine/adr/findings.md#adr-220)).
-    - *Fixed:* a regular expression a producer wrote, in a business rule's
-      `matches` or a `pattern` it inferred, decides a text only where its ECMA-262
-      and its Python reading agree (`\W` or `\d` on a non-ASCII text, `.` on a
-      carriage return are undecided); a declared `pattern` keeps its ECMA reading
-      ([ADR-220](../../specforge-engine/adr/findings.md#adr-220)).
 
 - **Report 1.29** — Additive; it ships with protocol `0.2.7`. Adds
-  `analysis.preset` and `analysis.options`, and the `grounds.downgraded` values
-  `contradicted_by_seed` and `contradicted_by_bounds`.
+  `analysis.preset` and `analysis.options`.
 - **0.2.6** — A finding says where its rule comes from, and one that stands on a
   rule the model only assumed is an LLM suspicion, apart from the defects. A
   seed case is judged against the outcome it expects. What a producer's contract

@@ -86,7 +86,7 @@ its metrics, endpoint stats and crashes stay queryable through `history` and
 ## The `report.json` schema
 
 `ReportDocument` is a frozen, `extra="forbid"` Pydantic model: a pure function
-of persisted run data, never a live object. Its `schema_version` is `1.29`.
+of persisted run data, never a live object. Its `schema_version` is `1.30`.
 The version changes when a reader must account for a new or changed field.
 
 The changelog is intentionally compact: **additive** versions preserve the
@@ -98,6 +98,7 @@ the schema table below.
 
     | Version | Compatibility | Changes |
     | --- | --- | --- |
+    | `1.30` | Additive over 1.29 | Adds the `grounds.downgraded` values `contradicted_by_seed` and `contradicted_by_bounds`, and the `producer_notes[].kind` `contradicted_by_spec`. |
     | `1.29` | Additive over 1.28 | Adds `analysis.preset`, the preset the run was one of, and `analysis.options`, the options it used. |
     | `1.28` | Additive over 1.27 | Adds `llm_suspicions`, `producer_notes`, `recurring_findings` and `run.producer`; `grounds` and the request's `origin`, `seed_case_id` and `seed_case_description` on every finding; `covered_by` on every LLM suspicion; `findings_llm_suspicions`, `findings_llm_suspicions_covered`, `stateful_chains` and `contract_items` in `metrics`; `requests_shrink`, `consumer_values`, `contract_usage`, `findings_llm_suspicions` and `requests_refused` on each endpoint; the signal cause `credentials_refused`; `extra` and `extra_run` in `budget_by_phase`; `latency_samples_ms` on a `control`; `observed_payload` and `observed_headers` on every unconfirmed finding; `details` on the envelope's `error`. `planned` is the strategy's share alone. |
     | `1.27` | Additive over 1.26 | Adds the signal cause `contracts_unproduced`. |

@@ -152,7 +152,7 @@ still ran. `vocabulary.producer_note_kinds` carries each with its label.
 | `invalid_rule` | A business rule of the answer could not be read and was left out; `subject` is its id, `<unnamed>` without one. |
 | `unknown_field` | A business rule, or a seed case's value, names a field the endpoint does not declare and was left out. A seed case's field named with its request zone in front (`body.title`) is read as that field when the zone declares it. |
 | `unbound_bundle` | A transition cites a state-link value nothing in the run binds and was left out. |
-| `unfollowable` | A transition the engine cannot follow from the endpoint was left out. |
+| `unfollowable` | A transition the engine cannot follow from the endpoint was left out, or one whose follow-up is an operation, its method and path together, the spec does not declare. |
 | `undeclared_echo` | A transition echoes a field the request body does not declare; the echo was left out. |
 | `incoherent_keyword` | A schema keyword the field's type does not take was left out of the fused contract. |
 | `superseded_by_enum` | A schema keyword an `enum` on the same field already settles was left out of the fused contract. |
@@ -161,6 +161,7 @@ still ran. `vocabulary.producer_note_kinds` carries each with its label.
 | `empty_seed_case` | A seed case left with no value to send was left out, unless every value it set was a path parameter. |
 | `assumed_over_declared` | A schema keyword the model assumed, rather than quoted, gave way to the one the spec declares on the same field; `subject` is the keyword and where it was. |
 | `unverified_quote` | A rule the model said the code or the spec states was taken as assumed: it came without a quote, its quote is not in what the model was shown, or a keyword's quote is about something else (`grounds.downgraded` says which); `subject` is the rule ([grounds](run-detail.md#grounds)). |
+| `contradicted_by_spec` | A transition was left out because it expects a success status the spec does not declare for its follow-up, while the spec declares another one there (and neither `2XX` nor `default`); `subject` is the transition. |
 ## `endpoints[].unprobed_reason` { #unprobed-reason }
 
 Why the `auth` mode crossed nothing at a targeted endpoint, the `resilience`

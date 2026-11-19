@@ -60,10 +60,20 @@ UTF-16 units, Python counts code points.
 before the match, and both depend only on the pattern and the text:
 
 - **Star height.** A repeated group that holds a quantifier or an alternation
-  (`^([a-z]+)*$`, `(foo|bar)*`) is undecidable.
+  (`^([a-z]+)*$`, `(foo|bar)*`).
 - **Work.** The product of each quantifier's reach over the text, times the start
-  positions, must stay within `MAX_PATTERN_WORK` (1 000 000); past it, the pattern
-  is undecidable for that text.
+  positions, past `MAX_PATTERN_WORK` (1 000 000).
+
+**An automaton where backtracking is costly.** A pattern either guard trips is
+not searched with `re`: `automaton_finds` (`shared/ecma_automaton.py`) simulates
+its nondeterministic automaton over the text, one step per character, so
+`^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$` decides `a@b.co`. It reads
+texts of up to `MAX_AUTOMATON_TEXT_LENGTH` (10 000) characters, builds up to
+`MAX_AUTOMATON_STATES` (20 000) states, takes up to `MAX_AUTOMATON_WORK`
+(100 000) steps and nests groups up to `MAX_AUTOMATON_DEPTH` (64) deep; past any
+of them, or with a lookaround, `\b`, `\B` or an octal escape (`\01`), the
+pattern is undecidable for that text
+([ADR-221](adr/findings.md#adr-221)).
 
 There is no timeout: a verdict that depended on the machine would let a replay
 judge a finding differently from the run that found it.

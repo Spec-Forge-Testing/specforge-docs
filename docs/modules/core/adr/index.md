@@ -95,3 +95,4 @@ replays alone, are the engine's.
 | [ADR-215](core.md#adr-215) | core | An LLM suspicion names the confirmed defect that already covers it, by the same request or the same field, and stays listed |
 | [ADR-217](core.md#adr-217) | core | A run whose credentials a targeted endpoint refused on every response is never clean |
 | [ADR-218](core.md#adr-218) | core | A user's presets are saved in their own store as runs checked like a fuzz request, and a run carries its preset as an uninterpreted tag |
+| [ADR-219](inference.md#adr-219) | inference | A model's rule its own contract contradicts rests on an assumption |

@@ -170,7 +170,7 @@ an intrinsic invariant, or a contract inferred without grounds.
 | --- | --- |
 | `basis` | `stated` (the code, the operation or the author states the rule) or `assumed` (the model assumed it from what the field means) |
 | `quote` | The text the model quoted for it; `null` for a rule it called assumed |
-| `downgraded` | Why a rule the model called stated is taken as `assumed`: `no_quote` (it quoted nothing), `quote_not_found` (the quote is not in what the model was shown) or `quote_unrelated` (a keyword's quote names neither its field, in the quote or in the function or spec pointer it was found in, nor its value); `null` otherwise. A business rule, an access policy and a seed case are never `quote_unrelated` |
+| `downgraded` | Why a rule is taken as `assumed`: `no_quote` (it quoted nothing), `quote_not_found` (the quote is not in what the model was shown) `quote_unrelated` (a keyword's quote names neither its field, in the quote or in the function or spec pointer it was found in, nor its value), `contradicted_by_seed` (a seed case of the same model contract that expects acceptance breaks the rule; the case is downgraded with it) or `contradicted_by_bounds` (a seed case that expects rejection keeps every bound its own contract declares); `null` otherwise. A business rule, an access policy and a seed case are never `quote_unrelated` |
 | `origin` | Where the quote, or the rule, is written: `{kind: "code", file, function, start_line, end_line}` (lines counted from 1, `file` relative to the analysis' tree), `{kind: "spec", pointer}` (a JSON Pointer into the operation the model was shown), `{kind: "fixture", file, pointer}`, or `null` |
 
 `inspect_finding_source` answers `rule_source` (`{file, function, start_line,

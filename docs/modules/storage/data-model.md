@@ -331,13 +331,13 @@ run's [`producer_notes`](../core/protocol/run-detail.md#producer-notes).
 | `run_id` | INTEGER | no | — | The run (`runs.id`). |
 | `method` | TEXT | no | — | HTTP method, e.g. `GET`. |
 | `path` | TEXT | no | — | URL path, e.g. `/api/v1/users`. |
-| `kind` | TEXT | no | — | What happened, one of the [thirteen kinds](#closed-vocabularies). |
+| `kind` | TEXT | no | — | What happened, one of the [fourteen kinds](#closed-vocabularies). |
 | `subject` | TEXT | no | — | What was lost: a model's answer, a rule, a field, a keyword. |
 | `detail` | TEXT | no | — | Why it was lost. |
 | `from_cache` | INTEGER | no | `0` | `1` when the note came with a contract served from the cache. |
 
 Constraints: `run_id` is `ON DELETE CASCADE`; `kind` CHECK in its
-[thirteen values](#closed-vocabularies); `from_cache` CHECK in `0`/`1`. An index on
+[fourteen values](#closed-vocabularies); `from_cache` CHECK in `0`/`1`. An index on
 `run_id` serves a run's lookup.
 
 ### `replay_defect_verdicts` — `ReplayDefectVerdictRecord` { #replay_defect_verdicts }
@@ -456,7 +456,7 @@ raises a typed error before the INSERT ([ADR-080](adr/repositories.md#adr-080)).
 | `runs.oracle_scope` | `ORACLE_SCOPES` | `contract`, `contract_free` | `InvalidOracleScopeError` |
 | `analysis_endpoints.disposition` | `ENDPOINT_DISPOSITIONS` | `targeted`, `excluded`, `filtered`, `reached_by_transition` | `InvalidDispositionError` |
 | `run_producer_exclusions.disposition` | `PRODUCER_EXCLUSION_DISPOSITIONS` | `schema_only`, `withheld` | `InvalidDispositionError` |
-| `run_producer_notes.kind` | `PRODUCER_NOTE_KINDS` | `reasked`, `invalid_rule`, `unknown_field`, `unbound_bundle`, `unfollowable`, `undeclared_echo`, `incoherent_keyword`, `superseded_by_enum`, `invalid_seed_case`, `path_parameter`, `empty_seed_case`, `assumed_over_declared`, `unverified_quote` | `InvalidProducerNoteKindError` |
+| `run_producer_notes.kind` | `PRODUCER_NOTE_KINDS` | `reasked`, `invalid_rule`, `unknown_field`, `unbound_bundle`, `unfollowable`, `undeclared_echo`, `incoherent_keyword`, `superseded_by_enum`, `invalid_seed_case`, `path_parameter`, `empty_seed_case`, `assumed_over_declared`, `unverified_quote`, `contradicted_by_spec` | `InvalidProducerNoteKindError` |
 | `findings.rule_basis` (when set) | `RULE_BASES` | `stated`, `assumed` | `InvalidRuleBasisError` |
 
 `findings.request_origin` takes the three values of `REQUEST_ORIGINS` (`drawn`, `witness`,

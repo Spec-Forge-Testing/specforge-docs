@@ -1011,3 +1011,104 @@ no such resource, the finding stays unreproduced.
 A defect on a write that consumes its resource is confirmed instead of ending
 unreproduced, at the cost of one more request per re-send. Its reproducer
 can name another resource's id than the request first observed.
+
+## ADR-220 — A producer's pattern is decided only where ECMA and Python agree, and a drawn header never carries an identity's credential { #adr-220 }
+
+**Status:** accepted · `shared/ecma_pattern.py` (`producer_match`), `shared/shape_check.py`, `shared/violation.py`, `runtime/oracles/semantic/evaluator.py`, `runtime/http/reserved_headers.py` (`without_identity_credentials`), `runtime/http/injector.py`
+
+### Context
+
+A `pattern` is ECMA-262 by the specification, and the engine reads it so. A
+pattern a model writes is another thing: the prompt asks for the target's own
+regex, and a Python server reads `\W` and `\d` as Unicode and lets `.` take a
+carriage return. Judged as ECMA, such a pattern makes the engine confirm a
+violation the server never sees: `é` "breaks" `^[^\W\d_]`, `00\r` "breaks"
+`^.*$`.
+
+Separately, a model may declare an `Authorization` header parameter with real
+tokens among its examples, read from the code. A caller without credentials
+then drew one of them, and an `access-check` run reported an anonymous caller
+succeeding with an invalid credential while it was sending another identity's.
+
+### Decision
+
+**A producer's pattern decides only where both dialects agree.** A business
+rule's `matches` and a `pattern` the contract marks as inferred
+(`inferred_keywords`) are judged by `producer_match`: ECMA first, with its usual
+bound on work; then Python's `re.search`; a text the two read differently is
+undecidable, and undecidable is never a violation. A pattern the specification
+declares keeps its ECMA reading.
+
+**A drawn header never sends an identity's credential.** A generated header
+whose name and value are a configured identity's own credential is left off the
+request. Any other value, a state link's included, still travels.
+
+### Rejected
+
+- **Reading every pattern as Python.** The specification says ECMA, and a
+  target in another language reads it so.
+- **Reserving every credential header name.** A state link may bind a value into
+  a header only one identity sends, and its value is not a credential.
+
+### Consequences
+
+A weak model's regex no longer turns a dialect difference into a defect. The
+spec's patterns, and the bugs a trailing newline hides under `$`, are judged as
+before.
+
+## ADR-221 — A pattern backtracking cannot judge cheaply is decided by a simulated automaton { #adr-221 }
+
+**Status:** accepted · Extends [ADR-176](#adr-176) and [ADR-220](#adr-220) · `shared/ecma_automaton.py` (`automaton_finds`, `Dialect`), `shared/ecma_pattern.py`, `shared/ecma_tokens.py`
+
+### Context
+
+The work budget of [ADR-176](#adr-176) keeps a verdict cheap and the same on
+every machine, but it left undecidable every pattern with a nested repetition,
+and those are common. A typical email pattern,
+`^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$`, could not judge even
+`a@b.co`, so a value that broke it was never a finding, and a seed case that
+kept it could not be shown to keep it.
+
+### Decision
+
+**Backtracking where it is provably cheap, an automaton elsewhere.** A pattern
+the engine can read, but whose star height or work would make backtracking
+costly, is decided by simulating its nondeterministic automaton over the text:
+one step per character, whatever the pattern nests. The automaton reads it in
+ECMA's dialect, and in Python's for the second reading of a producer's pattern
+([ADR-220](#adr-220)): Unicode classes, and a `$` that also holds before a
+final line feed.
+
+**Still bounded, still deterministic.** The simulation reads a text of up to
+`MAX_AUTOMATON_TEXT_LENGTH` (10 000) characters and builds up to
+`MAX_AUTOMATON_STATES` (20 000) states, a bounded repetition spelled out once per
+count. Before building anything it estimates the states, a repetition of an
+empty body included, and refuses a decision whose work, those states times the
+text's length plus one, passes `MAX_AUTOMATON_WORK` (100 000) steps. Groups may
+nest up to `MAX_AUTOMATON_DEPTH` (64) deep. Past any bound, or with a lookahead,
+a lookbehind, `\b` or `\B`, which an automaton without memory of the text around
+it cannot read, or with a legacy octal escape (`\0` before a digit), which it
+would read as a NUL and a digit, the pattern stays undecidable for that text.
+
+**One tokenizer for both.** The backtracking reading and the automaton split a
+pattern with the same tokenizer (`shared/ecma_tokens.py`), so they never
+disagree on what a token is.
+
+### Rejected
+
+- **Backtracking under a timeout.** A verdict would depend on how fast the
+  machine is, so the same text could be a finding on one run and undecidable on
+  its replay.
+- **A regex dependency with a linear engine.** Its dialect is neither ECMA's nor
+  Python's, so the guards of [ADR-176](#adr-176) would have to be rewritten
+  against a third one.
+- **Raising the work budget.** A nested repetition explodes on texts the budget
+  would still let through.
+
+### Consequences
+
+Patterns with nested repetition, email and domain shapes among them, now decide
+both ways: a value that breaks one can be a finding, and a value that keeps one
+can show a case or a conformance. What backtracking already decided is decided
+as before.
+

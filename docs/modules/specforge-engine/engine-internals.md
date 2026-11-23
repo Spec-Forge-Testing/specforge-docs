@@ -21,12 +21,13 @@ the shared HTTP client opens — so the runners never see a held endpoint and st
 untouched.
 
 The decision reads each endpoint's `EndpointRisk`, its method and the run's
-`ExecutionMode`. Three risk flags hold an endpoint back, each in the modes where
+`ExecutionMode`. Four risk flags hold an endpoint back, each in the modes where
 sending a probe would do real harm:
 
 | Risk flag | Raised by | Held out of | Why |
 |---|---|---|---|
 | `external_side_effects` | the producer declared `external_side_effects: true` | every request-generating mode — `stateless`, `performance`, `resilience`, `auth`, `stateful`, a custom mode | a probe reaches past the API (sends mail, charges a card, calls a third party) and cannot be undone |
+| `skipped_by_project` | the project asked to skip the operation: its `SessionEnding` disposition is `skip` | every request-generating mode | the project named an operation it never wants sent, such as a password change ([Operations that end the session](session-endings.md#skip)) |
 | `write_operation` | the producer declared `write_operation: true` | `performance`, `resilience`, a custom mode | the load and malformed-transport batteries would hammer a mutating endpoint; the correctness modes still probe it |
 | `assumed_write` | no producer judged it: no declared risk, or a risk that leaves `write_operation` out, on a method that is not safe (anything but `GET`, `HEAD`, `OPTIONS`) | `performance`, `resilience`, a custom mode | an unjudged write is treated as a write, so a schema-only endpoint is never sent the load batteries by default |
 
@@ -35,18 +36,22 @@ method through, `true` holds it as `write_operation`. An `external_side_effects`
 left out holds nothing. `is_safe_method` is the one reading of a safe method, the
 same one the follow-up rule below uses ([ADR-196](adr/engine.md#adr-196)).
 
-`replay` is exempt from all three: it re-sends a recorded trace verbatim, never a
+`replay` is exempt from all four: it re-sends a recorded trace verbatim, never a
 fresh probe. Re-sending a recording made without the guard, or whose run breached it, needs the caller's
 consent again, which the core asks for before the engine runs (see
 [consent to re-send](execution-modes.md#consent-to-re-send)). `RiskFlag`'s
-declaration order is precedence — `external_side_effects`, then
-`write_operation`, then `assumed_write` — so an endpoint carrying more than one
-is held for the stronger, less reversible reason, and a declared risk outranks an
-assumed one.
+declaration order is precedence — `external_side_effects`, then `skipped_by_project`,
+then `write_operation`, then `assumed_write` — so an endpoint carrying more than
+one is held for the stronger, less reversible reason, the project's own word on
+an operation outranks a write, and a declared risk outranks an assumed one.
 
 The guard is off by **policy**, not by engine stability:
 `ExecutionConfig.allow_side_effects` (default `False`, set by the CLI's
-`--allow-side-effects`) lifts it and probes every endpoint.
+`--allow-side-effects`) lifts every hold but `skipped_by_project`
+(`lifted_holds(config)`), which only the project's `sessions.operations` lifts.
+An operation outside the run's selection that the project asked to skip reaches
+`EngineInput.excluded` too, as a `SkippedOperation` on `CompilerInput.skipped`,
+so no transition reaches it.
 
 Every selected entry raises its vetoes, compiled or excluded alike. That
 includes an endpoint the caller keeps out of the run: `CompilerInput.withheld`
@@ -185,8 +190,8 @@ the run passes through it.
 
 `execute(blueprint)` sends one request through the retry wrapper;
 `send_chaos(blueprint, content, extra_headers)` sends one deliberately broken
-attempt with no retry; `probe_liveness()` sends a single retry-free `HEAD` to
-`base_url` to tell a live target from a dead one. `wire_requests` counts the
+attempt with no retry; `probe_liveness()` tells a live target from a dead one
+with up to three spaced `HEAD`s to `base_url` ([The liveness probe](#liveness-probe)). `wire_requests` counts the
 attempts that reached the wire — each retry counts, a refused request does not —
 so a runner can price a phase by difference.
 
@@ -208,12 +213,33 @@ unretried (see [Progress and cancellation](progress-and-cancellation.md)). Every
 transport error is returned on the first attempt: a 4xx or 5xx is the API's
 answer, not a fault to paper over, and a malformed URL will never succeed.
 
+### The liveness probe { #liveness-probe }
+
+`probe_liveness()` sends up to `LIVENESS_PROBE_ATTEMPTS` (3) `HEAD`s to `base_url`,
+each with `Connection: close`, and returns `True` at the first one that meets no
+target failure: any response counts, a `5xx` included, and so does a transport
+error outside `TARGET_FAILURE_CATEGORIES`. Between two attempts it sleeps the
+transport's backoff with its own base, `LIVENESS_PROBE_BACKOFF_BASE_S` (0.25 s):
+`2**attempt * 0.25` plus up to `BACKOFF_JITTER_S` (1 s) of jitter, so 0.5 to 1.5 s
+after the first `HEAD` and 1 to 2 s after the second. The sleep is chunked like a
+retry's, and a run cancelled during it ends the probe with `False` at once. Each
+`HEAD` is bounded by the run's `timeout_s` (10 s by default), so a probe against a
+target that hangs takes at most three timeouts plus those pauses, about 33 s at
+the defaults, and a refused connection is settled in a few seconds.
+
+One unanswered `HEAD` is not evidence enough to end a run: a target that restarts,
+pauses or drops one connection answers the next. The base is a constant of the
+transport, not a run option, so every mode probes the same way: the stateless
+fold, the replay's and the stateful mode's `TargetLivenessMonitor`
+([ADR-223](adr/engine.md#adr-223)).
+
 A request the client cannot put on the wire at all is caught before it is sent
 and returned as an **unsendable result** (`UNSENDABLE_REQUEST`, no status code),
 never as a transport fault and never as a crash of the run. A request is
 unsendable when its body cannot be encoded for its media type — a JSON body JSON
 cannot encode (a `NaN` or an infinity), a form or multipart body that is not an
-object of encodable fields, a multipart body with no field to send, or a media
+object of encodable fields, a multipart body with no field to send, a text body
+that is not a string or holds a character its charset cannot encode, or a media
 type no encoder handles — when a header name is not an RFC 9110 token, or when a
 header value is not ASCII or carries a NUL, a line break, or whitespace at either
 edge. The injector judges the body when it builds the blueprint, and a replay
@@ -223,12 +249,13 @@ encode at send time. An unsendable request is not counted as a wire request, nev
 retried and never a finding; it is only recorded in stats by category, and its
 detail names the offending header or the body's problem, never a value.
 
-**The body is encoded by its media type.** `runtime/http/body_encoders.py` holds
-`BODY_ENCODERS`, a closed table of three `BodyEncoder`s keyed by the media type's
-essence: JSON (any JSON media type, `+json` included), form-urlencoded and
-multipart. Each names the `Content-Type` it sends (`None` lets the client write
-multipart's boundary), the client arguments (`json=`, `data=`, `files=`), and why
-a body cannot be encoded. The table and what each encoder writes are on
+**The body is encoded by its media type.** `runtime/http/body_encoders.py`
+resolves two families first — every JSON media type (`+json` included) to the JSON
+encoder, every `text/*` media type to a `TextEncoder` in the charset it declares —
+and then `BODY_ENCODERS`, a closed table keyed by the media type's essence that
+adds form-urlencoded and multipart. Each encoder names the `Content-Type` it sends
+(`None` lets the client write multipart's boundary), the client arguments
+(`json=`, `data=`, `files=`, `content=`), and why a body cannot be encoded. The table and what each encoder writes are on
 [Requests](requests.md#encoders) ([ADR-122](adr/models.md#adr-122)).
 
 `error_classifier.py` maps outcomes to an `ErrorCategory`. `classify_response`
@@ -563,7 +590,19 @@ is a dotted lookup that is **transparent through arrays**: `items.price` over a
 list of objects yields the list of prices. Evaluation is total: a lookup that
 misses, a type-invalid operation (arithmetic on a bool, a division by zero, a
 comparison of unlike types) or an aggregation over a non-list yields the
-`UNDETERMINED` sentinel rather than raising. Boolean combinations use **strong
+`UNDETERMINED` sentinel rather than raising.
+
+**A numeric string is a number.** Many APIs send an amount as text (`"19.90"`).
+A string that spells a finite decimal number (an optional sign, digits, an
+optional fraction and exponent) takes part in arithmetic and ordering as a
+`Decimal`, so `total == price * quantity` is decided when `price` travels as
+`"19.90"`. Two such strings compared with `==` or `!=` stay strings; a number
+compared with a numeric string compares as numbers. A `+` of two numeric strings
+is ambiguous — the rule may mean the sum or the concatenation — so it keeps both
+readings: `==` over it holds when either reading is equal, `!=` fails only when
+both are, a further `+` of a numeric string keeps both readings, and any other
+operation reads it as the sum. Joined to a string that is no number, that `+`
+can only be the concatenation, and a regex match reads its text. Boolean combinations use **strong
 Kleene (K3) three-valued logic** — `and`/`or`/`not` over `TRUE`/`FALSE`/`UNKNOWN`
 — so an undetermined operand collapses a combination to undetermined only when it
 actually decides the outcome (`false and unknown` is still `false`).
@@ -932,9 +971,10 @@ request (one of `SAFE_PROBE_METHODS`) persists between endpoints and is there to
 resend the moment an abort streak needs adjudicating
 ([ADR-035](adr/engine.md#adr-035)). A run of consecutive 5xx on one endpoint is
 adjudicated the same way: past `MAX_CONSECUTIVE_SERVER_ERRORS`, the known-good
-request is resent off-budget; if it answers, the 500s are genuine findings, and
-if it does not, the run cuts `TARGET_DOWN`. Neither probe — the resent
-known-good request nor the `HEAD` to the base URL behind an abort streak — is
+request is resent off-budget; if it answers, the 500s are genuine findings; if it
+does not, the [liveness probe](#liveness-probe) decides, and the run cuts
+`TARGET_DOWN` only when that probe gets no answer either. Neither probe — the
+resent known-good request nor the `HEAD`s to the base URL — is
 counted in the run's request totals or recorded in the trace. A dead target can confirm nothing, so
 its raw findings are counted `unverified` — one `UnverifiedFinding` per
 signature — rather than spending requests rediscovering the target is down.
@@ -1010,7 +1050,8 @@ and the supervisor reacts to it:
   ([Run depth](stateful-depth.md#stateful-depth)).
 - `LinkBroken` raises `StatefulLinkError` carrying the partial exploration.
 - `MachineFailed` — the engine itself raised inside the pass, with an exception
-  the outcome table does not classify — ends the machine with an `engine_failure`
+  the outcome table does not classify, or the pass's state machine could not be
+  built from its endpoints — ends the machine with an `engine_failure`
   cut owned by the endpoint whose rule raised (the first endpoint otherwise), and
   keeps every result ([Isolating a failing endpoint](#isolating-a-failing-endpoint)).
   An error raised inside Hypothesis's own code while the pass holds a shrink
@@ -1189,7 +1230,7 @@ The other places the engine can raise follow the same rule:
 | Where | What happens |
 |---|---|
 | a stateless pass | the batch flush keeps the error and raises the same one when Hypothesis replays the example, so the detail names the engine's error, not Hypothesis's wrapper |
-| a stateful pass | an exception the outcome table does not classify is `MachineFailed`; the supervisor records an `engine_failure` cut owned by the endpoint whose rule raised (the first endpoint otherwise) and keeps the results |
+| a stateful pass | an exception the outcome table does not classify, or one raised while building the pass's state machine, is `MachineFailed`; the supervisor records an `engine_failure` cut owned by the endpoint whose rule raised (the first endpoint otherwise) and keeps the results |
 | one finding's shrink | the shrink runs inside `isolate`, keyed by its endpoint: the exception becomes an `engine_failure` cut of that endpoint, recorded in `ShrinkOutcome.engine_failures` and put on its stats row; the endpoint's remaining findings are not attempted, every other endpoint's are shrunk, and the first such cut is offered as the run's ([ADR-133](adr/engine.md#adr-133)) |
 | the resolve step outside any shrink | every finding group is reported as an `UnverifiedFinding` and the run is cut `engine_failure` at the endpoint whose finding was being shrunk (`EndpointLoopSpec.shrinking_at`) |
 | an auth endpoint with no valid request | not a failure: the endpoint is cut `generation_exhausted` with the detail `no valid request available to cross`, and the run goes on |

@@ -106,6 +106,11 @@ it does as it stands:
 | Off, with a core that holds unjudged writes | Whatever the rule source, endpoints that change data are not sent under load or broken traffic unless a producer judged they don't (the reason reads **Assumed write**), and endpoints marked as having effects outside the API are never called. This replaces the two rows above |
 | On | Write endpoints get real requests in every run; the note names the API they write to. The start opens a review that says so: use a test environment |
 
+The switch never sends an operation your project asked to skip: `skip` under `[sessions]`
+`operations` in its `specforge.toml` holds it back from every run, whatever the switch says
+(the hold reason `skipped_by_project`; see
+[Identities and sessions](../identities-and-sessions.md#session-endings)).
+
 A held endpoint is never sent a request; the run detail's **Endpoints** tab shows it as
 **Held back**, with the reason and, when another endpoint's flag decided it, which one. The core's
 side of this is described in [ADR-058](../../modules/specforge-engine/adr/engine.md#adr-058) and [ADR-196](../../modules/specforge-engine/adr/engine.md#adr-196).

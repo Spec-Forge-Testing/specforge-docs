@@ -36,13 +36,18 @@ hide the builtin `compile`.
 `Strategy`, or when that strategy's profile opts into an oracle that is unknown
 or not opt-in; a per-endpoint compile failure is an exclusion, not an exception.
 
-### `run(engine_input, config, *, mode=ExecutionMode.STATELESS, options=None, cancellation=NULL_TOKEN, observer=NULL_OBSERVER) -> EngineRunResult`
+### `run(engine_input, config, *, mode=ExecutionMode.STATELESS, options=None, cancellation=NULL_TOKEN, observer=NULL_OBSERVER, secrets=None) -> EngineRunResult`
 
 Execute an `EngineInput` against the API at `config.base_url` in one
 `ExecutionMode` (a member or its string). `options` is validated against the
 selected runner's options type; `None` means that mode's defaults, and a mode
 whose options carry a required field — replay's trace — raises before any
 request is sent.
+
+`secrets` is an optional `SecretLedger` that follows every credential the run's
+logins are issued and every secret they send, for a caller that must blank them
+out of what it reads beside the run, such as a server log
+([Secrets a run knows](run-secrets.md#server-log)).
 
 `cancellation` is a `CancellationToken` the run polls between units of work to
 stop cooperatively; `observer` is a `RunObserver` that receives every progress
@@ -51,7 +56,9 @@ and nobody watches pays nothing for either. What they are and how they behave is
 in [Progress and cancellation](progress-and-cancellation.md).
 
 **Raises** `EngineError` for an unknown mode or a violated execution
-invariant, `StatefulLinkError` when a state link cannot be honored.
+invariant, `StatefulLinkError` when a state link cannot be honored,
+`IdentityRejectedError` when the target refuses an identity's credential or login
+before the first request.
 
 ## Input DTOs (the orchestrator builds these)
 
@@ -103,10 +110,36 @@ Field names of this family are stable: they are persisted as columns.
 | Name | One line |
 |---|---|
 | `ExecutionConfig` | global runtime: `base_url` (required; an `http`/`https` URL naming a host, with a port from 1 to 65535 when it writes one, and no `@` in its fragment), timeouts, concurrency, headers, identities. `valid_identities` and `invalid_identities` are derived views that split `identities` by credential kind; every mode rotates through `valid_identities`, and `first_valid_identity` is the one a mode that sends under a single identity uses |
-| `Identity` | one caller identity: a `label`, its credential `headers`, an optional `role` (never empty) that only a `role_only` endpoint reads (`None` never satisfies a required role), and a `credential` (`CredentialKind`, default `VALID`) |
+| `Identity` | one caller identity: a `label`, its credential `headers`, an optional `role` (never empty) that only a `role_only` endpoint reads (`None` never satisfies a required role), a `credential` (`CredentialKind`, default `VALID`), an optional `tenant` (never empty) naming the organization it belongs to, which only the auth mode's `owner_only` crossing reads, and an optional `login` (`LoginRecipe`), how the run obtains its credential; only a valid identity may declare one, and its `headers` may not hold the header the login fills |
+| `LoginRecipe` *(in `models.runtime`)* | how an identity's credential is issued: `method`, `path`, `body`, `media_type`, `token_at` or `token_cookie`, `send_as` ([Identities and sessions](sessions.md#login)) |
 | `StatelessOptions`, `StatefulOptions`, `PerformanceOptions`, `ReplayOptions` | passed to `run(options=...)` per mode |
 | `ExchangeCapture` | the value of `ReplayOptions.capture`: the `sensitive_fields` to redact in each captured exchange |
 | `ConcurrencyLadder` | the value of `PerformanceOptions.concurrency_ladder`: strictly increasing `steps` plus the degradation `tolerance` (frozen) |
+
+## Sessions and secrets
+
+How a run checks, watches and renews each identity's credential, and what it does
+with the operations that end a session ([Identities and sessions](sessions.md),
+[Operations that end the session](session-endings.md),
+[Secrets a run knows](run-secrets.md)).
+
+| Name | One line |
+|---|---|
+| `SessionEnding` | an endpoint's `disposition` (`SessionDisposition`) and `source` (`SessionEndingSource`), on `EndpointSpec`, `WithheldEndpoint`, `CompiledExecutionEndpoint` and `EndpointStats` as `session_ending`; `None` when nobody said the endpoint ends the session |
+| `SessionDisposition` | `LAST` / `SKIP` / `KEEP` |
+| `SessionEndingSource` | `USER` / `MODEL` / `ASSUMED` |
+| `SkippedOperation` | an operation outside the selection the project asked to skip, on `CompilerInput.skipped`: guarded against, never compiled nor reported |
+| `check_identities(candidates, config, *, cancellation=NULL_TOKEN) -> tuple[IdentityCheck, ...]` | log every valid identity that declares a login in and check every credential over a client of its own; raises `IdentityRejectedError` |
+| `CredentialWitnessCandidate` | an endpoint as read to choose a witness: `method`, `path_url`, `endpoint_id`, `requires_authentication`, `takes_inputs`, `ends_session`, `base_url` |
+| `IdentityCheck`, `IdentityStanding`, `UncheckedReason` | what a check found: `ACCEPTED` on a witness, or `UNCHECKED` with `NO_WITNESS` / `NO_CREDENTIALS` / `TARGET_UNANSWERED` |
+| `IdentityRejectionCause` | `CREDENTIAL_REFUSED` / `LOGIN_REFUSED` / `LOGIN_TOKEN_MISSING` / `LOGIN_UNANSWERED` |
+| `IdentitySessionStats` | one identity's session over the run, on `RunStats.identities` ([the fields](sessions.md#report)) |
+| `CredentialLost`, `CredentialOutcome` | the `credential_lost` event: `identity`, `outcome` (`RETIRED` / `RENEWED`), `suspect_endpoint_id`, `suspect_identity` |
+| `SessionRenewal` *(in `models.runtime`)* | a renewal the run made, `identity_label` and `at_ms`, on `ExecutionTrace.session_renewals` |
+| `SecretLedger` | follows the secrets of every run it is handed to; `values` reads them, its `repr` shows only how many runs it follows |
+| `secret_reference(label, path)`, `with_secret_references(label, body)` | the reference to a login's secret, and a login body with every secret value replaced by its reference |
+| `held_reasons_allowing_side_effects(mode)` | the holds a mode still applies to a run given `allow_side_effects`: `skipped_by_project` among them |
+| `request_url(base_url, path)` | the URL a request to `path` goes to on `base_url`, as the transport composes it |
 
 ## Strategies and runner traits
 
@@ -160,7 +193,7 @@ See [Progress and cancellation](progress-and-cancellation.md) for how they behav
 | `CancellationSource` | the write side a caller holds: `cancel()` stops the run, `.token` is the read-only view it passes to `run(cancellation=...)` |
 | `CancellationToken` | the read side the run polls: a Protocol with one read-only `cancelled` property that never raises |
 | `RunObserver` | the observer Protocol: a single `on_event(event)` receiving every `RunEvent` |
-| `RunEvent` | the discriminated union of the nine event classes, on `kind` |
+| `RunEvent` | the discriminated union of the ten event classes, on `kind` |
 | `EventKind` | the `StrEnum` discriminator, one member per event class |
 | `RunStarted` | `started`: the run began fuzzing `endpoints` many endpoints |
 | `EndpointStarted` | `endpoint_started`: `endpoint_id`, 1-based `index`, `total` |
@@ -170,6 +203,7 @@ See [Progress and cancellation](progress-and-cancellation.md) for how they behav
 | `FindingObserved` | `finding`: the confirmed `report`, read as `endpoint_id`, `status_code`, `invariant`, `phase` |
 | `InfraFailure` | `infra_failure`: `endpoint_id`, `reason`, `streak`, `limit` |
 | `TargetDown` | `target_down`: `base_url`, `verdict` (`TargetDownVerdict`) |
+| `CredentialLost` | `credential_lost`: `identity`, `outcome`, `suspect_endpoint_id`, `suspect_identity` ([Identities and sessions](sessions.md#watch)) |
 | `RunTruncated` | `truncated`: `endpoint_id`, `reason` |
 | `RunFinished` | `finished`: the terminal `status` |
 | `TargetDownVerdict` | how a run decided the target is down: `LIVENESS_PROBE_FAILED` / `CIRCUIT_BREAKERS_OPEN` |
@@ -182,7 +216,7 @@ See [Progress and cancellation](progress-and-cancellation.md) for how they behav
 | `RunStatus` | a run's terminal outcome: `COMPLETED` / `TRUNCATED` / `ABORTED` / `CANCELLED` |
 | `FindingState` | a finding's settled state: `CONFIRMED` / `LLM_SUSPICION` / `FLAKY` / `UNVERIFIED` / `REFUTED` |
 | `ErrorCategory` | the outcome category of one request |
-| `TruncationReason` | why a run, or one endpoint, was cut short (includes `TARGET_DOWN`, `INFRASTRUCTURE_ABORT`, `CANCELLED`, and `ENGINE_FAILURE` for an endpoint the engine itself failed on and isolated) |
+| `TruncationReason` | why a run, or one endpoint, was cut short (includes `TARGET_DOWN`, `INFRASTRUCTURE_ABORT`, `CANCELLED`, `ENGINE_FAILURE` for an endpoint the engine itself failed on and isolated, and `CREDENTIALS_LOST` for a run whose every identity lost its credential) |
 | `InvariantViolation` | the invariant a finding broke (includes `INPUT_VALIDATION`: a 2xx accepted the poisoned field outside its declared schema; and the security invariants `INFORMATION_DISCLOSURE`, `SENSITIVE_DATA_EXPOSURE`, `REFLECTED_PAYLOAD`, `MASS_ASSIGNMENT`, `INPUT_INDUCED_TIMEOUT`; and the opt-in `UNDECLARED_RESPONSE_FIELD`) |
 | `FidelityLevel` | `EXACT` / `REDUCED` |
 | `CredentialKind` | whether an identity's credentials are ones the target should accept: `VALID` / `INVALID` |
@@ -225,6 +259,7 @@ kernel's from `specforge_contracts`.
 | `AccessIdentityError` | the auth runner has no valid declared identity to run against; raised before the first request |
 | `AccessUncrossableError` | an auth run crossed nothing while some endpoint was not public: its policy could not be crossed, or it declares none; `unprobed` maps each such endpoint to its `UnprobedReason`. Not raised for a run cut short. The core answers it `NOTHING_VERIFIED`. The runner and its modules are mapped in [Execution modes](execution-modes.md#auth) |
 | `AllEndpointsHeldError` | the safety guard held back every endpoint of the run, so nothing would be sent; `held` maps each endpoint to its `HoldReason`. Raised before any request; the core answers it `NOTHING_VERIFIED` |
+| `IdentityRejectedError` | the target refused an identity's credential, or its login, before the run's first request: `label`, `endpoint_id`, `status` (`None` without an answer) and `cause` (`IdentityRejectionCause`). The core answers it `IDENTITY_REJECTED` |
 | `ConcurrencyLadderError` | a performance run's concurrency ladder cannot be honored — a step exceeds `max_concurrency`; raised before the first request |
 | `RegistrationError` | a runner or a strategy profile was registered without what the engine publishes about it: a blank label or summary, or a variant selected by a field its options do not have; or an oracle registered with an alternative of `needs` that waits on more than one need no runner meets; `term` names it |
 
@@ -257,7 +292,7 @@ own tests exercise.
 | `CompiledRequestPart.poisoning_phases` | `models/runtime/engine_input.py` | the phases whose strategy poisons one of the zone's fields per draw; a subset of the compiled phases |
 | `SentEvidence` | `models/runtime/results.py` | `(results, findings)`: what an endpoint had sent and found when its exploration stopped short; `requests_sent` counts the results that reached the wire |
 | `kept_cut(current, cut)` | `models/runtime/run_status.py` | folds two cuts: one that halts the run outranks any recorded first, otherwise the first recorded stands |
-| `BODY_ENCODERS` | `runtime/http/body_encoders.py` | the closed table of body encoders by media type essence: JSON, form-urlencoded, multipart |
+| `BODY_ENCODERS` | `runtime/http/body_encoders.py` | the closed table of body encoders by media type essence: JSON, form-urlencoded, multipart. `encoder_for` resolves every JSON media type and every `text/*` one (a `TextEncoder` in its declared `charset`, UTF-8 by default) before reading it |
 | `reserved_for(config_headers, identity)` | `runtime/http/reserved_headers.py` | the lowercased header names the credentials and the transport own |
 | `guard_endpoint(endpoint_id, work, *, evidence)` | `runtime/bulkhead.py` | runs one endpoint's work, turning any exception but a control signal into an `EngineFailure` with an `engine_failure` cut |
 

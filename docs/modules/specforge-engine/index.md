@@ -170,6 +170,9 @@ decisions this rule produced are in the [decision records](adr/index.md).
 | Pick a mode and its options | [Execution modes](execution-modes.md) |
 | See how each mode gets past the first answer: run corpus, resilience confirmation | [Run depth](run-depth.md) |
 | See how a stateful run draws, how long it keeps going and how it judges a transition | [Stateful depth](stateful-depth.md) |
+| See how an identity is logged in, checked, watched, renewed or retired | [Identities and sessions](sessions.md) |
+| See what a run does with a logout, a password change or a revocation | [Operations that end the session](session-endings.md) |
+| See how the secrets a run knows stay out of what it reads and keeps | [Secrets a run knows](run-secrets.md) |
 | Add a runner, a profile, a phase, an oracle, a transport or a body encoder | [Extension guide](extension-guide.md) |
 | Call a function, or know what it raises | [API reference](api-reference.md) |
 | Know *why* something is the way it is | [Decision records](adr/index.md) |

@@ -31,7 +31,7 @@ none carrying information the counter does not already hold.
 
 ## The event catalog
 
-The 16 kinds. Common to all: `token` and `kind`. `started` and `finished` also
+The 17 kinds. Common to all: `token` and `kind`. `started` and `finished` also
 carry `operation`, since a client watching several operations needs to know
 which one framed the event.
 
@@ -48,7 +48,8 @@ which one framed the event.
 | `finding` | fact | `endpoint` (ref), `status`, `invariant`, `phase`, `category` and `severity` (see [`category`](vocabularies.md#category) and [`severity`](vocabularies.md#severity)), `summary`, `state` (`confirmed` or `llm_suspicion`) | A finding is confirmed, or stands as an LLM suspicion |
 | `infra_failure` | fact | `endpoint` (ref), `reason`, `streak`, `limit` | A timeout or transport failure |
 | `target_down` | fact | `base_url` (the URL the run's requests go to, server path included), `reason` | The run concluded the API is down: a liveness probe failed, or every circuit breaker opened; `reason` says which |
-| `truncated` | fact | `endpoint` (ref; absent when no endpoint caused the cut, reason [`flaky_generation`](vocabularies.md#truncation-reason)), `reason` | Cut short by budget |
+| `truncated` | fact | `endpoint` (ref; absent when no endpoint caused the cut, reason [`flaky_generation`](vocabularies.md#truncation-reason)), `reason` | The run was cut short before its plan was exhausted, by its budget or otherwise: `reason` is the run's [`truncation.reason`](vocabularies.md#truncation-reason), such as `deadline_exceeded`, or `credentials_lost` when no identity it sends under holds a working credential any more. Never `target_down` or `cancelled`: their own events tell of them |
+| `credential_lost` | fact | `identity` (its label), `outcome` (`retired` or `renewed`; see [`credential_lost.outcome`](vocabularies.md#credential-outcome)), `after` (ref: the operation suspected of ending it, the last write that succeeded under that identity before the credential died, or under any identity when it sent none; absent when none is), `after_identity` (the identity that sent `after`; absent with it) | An identity's credential died mid-run. `retired`: the run goes on with the identities left, and once none is left it stops exploring with a [`credentials_lost`](vocabularies.md#truncation-reason) cut. `renewed`: the identity declared a login, logged in again, and the run goes on with the credential it renewed. No credential value ever comes back ([Identities and sessions](../../specforge-engine/sessions.md#watch)) |
 | `endpoint_resolved` | fact | `endpoint` (ref) | An endpoint's static analysis resolved |
 | `endpoint_failed` | fact | `endpoint`, `code`, `reason` (an English [sentence](errors.md#analysis-failure-reasons) for the `code`) | An endpoint's static analysis failed |
 | `stage_started` | fact | `stage` | A pipeline stage begins |
@@ -72,7 +73,9 @@ suspicion as a finding while the run's document keeps it out of `defects`.
 
 **A `stateful` run's `tick` counts passes, not examples.** It plans no example
 budget, so its `total` is `0`. `passes` is how many passes over the state machine
-it has finished, and `max_passes` the most it may run (100): a ceiling, not a
+it has finished, and `max_passes` the most it may run (100, or 110 when the run
+keeps the operations that end the session for
+[final passes](../../specforge-engine/session-endings.md#last)): a ceiling, not a
 target, since the run usually stops earlier: once it has sent its exploration
 floor, after four passes in a row without
 progress. `findings` rises by one with each `finding` event. Every other mode
@@ -101,6 +104,10 @@ finding, a *signature*, to confirm and shrink it. That can take a while, and no
   re-sent requests), and `confirming`, from `0`, counts only the `DELETE`
   endpoints' signatures. A client still sees `generating`, then `confirming`
   once, no `endpoint_started` after it, and every `finding` together at the end.
+- A `stateless` or `performance` run with an identity that sends a credential
+  explores the endpoints that [end the session](../../specforge-engine/session-endings.md#last)
+  in a last round of their own, after the `DELETE` endpoints, the same way:
+  `confirming` then counts only that round's signatures.
 - The `finding` events arrive together once confirming is done. `sent` keeps
   rising with the re-sent requests; `total` does not count them.
 - A run with nothing to confirm never says `confirming`, nor does one that stopped

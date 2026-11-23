@@ -48,7 +48,7 @@ or parameter meeting a need without the engine.
 | `phases` | `{value, label, summary}` | Every generation phase a `phase_split` or a variant's `phases` can name |
 | `changes` | `{value, label}` | Every value an effect's [`changes`](vocabularies.md#changes) can take, in that order |
 | `producer_supplies` | `{producer, supplies, meets, clears}` | One row per producer: the [oracle needs](vocabularies.md#oracle-need) the contracts it produces meet (`supplies`), the values of a variant's [`requires`](#which-variant) they can meet (`meets`), and the holds they can clear by judging an endpoint (`clears`, [below](#holds-back)); `none` meets and clears nothing |
-| `holds_lifted_by` | string | The run parameter that lifts every hold of the safety guard: `allow_side_effects` |
+| `holds_lifted_by` | string | The run parameter that lifts every hold of the safety guard but `skipped_by_project`, which only the project's `sessions.operations` lifts: `allow_side_effects` |
 | `request_supplies` | `{need, parameter}` | One row per oracle need a run meets by a parameter it is given, its dotted path among the run's parameters |
 | `limits` | `{max_concurrency_default}` | The default of the core's `engine.max_concurrency` option (20): the concurrency a run that leaves `max_concurrency` unset gets, unless the project's config sets the option to another value. A `stress-ladder` step above the value in force when the run starts is refused then, never earlier |
 
@@ -58,7 +58,7 @@ An excerpt of what this core publishes:
 "fuzz_options": {
   "modes": [
     {"name": "performance", "label": "Performance", "summary": "Measures how fast …",
-     "holds_back": ["external_side_effects", "write_operation", "assumed_write"],
+     "holds_back": ["external_side_effects", "skipped_by_project", "write_operation", "assumed_write"],
      "variants": [
       {"name": "ladder", "label": "Concurrency ladder", "summary": "Sends valid requests …",
        "phases": ["valid"], "honors_examples_per_endpoint": false,
@@ -86,7 +86,7 @@ An excerpt of what this core publishes:
   "presets": [
     {"name": "stress-ladder", "label": "Stress ladder",
      "summary": "Rising load: who slows down first?", "requires": [],
-     "holds_back": ["external_side_effects", "write_operation", "assumed_write"],
+     "holds_back": ["external_side_effects", "skipped_by_project", "write_operation", "assumed_write"],
      "runs": [{"execution": "performance", "strategy": "default", "variant": "ladder",
                "load": {"latency_sla_ms": null, "concurrency_steps": [1, 4, 16],
                         "degradation_tolerance": null},
@@ -150,11 +150,19 @@ know, and the core still refuses the run that lacks it.
 
 A mode's `holds_back` lists, in `vocabulary.hold_reasons` order, every reason the
 safety guard can keep an endpoint of a run of it from being sent:
-`external_side_effects` in every mode; `write_operation` and `assumed_write` in
-`performance` and `resilience`, which send an endpoint many times or broken;
-`unsafe_method_outside_run` in `stateful`, a transition to an endpoint outside the
-run. A preset's `holds_back` is every hold any of its runs' modes applies.
-`holds_lifted_by` names the parameter that lifts all of them, `allow_side_effects`.
+`external_side_effects` and `skipped_by_project` in every mode; `write_operation`
+and `assumed_write` in `performance` and `resilience`, which send an endpoint many
+times or broken; `unsafe_method_outside_run` in `stateful`, a transition to an
+endpoint outside the run. A preset's `holds_back` is every hold any of its runs'
+modes applies.
+
+`skipped_by_project` holds an operation the project asked to skip (`skip` in its
+[`sessions.operations`](../configuration.md#the-options) option, which a run
+reports in the endpoint's [`ends_session.disposition`](vocabularies.md#ends-session)),
+and every transition to it. `holds_lifted_by` names the parameter that lifts every hold but that one,
+`allow_side_effects`: only the project's own `sessions.operations` sends an
+operation it asked to skip
+([Operations that end the session](../../specforge-engine/session-endings.md#skip)).
 
 A producer does not lift a hold: it can only clear what its row of
 `producer_supplies` lists in `clears`, today `assumed_write`, the hold on an
@@ -163,7 +171,11 @@ endpoint whose method is not safe and that nobody judged. A contract that says
 `write_operation`. A run whose every endpoint is held is refused
 [`NOTHING_VERIFIED`](errors.md#nothing-verified); one that still sends something
 ends `degraded` with `withheld_by_safety_guard`, its `degraded_signal` warning
-counting what was held.
+counting what was held by reason (`details.held_back`) and naming what sends it,
+as `NOTHING_VERIFIED` does: `details.parameter` is `allow_side_effects` when
+something was held for a hold that parameter lifts, and `details.option` is
+`sessions.operations` when something was held as `skipped_by_project`; each is absent
+when nothing was held for it.
 
 ## What a preset run asks for { #asks-for }
 

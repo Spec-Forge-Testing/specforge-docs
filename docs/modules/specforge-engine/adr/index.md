@@ -73,6 +73,7 @@ missing here belongs to another module:
 | [findings.md](findings.md) | findings | How a finding is classified, what it observed, when a value provably breaks its contract, how findings are told apart, refuted, left unverified and redacted, when one is an LLM suspicion, how a seed case and a latency finding are judged, and how an accepted write is re-sent to confirm it |
 | [strategies.md](strategies.md) | strategies | What a strategy decides, the oracles it opts into, the traits each runner declares, and how what a run can find is derived |
 | [runners.md](runners.md) | runners | How far each runner reaches: what a stateful pass draws, how a consumer gets its values, when the run stops and how it tells defects apart, how a sequence is re-sent and replayed, the later echo, the stateless run corpus, refuting a whole-request rejection, the resilience base request and its confirmation, provisioning a resource, links into reserved headers |
+| [sessions.md](sessions.md) | sessions | How a credential is checked and watched, how a declared login is renewed, what a run does with the operations that end a session, how the secrets it knows stay out of what it keeps, and what it confirms once an identity is lost |
 
 ## Full index
 
@@ -244,3 +245,10 @@ missing here belongs to another module:
 | [ADR-216](findings.md#adr-216) | findings | An accepted write whose resource is gone is confirmed at another resource its caller created |
 | [ADR-220](findings.md#adr-220) | findings | A producer's pattern is decided only where ECMA and Python agree, and a drawn header never carries an identity's credential |
 | [ADR-221](findings.md#adr-221) | findings | A pattern backtracking cannot judge cheaply is decided by a simulated automaton |
+| [ADR-222](runners.md#adr-222) | runners | An owner-only resource is crossed between tenants when the identities declare one, and a file declares a tenant on every identity or on none |
+| [ADR-223](engine.md#adr-223) | engine | The liveness probe sends three spaced `HEAD`s before it calls a target down, and a silent known-good request falls back to it |
+| [ADR-224](sessions.md#adr-224) | sessions | A credential is judged on a witness: a streak of `401`s sends a request it once passed, and only that request's refusal retires the identity |
+| [ADR-225](sessions.md#adr-225) | sessions | An identity may declare its login: the run logs it in, binds the credential on every attempt, and renews it when its witness is refused |
+| [ADR-226](sessions.md#adr-226) | sessions | An operation that ends the session runs last, or never when the project says so, and the project's word outranks the model's and the names' |
+| [ADR-227](sessions.md#adr-227) | sessions | The run withholds every secret it knows from what it reads, and a login's secret travels as a reference resolved only on the wire |
+| [ADR-228](sessions.md#adr-228) | sessions | A finding is never re-sent under a retired identity, and one that rests on refused re-sends is unverified, not flaky |

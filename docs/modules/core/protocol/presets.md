@@ -55,7 +55,7 @@ A listed preset is a `fuzz_options.presets` entry with three more keys:
 | `name`, `label`, `summary` | As in `fuzz_options.presets`. |
 | `origin` | `builtin` or `user`. |
 | `runs` | The preset's runs, in order ([below](#listed-run)). |
-| `requires`, `holds_back` | Derived for a saved preset exactly as for a builtin ([Fuzz options](fuzz-options.md#presets)), but for a run that keeps `allow_side_effects: true`: it lifts every hold (`fuzz_options.holds_lifted_by`), so `holds_back` leaves out what that run alone would hold. |
+| `requires`, `holds_back` | Derived for a saved preset exactly as for a builtin ([Fuzz options](fuzz-options.md#presets)), but for a run that keeps `allow_side_effects: true`: it lifts every hold `fuzz_options.holds_lifted_by` lifts, so of what that run alone would hold `holds_back` keeps only `skipped_by_project`, what the project asked to skip. |
 | `recommended` | As in `fuzz_options.presets`: `true` for `standard` alone, always `false` for a saved preset. |
 | `created_at`, `updated_at` | When a saved preset was saved first and last, as UTC ISO 8601 text with an offset (`2026-11-14T21:03:11+00:00`); `null` for a builtin. |
 
@@ -87,7 +87,7 @@ A builtin's kept parameters are all `null`, and its `allow_side_effects` is
             "asks_for":[],"examples_per_endpoint":null,"max_concurrency":null,
             "timeout_s":null,"deadline_ms":null,"allow_side_effects":false,
             "producer":null}],
-   "requires":[],"holds_back":["external_side_effects"],"recommended":true},
+   "requires":[],"holds_back":["external_side_effects","skipped_by_project"],"recommended":true},
   …
   {"name":"nightly-security","label":"Nightly security",
    "summary":"Security with the LLM, capped at two dollars.",
@@ -97,7 +97,7 @@ A builtin's kept parameters are all `null`, and its `allow_side_effects` is
             "asks_for":[],"examples_per_endpoint":200,"max_concurrency":null,
             "timeout_s":null,"deadline_ms":null,"allow_side_effects":false,
             "producer":{"kind":"inference","max_cost_usd":2.0}}],
-   "requires":[],"holds_back":["external_side_effects"],"recommended":false}
+   "requires":[],"holds_back":["external_side_effects","skipped_by_project"],"recommended":false}
 ]}
 ```
 

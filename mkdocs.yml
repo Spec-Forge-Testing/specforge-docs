@@ -136,6 +136,7 @@ nav:
       - Scripts, CI and approvals: user-guide/cli/scripts-and-ci.md
       - Fixing findings: user-guide/cli/fixing-findings.md
       - CLI operation reference: user-guide/specforge-cli-reference.md
+      - Identities and sessions: user-guide/identities-and-sessions.md
       - Run Report: user-guide/reports.md
       - Defects and LLM suspicions: user-guide/findings-and-suspicions.md
       - Desktop app:
@@ -252,6 +253,9 @@ nav:
           - Execution modes: modules/specforge-engine/execution-modes.md
           - Run depth: modules/specforge-engine/run-depth.md
           - Stateful depth: modules/specforge-engine/stateful-depth.md
+          - Identities and sessions: modules/specforge-engine/sessions.md
+          - Operations that end the session: modules/specforge-engine/session-endings.md
+          - Secrets a run knows: modules/specforge-engine/run-secrets.md
           - Progress and cancellation: modules/specforge-engine/progress-and-cancellation.md
           - Extension guide: modules/specforge-engine/extension-guide.md
           - API Reference: modules/specforge-engine/api-reference.md
@@ -267,6 +271,7 @@ nav:
               - Findings: modules/specforge-engine/adr/findings.md
               - Strategies: modules/specforge-engine/adr/strategies.md
               - Runners: modules/specforge-engine/adr/runners.md
+              - Sessions: modules/specforge-engine/adr/sessions.md
   - Test corpora:
       - Overview: testing/index.md
       - RealWorld corpus: testing/real-world.md

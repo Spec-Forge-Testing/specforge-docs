@@ -43,7 +43,7 @@ project, so `contract_failed` (`aborted`) arrives before the engine and the run
 fails `CONTRACT_PRODUCER_FAILED`. The last three exist so that **no event `kind`
 in the schema goes unexercised**.
 
-Four more cover what a stored run and the presets answer:
+Five more cover what a stored run, the presets and a lost credential answer:
 
 | Fixture | Scenario | `captured` |
 | --- | --- | --- |
@@ -51,6 +51,7 @@ Four more cover what a stored run and the presets answer:
 | `15-replay-run` | A `fuzz`, then a `replay` of its whole analysis: `get_run` of the replay gives its `judged` and `defect_verdicts`, `list_runs` gives `judged` on the replay's row, and `get_finding` gives `replay_alone` `possible: true` | `shape` |
 | `16-stateful-finding` | A stateful `fuzz` whose finding's `replay_alone` is refused: `possible: false`, `reason: stateful` | `shape` |
 | `17-saved-presets` | `list_presets` with the builtins alone; a `save_preset` of a two-run preset and the same one refused `PRESET_NAME_TAKEN`; `list_presets` with it after the builtins; a `fuzz` tagged with its first run, whose `get_run` gives `analysis.preset` and `analysis.options`; and `delete_preset` refused `PRESET_READ_ONLY` for a builtin, answering the saved one, then refused `PRESET_NOT_FOUND` | `shape` |
+| `18-credential-lost` | A `fuzz` against a project of four endpoints that demand a bearer credential, one of them a logout that revokes it, under one identity: the run announces `credential_lost` with `outcome: retired`, `after` naming the logout and `after_identity` the identity; with no identity left it stops exploring, a `truncated` event with reason `credentials_lost` names the logout, and the reply is `status: completed` with a document whose `run.status` is `truncated` and whose signal is `degraded` | `shape` |
 
 No fixture records `estimate_inference`, `estimate_contract_generation` or the
 approval flow: an estimate carries a model's price, which no placeholder can hold

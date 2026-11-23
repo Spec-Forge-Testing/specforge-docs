@@ -600,9 +600,11 @@ the closed set of attacks across both the httpx and raw-socket tables.
 ## Add a body encoder
 
 `BODY_ENCODERS` (`runtime/http/body_encoders.py`) is a closed table keyed by the
-media type's essence (lowercased, without parameters). Every JSON media type —
-`application/json` or any `+json` — resolves to the JSON encoder before the table
-is read. A media type with no row makes the request an `unsendable_request`.
+media type's essence (lowercased, without parameters). Two families resolve
+before the table is read, in `_ENCODER_FAMILIES`: every JSON media type —
+`application/json` or any `+json` — to the JSON encoder, and every `text/*` media
+type to a `TextEncoder` built for the `charset` it declares. A media type with no
+row and no family makes the request an `unsendable_request`.
 
 An encoder satisfies the `BodyEncoder` Protocol:
 
@@ -624,7 +626,7 @@ BODY_ENCODERS: Final[Mapping[str, BodyEncoder]] = MappingProxyType(
         JSON_MEDIA_TYPE: _JSON_ENCODER,
         FORM_MEDIA_TYPE: FormEncoder(),
         MULTIPART_MEDIA_TYPE: MultipartEncoder(),
-        "text/plain": PlainTextEncoder(),  # the new row
+        "application/xml": XmlEncoder(),  # the new row
     }
 )
 ```

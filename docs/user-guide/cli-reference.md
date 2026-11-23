@@ -443,6 +443,52 @@ unexpectedly.
     that declares none never satisfies an endpoint that requires a role. Only
     `--mode auth` reads it.
 
+    An identity may also declare the `tenant` (organization) it belongs to, a
+    non-empty string written, like `role`, above `[identities.headers]`:
+
+    ```toml
+    [[identities]]
+    label = "alice"
+    tenant = "acme"
+    [identities.headers]
+    Authorization = "Bearer alice-token"
+
+    [[identities]]
+    label = "bob"
+    tenant = "globex"
+    [identities.headers]
+    Authorization = "Bearer bob-token"
+    ```
+
+    With tenants declared, `--mode auth` crosses an `owner_only` resource
+    **between tenants**: the owner's resource is re-sent under every identity of
+    another tenant, and never under one of the owner's own tenant, which may
+    legitimately share it. A file declares a tenant on every identity that sends
+    valid credentials, or on none: one that declares it only on some is refused
+    with `Declare a tenant on every identity with valid credentials in <file>, or
+    on none; missing on: <labels>`. An anonymous entry (no headers) and an invalid
+    one need no tenant. Without tenants, the cross is between identities, as
+    described below.
+
+    Instead of a fixed token, an identity may declare how it logs in, in an
+    `[identities.login]` table; the run logs it in before its first request and
+    again whenever its token dies mid-run:
+
+    ```toml
+    [[identities]]
+    label = "alice"
+
+    [identities.login]
+    path = "/v1/auth/login"
+    body = { email = "alice@acme.test", password = "alice-password" }
+    token_at = "access_token"
+    ```
+
+    Before the first request every identity's credential is checked, and a run
+    whose identity the target rejects is refused with `IDENTITY_REJECTED`. The
+    keys, the check and what happens when a credential dies mid-run are on
+    [Identities and sessions](identities-and-sessions.md).
+
     An entry may set `credential = "invalid"` (the default is `"valid"`) to carry a
     token the target **must reject** — expired, revoked or garbage. Only `--mode
     auth` sends requests under an invalid identity: on an `authenticated` endpoint
@@ -490,7 +536,9 @@ unexpectedly.
     `--identities` and a contract producer — `--contracts <dir>` — whose contracts
     declare an `access` policy; an endpoint with no `access`, or a `public` one, is
     never sent, and the run needs at least one **valid** identity. On an
-    `owner_only` endpoint the owner is the first valid identity declared. A
+    `owner_only` endpoint the owner is the first valid identity declared; when
+    the identities declare a `tenant`, only the identities of another tenant
+    cross it, besides the anonymous request and any invalid identity. A
     `role_only` endpoint is sent under every identity that does not declare its
     required role, and once anonymously; it needs at least one identity declaring
     exactly that role, or the run stops before its first request.
@@ -564,8 +612,13 @@ unexpectedly.
     exempt — it re-sends a recorded trace, never a fresh probe. A held endpoint
     still appears in the run with zero requests, and the summary lists it under
     **Endpoints held back by the safety guard** (with the risk flag as the reason)
-    and hints *"Re-run with --allow-side-effects to probe them."* `--allow-side-effects`
-    lifts the guard and probes every endpoint; the flag is stored with the run's
+    and hints *"Re-run with --allow-side-effects to probe what a risk held back."*
+    An operation your project asked to skip (`skip` under `[sessions]` `operations`
+    in `specforge.toml`, see [Identities and sessions](identities-and-sessions.md#session-endings))
+    is held in every mode as `skipped_by_project`, and the hint then reads *"Change the
+    entry under sessions.operations of an operation the project skips to probe
+    it."* `--allow-side-effects` lifts every other hold and probes every endpoint
+    but those; the flag is stored with the run's
     recipe, so a `replay` or a re-run of a saved analysis inherits it. In `--mode
     auth`, holding back an endpoint that is the producer another endpoint's
     owner-only check needs fails the run with an `Access Link Error` that names the
@@ -1099,9 +1152,10 @@ vocabulary is closed:
 | `no_responses` | No request reached the target at all — every attempt was an availability, timeout or unsendable-request failure. |
 | `requests_unanswered` | An endpoint left at least three of its requests, and at least 5 % of them, with a timeout or an availability failure, so its evidence rests on the rest. |
 | `credentials_refused` | A targeted endpoint that requires authentication got at least one response and every response was a `401` or `403` (a public endpoint, like a login, never counts): the credentials opened nothing there, so nothing behind its access check was verified. Its `requests_refused` counts them. An `auth` run, which sends credentials meant to be refused, never raises it. |
+| `identities_retired` | An identity lost its credential mid-run and could not log in again, so the run sent nothing more under it and what it was left to verify went unverified ([Identities and sessions](identities-and-sessions.md#watch)). |
 | `endpoints_excluded` | A declared endpoint was selected but the compiler rejected it. |
 | `contracts_unproduced` | The producer left one or more endpoints without a contract, so they ran on their schema alone. |
-| `withheld_by_safety_guard` | A targeted endpoint was held out of the run by the safety guard (a declared side effect, or a write nobody judged). |
+| `withheld_by_safety_guard` | A targeted endpoint was held out of the run by the safety guard (a declared side effect, a write nobody judged, or an operation the project asked to skip). |
 | `access_policy_undeclared` | A targeted endpoint drew no requests because its access policy was not declared, so the run could not tell what to probe. |
 | `access_preconditions_unmet` | A targeted endpoint had an access policy the run could not cross: no producer, no role holder, no owner, or no resource it could create. |
 | `stateful_endpoints_unsent` | A `stateful` run never sent a targeted endpoint: the value it consumes was never produced, or the exploration never drew it. Its `unprobed_reason` says which, and it does not count as unreached. |
@@ -1116,6 +1170,15 @@ complete evidence, not a gap. A degraded run never closes as a plain success and
 never claims "No crashes found"; an empty crash table says its evidence is
 degraded instead, and the close line and every excluded endpoint print as
 warnings.
+
+An endpoint that got at least ten responses and not one `2xx` or `3xx` does not
+degrade a run either, but the summary names it: *"&lt;N&gt; answered every request
+with an error, never a 2xx or 3xx"*, a `Never succeeded:` line per endpoint, and
+*"Check that those endpoints get data the target accepts, such as ids that exist
+and identities allowed to call them, then run again."* The report carries them in
+[`coverage.endpoints_never_succeeded`](../modules/core/protocol/vocabularies.md#endpoints-never-succeeded);
+an `auth` or `resilience` run, which sends requests meant to be refused, lists
+none.
 
 `inspect --run <id>` shows the same partition and signal for a saved run,
 between the header and the metrics — skipped for a replay, which never compiles

@@ -219,6 +219,23 @@ access check. An `auth` run counts its refusals too but never raises the cause,
 since it sends identities the access policy should refuse. `null` for a run
 stored before it was kept, which never raises the cause.
 
+## Identities and the operations that end a session { #identities }
+
+**`identities`** says, per valid identity, whether the target was seen to know
+its credential before the run, the request that witnesses it, whether the run
+retired it and after which operation, and how many times the run logged it in
+again: the report document's [`run.identities`](vocabularies.md#run-identities).
+A retired identity raises [`identities_retired`](vocabularies.md#signal-causes);
+one whose session the run renewed does not. The HTML report shows them in an
+**Identities** table: the identity, its credential before the run, its witness,
+and whether it was retired (`Yes, after POST /auth/logout sent by alice`).
+
+**`endpoints[].ends_session`** says whether the run took the endpoint for an
+operation that ends the caller's session, what it did with it and who said so
+([`ends_session`](vocabularies.md#ends-session)). A retired identity's `suspect`
+carries `marked: true` when that operation was already known to end the session.
+A suspect not marked is the operation to declare under `sessions.operations`.
+
 ## Shrink requests and stateful values { #requests-shrink }
 
 **`endpoints[].requests_shrink`** counts the requests shrinking or confirming a

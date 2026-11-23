@@ -1139,3 +1139,59 @@ Findings on the endpoints a delete would have removed are confirmed against the
 resource they were found on. The `confirming` stage of a run with deletes is
 shorter than its actual confirmation, and `signatures_total` covers only the
 `DELETE` endpoints' signatures.
+
+## ADR-222 — An owner-only resource is crossed between tenants when the identities declare one, and a file declares a tenant on every identity or on none { #adr-222 }
+
+**Status:** accepted · Supersedes in part [ADR-050](engine.md#adr-050), [ADR-053](engine.md#adr-053) · `models/runtime/execution.py`, `runtime/runners/auth/planners.py`; in the core, `services/identities/service.py`
+
+### Context
+
+The auth runner crossed an `owner_only` resource against every identity other
+than its owner. That is the right check when each identity is a separate user
+of its own: a second user who reads the first one's resource is a leak. It is
+the wrong check for an API whose users belong to organizations and share what
+their organization owns. Two users of the same organization reading each other's
+invoice is the API working as designed, and reporting it would accuse a
+correctly guarded endpoint. The leak such an API can have is the other one: a
+user of one organization reaching a resource of another. The identities file had
+no way to say which identities share an organization, so that leak could not be
+checked.
+
+### Decision
+
+**An identity may declare its `tenant`.** `Identity.tenant` is an optional,
+non-empty string the user writes in the identities file, beside `role`. Nothing
+infers it: who belongs to which organization is a fact about the user's test
+accounts, never about the code or the spec.
+
+**With a tenant, an owner-only resource is crossed between tenants.** When the
+owner declares a tenant, a valid identity crosses the owner's resource only if it
+declares another tenant. An invalid identity crosses it whatever its tenant, since
+a credential the target must reject should reach nothing, and the anonymous
+request goes out as on any `owner_only` endpoint. The finding is the same `owner_only` violation, naming
+the caller. Without a tenant on the owner, every other identity crosses.
+
+**A file declares a tenant on every identity with valid credentials, or on none.**
+The core refuses one that declares it only on some, with `IDENTITIES_INVALID` and
+the labels that lack it. An identity with no headers and an invalid one need
+none: neither can be a member of the owner's organization the run would wrongly
+accuse.
+
+### Rejected
+
+- **Treating an identity without a tenant as a member of another one.** It would
+  cross a caller who may well share the owner's organization, and report its
+  legitimate success as a leak.
+- **Treating it as a member of the owner's tenant.** It would leave that caller
+  out silently, and a file that forgot one tenant would check less than it seems
+  to. Refusing the file says so before any request.
+- **Crossing within and between tenants under two rules.** A same-tenant success
+  is not a defect in a multi-tenant API, so it has no rule to break.
+
+### Consequences
+
+An API with organizations is checked for the leak it can have, and an API
+without them is checked identity against identity, since a file without `tenant`
+crosses every other identity. With a single tenant declared on every identity, an `owner_only`
+endpoint is crossed by the anonymous request and the invalid identities alone.
+`role_only` and the resilience battery do not read the tenant.

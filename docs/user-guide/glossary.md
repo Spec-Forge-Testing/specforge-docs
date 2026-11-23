@@ -27,7 +27,11 @@ name, that name follows in `code font`.
 | **Category / severity** | What kind of defect a finding is (`crash`, `security`, `access`, `business_rule`, `contract_hygiene`, `performance`) and how serious (`critical` to `info`); fixed per invariant. |
 | **Summary** | A finding's one-sentence account of what happened, built from what it observed. |
 | **Unique crashes** | The count of genuinely distinct defects a run found — its bottom line. |
-| **Identity** | A named set of request headers (credentials) requests can be sent under, optionally with the role it acts under, declared in a TOML file. |
+| **Identity** | A named set of request headers (credentials) requests can be sent under, optionally with the role it acts under and the tenant (organization) it belongs to, declared in a TOML file. |
+| **Login** | An identity's declared request that issues its credential (`[identities.login]`); the run sends it before the first request and again to renew a session that died. |
+| **Witness** | The harmless request, such as `GET /me`, a run sends to tell whether an identity's credential still works: before the run, and after five `401`s in a row. |
+| **Retired identity** | An identity whose credential the target stopped accepting mid-run and that could not log in again; the run sends nothing more under it. `credentials_lost` cuts a run once every identity is retired. |
+| **Session ending** | An operation that ends the caller's session (a logout, a revocation, a password change); a run sends it last, or never (`skip` in `sessions.operations`). |
 | **Execution mode** | How the fuzzer explores the API: `stateless`, `stateful`, `performance`, `resilience` or `auth` (`--mode`). |
 | **Stateless** | Fuzzing each operation on its own, one request at a time. |
 | **Stateful** | Chaining requests into sequences to find order-dependent bugs. |

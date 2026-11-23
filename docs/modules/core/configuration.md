@@ -39,6 +39,7 @@ is kept under.
 | `replay.ready_timeout_s` | number | `60.0` | `> 0`, finite | How long a rebuilt API under test may take to answer again (`REBUILD_FAILED`, `not_ready`). |
 | `fix.check_command` | string | none | — | The command, run from the project root, that builds the project when `verify_finding_fix` verifies an applied fix without rebuilding the service. Without it, the toolchain the manifest nearest the edited file names is used. |
 | `fix.check_timeout_s` | number | `120.0` | `> 0`, finite | How long building an applied fix on this machine may take; past it the build is skipped, the fix kept and the finding replayed. |
+| `sessions.operations` | string map | `{}` | keys `"<METHOD> /path"`, values `last`, `skip` or `keep` | What a run does with an operation that ends the session it is sent under: `last` sends it after the rest, `skip` never sends it, `keep` says it does not end the session. Wins over what the model and the operation's names suggest ([Operations that end the session](../specforge-engine/session-endings.md)). |
 | `paths.data_dir` | path | — | read-only | The open project's own Spec Forge directory, `.specforge` under its root. |
 | `paths.db_path` | path | — | read-only | The database the session reads and writes. |
 | `paths.artifacts_root` | path | — | read-only | The root every stored artifact path is under. |
@@ -63,7 +64,7 @@ option:
 
 | Field | Meaning |
 | --- | --- |
-| `key`, `group`, `type` | The option, its subsystem (`engine`, `llm`, `inference`, `replay`, `fix`, `paths`) and its value type. |
+| `key`, `group`, `type` | The option, its subsystem (`engine`, `llm`, `inference`, `replay`, `fix`, `sessions`, `paths`) and its value type. |
 | `value` | The effective value. |
 | `layer` | Which layer that value came from (below). |
 | `default` | What the value would be with nothing set. |
@@ -80,7 +81,7 @@ value wins.
 | `layer` | Where the value lives | Lifetime |
 | --- | --- | --- |
 | `run` | The `overrides` passed to `get_config`. | That one answer; never persisted. |
-| `user` | The project's `specforge.toml`, under `[engine]`, `[llm]`, `[inference]`, `[replay]` and `[fix]`. | Until `set_config` or `reset_config` changes it. |
+| `user` | The project's `specforge.toml`, under `[engine]`, `[llm]`, `[inference]`, `[replay]`, `[fix]` and `[sessions]`. | Until `set_config` or `reset_config` changes it. |
 | `environment` | The process environment, else the LLM's `.env.local`: only `llm.primary_model`, from `LLM_MODEL`. An empty variable fills nothing. | Read on every call. |
 | `default` | The code. | Always present. |
 
@@ -88,7 +89,7 @@ The `environment` layer is not the user's choice: `reset_config` has nothing to
 undo for it, and inference is not handed it as an override, since the LLM layer
 already reads the same variable.
 
-`set_config` writes into the user layer, and only rewrites those five sections:
+`set_config` writes into the user layer, and only rewrites those six sections:
 anything else in `specforge.toml` (the project's name, spec and base URL) is left
 as written. A key the file carries that is not an option is ignored. Without an
 open project there is no user layer, so `get_config` answers with the defaults
@@ -117,6 +118,7 @@ sent.
 | `inference.require_approval` | `specforge.toml`, else `true` | not read |
 | `inference.max_workers` | `specforge.toml`, else `4`; read only by a run with a producer | not read |
 | `replay.*`, `fix.*` | not read | not read; `replay_finding`, `inspect_service` and `verify_finding_fix` read them from `specforge.toml`, else the default |
+| `sessions.operations` | `specforge.toml`, else none; refused `INVALID_PARAMS` when it names an operation the contract does not declare | not read: a replay re-sends what the recorded run sent |
 
 A recording keeps the names of the headers it sent, never their values, so a
 replay takes the values from `engine.headers` where it runs, as it re-reads the

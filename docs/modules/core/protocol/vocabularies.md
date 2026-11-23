@@ -79,6 +79,7 @@ set when that endpoint's pass was cut short whether or not the run was.
 | `pass_limit_reached` | A stateful run that kept making progress stopped at its limit of passes. |
 | `flaky_generation` | A stateful run's passes kept ending because the target answered differently from an earlier test case, so it stopped before a clean pass. No endpoint caused it: `run.truncation.endpoint_id` is `null`, and the `truncated` event carries no `endpoint`. |
 | `cancelled` | The client asked the run to stop. |
+| `credentials_lost` | Every identity the run sends under lost its credential mid-run, so it stopped exploring rather than send anonymously. It still confirms what it found anonymously or under an identity it did not watch; what a retired identity found stays `unverified`. The endpoint named is the one the run was sending to when the last identity was retired; when the re-check of the identities before the endpoints that end the session finds the last one lost, the run explores none of those and names the last endpoint it sent to before that re-check, in every mode. Each [`credential_lost`](events.md#the-event-catalog) event names, in `after`, the operation suspected of ending its identity's session. The API may be perfectly healthy ([Identities and sessions](../../specforge-engine/sessions.md#watch)). |
 
 Every reason but `flaky_generation` names the endpoint the run was exploring in
 `run.truncation.endpoint_id`. `detail` beside it is free text for a person, or `null`. For `engine_failure` it
@@ -112,6 +113,28 @@ counts each one: in `get_run` under `coverage.counts`, in `list_analyses` and
 `declared` is `targeted + excluded + filtered`: an endpoint reached by a
 transition is never counted as declared. The persistence layer stores these four
 values under a CHECK constraint.
+
+### `coverage.endpoints_never_succeeded` { #endpoints-never-succeeded }
+
+Each targeted endpoint, as `{method, path}` in method-then-path order, that got at
+least ten responses and none of them a `2xx` or a `3xx`: the target refused every
+request the run sent there, as a `DELETE` whose ids never exist, so the run
+verified nothing past that refusal. In `get_run`'s `coverage` and the report
+document's `coverage`; `[]` when there is none, and always in an `auth` or a
+`resilience` run, which sends requests meant to be refused. The endpoint's
+`by_category` counts them: its responses are its `success`, `contract_violation`,
+`client_error` and `server_error`, and a `2xx` or `3xx` is a `success` or a
+`contract_violation`. An endpoint that raises
+[`credentials_refused`](#signal-causes) is left to that cause and not listed.
+
+It informs and never degrades the run: a run whose only issue is this list stays
+`clean`. The HTML report lists them under **Endpoints that never succeeded**, with
+the next thing to do: give those endpoints data the target accepts, such as ids
+that exist and identities allowed to call them, then run again.
+
+```json
+"coverage":{"…":"…","endpoints_never_succeeded":[{"method":"DELETE","path":"/articles/{slug}"}]}
+```
 
 ## `producer_exclusions[].disposition` { #producer-exclusion-disposition }
 
@@ -150,7 +173,7 @@ still ran. `vocabulary.producer_note_kinds` carries each with its label.
 | --- | --- |
 | `reasked` | The model's answer failed validation and the model was asked again; `subject` is the model that gave it, `detail` where the answer broke, never what it said. |
 | `invalid_rule` | A business rule of the answer could not be read and was left out; `subject` is its id, `<unnamed>` without one. |
-| `unknown_field` | A business rule, or a seed case's value, names a field the endpoint does not declare and was left out. A seed case's field named with its request zone in front (`body.title`) is read as that field when the zone declares it. |
+| `unknown_field` | A business rule, a seed case's value, or an attack hint names a field the endpoint does not declare and was left out. A seed case's field named with its request zone in front (`body.title`) is read as that field when the zone declares it. A dropped attack hint's `subject` is `attack hint <zone.field>`, and the rest of the contract is adopted. |
 | `unbound_bundle` | A transition cites a state-link value nothing in the run binds and was left out. |
 | `unfollowable` | A transition the engine cannot follow from the endpoint was left out, or one whose follow-up is an operation, its method and path together, the spec does not declare. |
 | `undeclared_echo` | A transition echoes a field the request body does not declare; the echo was left out. |
@@ -162,6 +185,8 @@ still ran. `vocabulary.producer_note_kinds` carries each with its label.
 | `assumed_over_declared` | A schema keyword the model assumed, rather than quoted, gave way to the one the spec declares on the same field; `subject` is the keyword and where it was. |
 | `unverified_quote` | A rule the model said the code or the spec states was taken as assumed: it came without a quote, its quote is not in what the model was shown, or a keyword's quote is about something else (`grounds.downgraded` says which); `subject` is the rule ([grounds](run-detail.md#grounds)). |
 | `contradicted_by_spec` | A transition was left out because it expects a success status the spec does not declare for its follow-up, while the spec declares another one there (and neither `2XX` nor `default`); `subject` is the transition. |
+| `declared_login_unseeded` | An identity's declared login was not sent as an example of the login operation itself, the seed case `declared_login.<label>` every other declared login adds to that operation, its secret fields as references resolved only on the wire ([Secrets a run knows](../../specforge-engine/run-secrets.md#references)). `subject` is `seed case declared_login.<label>`; `detail` says why: the login declares no field the engine takes for a secret (its values would go out in the clear), no operation of the contract is the login's method on its path, or that operation cannot be projected from its schema. A run without a producer notes it too; `method` and `path` are the operation's, or the login's own when the contract has none. |
+
 ## `endpoints[].unprobed_reason` { #unprobed-reason }
 
 Why the `auth` mode crossed nothing at a targeted endpoint, the `resilience`
@@ -221,9 +246,10 @@ to do without a table of its own ([vocabulary](handshake.md#vocabulary)).
 | `no_responses` | No request reached the target | No request reached the target: every attempt was an availability, timeout or unsendable-request failure. |
 | `requests_unanswered` | Some requests went unanswered | Some requests reached the target, but an endpoint left at least three of its requests, and at least 5 % of them, with a timeout or an availability failure, so what the run says of that endpoint rests on the rest. `metrics.by_category` and the endpoint's `by_category` count them. Never raised beside `no_responses`. |
 | `credentials_refused` | Some endpoints refused every request's credentials | One or more targeted endpoints that require authentication got at least one response, and every response was a `401` or a `403`: the run's credentials opened nothing there, as when the target no longer accepts the identities' tokens, so the run verified nothing behind that endpoint's access check. The endpoint's [`requests_refused`](run-detail.md#requests-refused) counts them. An endpoint without a response does not raise it; an `auth` run, which crosses each endpoint with the identities its access policy should refuse, never raises it; nor does a run stored before `requests_refused` was kept. |
+| `identities_retired` | Some identities lost their credentials mid-run | One or more identities lost their credentials mid-run and were retired: the run sent nothing more under them, so what they were left to verify went unverified. [`run.identities`](#run-identities) names each one, its `retired` is `true`, and its `suspect` the operation after which the credential died. Raised in every mode, `auth` included; an identity whose session the run renewed and kept does not raise it. |
 | `endpoints_excluded` | Some endpoints were excluded | One or more declared endpoints were excluded from this run. |
 | `contracts_unproduced` | Some endpoints ran without rules | One or more endpoints of a run with a producer are in `producer_exclusions`, whatever their `disposition`: the producer left them without a contract, so they ran on their schema alone or were withheld. An endpoint the static analysis could not trace counts too. |
-| `withheld_by_safety_guard` | Held back by the safety guard | The safety guard held back one or more targeted endpoints, so they were never probed: a declared risk flag, or `assumed_write` (an unsafe method no producer judged a write for). |
+| `withheld_by_safety_guard` | Held back by the safety guard | The safety guard held back one or more targeted endpoints, so they were never probed: a declared risk flag, `assumed_write` (an unsafe method no producer judged a write for), or `skipped_by_project` (an operation the project asked to skip). |
 | `access_policy_undeclared` | Some endpoints declare no access policy | One or more targeted endpoints declare no access policy, so the `auth` run verified nothing there. |
 | `access_preconditions_unmet` | Some access checks could not be set up | One or more targeted endpoints had an access policy the run could not cross: no producer, no role holder, no owner, no resource it could create, or a state link into a reserved header; each one's [`unprobed_reason`](#unprobed-reason) says which. |
 | `stateful_endpoints_unsent` | Some endpoints were never sent in a flow | One or more targeted endpoints were never sent by a `stateful` run: no producer returned a value they consume, none exists, it was cut off, only another identity holds one, or the exploration never drew them or their arguments; each one's [`unprobed_reason`](#unprobed-reason) says which. Those endpoints do not count toward `endpoints_unreached`. |
@@ -239,9 +265,10 @@ Each cause's `remedy`, as `vocabulary.signal_causes` carries it:
 | `no_responses` | Check that the target is up and that the run's base URL points at it, then run again. |
 | `requests_unanswered` | Raise the request timeout or lower the concurrency, then run again. |
 | `credentials_refused` | Give the run identities whose credentials the target accepts, then run again. |
+| `identities_retired` | Declare how each retired identity logs in so the run renews its session, or mark the operation the run suspects of ending it so it runs last, then run again. |
 | `endpoints_excluded` | Read why each endpoint was excluded, fix what that names in the spec, then run again. |
 | `contracts_unproduced` | Read why the producer left each endpoint without rules, fix what that names, then run again. |
-| `withheld_by_safety_guard` | Allow side effects, against a target that may be written to, to send what was held back. |
+| `withheld_by_safety_guard` | Set allow_side_effects, against a target that may be written to, to send what a risk held back; to send an operation the project asked to skip, change its entry under sessions.operations. |
 | `access_policy_undeclared` | Declare who may call those endpoints, then run the auth mode again. |
 | `access_preconditions_unmet` | Read each endpoint's unprobed reason and give the run what it names, such as an identity holding the role. |
 | `stateful_endpoints_unsent` | Read each endpoint's unprobed reason and give the stateful run what it names, such as more examples per endpoint. |
@@ -253,6 +280,114 @@ Each cause's `remedy`, as `vocabulary.signal_causes` carries it:
 The signal and its causes are derived from the run's facts, both for the report
 a run answers with and when a stored run is read, so the persistence layer
 keeps no column for them.
+
+## `run.identities` { #run-identities }
+
+What each valid identity's credential went through over the run, one entry per
+identity the run checked before its first request, in the order the identities
+file declares them ([Identities and sessions](../../specforge-engine/sessions.md)).
+In the report document's `run` and in `get_run`'s `identities`. `[]` for a
+replay, which checks nothing, for a run without valid identities, and for a run
+stored before identities were kept. No credential value ever comes back: an
+endpoint is named by its `method` and `path`, never by the URL or the headers it
+was sent with.
+
+| Field | What it says |
+| --- | --- |
+| `label` | The identity's label. |
+| `standing` | What the check before the run found ([below](#identity-standing)). |
+| `unchecked_reason` | Why the credential went into the run unchecked ([below](#unchecked-reason)); `null` when `standing` is `accepted`. |
+| `witness` | `{method, path}`: the request the run re-sends to tell whether the credential still works, as it stood at the end, the check's or one learned from a read answered `2xx`; `null` without one. |
+| `retired` | `true` when the target stopped accepting the credential mid-run, even on its witness, and the run went on without the identity, as `credential_lost` announced. |
+| `suspect` | `{method, path, identity, marked}`: the operation suspected of ending its session, the last write that succeeded under that identity before the credential died, or under any identity when it sent none, and the identity that sent it; `marked` is `true` when it was already known to end the session it is sent under. `null` when the identity was not retired or no write is suspected. |
+| `renewals` | How many times the run renewed the identity's session: it declared a login and the run logged it in again when its credential died. |
+| `session_requests` | The requests the run sent under the identity to check its credential, before the run and while it ran; never part of `metrics.total_requests`. |
+
+```json
+"identities":[{"label":"reader","standing":"accepted","unchecked_reason":null,
+  "witness":{"method":"GET","path":"/session/me"},"retired":true,
+  "suspect":{"method":"POST","path":"/session/logout","identity":"reader","marked":true},
+  "renewals":0,"session_requests":2}]
+```
+
+### `run.identities[].standing` { #identity-standing }
+
+Whether the target was seen to know an identity's credential before the run.
+`vocabulary.identity_standings` carries each with its label.
+
+| Value | Label | Meaning |
+| --- | --- | --- |
+| `accepted` | Accepted | The target answered the credential's check with a success, or with a `403` that shows it knows the caller. |
+| `unchecked` | Unchecked | The credential went into the run without being seen to work; `unchecked_reason` says why. |
+
+### `run.identities[].unchecked_reason` { #unchecked-reason }
+
+Why an identity's credential went into the run unchecked.
+`vocabulary.unchecked_reasons` carries each with its label.
+
+| Value | Label | Meaning |
+| --- | --- | --- |
+| `no_witness` | No request to check it on | No endpoint of the run could check it: none is a read that requires authentication and takes no input, or every one tried answered something that proves nothing. |
+| `no_credentials` | No credentials | The identity sends no credential to check. |
+| `target_unanswered` | Target did not answer | The target did not answer the check. |
+
+A credential every request tried refused with `401` never goes in: the run is
+refused [`IDENTITY_REJECTED`](errors.md#identity-rejected).
+
+## `credential_lost.outcome` { #credential-outcome }
+
+What became of an identity whose credential died mid-run, in the
+[`credential_lost`](events.md#the-event-catalog) event.
+`vocabulary.credential_outcomes` carries each with its label.
+
+| Value | Label | Meaning |
+| --- | --- | --- |
+| `retired` | Retired | The run goes on without the identity; once no identity is left it stops exploring with a `credentials_lost` cut. |
+| `renewed` | Renewed | The identity declared a login, the run logged it in again, and it goes on with the credential it renewed. |
+
+## `endpoints[].ends_session` { #ends-session }
+
+Whether the run took the endpoint as an operation that ends the caller's session
+(a logout, a token revocation, a password change), what it did with it and who
+said so ([Operations that end the session](../../specforge-engine/session-endings.md)).
+In `get_run` and the report document's `endpoints`: `{disposition, source}`, on
+the entry of every endpoint of the run, probed, held back or never reached. `null`
+when nobody said the endpoint ends the session, and for a run stored before it was
+kept. A detection a project disagrees with is corrected with the
+[`sessions.operations`](../configuration.md#the-options) option, which turns its
+`source` into `user`.
+
+`disposition`, what the run did with it; `vocabulary.session_dispositions` carries
+each with its label:
+
+| Value | Label | Meaning |
+| --- | --- | --- |
+| `last` | Runs last | The endpoint ends the session and runs after the endpoints that keep it: in a final round of its own in `stateless` and `performance`, last in `auth` and `resilience`, and in final passes of its own, with a budget of their own, in `stateful`. A `stateless`, `performance` or `stateful` run checks its identities again before that round and before confirming it. A run without an identity that sends a credential keeps the endpoint in its usual place. What the model or the names say, unless the project says otherwise. |
+| `skip` | Skipped | The endpoint ends the session and the project asked for it to be left unsent: the safety guard holds it back in every mode but `replay`, `allow_side_effects` or not, its `held_back_by` [`skipped_by_project`](#hold-reason). |
+| `keep` | Kept | The project said the endpoint does not end the session after all: it is sent like any other. |
+
+`source`, who said it; `vocabulary.session_ending_sources` carries each with its
+label:
+
+| Value | Label | Meaning |
+| --- | --- | --- |
+| `user` | Declared by you | The project declared it, under `sessions.operations`. |
+| `model` | Read from the code | The producer read it from the code. |
+| `assumed` | Assumed from its name | The core assumed it from the operation's name, with nothing else saying so. |
+
+## `endpoints[].held_back_by` { #hold-reason }
+
+Why the safety guard kept an endpoint, or a transition to one, from being sent.
+`vocabulary.hold_reasons` carries each with its label, and each mode's
+[`holds_back`](fuzz-options.md#holds-back) lists the ones it applies.
+
+| Value | Label | Held in | Sent by |
+| --- | --- | --- | --- |
+| `external_side_effects` | External side effects | every mode but `replay` | `allow_side_effects` |
+| `skipped_by_project` | Skipped by the project | every mode but `replay` | `sessions.operations`: only the project sends an operation it asked to skip, one whose [`ends_session.disposition`](#ends-session) is `skip` |
+| `write_operation` | Write operation | `performance`, `resilience` | `allow_side_effects` |
+| `assumed_write` | Assumed write | `performance`, `resilience` | `allow_side_effects`, or a producer whose contract judges the endpoint no write |
+| `unsafe_method_outside_run` | Unsafe method outside the run | `stateful`, a transition to an endpoint outside the run | `allow_side_effects` |
 
 ## `endpoints[].load_profile[].degraded` { #load-step-degraded }
 

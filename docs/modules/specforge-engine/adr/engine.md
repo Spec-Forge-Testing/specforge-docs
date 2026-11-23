@@ -267,7 +267,7 @@ raises.
 
 ## ADR-035 — Exploration state is run-scoped; the liveness probe is shared across endpoints { #adr-035 }
 
-**Status:** accepted · `runtime/fuzzers/stateless/state.py`, `runtime/fuzzers/stateless/folding.py`
+**Status:** accepted · Refined by [ADR-223](#adr-223) · `runtime/fuzzers/stateless/state.py`, `runtime/fuzzers/stateless/folding.py`
 
 ### Context
 
@@ -840,7 +840,7 @@ another oracle has a rule to name.
 
 ## ADR-050 — Access control is declared by the producer and checked by a dormant oracle woken by the auth runner { #adr-050 }
 
-**Status:** accepted · Superseded in part by [ADR-102](#adr-102) · Extends [ADR-049](#adr-049) · `specforge_contracts/access.py`, `models/runtime/access.py`, `runtime/oracles/access_control.py`, `runtime/oracles/precedence.py`, `runtime/runners/auth/`, `models/execution_mode.py`
+**Status:** accepted · Superseded in part by [ADR-102](#adr-102), [ADR-222](runners.md#adr-222) · Extends [ADR-049](#adr-049) · `specforge_contracts/access.py`, `models/runtime/access.py`, `runtime/oracles/access_control.py`, `runtime/oracles/precedence.py`, `runtime/runners/auth/`, `models/execution_mode.py`
 
 ### Context
 
@@ -990,7 +990,7 @@ socket is opened. No new flag or mode appears — the mode is still
 
 ## ADR-053 — Role-restricted access is a fourth kernel policy, crossed against the roles the user's identities declare { #adr-053 }
 
-**Status:** accepted · Superseded in part by [ADR-102](#adr-102), [ADR-212](runners.md#adr-212) · Extends [ADR-050](#adr-050) · `specforge_contracts/access.py`, `models/runtime/execution.py`, `models/runtime/access.py`, `runtime/runners/auth/`, `runtime/oracles/access_control.py`, `exceptions.py`
+**Status:** accepted · Superseded in part by [ADR-102](#adr-102), [ADR-212](runners.md#adr-212), [ADR-222](runners.md#adr-222) · Extends [ADR-050](#adr-050) · `specforge_contracts/access.py`, `models/runtime/execution.py`, `models/runtime/access.py`, `runtime/runners/auth/`, `runtime/oracles/access_control.py`, `exceptions.py`
 
 ### Context
 
@@ -1953,7 +1953,7 @@ key beyond the added status field changes, and the body remains outside it.
 
 ## ADR-066 — The stateful mode shares the liveness monitor and cuts a dead target run-wide in one streak, with the verdict carried in the outcome { #adr-066 }
 
-**Status:** accepted · `runtime/http/liveness.py`, `runtime/fuzzers/stateful/liveness_watch.py`, `runtime/fuzzers/stateful/collector.py`, `runtime/fuzzers/stateful/probes.py`, `runtime/fuzzers/stateful/rule.py`, `runtime/fuzzers/stateful/supervisor.py`, `runtime/fuzzers/stateful/truncation.py`, `runtime/runners/stateful.py`, `models/runtime/results.py`
+**Status:** accepted · Refined by [ADR-223](#adr-223) · `runtime/http/liveness.py`, `runtime/fuzzers/stateful/liveness_watch.py`, `runtime/fuzzers/stateful/collector.py`, `runtime/fuzzers/stateful/probes.py`, `runtime/fuzzers/stateful/rule.py`, `runtime/fuzzers/stateful/supervisor.py`, `runtime/fuzzers/stateful/truncation.py`, `runtime/runners/stateful.py`, `models/runtime/results.py`
 
 ### Context
 
@@ -3763,3 +3763,57 @@ Such a run measures only the safe endpoints until the operator either declares
 that judges it) or passes `allow_side_effects`. The prompt asks the inference
 producer to always state `write_operation`, so an inferred contract normally
 judges it. `stateless`, `stateful` and `auth` runs are unchanged.
+
+## ADR-223 — The liveness probe sends three spaced `HEAD`s before it calls a target down, and a silent known-good request falls back to it { #adr-223 }
+
+**Status:** accepted · Refines [ADR-035](#adr-035), [ADR-066](#adr-066) · `runtime/http/constants.py`, `runtime/http/orchestrator.py`, `runtime/fuzzers/stateless/folding.py`
+
+### Context
+
+Every mode decides that a target is down through one question: does it still
+answer? The probe asked it once. A single `HEAD` lost to a target that was
+restarting a worker, pausing for a garbage collection or dropping one connection
+ended the whole run `aborted` with `target_down`, and every finding it had not
+confirmed yet became `unverified`. The stateless fold asked it even more
+narrowly behind a streak of `5xx`: it re-sent the last known-good request once,
+and a lost answer to that one request was enough to cut the run, without asking
+the base URL at all.
+
+### Decision
+
+**The probe asks three times.** `probe_liveness()` sends up to
+`LIVENESS_PROBE_ATTEMPTS` (3) `HEAD`s to the base URL and calls the target alive
+at the first answer; any response counts, a `5xx` included. Between attempts it
+sleeps the transport's exponential backoff with its own base,
+`LIVENESS_PROBE_BACKOFF_BASE_S` (0.25 s), plus the usual jitter: 0.5 to 1.5 s, then
+1 to 2 s. The sleep ends at once when the run is cancelled.
+
+**A silent known-good request falls back to the probe.** Behind a streak of `5xx`
+the stateless fold still re-sends the known-good request first, since an answer to
+it proves the target serves real requests. When that request gets no answer, the
+fold asks the probe, and cuts `TARGET_DOWN` only when the probe gets none either.
+
+**The spacing is a constant of the transport.** It is not a run option: it does
+not change what a run finds on a live target, only how sure the run is before it
+gives up on a dead one, and every mode reads the same probe.
+
+### Rejected
+
+- **Retrying the probe with the run's retry policy.** That policy retries only
+  some statuses and a connect timeout, and its backoff base is a run setting that
+  can be zero; the probe needs a pause that holds whatever the run's settings are.
+- **More attempts, or longer pauses.** Each attempt can wait a full request
+  timeout against a target that hangs, so three attempts already cost up to three
+  timeouts. A target that has not answered in that window is not coming back
+  within the run.
+- **Ending on the known-good request alone.** One lost answer is the case the
+  probe exists to tell apart; ending on it skips the question.
+
+### Consequences
+
+A dead target is declared down a little later: within a few seconds when its
+connections are refused, and within three request timeouts plus 1.5 to 3.5 s of
+pauses when it hangs, about 33 s at the default 10 s timeout. A target that misses
+one answer keeps its run, and the run keeps the findings it would otherwise have
+left unverified. Neither the known-good request nor the `HEAD`s enter the trace or
+the request totals.

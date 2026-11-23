@@ -177,7 +177,12 @@ One property is the exception: `json_schema` is the single raw
 `model_dump(by_alias=True, exclude_none=True)`. It is used in exactly two
 places — the zone's documentation schema (`build_zone_schema`) and the
 `hypothesis-jsonschema` fallback for constructs the compiler does not build
-directly (`anyOf`, `oneOf`, `allOf`, `$ref`).
+directly (`anyOf`, `oneOf`, `allOf`, `$ref`, or a field that declares neither a
+`type` nor an `enum`). The contract carries `required` as a boolean on each field,
+where JSON Schema spells it as a list on the parent object, so the fallback drops
+that boolean at every depth (`properties`, `items`, `additionalProperties`,
+`allOf`, `oneOf`, `anyOf`) before it hands the schema over: a required field with
+no `type` compiles and draws any JSON value.
 
 ## The phase registry
 

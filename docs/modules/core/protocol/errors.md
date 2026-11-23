@@ -165,6 +165,7 @@ when the analysis named none.
 | --- | --- |
 | `NO_BASE_URL` | A run was asked for with no target base URL |
 | `IDENTITIES_INVALID` | The declared identities are malformed |
+| `IDENTITY_REJECTED` | The target refused an identity's credential, or its login, before the run sent its first request ([details](#identity-rejected)) |
 | `UNSUPPORTED_SCHEMA` | The contract's schema version is not supported |
 | `NO_COMPILABLE_ENDPOINTS` | No endpoint could be compiled into a strategy |
 | `CONTRACT_PRODUCER_FAILED` | A contract producer could not honor an explicit request. A `producer.source_repo` that is not a directory is one, on `fuzz` and `estimate_inference` and in `run_pipeline`'s `inference` stage, before any inference: `data.source` names the path and `data.detail` is `not a directory`. A capped `generate_contract` whose route discovery its `max_cost_usd` cannot hold is another, before the discovery call the cap cannot hold is sent and with nothing written: `data.source` is `route discovery` and `data.detail` the reason ([its cap](operations.md#generate-contract-cap)) |
@@ -194,19 +195,52 @@ marks that field.
 "data":{"code":"REQUIREMENT_UNMET","requirement":"access_policies","parameter":"producer"}
 ```
 
+#### `IDENTITY_REJECTED` { #identity-rejected }
+
+The run checks every valid identity's credential on a request it must pass before
+the run sends anything, and logs in first every identity that declares a login
+([Identities and sessions](../../specforge-engine/sessions.md#check)). When the
+target refuses one, the run is refused: before its contracts are produced when it
+has a producer, so no inference is paid for, and before its first request
+otherwise. No credential, password or token value ever comes back.
+
+| `data` field | Meaning |
+| --- | --- |
+| `identity` | The label of the identity refused. |
+| `endpoint` | `{method, path}`: the request that refused it; for a login, the login's. |
+| `status` | The status it answered, or `null` when it got no answer. |
+| `cause` | Why (below). |
+
+| `data.cause` | When |
+| --- | --- |
+| `credential_refused` | Every request tried to witness the credential answered `401`. |
+| `login_refused` | The identity's login answered other than `2xx`. |
+| `login_token_missing` | The login answered `2xx` without a non-empty text where the identity says the token is. |
+| `login_unanswered` | The login got no answer; `status` is `null`. |
+
+```json
+"data":{"code":"IDENTITY_REJECTED","identity":"alice","endpoint":{"method":"GET","path":"/me"},"status":401,"cause":"credential_refused"}
+```
+
 #### `NOTHING_VERIFIED` { #nothing-verified }
 
 A run whose contracts are produced and whose engine would verify no endpoint is
 refused rather than reported `completed`. `data.cause` says why;
-`data.endpoints` lists each endpoint as `{endpoint_id, reason}`; `data.parameter`
-names the parameter that lifts it, when one does. Inferred contracts stay in the
+`data.endpoints` lists each endpoint as `{endpoint_id, reason}`. For `held_back`,
+`data.parameter` names the run parameter that sends what was held, and
+`data.option` the project option that does, each when something was held for a
+hold it lifts; a run held for both carries both. Inferred contracts stay in the
 cache, so asking again does not pay for them again
 ([ADR-213](../adr/core.md#adr-213)).
 
-| `data.cause` | When | Each endpoint's `reason` | `data.parameter` |
+| `data.cause` | When | Each endpoint's `reason` | What sends them |
 | --- | --- | --- | --- |
-| `access_uncrossable` | An `auth` run crossed no endpoint: none that is not public declares an access policy, or none it declares can be crossed. Decided after the run's walk, so the provisioning requests it sent trying to create owner resources may already be on the wire and in the trace | Its [`unprobed_reason`](vocabularies.md#unprobed-reason) | absent: a producer whose contracts declare crossable policies lifts it |
-| `held_back` | The safety guard holds back every endpoint of the run; nothing is sent | Its `hold_reason` | `allow_side_effects` |
+| `access_uncrossable` | An `auth` run crossed no endpoint: none that is not public declares an access policy, or none it declares can be crossed. Decided after the run's walk, so the provisioning requests it sent trying to create owner resources may already be on the wire and in the trace | Its [`unprobed_reason`](vocabularies.md#unprobed-reason) | neither field: a producer whose contracts declare crossable policies lifts it |
+| `held_back` | The safety guard holds back every endpoint of the run; nothing is sent | Its `hold_reason` | `data.parameter` `allow_side_effects` for every hold but `skipped_by_project`; `data.option` `sessions.operations` for `skipped_by_project`, an operation the project asked to skip ([ADR-226](../../specforge-engine/adr/sessions.md#adr-226)) |
+
+```json
+"data":{"code":"NOTHING_VERIFIED","cause":"held_back","endpoints":[{"endpoint_id":"POST:/auth/logout","reason":"skipped_by_project"}],"option":"sessions.operations"}
+```
 
 `vocabulary.nothing_verified_causes` carries each cause with its label.
 

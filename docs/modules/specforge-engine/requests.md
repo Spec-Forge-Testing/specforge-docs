@@ -35,7 +35,7 @@ and `zone_wire(zone, media_type)` picks one
 | `ZoneWire` | Zones | What it carries |
 |---|---|---|
 | `STRUCTURED` | a body with a JSON media type, or none | types and `null`, as such |
-| `TEXT` | query, header, a body of any other media type (form, multipart) | every value as text; `None` is the field left out |
+| `TEXT` | query, header, a body of any other media type (form, multipart, `text/*`) | every value as text; `None` is the field left out |
 | `SEGMENT` | path | text that can be neither empty nor left out |
 
 A media type is JSON when its essence is `application/json` or ends in `+json`
@@ -163,14 +163,17 @@ declares is JSON.
 
 ### Encoders
 
-`runtime/http/body_encoders.py` writes the body for its media type. `BODY_ENCODERS`
-is a closed table keyed by the media type's essence:
+`runtime/http/body_encoders.py` writes the body for its media type. Two families
+resolve first, by the media type's shape: every JSON media type, and every `text/*`
+one. The other media types are looked up in `BODY_ENCODERS`, a closed table keyed
+by the media type's essence:
 
 | Media type | Client arguments | `Content-Type` sent | Unsendable when |
 |---|---|---|---|
 | JSON (`application/json`, any `+json`) | `json=` | the declared media type, as declared | the body holds a value JSON cannot encode |
 | `application/x-www-form-urlencoded` | `data=`, each field as text | the declared media type | the body is not an object, or a field cannot be encoded |
 | `multipart/form-data` | `files=`, every field as a part; only a file field carries a filename | none: the client writes it with the boundary | the body is not an object, has no field to send, or a field cannot be encoded |
+| text (`text/plain`, `text/csv`, any `text/*`) | `content=`, the string encoded in the media type's `charset`, UTF-8 when it declares none | the declared media type, as declared | the body is not a string, or holds a character the charset cannot encode (an unknown charset included) |
 
 On a form or multipart body a string goes as drawn and any other value as its JSON
 text (`true`, `3`); an array field is sent once per non-null item. A media type with no encoder makes the request an

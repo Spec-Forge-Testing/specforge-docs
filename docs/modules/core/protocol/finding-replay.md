@@ -49,7 +49,8 @@ ask for no consent of their own: they are reads the recording already made.
 !!! note "Not the engine's witnesses"
     A replay witness is a recorded read sent again. It is unrelated to the
     [inferred-rule witnesses](../../specforge-engine/witnesses.md) the engine draws
-    while fuzzing.
+    while fuzzing, and to the request that witnesses an identity's
+    [credential](../../specforge-engine/sessions.md#check).
 
 The answer reports what the witnesses did:
 

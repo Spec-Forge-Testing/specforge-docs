@@ -97,7 +97,9 @@ The first run of a plan traces each endpoint to its handler in your code before 
 with the headers they log in with. Every endpoint that needs a login is called as them, in any
 mode, and `auth` needs at least one. Without users, the row says how many endpoints need a login
 and that they answer 401. Credentials never leave your machine. Users say who calls; who may do
-what is part of the rules.
+what is part of the rules. A user may also name its organization with `tenant`; then `auth`
+checks that what only its owner may read stays inside the owner's organization. Name a tenant
+on every user with valid credentials or on none: a file that names it only on some is refused.
 
 **Allow side effects** is one switch for every run of the plan. What it lets through is described
 in [Side effects](llm-rules-and-side-effects.md#side-effects). A [saved preset](saved-presets.md#side-effects-saved-in-a-preset)

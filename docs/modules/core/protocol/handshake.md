@@ -4,7 +4,7 @@
 refused `HANDSHAKE_REQUIRED`.
 
 ```json
-{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.2.9"}}
+{"jsonrpc":"2.0","id":1,"method":"hello","params":{"protocol_version":"0.2.10"}}
 ```
 
 The response carries the protocol version, the server's identity, what this
@@ -13,7 +13,7 @@ in, and the options a run can be asked for:
 
 ```json
 {"jsonrpc":"2.0","id":1,"result":{
-  "protocol_version":"0.2.9",
+  "protocol_version":"0.2.10",
   "server":{"name":"specforge-core","version":"…","frozen":false},
   "capabilities":{…},
   "catalog":{…},
@@ -55,7 +55,7 @@ lists it among the result's required fields.
 | `target_down_verdicts` | `{value, label}` | Every [`target_down_verdict`](vocabularies.md#target-down-verdict) |
 | `finding_states` | `{value, label}` | Every [state](vocabularies.md#finding-state) a finding is reported in: `confirmed`, `llm_suspicion`, `flaky`, `unverified`, `refuted` |
 | `unprobed_reasons` | `{value, label}` | Every [`unprobed_reason`](vocabularies.md#unprobed-reason) |
-| `hold_reasons` | `{value, label}` | Every value of `held_back_by` |
+| `hold_reasons` | `{value, label}` | Every value of [`held_back_by`](vocabularies.md#hold-reason) |
 | `exclusion_dispositions` | `{value, label}` | The core's own: every [`producer_exclusions[].disposition`](vocabularies.md#producer-exclusion-disposition), plus `aborted`, a failed contract that stopped the run |
 | `signal_causes` | `{value, label, remedy}` | The core's own: every [`run.signal_causes`](vocabularies.md#signal-causes) value, in the order they render, each with a label short enough for a verdict line and a `remedy`, one sentence on the next thing to do about it |
 | `attack_families` | `{value, label, summary}` | Every [attack family](vocabularies.md#attack-family) a request's `attack_family` or a strategy's `attack_families` names, in declaration order, with a one-sentence `summary` of the payloads it sends |
@@ -66,6 +66,11 @@ lists it among the result's required fields.
 | `unexercised_reasons` | `{value, label, summary}` | The core's own, mirroring the engine's: every [`contract_usage.items[].unexercised.reason`](vocabularies.md#unexercised-reason), in their order of precedence, with a `summary` in plain words |
 | `unjudged_reasons` | `{value, label, summary}` | The core's own, mirroring the engine's: every [`contract_usage.items[].unjudged_because`](vocabularies.md#unjudged-reason), in their order of precedence, with a `summary` in plain words |
 | `unexercised_details` | `{reason, value, label, summary}` | The core's own, mirroring the engine's: every closed-vocabulary [`unexercised.detail`](vocabularies.md#unexercised-detail) with no list of its own, those of `witness_not_found` and `never_judged`. Looked up by the pair (`reason`, `value`): the same token can mean different things under two reasons. A pair a client does not know reads as the raw token |
+| `identity_standings` | `{value, label}` | Every [`run.identities[].standing`](vocabularies.md#identity-standing), in declaration order |
+| `unchecked_reasons` | `{value, label}` | Every [`run.identities[].unchecked_reason`](vocabularies.md#unchecked-reason), in declaration order |
+| `credential_outcomes` | `{value, label}` | Every [`outcome`](vocabularies.md#credential-outcome) of a `credential_lost` event, in declaration order |
+| `session_dispositions` | `{value, label}` | Every [`endpoints[].ends_session.disposition`](vocabularies.md#ends-session), in declaration order |
+| `session_ending_sources` | `{value, label}` | Every [`endpoints[].ends_session.source`](vocabularies.md#ends-session), in declaration order |
 
 Every list but `exclusion_dispositions`, `signal_causes`, `producer_note_kinds`,
 `nothing_verified_causes`, `contract_item_kinds`, `unexercised_reasons`,
@@ -88,8 +93,8 @@ keys, the effects matrix and how it is derived are on
 **The core serves a range within its own series.** A client is served when its
 `protocol_version` has the core's `major.minor` and a patch between a declared
 floor and the core's own. Each part compares as a number, never as text:
-`0.1.10` is newer than `0.1.9`. This core speaks `0.2.9` and serves `0.2.0`
-up to `0.2.9`: no `0.1.x` client is served. It always answers `hello` with its
+`0.1.10` is newer than `0.1.9`. This core speaks `0.2.10` and serves `0.2.0`
+up to `0.2.10`: no `0.1.x` client is served. It always answers `hello` with its
 own version, and a frontend ignores the keys it does not know.
 
 Anything else — another series, a patch outside the range, or a
@@ -136,9 +141,70 @@ neither. See [ADR-095](../adr/protocol.md#adr-095).
 ## Changelog
 
 The report document that `fuzz`, `replay` and `run_pipeline` answer with is
-`schema_version` 1.30. The protocol's own README holds the full entry for each
+`schema_version` 1.31. The protocol's own README holds the full entry for each
 version; the lines below are the summary.
 
+- **0.2.10** — A run looks after each identity's session: it checks every
+  credential before its first request, tells when one dies mid-run, logs an
+  identity in again when it declares how, and otherwise goes on without it; an
+  operation that ends the session runs after the rest, or never when the project
+  says so. **Additive on the wire**: this core serves `0.2.0` up to `0.2.10`. It
+  ships with report `1.31`
+  ([Identities and sessions](../../specforge-engine/sessions.md),
+  [ADR-224](../../specforge-engine/adr/sessions.md#adr-224) to
+  [ADR-228](../../specforge-engine/adr/sessions.md#adr-228)).
+    - *Added:* error [`IDENTITY_REJECTED`](errors.md#identity-rejected): a run
+      whose identity's credential, or login, the target refuses is refused before
+      its first request, and before its contracts are produced when it has a
+      producer. `data`: `identity`, `endpoint`, `status`, `cause`.
+    - *Added:* event [`credential_lost`](events.md#the-event-catalog) (`identity`,
+      `outcome`, `after`, `after_identity`), with `vocabulary.credential_outcomes`;
+      the `truncation.reason` [`credentials_lost`](vocabularies.md#truncation-reason);
+      the signal cause `identities_retired`; and
+      [`coverage.endpoints_never_succeeded`](vocabularies.md#endpoints-never-succeeded),
+      the targeted endpoints that got ten responses or more and no `2xx` or `3xx`,
+      which informs without degrading the run.
+    - *Added:* [`run.identities[]`](vocabularies.md#run-identities) in the report
+      document and `get_run`, with `vocabulary.identity_standings` and
+      `vocabulary.unchecked_reasons`; never a credential value.
+    - *Added:* [`endpoints[].ends_session`](vocabularies.md#ends-session)
+      (`{disposition, source}` or `null`), with `vocabulary.session_dispositions`
+      and `vocabulary.session_ending_sources`; a contract's risk may say
+      `ends_session`, and an operation nobody judged is assumed from its method and
+      names.
+    - *Added:* config group `sessions`, with
+      [`sessions.operations`](../configuration.md#the-options): `"<METHOD> /path"`
+      to `last`, `skip` or `keep`, refused `INVALID_PARAMS` for a key not written
+      that way, a value outside the three, or an operation the contract lacks.
+    - *Added:* hold reason [`skipped_by_project`](vocabularies.md#hold-reason),
+      second in `vocabulary.hold_reasons` and in every mode's `holds_back`:
+      `allow_side_effects` does not lift it, `holds_lifted_by` lifts every hold but
+      it, and a saved preset that keeps `allow_side_effects` still lists it.
+      `NOTHING_VERIFIED`'s `data.option` and the `degraded_signal`'s
+      `details.option` name `sessions.operations` beside `parameter`.
+    - *Added:* [`propose_login`](operations.md#propose-login) (family `contract`),
+      and an identity's `login` block in the identities file; a run logs it in
+      before its first request in every mode, `replay` included.
+    - *Added:* `producer_notes[].kind` `declared_login_unseeded`; a declared login
+      is sent as the seed case `declared_login.<label>` with its secrets as
+      `specforge-secret(/<label>/<field path>)` references resolved only on the wire.
+    - *Changed:* a run watches each identity's credential and renews or retires it
+      when its witness is refused; a retired identity sends nothing more, and its
+      findings stay `unverified` while the rest is confirmed.
+    - *Changed:* the operations marked `last` run after the rest when an identity
+      sends a credential, behind a re-check of the identities.
+    - *Changed:* a replay logs an identity in again where the recorded run renewed
+      its session.
+    - *Changed:* the engine keeps no cookies between requests, and a credential the
+      run knows is blanked (`***`) from every response it keeps whose request did
+      not send it, and from a replay's captured server log.
+
+- **Report 1.31** — Additive; it ships with protocol `0.2.10`. Adds
+  `run.identities`, `endpoints[].ends_session`, the `truncation.reason`
+  `credentials_lost`, the signal cause `identities_retired`,
+  `coverage.endpoints_never_succeeded`, the `held_back_by` value
+  `skipped_by_project`, and
+  the `producer_notes[].kind` `declared_login_unseeded`.
 - **0.2.9** — A model's contract is read for what it can back: a rule it does
   not ground, or that its own seed cases contradict, is an LLM suspicion, and a
   transition the specification does not allow is left out. **Additive on the

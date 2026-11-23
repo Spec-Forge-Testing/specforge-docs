@@ -218,3 +218,18 @@ file. `--mode auth` uses it to check endpoints restricted to a role: it sends th
 every identity that lacks the role and flags any that succeeds. Keep `role` above
 `[identities.headers]`, and spell it exactly as the endpoint requires it — roles are
 case-sensitive and have no hierarchy.
+
+The optional `tenant` names the organization an identity belongs to (`tenant = "acme"`, also
+above `[identities.headers]`). When your identities declare one, `--mode auth` checks that a
+resource only its owner may read stays inside the owner's organization: it re-sends the
+owner's request as each identity of another tenant and flags any that succeeds, and it never
+treats a colleague of the same tenant as an intruder. Declare a tenant on every identity with
+valid credentials, or on none; a file that declares it only on some is refused.
+
+A credential is a session the run looks after. An identity may declare a `login` instead of a
+fixed token, and the run logs it in itself. Before the first request it checks every
+credential on a harmless request the credential must pass, and refuses the run when the target
+rejects one. While it runs, a credential that starts drawing `401`s is checked again: renewed
+by logging in again when the identity can, retired otherwise. Operations that end a session,
+such as a logout, run after the others, or never when your `specforge.toml` says so. See
+[Identities and sessions](identities-and-sessions.md).

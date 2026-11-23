@@ -26,6 +26,14 @@ run keeps its original order. The stateless runner then orders them by state flo
 producers before their consumers and deletes last, with risk breaking ties
 ([Run depth](run-depth.md#producers-first-deletes-last)).
 
+Every mode logs in the identities that declare a login before its first request.
+Every mode but `replay` then checks each valid identity's credential on a witness
+request and watches it over the run ([Identities and sessions](sessions.md)).
+When a valid identity sends a credential, the endpoints that end the session go
+after the others: a final round in
+`stateless` and `performance`, final passes in `stateful`, the end of the order in
+`auth` and `resilience` ([Operations that end the session](session-endings.md)).
+
 ## Options per mode
 
 | Mode | Options DTO | Fields |
@@ -332,12 +340,22 @@ the two that applies, the breach first. Consent is per run, never inherited from
 other recording the parameter is accepted and changes nothing, and it never
 alters the recorded configuration the engine replays under.
 
+### Sessions in a replay { #replay-sessions }
+
+A replay logs in every identity that declares a login when it starts, and logs it
+in again just before the first recorded request sent at or after each renewal the
+recorded run made (`ExecutionTrace.session_renewals`), so the requests after a
+recorded sign-out meet a live credential. It checks no credential, watches none
+and retires no identity; a renewal the login refuses is logged and the replay
+goes on ([Identities and sessions](sessions.md#replay)).
+
 ### Stopping on a dead target
 
 A replay does not always end `completed`. A `TargetLivenessMonitor` watches the
 stream of results as they come back. A streak of target failures
 (`timeout`, `availability` or `connection_dropped`) reaching `MAX_INFRA_FAILURES`
-(5) trips a single liveness probe — a `HEAD` to the base URL:
+(5) trips the liveness probe — up to `LIVENESS_PROBE_ATTEMPTS` (3) `HEAD`s to the
+base URL, spaced by the backoff ([Target down](engine-internals.md#liveness-probe)):
 
 - if the target is dead, the replay stops re-sending and ends `aborted` with the
   truncation reason `target_down`;
@@ -699,6 +717,18 @@ an `owner_only` endpoint the owner is always the first valid identity
 (`config.valid_identities[0]`); a `role_only` endpoint privileges every valid
 identity whose `role` equals its `required_role`, wherever it sits in the list.
 
+An identity may declare the `tenant` (organization) it belongs to. When the owner
+declares one, an `owner_only` endpoint is crossed **between tenants**: a valid
+identity is a caller only when it declares another tenant, so a colleague of the
+owner's tenant, who may legitimately share the resource, is never reported as an
+intruder. An invalid identity and the anonymous request cross it whatever the
+tenants. The core refuses an identities file that declares a tenant on some
+identities sending valid credentials and not on others (`IDENTITIES_INVALID`): a
+caller of unknown tenant could share the owner's, and its success would prove
+nothing ([ADR-222](adr/runners.md#adr-222)). Without tenants, every other identity
+crosses. `role_only` and `resilience` do not
+read the tenant.
+
 An identity declared with `credential = "invalid"` (see
 [the core REPL reference](../../user-guide/cli-reference.md#commands)) carries a token
 the target must reject — expired, revoked or garbage. Only the auth mode sends
@@ -747,7 +777,7 @@ sequenceDiagram
             AR->>Orch: provision the bundle chain, dependencies first (first identity)
             AR->>Cap: capture(response, production) → owner value | unprobed_reason
             AR->>Pl: write the value into the consuming zone/field
-            AR->>Orch: re-send under every other identity, and anonymously
+            AR->>Orch: re-send under every other identity (of another tenant, when declared), and anonymously
         else role_only
             AR->>Orch: provision what it acts on (first holder of the role)
             AR->>Orch: send under every identity lacking the role, and anonymously
@@ -771,7 +801,7 @@ runner does with the request depends on the policy:
 | Policy | What the runner sends |
 |---|---|
 | `authenticated` | one anonymous probe, with the config credential headers stripped so it is truly anonymous, plus one probe under **each** invalid identity's credential; the anonymous probe is skipped when one of those identities already sends no credential at all |
-| `owner_only` | provision the owner's resource under the **first** valid identity, capture the bundle value from the response, write it into the endpoint's consuming zone/field, then re-send under every **other** identity and once anonymously, unless one of them already sends no credential at all. Invalid identities cross as ordinary non-privileged callers |
+| `owner_only` | provision the owner's resource under the **first** valid identity, capture the bundle value from the response, write it into the endpoint's consuming zone/field, then re-send under every **other** identity and once anonymously, unless one of them already sends no credential at all. When the owner declares a `tenant`, a valid identity crosses only if it declares another tenant. Invalid identities cross as ordinary non-privileged callers |
 | `role_only` | provision each resource the endpoint consumes that the run can produce under the **first** valid identity holding the `required_role`, and write it into the request (a resource nothing produces keeps the simplest value its contract gives); then send under every valid identity whose `role` is **not** the `required_role` (an identity with no role included) and once anonymously. Holders of the role are never sent; when every identity holds it, only the anonymous request goes out. Invalid identities cross as ordinary role-less callers |
 
 A crossing is a finding when the `access_control` oracle sees a success for a
@@ -783,8 +813,9 @@ invalid identity is reported under the same `authenticated` rule, naming that
 identity; two invalid identities that both succeed produce two findings. The
 finding names the caller (`identity_label`) and the policy it broke as the rule;
 the credential is redacted like any other. With a single valid identity the
-`owner_only` cross is owner-versus-anonymous only. Roles compare as exact strings
-— no hierarchy, no case folding — and cross-tenant isolation is not expressible.
+`owner_only` cross is owner-versus-anonymous only, and so it is when no identity
+declares a tenant other than the owner's. Roles compare as exact strings — no
+hierarchy, no case folding.
 
 The `role_only` precondition exists because the comparison is exact: an identity
 file that spells the role `Admin` against a `required_role` of `admin` declares no

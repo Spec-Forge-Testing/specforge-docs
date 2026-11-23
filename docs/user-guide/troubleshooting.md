@@ -87,7 +87,13 @@ single owner of that answer per library.
 **Symptom.** A run stops early with *"Run aborted: the target stopped responding"*; the report
 marks it `aborted` (truncation reason `target_down`) and says the remaining endpoints were skipped.
 
-**Cause.** The live API at `--base-url` stopped answering while the run was exploring it.
+**Cause.** The live API at `--base-url` stopped answering while the run was exploring it. A
+streak of failed requests does not end a run by itself: the engine's liveness probe sends up
+to three `HEAD` requests to the base URL, a moment apart, and calls the target down only when
+none of them gets an answer. Any answer, a `5xx` included, counts as alive. Each `HEAD` waits up to the request
+timeout (`--timeout`, 10 seconds by default), and the pauses between them add 1.5 to 3.5
+seconds, so against an API that hangs the check takes up to about 33 seconds at the defaults;
+against a refused connection, a few seconds.
 
 **Fix.** Confirm the API is running and reachable at the exact `--base-url` you passed, then
 re-run. An aborted run is saved, so you can inspect what it reached before it was cut.
@@ -130,6 +136,84 @@ guarded endpoint as broken, so the run refuses instead.
 it, with that user's credentials — or correct the spelling of an existing one. Write `role`
 above `[identities.headers]`; below it, the key becomes a header. The list at the end of the
 message shows the roles the file did declare.
+
+## The identities file is refused: a tenant on only some identities
+
+**Symptom.** A run stops before sending anything with `IDENTITIES_INVALID` (in the core REPL,
+an *Invalid Identities File* panel), whose reason reads *"Declare a tenant on every identity with valid
+credentials in &lt;file&gt;, or on none; missing on: &lt;labels&gt;"*.
+
+**Cause.** Some identities declare a `tenant` and others that send valid credentials do not.
+With tenants, `--mode auth` crosses an owner's resource only between tenants; an identity whose
+tenant is unknown could belong to the owner's organization, so a success under it would prove
+nothing.
+
+**Fix.** Add a `tenant` to every identity the message lists, above `[identities.headers]`, or
+remove `tenant` from every identity. An anonymous entry (no headers) and one declared
+`credential = "invalid"` need none.
+
+## A run is refused: the target rejected an identity { #identity-rejected }
+
+**Symptom.** A run stops before sending anything with `IDENTITY_REJECTED`: *"The target
+rejected identity 'alice' (credential_refused): GET /me answered 401."* A run with a producer
+stops before producing any contract, so no inference is paid for.
+
+**Cause.** Before the run, every identity is checked on a request its credential must pass
+([Identities and sessions](identities-and-sessions.md#check)). The cause in parentheses says
+what failed:
+
+| Cause | What happened |
+| --- | --- |
+| `credential_refused` | Every request tried answered `401`: the token in `[identities.headers]` is expired, revoked or for another environment. |
+| `login_refused` | The identity's `login` answered other than `2xx`: wrong password, wrong path, or a body the login does not accept. |
+| `login_token_missing` | The login answered `2xx`, but `token_at` (or `token_cookie`) does not point at a non-empty text in its answer. |
+| `login_unanswered` | The login got no answer: check the base URL and the login's `path`. |
+
+**Fix.** Replace the identity's token, or declare a `login` so the run fetches a fresh one each
+time. For a login, send its request by hand with the same body and read where its answer
+carries the token.
+
+## A run is cut short: `credentials_lost` { #credentials-lost }
+
+**Symptom.** The run ends `truncated` with the reason `credentials_lost`, its signal `degraded`
+with `identities_retired`, and a client shows a `credential_lost` event naming an identity and
+the operation it happened after.
+
+**Cause.** Mid-run, the target stopped accepting the identities' credentials, even on the
+request each one had passed, and no identity could log in again. Most often a fuzzed logout,
+token revocation or password change ended the session. The report's **Identities** table names
+the suspect operation for each retired identity. Your API may be perfectly healthy.
+
+**Fix.** Either let the identity renew itself by declaring a `login`, or tell the run about the
+operation: in `specforge.toml`, `[sessions]` `operations = { "POST /auth/logout" = "last" }`
+runs it after everything else, and `"skip"` never sends it
+([Operations that end a session](identities-and-sessions.md#session-endings)). When the suspect
+is already `marked`, the run knew and ran it last, and a login is what keeps the identity.
+
+An identity with a fixed token in `[identities.headers]` cannot be renewed: the first operation
+of the final round that ends its session retires it, and the rest of that round may go
+unexplored, which the run reports as `credentials_lost` and `endpoints_unreached`. The run's
+remedy for `identities_retired` says it: *"Declare how each retired identity logs in so the run
+renews its session, or mark the operation the run suspects of ending it so it runs last, then
+run again."* A declared `login` lets the run log the identity in again and explore that round.
+What the run found anonymously or under a live identity is still confirmed; only what a
+retired identity found stays `unverified`.
+
+## Endpoints that never succeeded { #endpoints-never-succeeded }
+
+**Symptom.** The run summary says *"&lt;N&gt; answered every request with an error, never a 2xx or
+3xx"* and lists them as `Never succeeded:`; the HTML report has an **Endpoints that never
+succeeded** section, and `report.json` lists them in `coverage.endpoints_never_succeeded`. The
+run's signal is not degraded by it.
+
+**Cause.** An endpoint got ten responses or more and not one was a `2xx` or a `3xx`: the target
+refused everything the run sent there, so nothing past that refusal was verified. A `DELETE`
+or a `GET /items/{id}` whose ids never exist is the usual case. An `auth` or `resilience` run,
+which sends requests meant to be refused, never lists one.
+
+**Fix.** Give those endpoints data the target accepts: resources that exist (a producer whose
+contracts link the operation to the one that creates them, or a `stateful` run), and identities
+allowed to call them.
 
 ## `replay` refuses: credentials or target missing
 

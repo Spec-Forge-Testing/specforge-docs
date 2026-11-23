@@ -73,6 +73,7 @@ still uses the URL the file declares.
 | `get_endpoint` | contract | — |
 | `generate_contract` | project | `started`, `contract_*`, `finished`; cancellable. Writes an OpenAPI from the source code and loads it; see [below](#generate-contract) |
 | `estimate_contract_generation` | project | none; read-only. Prices `generate_contract` with `use_llm` and answers the `approval_token` it takes; calls no model ([below](#estimate-contract-generation)) |
+| `propose_login` | contract | none; read-only, no parameters. The operations the contract suggests an identity log in with ([below](#propose-login)) |
 
 ### Which endpoints need a login { #requires-auth }
 
@@ -173,6 +174,33 @@ ceiling, plus the refinement of the routes the scan finds.
 
 A client that prices and approves in one step calls it, shows the estimate, and
 sends `generate_contract` with the token, so the first call is never a refusal.
+
+### `propose_login` { #propose-login }
+
+`propose_login` answers `{proposals}`: the operations the contract suggests an
+identity log in with, for a client to prefill an identity's `login` table
+([Identities and sessions](../../../user-guide/identities-and-sessions.md#login)).
+Nothing is sent to the target and no state changes; nothing recognizable is
+`proposals: []`.
+
+| Field | What it holds |
+| --- | --- |
+| `method`, `path` | The operation, named as the `login` table names it. |
+| `media_type` | `application/json` or `application/x-www-form-urlencoded`. |
+| `body_fields` | The names of the body fields to fill, never a value: no example, default or enum of the schema travels. |
+| `token_at` | Where the answer's body holds the token, keys joined by dots (`data.token`). |
+| `token_cookie` | Always `null`. |
+| `send_as` | `Authorization: Bearer {token}`. |
+| `source` | `oauth2_password_flow` or `operation_names` (below). |
+
+The `oauth2_password_flow` proposals come first, in the order the document
+declares them, then the `operation_names` ones, in the order of the endpoints'
+numbers:
+
+| `source` | What is proposed |
+| --- | --- |
+| `oauth2_password_flow` | The `tokenUrl` of each OAuth2 `password` flow under `components.securitySchemes`, reduced to its path from the root, as `POST`, form encoded, with `username` and `password`, and the token at `access_token`, as OAuth2 fixes them. When a `POST` operation declares that path (ignoring a trailing `/`), the path is spelled as it does. A server prefix is not stripped: a `tokenUrl` naming the prefix proposes the path with it. |
+| `operation_names` | A `POST` operation whose literal path segments, `operationId` or `summary` say `login`, `log in`, `signin`, `sign in`, `authenticate`, `token` or `session`; whose JSON or form body declares a text field `email`, `username`, `user` or `login` and a field `password` (names compared ignoring case, `_` and `-`); and whose `2xx` response declares a text field `access_token`, `token`, `accessToken`, `jwt` or `id_token` on its top level or one level in. `body_fields` are the body's required fields and the two that matched, in the order the schema declares them; `media_type` is JSON when the body declares both. An operation a password flow already proposed is not proposed again. |
 
 ## `analysis`
 

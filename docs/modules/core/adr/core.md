@@ -865,7 +865,7 @@ run exercised only under another, is ruled as usual and can read
 
 ## ADR-213 — A run that lacks what its mode requires is refused before it is produced, and one that would verify nothing is refused with the endpoints and why { #adr-213 }
 
-**Status:** accepted · Supersedes in part [ADR-102](../../specforge-engine/adr/engine.md#adr-102) · `controllers/execution/requirements.py`, `controllers/execution/translation.py`, `controllers/execution/producers.py`, `errors/execution.py`, `services/fuzz/exceptions.py`, `services/fuzz/runner.py`, `services/catalog/vocabulary.py`; engine `exceptions.py`, `runtime/facade.py`, `runtime/runners/auth/runner.py`
+**Status:** accepted · Supersedes in part [ADR-102](../../specforge-engine/adr/engine.md#adr-102) · Refined by [ADR-226](../../specforge-engine/adr/sessions.md#adr-226) · `controllers/execution/requirements.py`, `controllers/execution/translation.py`, `controllers/execution/producers.py`, `errors/execution.py`, `services/fuzz/exceptions.py`, `services/fuzz/runner.py`, `services/catalog/vocabulary.py`; engine `exceptions.py`, `runtime/facade.py`, `runtime/runners/auth/runner.py`
 
 ### Context
 
@@ -1031,7 +1031,7 @@ request also degrades the run, and the cause names it so a reader can tell.
 
 ## ADR-218 — A user's presets are saved in their own store as runs checked like a fuzz request, and a run carries its preset as an uninterpreted tag { #adr-218 }
 
-**Status:** accepted · Builds on [ADR-160](#adr-160) · `facade/presets.py`, `controllers/presets/`, `controllers/execution/shape.py`, `services/presets/listing.py`, `services/persistence/presets.py`, `schemas/presets.py`, `schemas/run_preset.py`
+**Status:** accepted · Builds on [ADR-160](#adr-160) · Refined by [ADR-226](../../specforge-engine/adr/sessions.md#adr-226) · `facade/presets.py`, `controllers/presets/`, `controllers/execution/shape.py`, `services/presets/listing.py`, `services/persistence/presets.py`, `schemas/presets.py`, `schemas/run_preset.py`
 
 ### Context
 

@@ -116,7 +116,10 @@ order:
    A business rule must name fields the endpoint declares. A bare name the model
    wrote for a nested body field (`end` for `booking.end`) is resolved to the one
    declared path that ends in it; a name two paths end in stays as written and
-   fails the check.
+   fails the check. An attack hint (`attack.field_hints`) whose `zone.field` path
+   names no field of the projected request is left out with a `producer_notes[]`
+   entry of kind [`unknown_field`](protocol/vocabularies.md#producer-note-kind),
+   and the contract is adopted with its other hints.
 
 A contract that passes all three replaces the endpoint's definition for the run,
 and the run keeps it with its results. A failure leaves an entry in
